@@ -3,10 +3,10 @@ import { Twitter, Youtube, MessageCircle, ExternalLink } from 'lucide-react'
 
 const footerLinks = {
   Platform: [
-    { label: 'Watch Live', href: '/watch', external: false },
+    { label: 'Watch Live', href: '/', external: false },
     { label: 'Schedule', href: '/schedule', external: false },
     { label: 'Apply to Stream', href: '/apply', external: false },
-    { label: 'Tokenomics', href: '/tokenomics', external: false },
+    { label: 'Queue', href: '/queue', external: false },
   ],
   Company: [
     { label: 'About', href: '/about', external: false },

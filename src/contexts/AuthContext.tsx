@@ -5,8 +5,6 @@ import {
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   updateProfile,
-  GoogleAuthProvider,
-  signInWithPopup,
   type User,
 } from 'firebase/auth'
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
@@ -29,7 +27,6 @@ interface AuthContextType {
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string, displayName: string) => Promise<void>
-  signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
 }
@@ -87,14 +84,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await createProfile(user, displayName)
   }
 
-  const signInWithGoogle = async () => {
-    const provider = new GoogleAuthProvider()
-    const { user } = await signInWithPopup(auth, provider)
-    const existing = await fetchProfile(user.uid)
-    if (!existing) {
-      await createProfile(user, user.displayName || 'Anonymous')
-    }
-  }
 
   const signOut = async () => {
     await firebaseSignOut(auth)
@@ -107,7 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, profile, loading, signIn, signUp, signInWithGoogle, signOut, refreshProfile }}
+      value={{ user, profile, loading, signIn, signUp, signOut, refreshProfile }}
     >
       {children}
     </AuthContext.Provider>
