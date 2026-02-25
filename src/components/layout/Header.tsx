@@ -4,14 +4,15 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Menu, X, ChevronDown, User, LogOut, LayoutDashboard, Shield } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
+import { Logo } from '@/components/ui/Logo'
 import { useAuth } from '@/contexts/AuthContext'
 
 const navLinks = [
-  { href: '/', label: 'Watch Live', live: true },
+  { href: '/watch', label: 'Watch Live', live: true },
   { href: '/schedule', label: 'Schedule' },
   { href: '/queue', label: 'Queue' },
   { href: '/apply', label: 'Apply' },
-  { href: '/account', label: 'Account' },
+  { href: '/about', label: 'About' },
 ]
 
 export function Header() {
@@ -27,54 +28,46 @@ export function Header() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-
   return (
     <>
       <header
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
           scrolled
-            ? 'bg-[#07070b]/85 backdrop-blur-xl border-b border-red-500/20'
+            ? 'bg-[#06060f]/90 backdrop-blur-xl border-b border-white/[0.06] shadow-[0_1px_0_rgba(255,35,70,0.12)]'
             : 'bg-transparent'
         }`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 lg:h-20">
+
             {/* Logo */}
-            <Link to="/" className="flex items-center gap-3 group">
-              <div className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-primary-500 to-accent-600 flex items-center justify-center font-display font-bold text-sm text-white shadow-lg shadow-primary-600/30 group-hover:shadow-primary-500/50 transition-shadow">
-                CS
-              </div>
-              <div className="flex flex-col">
-                <span className="font-display font-bold text-lg tracking-tight text-white leading-none">CSGN</span>
-                <span className="text-[10px] text-gray-500 tracking-widest uppercase leading-none mt-0.5 hidden sm:block">
-                  Crypto Sports & Gaming
-                </span>
-              </div>
-            </Link>
+            <Logo showTagline size="md" />
 
             {/* Desktop Nav */}
-            <nav className="hidden lg:flex items-center gap-1">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  to={link.href}
-                  className={`relative px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 ${
-                    location.pathname === link.href
-                      ? 'text-white bg-white/[0.08]'
-                      : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
-                  }`}
-                >
-                  {link.live && <LiveIndicator />}
-                  {!link.live && link.label}
-                  {link.live && <span className="sr-only">{link.label}</span>}
-                  {location.pathname === link.href && (
-                    <motion.div
-                      layoutId="navIndicator"
-                      className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-primary-500 rounded-full"
-                    />
-                  )}
-                </Link>
-              ))}
+            <nav className="hidden lg:flex items-center gap-0.5">
+              {navLinks.map((link) => {
+                const isActive = location.pathname === link.href
+                return (
+                  <Link
+                    key={link.href}
+                    to={link.href}
+                    className={`relative px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 ${
+                      isActive
+                        ? 'text-white bg-white/[0.07]'
+                        : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    {link.live && <LiveIndicator />}
+                    {link.label}
+                    {isActive && (
+                      <motion.div
+                        layoutId="navIndicator"
+                        className="absolute bottom-0 left-1/2 -translate-x-1/2 w-6 h-0.5 bg-primary-500 rounded-full"
+                      />
+                    )}
+                  </Link>
+                )
+              })}
             </nav>
 
             {/* Right side */}
@@ -100,7 +93,7 @@ export function Header() {
                         initial={{ opacity: 0, y: 8, scale: 0.96 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                        className="absolute right-0 mt-2 w-56 py-2 bg-surface-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl"
+                        className="absolute right-0 mt-2 w-56 py-2 bg-[#0a0a18]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl"
                       >
                         <Link
                           to="/account"
@@ -174,13 +167,14 @@ export function Header() {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="absolute right-0 top-0 bottom-0 w-80 max-w-[85vw] bg-[#0a0a1a] border-l border-white/[0.06] p-6 pt-20"
+              className="absolute right-0 top-0 bottom-0 w-80 max-w-[85vw] bg-[#09091a] border-l border-white/[0.06] p-6 pt-20"
             >
               <div className="flex flex-col gap-1">
                 {navLinks.map((link) => (
                   <Link
                     key={link.href}
                     to={link.href}
+                    onClick={() => setMobileOpen(false)}
                     className={`flex items-center gap-3 px-4 py-3 text-base font-medium rounded-xl transition-all ${
                       location.pathname === link.href
                         ? 'text-white bg-white/[0.08]'
@@ -194,12 +188,12 @@ export function Header() {
               </div>
               {!user && (
                 <div className="mt-8 flex flex-col gap-3">
-                  <Link to="/account"><Button variant="secondary" size="lg" className="w-full" onClick={() => setMobileOpen(false)}>
-                    Sign In
-                  </Button></Link>
-                  <Link to="/account"><Button variant="primary" size="lg" className="w-full" onClick={() => setMobileOpen(false)}>
-                    Get Started
-                  </Button></Link>
+                  <Link to="/account" onClick={() => setMobileOpen(false)}>
+                    <Button variant="secondary" size="lg" className="w-full">Sign In</Button>
+                  </Link>
+                  <Link to="/account" onClick={() => setMobileOpen(false)}>
+                    <Button variant="primary" size="lg" className="w-full">Get Started</Button>
+                  </Link>
                 </div>
               )}
             </motion.nav>

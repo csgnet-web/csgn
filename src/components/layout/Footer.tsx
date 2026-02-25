@@ -1,9 +1,10 @@
 import { Link } from 'react-router-dom'
 import { Twitter, Youtube, MessageCircle, ExternalLink } from 'lucide-react'
+import { Logo } from '@/components/ui/Logo'
 
 const footerLinks = {
   Platform: [
-    { label: 'Watch Live', href: '/', external: false },
+    { label: 'Watch Live', href: '/watch', external: false },
     { label: 'Schedule', href: '/schedule', external: false },
     { label: 'Apply to Stream', href: '/apply', external: false },
     { label: 'Queue', href: '/queue', external: false },
@@ -11,7 +12,7 @@ const footerLinks = {
   Company: [
     { label: 'About', href: '/about', external: false },
     { label: 'Team', href: '/about#team', external: false },
-    { label: 'Business Plan', href: '/about#vision', external: false },
+    { label: 'Tokenomics', href: '/tokenomics', external: false },
     { label: 'Contact', href: '/about#contact', external: false },
   ],
   Community: [
@@ -24,17 +25,12 @@ const footerLinks = {
 
 export function Footer() {
   return (
-    <footer className="relative border-t border-white/[0.06] bg-[#06060e]">
+    <footer className="relative border-t border-white/[0.05] bg-[#05050d]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 lg:gap-12">
           {/* Brand */}
           <div className="col-span-2 md:col-span-1">
-            <Link to="/" className="flex items-center gap-3 mb-4">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-500 to-accent-600 flex items-center justify-center font-display font-bold text-sm text-white">
-                CS
-              </div>
-              <span className="font-display font-bold text-lg text-white">CSGN</span>
-            </Link>
+            <Logo showTagline size="md" className="mb-5" />
             <p className="text-sm text-gray-500 leading-relaxed mb-6">
               The 24/7 crypto-native streaming network. The ESPN and TMZ of crypto.
             </p>
@@ -43,19 +39,19 @@ export function Footer() {
                 href="https://x.com/caborgg"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all"
+                className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 hover:border-primary-500/30 transition-all"
               >
                 <Twitter className="w-4 h-4" />
               </a>
               <a
                 href="#"
-                className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all"
+                className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 hover:border-primary-500/30 transition-all"
               >
                 <Youtube className="w-4 h-4" />
               </a>
               <a
                 href="#"
-                className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all"
+                className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 hover:border-primary-500/30 transition-all"
               >
                 <MessageCircle className="w-4 h-4" />
               </a>
@@ -96,7 +92,7 @@ export function Footer() {
 
         <div className="mt-16 pt-8 border-t border-white/[0.04] flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-xs text-gray-600">
-            &copy; {new Date().getFullYear()} CSGN — Crypto Sports & Gaming Network. All rights reserved.
+            &copy; {new Date().getFullYear()} CSGN &mdash; Crypto Sports &amp; Gaming Network. All rights reserved.
           </p>
           <p className="text-xs text-gray-600">
             Built on <span className="text-primary-400">Solana</span> &middot; Powered by pump.fun
