@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>CSGN — Live</title>
+  <style>
+    :root{
+      --bg:#050507;
+      --panel: rgba(255,255,255,.06);
+      --panel2: rgba(255,255,255,.08);
+      --stroke: rgba(255,255,255,.10);
+      --stroke2: rgba(255,255,255,.14);
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.60);
+      --muted2: rgba(255,255,255,.38);
+      --red:#ff2346;
+      --red2:#ff3b5a;
+      --green:#35ff8a;
+      --amber:#ffb020;
+      --shadow: 0 12px 40px rgba(0,0,0,.55);
+      --radius: 18px;
+      --radius2: 14px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      background: radial-gradient(1100px 700px at 50% -140px, rgba(255,35,70,.22), transparent 55%),
+                  radial-gradient(900px 600px at 20% 30%, rgba(255,35,70,.10), transparent 55%),
+                  var(--bg);
+      color:var(--text);
+      font-family: var(--sans);
+      letter-spacing: .1px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow-x:hidden;
+    }
+
+    /* subtle “crypto” grain */
+    body:before{
+      content:"";
+      position:fixed; inset:0;
+      pointer-events:none;
+      background:
+        radial-gradient(circle at 10% 10%, rgba(255,255,255,.05), transparent 30%),
+        radial-gradient(circle at 80% 20%, rgba(255,255,255,.03), transparent 35%),
+        linear-gradient(to bottom, rgba(255,255,255,.03), transparent 24%, rgba(255,255,255,.02));
+      mix-blend-mode: overlay;
+      opacity:.30;
+    }
+
+    .app{
+      max-width: 460px;
+      margin: 0 auto;
+      padding-bottom: 92px; /* bottom nav */
+    }
+
+    .safeTop{ padding-top: env(safe-area-inset-top); }
+    .safeBottom{ padding-bottom: env(safe-area-inset-bottom); }
+
+    .hero{
+      position:relative;
+      height: 420px;
+      margin: 12px 14px 10px;
+      border-radius: 28px;
+      overflow:hidden;
+      background:
+        radial-gradient(900px 520px at 50% 20%, rgba(255,35,70,.18), transparent 55%),
+        radial-gradient(700px 520px at 50% 120%, rgba(255,255,255,.06), transparent 60%),
+        #030305;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(255,255,255,.10);
+    }
+
+    .hero:after{
+      content:"";
+      position:absolute; inset:0;
+      background: radial-gradient(600px 360px at 50% 40%, rgba(255,35,70,.10), transparent 60%),
+                  linear-gradient(to bottom, rgba(0,0,0,.10), rgba(0,0,0,.42));
+      pointer-events:none;
+    }
+
+    .heroTop{
+      position:absolute; left:14px; right:14px; top:14px;
+      display:flex; align-items:center; justify-content:space-between;
+      z-index:2;
+    }
+
+    .pill{
+      display:inline-flex; align-items:center; gap:8px;
+      padding:10px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,35,70,.45);
+      background: rgba(0,0,0,.28);
+      backdrop-filter: blur(10px);
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+
+    .dot{
+      width:8px; height:8px; border-radius:99px;
+      background: var(--red);
+      box-shadow: 0 0 12px rgba(255,35,70,.65);
+    }
+
+    .viewers{
+      display:flex; align-items:center; gap:10px;
+      padding:10px 12px;
+      border-radius: 999px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.22);
+      backdrop-filter: blur(10px);
+      font-family: var(--mono);
+      font-size: 12px;
+      color: rgba(255,255,255,.82);
+    }
+
+    .playWrap{
+      position:absolute; inset:0;
+      display:flex; align-items:center; justify-content:center;
+      z-index:2;
+    }
+
+    .playBtn{
+      width: 78px; height: 78px;
+      border-radius: 999px;
+      display:grid; place-items:center;
+      background: rgba(0,0,0,.35);
+      border: 1px solid rgba(255,255,255,.14);
+      box-shadow: 0 14px 34px rgba(0,0,0,.55);
+      backdrop-filter: blur(10px);
+      cursor:pointer;
+      transform: translateZ(0);
+      transition: transform .12s ease, border-color .12s ease;
+      position:relative;
+    }
+    .playBtn:hover{ transform: scale(1.02); border-color: rgba(255,255,255,.22); }
+
+    .ring{
+      position:absolute; inset:-8px;
+      border-radius: 999px;
+      border: 6px solid rgba(255,35,70,.18);
+      border-top-color: rgba(255,35,70,.95);
+      filter: drop-shadow(0 0 12px rgba(255,35,70,.35));
+      transform: rotate(25deg);
+    }
+
+    .triangle{
+      width:0; height:0;
+      border-left: 18px solid rgba(255,255,255,.90);
+      border-top: 11px solid transparent;
+      border-bottom: 11px solid transparent;
+      margin-left:4px;
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,.45));
+    }
+
+    .heroActions{
+      position:absolute;
+      right: 14px;
+      bottom: 14px;
+      z-index:2;
+      display:flex;
+      gap:10px;
+    }
+
+    .btn{
+      height:44px;
+      padding:0 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.25);
+      backdrop-filter: blur(10px);
+      color: rgba(255,255,255,.88);
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      display:inline-flex; align-items:center; gap:10px;
+      cursor:pointer;
+      transition: transform .12s ease, border-color .12s ease, background .12s ease;
+    }
+    .btn:hover{ transform: translateY(-1px); border-color: rgba(255,255,255,.20); background: rgba(0,0,0,.32); }
+
+    .btnPrimary{
+      border-color: rgba(255,35,70,.35);
+      background: rgba(255,35,70,.10);
+    }
+    .btnPrimary:hover{ border-color: rgba(255,35,70,.55); background: rgba(255,35,70,.14); }
+
+    .section{
+      margin: 0 14px;
+    }
+
+    .nowBar{
+      display:grid;
+      grid-template-columns: 1fr 1.2fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .card{
+      background: var(--panel);
+      border: 1px solid var(--stroke);
+      border-radius: var(--radius);
+      box-shadow: 0 10px 24px rgba(0,0,0,.35);
+      backdrop-filter: blur(12px);
+    }
+
+    .cardPad{ padding: 14px; }
+
+    .label{
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+      color: var(--muted2);
+      margin-bottom: 6px;
+    }
+
+    .value{
+      font-size: 16px;
+      font-weight: 650;
+      color: rgba(255,255,255,.92);
+      line-height: 1.2;
+      margin-bottom: 10px;
+    }
+
+    .chip{
+      display:inline-flex; align-items:center; gap:8px;
+      height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.24);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,.85);
+    }
+
+    .chipAuction{ border-color: rgba(255,176,32,.35); }
+    .chipLottery{ border-color: rgba(255,35,70,.35); }
+    .chipAdmin{ border-color: rgba(120,200,255,.35); }
+
+    .metric{
+      font-family: var(--mono);
+      font-size: 14px;
+      letter-spacing:.04em;
+    }
+
+    .green{ color: var(--green); }
+    .red{ color: var(--red2); }
+    .amber{ color: var(--amber); }
+
+    .railHeader{
+      display:flex; align-items:flex-end; justify-content:space-between;
+      margin: 18px 0 10px;
+    }
+    .title{
+      font-size: 18px;
+      font-weight: 750;
+      letter-spacing: .02em;
+    }
+    .sub{
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .rail{
+      display:flex;
+      gap: 10px;
+      overflow:auto;
+      padding-bottom: 6px;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+    }
+    .rail::-webkit-scrollbar{ display:none; }
+
+    .slotCard{
+      min-width: 230px;
+      scroll-snap-align: start;
+      padding: 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.06);
+      backdrop-filter: blur(12px);
+    }
+    .slotTop{
+      display:flex; align-items:center; justify-content:space-between;
+      margin-bottom: 10px;
+    }
+    .slotTime{
+      font-family: var(--mono);
+      font-size: 12px;
+      color: rgba(255,255,255,.78);
+    }
+    .slotName{
+      font-size: 14px;
+      font-weight: 650;
+      margin: 6px 0 2px;
+    }
+    .slotMeta{
+      font-family: var(--mono);
+      font-size: 12px;
+      color: rgba(255,255,255,.62);
+    }
+
+    .feeHeader{
+      display:flex; align-items:flex-end; justify-content:space-between;
+      margin-top: 18px;
+      padding: 16px 14px 12px;
+    }
+
+    .feeTitle{
+      display:flex;
+      flex-direction:column;
+      gap: 6px;
+    }
+    .epoch{
+      font-family: var(--mono);
+      font-size: 12px;
+      color: rgba(255,35,70,.85);
+      letter-spacing: .10em;
+    }
+    .feePool{
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: .06em;
+    }
+
+    .metricsGrid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      padding: 0 14px 14px;
+    }
+
+    .metricCard{
+      padding: 12px;
+      border-radius: 16px;
+      background: rgba(0,0,0,.18);
+      border: 1px solid rgba(255,255,255,.10);
+    }
+
+    .metricVal{
+      font-family: var(--mono);
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: .02em;
+      margin-top: 2px;
+    }
+
+    .fineprint{
+      padding: 0 14px 16px;
+      color: rgba(255,255,255,.60);
+      font-size: 12.5px;
+      line-height: 1.45;
+    }
+
+    .bottomNav{
+      position:fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 0;
+      width: min(460px, 100%);
+      padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+      background: rgba(0,0,0,.42);
+      border-top: 1px solid rgba(255,255,255,.08);
+      backdrop-filter: blur(16px);
+      z-index: 20;
+    }
+
+    .navRow{
+      display:grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      align-items:end;
+    }
+
+    .navItem{
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      gap: 6px;
+      color: rgba(255,255,255,.55);
+      text-decoration:none;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      padding: 6px 0;
+      user-select:none;
+    }
+
+    .navIcon{
+      width: 24px; height: 24px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.06);
+      display:grid; place-items:center;
+    }
+
+    .active{
+      color: rgba(255,255,255,.92);
+    }
+    .active .navIcon{
+      border-color: rgba(255,35,70,.35);
+      background: rgba(255,35,70,.12);
+      box-shadow: 0 0 0 2px rgba(255,35,70,.10) inset;
+    }
+
+    /* tiny admin strip (hidden by default) */
+    .adminStrip{
+      margin: 10px 14px 0;
+      padding: 12px;
+      border-radius: 16px;
+      background: rgba(255,35,70,.06);
+      border: 1px solid rgba(255,35,70,.18);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 12px;
+    }
+    .adminStrip .left{
+      display:flex; flex-direction:column; gap: 4px;
+    }
+    .adminStrip .left .k{ font-family: var(--mono); font-size: 11px; letter-spacing:.16em; color: rgba(255,255,255,.60); text-transform:uppercase;}
+    .adminStrip .left .v{ font-weight: 700; }
+    .toggle{
+      display:inline-flex; gap: 10px; align-items:center;
+    }
+    .switch{
+      width: 46px; height: 28px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.22);
+      position:relative;
+      cursor:pointer;
+    }
+    .knob{
+      position:absolute; top: 50%; transform: translateY(-50%);
+      left: 3px;
+      width: 22px; height: 22px; border-radius: 999px;
+      background: rgba(255,255,255,.88);
+      transition: left .18s ease;
+    }
+    .switch.on{
+      border-color: rgba(255,35,70,.35);
+      background: rgba(255,35,70,.14);
+    }
+    .switch.on .knob{ left: 21px; background: rgba(255,255,255,.92); }
+  </style>
+</head>
+
+<body>
+  <div class="app safeTop">
+
+    <!-- Admin strip (simulate CEO controls) -->
+    <div class="adminStrip" id="adminStrip" style="display:none;">
+      <div class="left">
+        <div class="k">Admin</div>
+        <div class="v">Force Live Override (CEO Assign)</div>
+      </div>
+      <div class="toggle">
+        <button class="btn btnPrimary" id="btnKill">Kill Stream</button>
+        <div class="switch" id="overrideSwitch" role="switch" aria-checked="false">
+          <div class="knob"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HERO -->
+    <div class="hero">
+      <div class="heroTop">
+        <div class="pill"><span class="dot"></span> ON AIR</div>
+        <div class="viewers">👁 <span id="viewerCount">2,133</span></div>
+      </div>
+
+      <div class="playWrap">
+        <div class="playBtn" id="playBtn" title="Play (demo)">
+          <div class="ring"></div>
+          <div class="triangle"></div>
+        </div>
+      </div>
+
+      <div class="heroActions">
+        <button class="btn" id="btnPhantom">Connect Phantom</button>
+        <button class="btn" id="btnUnmute">Unmute</button>
+      </div>
+    </div>
+
+    <!-- NOW BAR -->
+    <div class="section nowBar">
+      <div class="card cardPad">
+        <div class="label">Streamer</div>
+        <div class="value" id="nowStreamer">CSGN Demo</div>
+
+        <div class="label">Slot</div>
+        <div class="chip chipAdmin" id="nowSlotMethod">CEO ASSIGN</div>
+      </div>
+
+      <div class="card cardPad">
+        <div class="label">Content</div>
+        <div class="value" id="nowContent">Test Stream — Replace with your Live URL</div>
+
+        <div class="label">Earning</div>
+        <div class="value metric"><span class="green" id="nowEarning">84 CSGN/hr</span></div>
+      </div>
+    </div>
+
+    <!-- NEXT UP RAIL -->
+    <div class="section">
+      <div class="railHeader">
+        <div>
+          <div class="title">Next Up</div>
+          <div class="sub" id="ruleSummary">3am–1pm Auction • 1pm–7pm Lottery • 7pm–3am CEO</div>
+        </div>
+        <div class="sub" id="walletPill">Not connected</div>
+      </div>
+
+      <div class="rail" id="nextRail"></div>
+    </div>
+
+    <!-- FEE POOL -->
+    <div class="section card" style="margin-top:16px;">
+      <div class="feeHeader">
+        <div class="feeTitle">
+          <div class="epoch">— Epoch #14</div>
+          <div class="feePool">FEE POOL</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="label" style="margin:0;">Next draw</div>
+          <div class="value red" style="margin:0; font-family:var(--mono); font-size:14px;" id="nextDraw">2h 11m 58s</div>
+        </div>
+      </div>
+
+      <div class="metricsGrid">
+        <div class="metricCard">
+          <div class="label">24H VOL</div>
+          <div class="metricVal amber" id="mVol">$4.7K</div>
+        </div>
+        <div class="metricCard">
+          <div class="label">EPOCH POOL</div>
+          <div class="metricVal red" id="mPool">$329</div>
+        </div>
+        <div class="metricCard">
+          <div class="label">STREAMER 50%</div>
+          <div class="metricVal green" id="mStreamer">$164</div>
+        </div>
+        <div class="metricCard">
+          <div class="label">PER SLOT</div>
+          <div class="metricVal" id="mPer">$12.6</div>
+        </div>
+      </div>
+
+      <div class="fineprint">
+        1% of all on-chain CSGN volume is pooled each epoch (7 days). 50% is distributed to active streamers
+        proportional to hours broadcast. <b>Lottery closes 2 hours before each 2-hour slot.</b>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Bottom Nav -->
+  <div class="bottomNav">
+    <div class="navRow">
+      <a class="navItem active" href="javascript:void(0)" data-tab="live">
+        <div class="navIcon">📺</div>
+        LIVE
+      </a>
+      <a class="navItem" href="javascript:void(0)" data-tab="schedule">
+        <div class="navIcon">🗓️</div>
+        SCHEDULE
+      </a>
+      <a class="navItem" href="javascript:void(0)" data-tab="apply">
+        <div class="navIcon">✍️</div>
+        APPLY
+      </a>
+      <a class="navItem" href="javascript:void(0)" data-tab="queue">
+        <div class="navIcon">📋</div>
+        QUEUE
+      </a>
+      <a class="navItem" href="javascript:void(0)" data-tab="account">
+        <div class="navIcon">👤</div>
+        ACCOUNT
+      </a>
+    </div>
+  </div>
+
+  <script>
+    /*************************************************************
+     *  CSGN Prototype Architecture
+     *  - Daypart rules decide slot type (Auction / Lottery / Admin)
+     *  - Schedule is generated in 2-hour blocks
+     *  - Wallet (Phantom) provides token balance -> voting weight
+     *  - Admin override simulates CEO Assign / Kill switch
+     *************************************************************/
+
+    // ---- CONFIG (swap these later to server-side values) ----
+    const CONFIG = {
+      tz: "America/Chicago",
+      slotMinutes: 120,
+      // dayparts in local time:
+      // 03:00–13:00 Auction
+      // 13:00–19:00 Lottery (closes 2 hours before slot start)
+      // 19:00–03:00 Admin programming
+      dayparts: [
+        { name:"Auction", type:"AUCTION", start:"03:00", end:"13:00" },
+        { name:"Lottery", type:"LOTTERY", start:"13:00", end:"19:00" },
+        { name:"CEO", type:"ADMIN", start:"19:00", end:"03:00" },
+      ],
+      // demo streamer pool
+      streamers: [
+        { id:"s1", name:"CSGN Demo", platform:"YouTube", content:"Test Stream — Replace with your Live URL", earnPerHour:84 },
+        { id:"s2", name:"Start5 Arena", platform:"Twitch", content:"NBA Night Run — Live Picks", earnPerHour:96 },
+        { id:"s3", name:"Grid Lords", platform:"YouTube", content:"Daily Grid Speedruns", earnPerHour:72 },
+        { id:"s4", name:"Campus Chaos", platform:"Twitch", content:"CFB Sim + Live Chat", earnPerHour:88 },
+        { id:"s5", name:"CSGN Center", platform:"YouTube", content:"Highlights + Reactions", earnPerHour:80 },
+      ],
+      // demo metrics (fee pool)
+      feePool: { epoch:14, vol24h:"$4.7K", epochPool:"$329", streamer50:"$164", perSlot:"$12.6" }
+    };
+
+    // ---- State ----
+    const STATE = {
+      wallet: { connected:false, address:null, tokenBalance:0 },
+      admin: { enabled:false, forceOverride:false, killed:false },
+      schedule: [],
+      now: null,
+    };
+
+    // ---- Utilities ----
+    const $ = (id)=>document.getElementById(id);
+    const pad2 = (n)=>String(n).padStart(2,"0");
+
+    function parseHHMM(s){
+      const [h,m]=s.split(":").map(Number);
+      return {h,m};
+    }
+
+    function toMinutes(h,m){ return h*60+m; }
+
+    function localNow(){
+      // For prototype: use browser local time (your app can enforce CONFIG.tz later)
+      return new Date();
+    }
+
+    function fmtTime(d){
+      const h=d.getHours(), m=d.getMinutes();
+      const ampm = h>=12 ? "PM":"AM";
+      const hh = h%12===0 ? 12 : h%12;
+      return `${hh}:${pad2(m)} ${ampm}`;
+    }
+
+    function getDaypartType(date){
+      const h=date.getHours(), m=date.getMinutes();
+      const t=toMinutes(h,m);
+
+      // Handle wraparound for 19:00–03:00 admin
+      const auction = { start: toMinutes(...Object.values(parseHHMM("03:00"))), end: toMinutes(...Object.values(parseHHMM("13:00"))) };
+      const lottery = { start: toMinutes(...Object.values(parseHHMM("13:00"))), end: toMinutes(...Object.values(parseHHMM("19:00"))) };
+      const admin1 = { start: toMinutes(...Object.values(parseHHMM("19:00"))), end: toMinutes(...Object.values(parseHHMM("24:00"))) };
+      const admin2 = { start: toMinutes(...Object.values(parseHHMM("00:00"))), end: toMinutes(...Object.values(parseHHMM("03:00"))) };
+
+      if (t >= auction.start && t < auction.end) return "AUCTION";
+      if (t >= lottery.start && t < lottery.end) return "LOTTERY";
+      if (t >= admin1.start && t < admin1.end) return "ADMIN";
+      if (t >= admin2.start && t < admin2.end) return "ADMIN";
+      return "ADMIN";
+    }
+
+    function chipClass(type){
+      if(type==="AUCTION") return "chip chipAuction";
+      if(type==="LOTTERY") return "chip chipLottery";
+      return "chip chipAdmin";
+    }
+    function chipText(type){
+      if(type==="AUCTION") return "AUCTION SLOT";
+      if(type==="LOTTERY") return "LOTTERY SLOT";
+      return "CEO ASSIGN";
+    }
+
+    function votingWeightFromTokens(tokenBalance){
+      // Weight function you can tune later:
+      // - keeps whales meaningful but not infinite (sqrt curve)
+      // - also makes small holders still matter
+      return Math.max(1, Math.floor(Math.sqrt(Math.max(0, tokenBalance))));
+    }
+
+    function buildSchedule(){
+      const now = localNow();
+      const start = new Date(now);
+      start.setMinutes(0,0,0);
+
+      // Align to next 2-hour boundary
+      const minutes = start.getHours()*60 + start.getMinutes();
+      const block = CONFIG.slotMinutes;
+      const aligned = Math.floor(minutes/block)*block;
+      start.setHours(Math.floor(aligned/60), aligned%60, 0, 0);
+
+      const slots = [];
+      let cursor = new Date(start);
+
+      // Next 10 slots (20 hours)
+      for(let i=0;i<10;i++){
+        const slotStart = new Date(cursor);
+        const slotEnd = new Date(cursor);
+        slotEnd.setMinutes(slotEnd.getMinutes()+CONFIG.slotMinutes);
+
+        const type = getDaypartType(slotStart);
+
+        // Demo assignment logic:
+        // - Admin: rotate through streamers
+        // - Lottery: pick a “winner” placeholder
+        // - Auction: pick “top bidder” placeholder
+        const streamer = CONFIG.streamers[(i+1) % CONFIG.streamers.length];
+
+        let assignNote = "";
+        if(type==="ADMIN") assignNote = "Programmed by CEO";
+        if(type==="LOTTERY") assignNote = "Lottery closes 2h before slot";
+        if(type==="AUCTION") assignNote = "Highest bid wins slot";
+
+        slots.push({
+          id: `slot_${slotStart.getTime()}`,
+          type,
+          start: slotStart,
+          end: slotEnd,
+          streamerId: streamer.id,
+          streamerName: streamer.name,
+          content: streamer.content,
+          earnPerHour: streamer.earnPerHour,
+          assignNote
+        });
+
+        cursor = slotEnd;
+      }
+
+      STATE.schedule = slots;
+      return slots;
+    }
+
+    function getActiveSlot(){
+      const now = localNow();
+      for(const s of STATE.schedule){
+        if(now >= s.start && now < s.end) return s;
+      }
+      return STATE.schedule[0];
+    }
+
+    function secondsUntil(d){
+      return Math.max(0, Math.floor((d.getTime()-Date.now())/1000));
+    }
+    function fmtCountdown(sec){
+      const h=Math.floor(sec/3600);
+      const m=Math.floor((sec%3600)/60);
+      const s=sec%60;
+      if(h>0) return `${h}h ${m}m ${s}s`;
+      if(m>0) return `${m}m ${s}s`;
+      return `${s}s`;
+    }
+
+    // ---- Wallet (Phantom) ----
+    async function connectPhantom(){
+      try{
+        const provider = window.solana;
+        if(!provider || !provider.isPhantom){
+          // Demo fallback: “mock connect”
+          STATE.wallet.connected = true;
+          STATE.wallet.address = "DemoWalletxxxx...CSGN";
+          STATE.wallet.tokenBalance = 4200; // mock
+          renderWallet();
+          return;
+        }
+        const resp = await provider.connect();
+        STATE.wallet.connected = true;
+        STATE.wallet.address = resp.publicKey.toString();
+
+        // TODO: Replace this with real SPL token balance fetch.
+        STATE.wallet.tokenBalance = 0;
+        renderWallet();
+      }catch(e){
+        console.warn("Phantom connect error:", e);
+      }
+    }
+
+    function renderWallet(){
+      const pill = $("walletPill");
+      if(!STATE.wallet.connected){
+        pill.textContent = "Not connected";
+        return;
+      }
+      const w = votingWeightFromTokens(STATE.wallet.tokenBalance);
+      pill.textContent = `Weight ${w} • ${STATE.wallet.tokenBalance.toLocaleString()} CSGN`;
+    }
+
+    // ---- Admin controls (simulate) ----
+    function setAdminEnabled(on){
+      STATE.admin.enabled = on;
+      $("adminStrip").style.display = on ? "flex" : "none";
+    }
+
+    function setOverride(on){
+      STATE.admin.forceOverride = on;
+      const sw = $("overrideSwitch");
+      sw.classList.toggle("on", on);
+      sw.setAttribute("aria-checked", on ? "true" : "false");
+      renderNow();
+    }
+
+    function killStream(){
+      STATE.admin.killed = !STATE.admin.killed;
+      $("btnKill").textContent = STATE.admin.killed ? "Restore" : "Kill Stream";
+      renderNow();
+    }
+
+    // ---- Rendering ----
+    function renderNow(){
+      const active = getActiveSlot();
+      STATE.now = active;
+
+      // If admin override, force method to ADMIN (CEO Assign)
+      let type = active.type;
+      if(STATE.admin.forceOverride) type = "ADMIN";
+
+      // If killed, show fallback slate
+      if(STATE.admin.killed){
+        $("nowStreamer").textContent = "CSGN Holding";
+        $("nowContent").textContent = "We’ll be back — standby for the next slot";
+        $("nowEarning").textContent = "0 CSGN/hr";
+        $("nowSlotMethod").className = chipClass("ADMIN");
+        $("nowSlotMethod").textContent = "KILLED (ADMIN)";
+        return;
+      }
+
+      $("nowStreamer").textContent = active.streamerName;
+      $("nowContent").textContent = active.content;
+      $("nowEarning").textContent = `${active.earnPerHour} CSGN/hr`;
+      $("nowSlotMethod").className = chipClass(type);
+      $("nowSlotMethod").textContent = chipText(type);
+    }
+
+    function renderRail(){
+      const rail = $("nextRail");
+      rail.innerHTML = "";
+
+      const now = localNow();
+      const upcoming = STATE.schedule
+        .filter(s => s.end > now)
+        .slice(0, 6);
+
+      for(const s of upcoming){
+        const sec = secondsUntil(s.start);
+        const status = now >= s.start && now < s.end ? "LIVE NOW" : `Starts in ${fmtCountdown(sec)}`;
+
+        const el = document.createElement("div");
+        el.className = "slotCard";
+        el.innerHTML = `
+          <div class="slotTop">
+            <div class="slotTime">${fmtTime(s.start)} – ${fmtTime(s.end)}</div>
+            <div class="${chipClass(s.type)}" style="height:26px">${chipText(s.type)}</div>
+          </div>
+          <div class="slotName">${s.streamerName}</div>
+          <div class="slotMeta">${status} • ${s.assignNote}</div>
+        `;
+        el.addEventListener("click", ()=>{
+          // Demo behavior: clicking a future slot simulates “preview”
+          $("nowStreamer").textContent = s.streamerName;
+          $("nowContent").textContent = s.content;
+          $("nowEarning").textContent = `${s.earnPerHour} CSGN/hr`;
+          $("nowSlotMethod").className = chipClass(s.type);
+          $("nowSlotMethod").textContent = chipText(s.type);
+        });
+        rail.appendChild(el);
+      }
+    }
+
+    function renderMetrics(){
+      $("mVol").textContent = CONFIG.feePool.vol24h;
+      $("mPool").textContent = CONFIG.feePool.epochPool;
+      $("mStreamer").textContent = CONFIG.feePool.streamer50;
+      $("mPer").textContent = CONFIG.feePool.perSlot;
+    }
+
+    function tick(){
+      // Light “live-ness”
+      const viewers = 2100 + Math.floor(Math.random()*120);
+      $("viewerCount").textContent = viewers.toLocaleString();
+
+      // Countdown demo (next draw)
+      // Just oscillate a fake timer so it looks real.
+      const t = Math.floor(Date.now()/1000);
+      const sec = 2*3600 + 11*60 + 58 - (t % 4000);
+      $("nextDraw").textContent = fmtCountdown(Math.max(0,sec));
+
+      renderNow();
+      renderRail();
+    }
+
+    // ---- Nav (demo only) ----
+    function bindNav(){
+      document.querySelectorAll(".navItem").forEach(a=>{
+        a.addEventListener("click", ()=>{
+          document.querySelectorAll(".navItem").forEach(x=>x.classList.remove("active"));
+          a.classList.add("active");
+
+          const tab = a.getAttribute("data-tab");
+          if(tab==="account"){
+            // For demo: toggle admin strip from Account
+            setAdminEnabled(!STATE.admin.enabled);
+          }
+          if(tab==="apply"){
+            alert("APPLY (demo): This will become the streamer application form + link submission.");
+          }
+          if(tab==="queue"){
+            alert("QUEUE (demo): This will become the upcoming slots + applicants + bidding/lottery entry.");
+          }
+          if(tab==="schedule"){
+            alert("SCHEDULE (demo): This will become the full TV guide grid view.");
+          }
+        });
+      });
+    }
+
+    // ---- Bindings ----
+    $("btnPhantom").addEventListener("click", connectPhantom);
+    $("btnUnmute").addEventListener("click", ()=>alert("UNMUTE (demo)"));
+    $("playBtn").addEventListener("click", ()=>alert("PLAY (demo): Replace with embedded player iframe later."));
+    $("overrideSwitch").addEventListener("click", ()=>setOverride(!STATE.admin.forceOverride));
+    $("btnKill").addEventListener("click", killStream);
+
+    // ---- Init ----
+    buildSchedule();
+    renderMetrics();
+    bindNav();
+    renderWallet();
+    tick();
+    setInterval(tick, 1500);
+  </script>
+</body>
+</html>
