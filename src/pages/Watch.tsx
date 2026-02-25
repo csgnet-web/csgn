@@ -1,87 +1,216 @@
-import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { Maximize2, Minimize2, MessageSquare, Clock, Users, Radio, ChevronRight, ExternalLink } from 'lucide-react'
-import { LiveIndicator } from '@/components/ui/LiveIndicator'
-import { Badge } from '@/components/ui/Badge'
-import { Card } from '@/components/ui/Card'
+import { useMemo } from 'react'
+import { Link } from 'react-router-dom'
+import { ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
 
-const currentSchedule = [
-  { time: '12:00 PM', streamer: 'SolanaSteve', type: 'Auction', status: 'live' as const },
-  { time: '2:00 PM', streamer: 'TBA (Lottery)', type: 'Lottery', status: 'upcoming' as const },
-  { time: '4:00 PM', streamer: 'TBA (Lottery)', type: 'Lottery', status: 'upcoming' as const },
-  { time: '6:00 PM', streamer: 'CEO Show', type: 'Prime', status: 'upcoming' as const },
+/* ── Twitch channel ── */
+const CHANNEL = 'caborgg'
+
+/* ── Schedule data ── */
+const todaySchedule = [
+  {
+    handle: 'TRAPKINGZ',
+    specialty: 'NBA Picks',
+    time: '6:00–8:00PM',
+    status: 'live' as const,
+    avatarHue: 220,
+  },
+  {
+    handle: 'SolanaSteve',
+    specialty: 'Crypto Markets',
+    time: '8:00–10:00PM',
+    status: 'upcoming' as const,
+    avatarHue: 260,
+  },
+  {
+    handle: 'CEO Show',
+    specialty: 'Prime Time',
+    time: '10:00PM–12AM',
+    status: 'upcoming' as const,
+    avatarHue: 200,
+  },
 ]
 
-export default function Watch() {
-  const [isTheaterMode, setIsTheaterMode] = useState(false)
-  const [chatVisible, setChatVisible] = useState(true)
+/* ── Streamer silhouette (shown inside blue cards) ── */
+function AvatarSilhouette({ hue }: { hue: number }) {
+  return (
+    <svg viewBox="0 0 120 160" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
+      <defs>
+        <linearGradient id={`ag${hue}`} x1="60" y1="0" x2="60" y2="160" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor={`hsl(${hue},80%,65%)`} stopOpacity="0.85" />
+          <stop offset="100%" stopColor={`hsl(${hue},60%,25%)`} stopOpacity="0.4" />
+        </linearGradient>
+      </defs>
+      {/* Head */}
+      <ellipse cx="60" cy="52" rx="26" ry="30" fill={`url(#ag${hue})`} />
+      {/* Shoulders/body */}
+      <path d="M0 160 C0 110 28 88 60 85 C92 88 120 110 120 160 Z" fill={`url(#ag${hue})`} />
+    </svg>
+  )
+}
+
+/* ── Schedule card (the "blue squares") ── */
+function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
+  const isLive = slot.status === 'live'
 
   return (
-    <div className="min-h-screen pt-16 lg:pt-20">
-      <div className={`max-w-[1800px] mx-auto ${isTheaterMode ? 'px-0' : 'px-3 sm:px-5 lg:px-6'}`}>
-        <div className={`flex flex-col ${chatVisible && !isTheaterMode ? 'lg:flex-row' : ''} gap-4 py-4`}>
-          <div className="flex-1 min-w-0">
-            <div className={`relative bg-black overflow-hidden border border-red-500/20 shadow-[0_20px_60px_rgba(0,0,0,0.55)] ${isTheaterMode ? 'rounded-none' : 'rounded-2xl'}`}>
-              <div className="aspect-video relative">
-                <iframe
-                  className="absolute inset-0 h-full w-full"
-                  src="https://player.twitch.tv/?channel=monstercat&parent=localhost&muted=true"
-                  title="CSGN live player"
-                  allowFullScreen
-                />
-                <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/75 via-transparent to-black/30" />
-                <div className="absolute top-3 left-3 right-3 flex items-center justify-between text-[11px] uppercase tracking-[0.2em] font-mono">
-                  <Badge variant="live" pulse>Live</Badge>
-                  <span className="px-2 py-1 rounded-full border border-white/20 bg-black/30 text-gray-200">starting 5 · pot: $14.70</span>
-                </div>
-                <div className="absolute left-4 bottom-4 right-4 flex items-end justify-between">
-                  <div>
-                    <p className="text-xs text-red-300 tracking-[0.25em] uppercase font-mono">NBA Picks & Analysis</p>
-                    <h2 className="text-4xl sm:text-5xl font-display font-black text-white">TRAPKINGZ</h2>
-                    <p className="text-sm text-gray-300">8:00 PM - 10:00 PM EST</p>
-                  </div>
-                  <p className="text-3xl sm:text-5xl text-yellow-300 font-mono">$1237.08</p>
-                </div>
-              </div>
+    <div
+      className={`relative rounded-xl overflow-hidden flex flex-col transition-all duration-300 ${
+        isLive
+          ? 'ring-2 ring-red-500 shadow-[0_0_24px_rgba(255,35,70,0.5)]'
+          : 'ring-1 ring-white/10 hover:ring-white/20'
+      }`}
+      style={{
+        background: `linear-gradient(160deg, hsl(${slot.avatarHue},70%,30%) 0%, hsl(${slot.avatarHue},60%,12%) 100%)`,
+      }}
+    >
+      {/* Status badge */}
+      <div className="absolute top-2 left-2 z-10">
+        {isLive ? (
+          <span className="flex items-center gap-1 px-2 py-0.5 bg-red-600 rounded-full text-[10px] font-bold text-white uppercase tracking-wider">
+            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+            LIVE
+          </span>
+        ) : (
+          <span className="px-2 py-0.5 bg-black/40 border border-white/20 rounded-full text-[10px] text-white/70 uppercase tracking-wider">
+            UP NEXT
+          </span>
+        )}
+      </div>
 
-              <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/95 to-transparent">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3"><LiveIndicator /><span className="text-sm text-gray-300 hidden sm:block">CSGN Network</span></div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => setChatVisible(!chatVisible)} className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all cursor-pointer lg:block hidden" title={chatVisible ? 'Hide chat' : 'Show chat'}><MessageSquare className="w-4 h-4" /></button>
-                    <button onClick={() => setIsTheaterMode(!isTheaterMode)} className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all cursor-pointer" title={isTheaterMode ? 'Exit theater' : 'Theater mode'}>{isTheaterMode ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}</button>
-                  </div>
-                </div>
-              </div>
-            </div>
+      {/* Avatar area */}
+      <div className="flex-1 flex items-end justify-center pt-8 pb-0 px-4 min-h-[110px]">
+        <AvatarSilhouette hue={slot.avatarHue} />
+      </div>
 
-            <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-3 mb-1"><h1 className="text-xl font-bold font-display text-white">CSGN Live Network</h1><Badge variant="live" pulse>LIVE</Badge></div>
-                <p className="text-sm text-gray-400">24/7 Crypto Sports & Gaming Network · The ESPN and TMZ of Crypto</p>
-              </div>
-              <div className="flex items-center gap-4 text-sm text-gray-400">
-                <span className="flex items-center gap-1.5"><Users className="w-4 h-4" /><span className="text-white font-medium">7,589</span> watching</span>
-                <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" />Started 24/7</span>
-              </div>
+      {/* Info */}
+      <div className="px-3 pb-3 pt-2 bg-gradient-to-t from-black/70 to-transparent">
+        <p className="text-white font-black font-display text-sm leading-tight truncate">{slot.handle}</p>
+        <p className="text-white/50 text-[10px] truncate">{slot.specialty}</p>
+        <p className="text-white/40 text-[10px] font-mono mt-0.5">{slot.time} EST</p>
+      </div>
+    </div>
+  )
+}
+
+export default function Watch() {
+  const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
+
+  const playerSrc = `https://player.twitch.tv/?channel=${CHANNEL}&parent=${hostname}&autoplay=true`
+  const chatSrc   = `https://www.twitch.tv/embed/${CHANNEL}/chat?parent=${hostname}&darkpopout`
+
+  return (
+    <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
+
+      {/* ── Main content ── */}
+      <div className="flex-1 flex flex-col overflow-y-auto min-w-0">
+
+        {/* Status bar */}
+        <div className="shrink-0 flex items-center justify-between bg-red-600 px-4 py-2">
+          <div className="flex items-center gap-2.5">
+            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+            <span className="text-white font-black tracking-[0.25em] text-sm uppercase">LIVE</span>
+          </div>
+          <span className="text-white/90 text-xs font-mono tracking-wider uppercase">
+            STARTING 5 &nbsp;·&nbsp; POT: $14.70
+          </span>
+        </div>
+
+        {/* Video player */}
+        <div className="shrink-0 bg-black w-full" style={{ aspectRatio: '16/9' }}>
+          <iframe
+            src={playerSrc}
+            className="w-full h-full"
+            allowFullScreen
+            title="CSGN Live"
+          />
+        </div>
+
+        {/* Streamer info row */}
+        <div className="shrink-0 flex items-start justify-between px-5 py-4 border-b border-white/[0.06]">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-black font-display text-white tracking-tight leading-none">
+              TRAPKINGZ
+            </h1>
+            <p className="text-sm text-gray-400 mt-1 font-mono">8:00 – 10:00 PM EST</p>
+          </div>
+          <div className="text-right">
+            <p className="text-2xl sm:text-3xl font-black font-mono text-yellow-400">$123.69</p>
+            <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">Earnings</p>
+          </div>
+        </div>
+
+        {/* TODAY'S SCHEDULE */}
+        <div className="shrink-0 px-5 py-5 border-b border-white/[0.06]">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xs font-black tracking-[0.25em] uppercase text-gray-400">
+              Today's Schedule
+            </h2>
+            <div className="text-right">
+              <p className="text-[11px] text-gray-500 uppercase tracking-wider leading-none">In the Hole</p>
+              <p className="text-sm font-display font-bold text-white mt-0.5">SolanaSteve</p>
             </div>
           </div>
 
-          {chatVisible && !isTheaterMode && (
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="lg:w-[380px] shrink-0 flex flex-col gap-4">
-              <Card hover={false} className="overflow-hidden">
-                <div className="p-4 border-b border-white/[0.06]"><div className="flex items-center justify-between"><h3 className="font-semibold font-display text-white flex items-center gap-2"><Radio className="w-4 h-4 text-red-400" />Today's Schedule</h3><Badge variant="blue">EST</Badge></div></div>
-                <div>{currentSchedule.map((slot, i) => <div key={i} className={`flex items-center gap-3 px-4 py-3 border-b border-white/[0.03] last:border-0 ${slot.status === 'live' ? 'bg-red-500/10' : 'hover:bg-white/[0.02]'}`}><span className="text-xs font-mono text-gray-500 w-16 shrink-0">{slot.time}</span><div className="flex-1"><span className="text-sm text-white">{slot.streamer}</span></div><Badge variant={slot.type === 'Prime' ? 'gold' : slot.type === 'Lottery' ? 'purple' : 'default'}>{slot.type}</Badge></div>)}</div>
-                <div className="p-3 border-t border-white/[0.06]"><a href="/schedule" className="flex items-center justify-center gap-1.5 text-sm text-red-300 hover:text-red-200 font-medium transition-colors">View Full Schedule <ChevronRight className="w-3.5 h-3.5" /></a></div>
-              </Card>
-              <Card hover={false} className="flex-1 min-h-[300px] flex flex-col overflow-hidden">
-                <div className="p-4 border-b border-white/[0.06]"><h3 className="font-semibold font-display text-white flex items-center gap-2"><MessageSquare className="w-4 h-4 text-red-400" />Live Chat</h3></div>
-                <div className="flex-1 flex items-center justify-center p-6 text-center"><a href="https://pump.fun" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-red-300 hover:text-red-200 font-medium mt-2 transition-colors">Join on pump.fun <ExternalLink className="w-3.5 h-3.5" /></a></div>
-              </Card>
-            </motion.div>
-          )}
+          {/* Blue schedule cards — the "blue squares" */}
+          <div className="grid grid-cols-3 gap-3">
+            {todaySchedule.map((slot) => (
+              <ScheduleCard key={slot.handle} slot={slot} />
+            ))}
+          </div>
+
+          <div className="mt-4 text-center">
+            <Link
+              to="/schedule"
+              className="inline-flex items-center gap-1.5 px-5 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all font-medium"
+            >
+              View Full Schedule <ChevronRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+        </div>
+
+        {/* Game buttons */}
+        <div className="shrink-0 grid grid-cols-2 gap-3 px-5 py-5">
+          <button className="relative overflow-hidden flex flex-col items-center justify-center gap-2 py-5 px-3 bg-red-600 hover:bg-red-500 active:scale-[0.98] rounded-xl font-black font-display text-white text-sm sm:text-base uppercase tracking-wider transition-all shadow-lg shadow-red-900/40 cursor-pointer">
+            <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
+            <Gamepad2 className="w-6 h-6 shrink-0" />
+            <span className="text-center leading-tight">Play Starting 5<br /><span className="font-normal text-xs text-white/80">for free!</span></span>
+          </button>
+          <button className="relative overflow-hidden flex flex-col items-center justify-center gap-2 py-5 px-3 bg-red-600 hover:bg-red-500 active:scale-[0.98] rounded-xl font-black font-display text-white text-sm sm:text-base uppercase tracking-wider transition-all shadow-lg shadow-red-900/40 cursor-pointer">
+            <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
+            <Grid3X3 className="w-6 h-6 shrink-0" />
+            <span className="text-center leading-tight">Play Squares</span>
+          </button>
+        </div>
+
+        {/* Mobile chat (shown below game buttons on small screens) */}
+        <div className="lg:hidden shrink-0 px-5 pb-5">
+          <div className="rounded-xl overflow-hidden border border-white/10" style={{ height: 400 }}>
+            <div className="bg-[#0e0e1a] border-b border-white/[0.06] px-4 py-3">
+              <span className="text-xs font-bold tracking-[0.2em] uppercase text-gray-400">Live Chat</span>
+            </div>
+            <iframe
+              src={chatSrc}
+              className="w-full"
+              style={{ height: 'calc(100% - 41px)', background: '#0a0a14' }}
+              title="CSGN Chat"
+            />
+          </div>
         </div>
       </div>
+
+      {/* ── Right: Chat sidebar (desktop only) ── */}
+      <aside className="hidden lg:flex w-[340px] shrink-0 flex-col border-l border-white/[0.06] bg-[#07070f]">
+        <div className="px-4 py-3 border-b border-white/[0.06] flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+          <span className="text-xs font-bold tracking-[0.2em] uppercase text-gray-400">Live Chat</span>
+        </div>
+        <iframe
+          src={chatSrc}
+          className="flex-1 w-full"
+          style={{ background: '#07070f' }}
+          title="CSGN Chat"
+        />
+      </aside>
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { Menu, X, ChevronDown, User, LogOut, LayoutDashboard, Shield } from 'luc
 import { Button } from '@/components/ui/Button'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
 import { Logo } from '@/components/ui/Logo'
+import { AuthModal } from '@/components/auth/AuthModal'
 import { useAuth } from '@/contexts/AuthContext'
 
 const navLinks = [
@@ -16,9 +17,14 @@ const navLinks = [
 ]
 
 export function Header() {
-  const [scrolled, setScrolled] = useState(false)
+  const [scrolled, setScrolled]     = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [authModal, setAuthModal]   = useState<{ open: boolean; mode: 'login' | 'signup' }>({
+    open: false,
+    mode: 'login',
+  })
+
   const location = useLocation()
   const { user, profile, signOut } = useAuth()
 
@@ -28,12 +34,17 @@ export function Header() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
+  const openAuth = (mode: 'login' | 'signup') => {
+    setMobileOpen(false)
+    setAuthModal({ open: true, mode })
+  }
+
   return (
     <>
       <header
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
           scrolled
-            ? 'bg-[#06060f]/90 backdrop-blur-xl border-b border-white/[0.06] shadow-[0_1px_0_rgba(255,35,70,0.12)]'
+            ? 'bg-[#06060f]/90 backdrop-blur-xl border-b border-white/[0.06] shadow-[0_1px_0_rgba(255,35,70,0.1)]'
             : 'bg-transparent'
         }`}
       >
@@ -135,8 +146,8 @@ export function Header() {
                 </div>
               ) : (
                 <div className="hidden lg:flex items-center gap-2">
-                  <Link to="/account"><Button variant="ghost" size="sm">Sign In</Button></Link>
-                  <Link to="/account"><Button variant="primary" size="sm">Get Started</Button></Link>
+                  <Button variant="ghost" size="sm" onClick={() => openAuth('login')}>Sign In</Button>
+                  <Button variant="primary" size="sm" onClick={() => openAuth('signup')}>Get Started</Button>
                 </div>
               )}
 
@@ -188,18 +199,25 @@ export function Header() {
               </div>
               {!user && (
                 <div className="mt-8 flex flex-col gap-3">
-                  <Link to="/account" onClick={() => setMobileOpen(false)}>
-                    <Button variant="secondary" size="lg" className="w-full">Sign In</Button>
-                  </Link>
-                  <Link to="/account" onClick={() => setMobileOpen(false)}>
-                    <Button variant="primary" size="lg" className="w-full">Get Started</Button>
-                  </Link>
+                  <Button variant="secondary" size="lg" className="w-full" onClick={() => openAuth('login')}>
+                    Sign In
+                  </Button>
+                  <Button variant="primary" size="lg" className="w-full" onClick={() => openAuth('signup')}>
+                    Get Started
+                  </Button>
                 </div>
               )}
             </motion.nav>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={authModal.open}
+        onClose={() => setAuthModal((s) => ({ ...s, open: false }))}
+        initialMode={authModal.mode}
+      />
     </>
   )
 }
