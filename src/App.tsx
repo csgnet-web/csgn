@@ -14,6 +14,7 @@ const Apply = lazy(() => import('@/pages/Apply'))
 const About = lazy(() => import('@/pages/About'))
 const Tokenomics = lazy(() => import('@/pages/Tokenomics'))
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
+const Queue = lazy(() => import('@/pages/Queue'))
 const Admin = lazy(() => import('@/pages/Admin'))
 
 function Loading() {
@@ -36,15 +37,14 @@ function AppContent() {
   })
   const location = useLocation()
 
-  const openAuth = (mode: 'login' | 'signup') => setAuthModal({ open: true, mode })
   const closeAuth = () => setAuthModal({ open: false, mode: 'login' })
 
   // Hide footer on Watch page for immersive experience
   const hideFooter = location.pathname === '/watch'
 
   return (
-    <div className="min-h-screen bg-[#06060e]">
-      <Header onOpenAuth={openAuth} />
+    <div className="min-h-screen bg-[#050507] csgn-bg">
+      <Header />
       <AuthModal isOpen={authModal.open} onClose={closeAuth} initialMode={authModal.mode} />
 
       <Suspense fallback={<Loading />}>
@@ -56,7 +56,9 @@ function AppContent() {
             <Route path="/apply" element={<Apply />} />
             <Route path="/about" element={<About />} />
             <Route path="/tokenomics" element={<Tokenomics />} />
+            <Route path="/account" element={<Dashboard />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/queue" element={<Queue />} />
             <Route path="/admin" element={<Admin />} />
           </Routes>
         </AnimatePresence>

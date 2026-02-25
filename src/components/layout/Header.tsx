@@ -9,12 +9,12 @@ import { useAuth } from '@/contexts/AuthContext'
 const navLinks = [
   { href: '/watch', label: 'Watch Live', live: true },
   { href: '/schedule', label: 'Schedule' },
+  { href: '/queue', label: 'Queue' },
   { href: '/apply', label: 'Apply' },
-  { href: '/tokenomics', label: 'Tokenomics' },
-  { href: '/about', label: 'About' },
+  { href: '/account', label: 'Account' },
 ]
 
-export function Header({ onOpenAuth }: { onOpenAuth: (mode: 'login' | 'signup') => void }) {
+export function Header() {
   const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -27,16 +27,13 @@ export function Header({ onOpenAuth }: { onOpenAuth: (mode: 'login' | 'signup') 
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  useEffect(() => {
-    setMobileOpen(false)
-  }, [location])
 
   return (
     <>
       <header
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
           scrolled
-            ? 'bg-[#06060e]/80 backdrop-blur-xl border-b border-white/[0.06]'
+            ? 'bg-[#07070b]/85 backdrop-blur-xl border-b border-red-500/20'
             : 'bg-transparent'
         }`}
       >
@@ -106,20 +103,20 @@ export function Header({ onOpenAuth }: { onOpenAuth: (mode: 'login' | 'signup') 
                         className="absolute right-0 mt-2 w-56 py-2 bg-surface-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl"
                       >
                         <Link
-                          to="/dashboard"
+                          to="/account"
                           onClick={() => setProfileOpen(false)}
                           className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
                         >
                           <LayoutDashboard className="w-4 h-4" />
-                          Dashboard
+                          Account
                         </Link>
                         <Link
-                          to="/dashboard"
+                          to="/queue"
                           onClick={() => setProfileOpen(false)}
                           className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
                         >
                           <User className="w-4 h-4" />
-                          Profile
+                          Queue
                         </Link>
                         {profile?.role === 'admin' && (
                           <Link
@@ -145,12 +142,8 @@ export function Header({ onOpenAuth }: { onOpenAuth: (mode: 'login' | 'signup') 
                 </div>
               ) : (
                 <div className="hidden lg:flex items-center gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => onOpenAuth('login')}>
-                    Sign In
-                  </Button>
-                  <Button variant="primary" size="sm" onClick={() => onOpenAuth('signup')}>
-                    Get Started
-                  </Button>
+                  <Link to="/account"><Button variant="ghost" size="sm">Sign In</Button></Link>
+                  <Link to="/account"><Button variant="primary" size="sm">Get Started</Button></Link>
                 </div>
               )}
 
@@ -201,12 +194,12 @@ export function Header({ onOpenAuth }: { onOpenAuth: (mode: 'login' | 'signup') 
               </div>
               {!user && (
                 <div className="mt-8 flex flex-col gap-3">
-                  <Button variant="secondary" size="lg" className="w-full" onClick={() => { setMobileOpen(false); onOpenAuth('login') }}>
+                  <Link to="/account"><Button variant="secondary" size="lg" className="w-full" onClick={() => setMobileOpen(false)}>
                     Sign In
-                  </Button>
-                  <Button variant="primary" size="lg" className="w-full" onClick={() => { setMobileOpen(false); onOpenAuth('signup') }}>
+                  </Button></Link>
+                  <Link to="/account"><Button variant="primary" size="lg" className="w-full" onClick={() => setMobileOpen(false)}>
                     Get Started
-                  </Button>
+                  </Button></Link>
                 </div>
               )}
             </motion.nav>

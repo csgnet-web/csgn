@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Send, User, CheckCircle, AlertCircle, Mic, Gamepad2, Tv, FileText } from 'lucide-react'
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
@@ -19,6 +20,7 @@ const contentTypes = [
 
 export default function Apply() {
   const { user, profile } = useAuth()
+
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -35,6 +37,9 @@ export default function Apply() {
     preferredSlot: 'any',
     weeklyHours: '5-10',
   })
+
+
+  if (!user) return <Navigate to="/account" replace />
 
   const updateField = (field: string, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }))
