@@ -7,7 +7,7 @@ import { LiveIndicator } from '@/components/ui/LiveIndicator'
 import { useAuth } from '@/contexts/AuthContext'
 
 const navLinks = [
-  { href: '/watch', label: 'Watch Live', live: true },
+  { href: '/', label: 'Watch Live', live: true },
   { href: '/schedule', label: 'Schedule' },
   { href: '/queue', label: 'Queue' },
   { href: '/apply', label: 'Apply' },
