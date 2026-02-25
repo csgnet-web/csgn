@@ -3,8 +3,10 @@ import { AnimatePresence } from 'framer-motion'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
+import { CSGNMark } from '@/components/ui/Logo'
 import { lazy, Suspense } from 'react'
 
+const Home = lazy(() => import('@/pages/Home'))
 const Watch = lazy(() => import('@/pages/Watch'))
 const Schedule = lazy(() => import('@/pages/Schedule'))
 const Apply = lazy(() => import('@/pages/Apply'))
@@ -17,9 +19,7 @@ function Loading() {
   return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="flex flex-col items-center gap-4">
-        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-accent-600 flex items-center justify-center font-display font-bold text-white animate-pulse">
-          CS
-        </div>
+        <CSGNMark className="w-12 h-12 animate-pulse" />
         <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
       </div>
     </div>
@@ -28,7 +28,7 @@ function Loading() {
 
 function AppContent() {
   const location = useLocation()
-  const hideFooter = location.pathname === '/' || location.pathname === '/watch'
+  const hideFooter = location.pathname === '/watch'
 
   return (
     <div className="min-h-screen bg-[#050507] csgn-bg">
@@ -37,8 +37,8 @@ function AppContent() {
       <Suspense fallback={<Loading />}>
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
-            <Route path="/" element={<Watch />} />
-            <Route path="/watch" element={<Navigate to="/" replace />} />
+            <Route path="/" element={<Home />} />
+            <Route path="/watch" element={<Watch />} />
             <Route path="/schedule" element={<Schedule />} />
             <Route path="/apply" element={<Apply />} />
             <Route path="/about" element={<About />} />
