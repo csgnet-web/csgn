@@ -95,7 +95,7 @@ function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
 export default function Watch() {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
 
-  const playerSrc = `https://player.twitch.tv/?channel=${CHANNEL}&parent=${hostname}&autoplay=true`
+  const playerSrc = `https://player.twitch.tv/?channel=shrood&parent=${hostname}&autoplay=true`
   const chatSrc   = `https://www.twitch.tv/embed/${CHANNEL}/chat?parent=${hostname}&darkpopout`
 
   return (
