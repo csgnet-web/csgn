@@ -79,7 +79,7 @@ export function AuthModal({ isOpen, onClose, initialMode }: AuthModalProps) {
               <button onClick={onClose} className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-white/5 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-accent-600 flex items-center justify-center font-display font-bold text-white mb-4 shadow-lg shadow-primary-600/30">CS</div>
+              <img src="https://pbs.twimg.com/profile_images/1966988305255276544/3Qz3tNAa_200x200.jpg" alt="CSGN" className="w-12 h-12 rounded-xl object-cover mb-4 shadow-lg" />
               <h2 className="text-2xl font-bold font-display text-white">{mode === 'login' ? 'Welcome back' : 'Join CSGN'}</h2>
               <p className="text-sm text-gray-400 mt-1">{mode === 'login' ? 'Sign in with email/password' : 'Create an account with email/password'}</p>
             </div>
