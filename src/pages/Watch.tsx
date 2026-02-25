@@ -96,7 +96,7 @@ export default function Watch() {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
 
   const playerSrc = `https://player.twitch.tv/?channel=shrood&parent=${hostname}&autoplay=true`
-  const chatSrc   = `https://www.twitch.tv/embed/shrood/chat?parent=${hostname}&darkpopout`
+  const chatSrc   = `https://www.twitch.tv/embed/${CHANNEL}/chat?parent=${hostname}&darkpopout`
 
   return (
     <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
