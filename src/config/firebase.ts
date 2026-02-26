@@ -4,7 +4,7 @@ import { getFirestore } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCXwzaIjbD_ntrdJ6OhVWdxldn9E0qzyv4',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyB5Xi8kNL_Xn5fpYzQb6Hr30f68uCUyKng',
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'csgn-ac44b.firebaseapp.com',
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'csgn-ac44b',
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'csgn-ac44b.firebasestorage.app',
