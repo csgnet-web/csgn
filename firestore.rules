@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users: owners can read/write their own doc; admins can read all
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && isAdmin();
+      allow update: if request.auth != null && isAdmin();
+    }
+
+    // Applications: authenticated users can create; admins can read/update all
+    match /applications/{appId} {
+      allow create: if request.auth != null;
+      allow read, update: if request.auth != null && isAdmin();
+    }
+
+    // Slots: admins can create/update/delete; authenticated users can read and update (for bids/lottery)
+    match /slots/{slotId} {
+      allow read: if request.auth != null;
+      allow create, delete: if request.auth != null && isAdmin();
+      allow update: if request.auth != null;
+    }
+
+    // Helper: check if the calling user has role 'admin' in their user doc
+    function isAdmin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+  }
+}
