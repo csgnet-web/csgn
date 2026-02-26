@@ -4,11 +4,25 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
+  sendEmailVerification,
   updateProfile,
   type User,
 } from 'firebase/auth'
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from '@/config/firebase'
+
+export interface UserNotification {
+  id: string
+  type: 'auction_won' | 'lottery_selected' | 'prime_assigned'
+  slotId: string
+  slotLabel: string
+  slotStart: string
+  message: string
+  depositRequired?: number
+  depositDeadline?: string
+  read: boolean
+  createdAt: string
+}
 
 export interface UserProfile {
   uid: string
@@ -19,6 +33,7 @@ export interface UserProfile {
   createdAt: unknown
   bio?: string
   socialLinks?: { twitter?: string; twitch?: string; youtube?: string }
+  notifications?: UserNotification[]
 }
 
 interface AuthContextType {
@@ -29,6 +44,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, displayName: string) => Promise<void>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
+  resendVerification: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -55,6 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       photoURL: user.photoURL,
       role: 'viewer',
       createdAt: serverTimestamp(),
+      notifications: [],
     }
     await setDoc(doc(db, 'users', user.uid), profileData)
     setProfile(profileData)
@@ -97,6 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = async (email: string, password: string, displayName: string) => {
     const { user } = await createUserWithEmailAndPassword(auth, email, password)
     await updateProfile(user, { displayName })
+    await sendEmailVerification(user)
     try {
       await createProfile(user, displayName)
     } catch (err) {
@@ -112,7 +130,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-
   const signOut = async () => {
     await firebaseSignOut(auth)
     setProfile(null)
@@ -122,9 +139,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user) await fetchProfile(user.uid)
   }
 
+  const resendVerification = async () => {
+    if (user && !user.emailVerified) {
+      await sendEmailVerification(user)
+    }
+  }
+
   return (
     <AuthContext.Provider
-      value={{ user, profile, loading, signIn, signUp, signOut, refreshProfile }}
+      value={{ user, profile, loading, signIn, signUp, signOut, refreshProfile, resendVerification }}
     >
       {children}
     </AuthContext.Provider>

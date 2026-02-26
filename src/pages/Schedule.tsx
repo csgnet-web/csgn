@@ -1,66 +1,65 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Gavel, Ticket, Crown, Radio, Info } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { SectionHeading } from '@/components/ui/SectionHeading'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
+import { fetchSlots, type Slot, type SlotType } from '@/lib/slots'
 
-type SlotType = 'auction' | 'lottery' | 'prime'
-
-interface TimeSlot {
-  time: string
-  endTime: string
-  streamer: string
-  type: SlotType
-  status: 'past' | 'live' | 'upcoming'
-  description?: string
+function getSlotDisplayStatus(slot: Slot): 'past' | 'live' | 'upcoming' {
+  const now = Date.now()
+  const start = new Date(slot.startTime).getTime()
+  const end = new Date(slot.endTime).getTime()
+  if (now >= start && now < end) return 'live'
+  if (now >= end) return 'past'
+  return 'upcoming'
 }
 
-const scheduleData: TimeSlot[] = [
-  { time: '3:00 AM', endTime: '5:00 AM', streamer: 'Open Slot', type: 'auction', status: 'past' },
-  { time: '5:00 AM', endTime: '7:00 AM', streamer: 'EarlyCrypto', type: 'auction', status: 'past', description: 'Morning Market Recap' },
-  { time: '7:00 AM', endTime: '9:00 AM', streamer: 'BlockBuilder', type: 'auction', status: 'past', description: 'Solana Dev Talk' },
-  { time: '9:00 AM', endTime: '11:00 AM', streamer: 'CryptoKing', type: 'auction', status: 'past', description: 'Token Analysis' },
-  { time: '11:00 AM', endTime: '1:00 PM', streamer: 'SolanaSteve', type: 'auction', status: 'live', description: 'Live Trading Session' },
-  { time: '1:00 PM', endTime: '2:00 PM', streamer: 'MintMaster', type: 'auction', status: 'upcoming', description: 'NFT Showcase' },
-  { time: '2:00 PM', endTime: '3:00 PM', streamer: 'TBA (Lottery)', type: 'lottery', status: 'upcoming' },
-  { time: '3:00 PM', endTime: '4:00 PM', streamer: 'TBA (Lottery)', type: 'lottery', status: 'upcoming' },
-  { time: '4:00 PM', endTime: '5:00 PM', streamer: 'TBA (Lottery)', type: 'lottery', status: 'upcoming' },
-  { time: '5:00 PM', endTime: '6:00 PM', streamer: 'TBA (Lottery)', type: 'lottery', status: 'upcoming' },
-  { time: '6:00 PM', endTime: '8:00 PM', streamer: 'CEO Show', type: 'prime', status: 'upcoming', description: 'Crypto Drama Roundup' },
-  { time: '8:00 PM', endTime: '10:00 PM', streamer: 'GameTime', type: 'prime', status: 'upcoming', description: 'EA College Football 25' },
-  { time: '10:00 PM', endTime: '12:00 AM', streamer: 'NightOwl', type: 'prime', status: 'upcoming', description: 'Late Night Crypto Talk' },
-  { time: '12:00 AM', endTime: '3:00 AM', streamer: 'CSGN Reruns', type: 'prime', status: 'upcoming', description: 'Best Of Highlights' },
-]
-
-const slotInfo: Record<SlotType, { icon: typeof Gavel; color: string; label: string; time: string; desc: string }> = {
-  auction: {
-    icon: Gavel,
-    color: 'text-cyan-400',
-    label: 'Auction Slots',
-    time: '3 AM – 2 PM',
-    desc: 'Highest bidder wins the time slot. Bids close 1 hour before broadcast.',
-  },
-  lottery: {
-    icon: Ticket,
-    color: 'text-accent-400',
-    label: 'Lottery Slots',
-    time: '2 PM – 6 PM',
-    desc: 'Random selection from all entries. Enter by 1:00 PM daily for your chance.',
-  },
-  prime: {
-    icon: Crown,
-    color: 'text-gold',
-    label: 'Prime Time',
-    time: '6 PM – 3 AM',
-    desc: 'CEO-curated programming. The flagship block where brand-defining content airs.',
-  },
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
 export default function Schedule() {
   const [selectedDay, setSelectedDay] = useState(0)
+  const [slots, setSlots] = useState<Slot[]>([])
+  const [loading, setLoading] = useState(true)
   const days = ['Today', 'Tomorrow', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7']
+
+  useEffect(() => {
+    const loadSlots = async () => {
+      setLoading(true)
+      const from = new Date()
+      from.setHours(0, 0, 0, 0)
+      from.setDate(from.getDate() + selectedDay)
+
+      const to = new Date(from)
+      to.setDate(to.getDate() + 1)
+      to.setHours(23, 59, 59, 999)
+
+      try {
+        const data = await fetchSlots(from, to)
+        setSlots(data)
+      } catch (err) {
+        console.warn('Failed to fetch slots from Firestore:', err)
+        setSlots([])
+      }
+      setLoading(false)
+    }
+    loadSlots()
+  }, [selectedDay])
+
+  const typeIcon = (type: SlotType) => {
+    if (type === 'auction') return <Gavel className="w-4 h-4" />
+    if (type === 'lottery') return <Ticket className="w-4 h-4" />
+    return <Crown className="w-4 h-4" />
+  }
+
+  const typeColor = (type: SlotType) => {
+    if (type === 'auction') return 'text-cyan-400'
+    if (type === 'lottery') return 'text-accent-400'
+    return 'text-gold'
+  }
 
   return (
     <div className="min-h-screen pt-24 lg:pt-32 pb-24">
@@ -69,26 +68,8 @@ export default function Schedule() {
           badge="Schedule"
           title="Broadcast"
           highlight="Schedule"
-          description="CSGN runs 24/7 with a structured 3-tier time slot system. Every day, every hour—someone is live."
+          description="CSGN runs 24/7 with a structured 3-tier time slot system. Every day, every hour — someone is live."
         />
-
-        {/* Slot Types Explanation */}
-        <div className="grid md:grid-cols-3 gap-4 mb-12">
-          {(Object.entries(slotInfo) as [SlotType, typeof slotInfo[SlotType]][]).map(([type, info]) => (
-            <Card key={type} className="p-5" hover={false}>
-              <div className="flex items-start gap-3">
-                <div className={`w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center shrink-0 ${info.color}`}>
-                  <info.icon className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-white text-sm">{info.label}</h3>
-                  <p className="text-xs text-primary-400 font-mono mb-1">{info.time}</p>
-                  <p className="text-xs text-gray-500 leading-relaxed">{info.desc}</p>
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
 
         {/* Day Selector */}
         <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2">
@@ -118,55 +99,78 @@ export default function Schedule() {
           </div>
 
           <div className="divide-y divide-white/[0.04]">
-            {scheduleData.map((slot, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: i * 0.03 }}
-                className={`flex items-center gap-4 px-4 sm:px-6 py-4 transition-colors ${
-                  slot.status === 'live'
-                    ? 'bg-primary-500/5 border-l-2 border-l-primary-500'
-                    : slot.status === 'past'
-                    ? 'opacity-50'
-                    : 'hover:bg-white/[0.02]'
-                }`}
-              >
-                {/* Time */}
-                <div className="w-20 sm:w-28 shrink-0">
-                  <span className="text-sm font-mono text-gray-400">{slot.time}</span>
-                  <span className="text-xs text-gray-600 block">to {slot.endTime}</span>
-                </div>
+            {loading ? (
+              <div className="py-16 text-center">
+                <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                <p className="text-sm text-gray-500">Loading schedule...</p>
+              </div>
+            ) : slots.length === 0 ? (
+              <div className="py-16 text-center">
+                <p className="text-sm text-gray-500">No slots scheduled for this day yet.</p>
+                <p className="text-xs text-gray-600 mt-1">Slots are generated 24 hours ahead of time by the admin.</p>
+              </div>
+            ) : (
+              slots.map((slot, i) => {
+                const displayStatus = getSlotDisplayStatus(slot)
+                const streamerName = slot.assignedName || (slot.type === 'lottery' ? 'TBA (Lottery)' : slot.type === 'auction' ? 'Open for Bidding' : 'TBA')
 
-                {/* Type indicator */}
-                <div className={`w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 ${
-                  slot.type === 'auction' ? 'text-cyan-400' : slot.type === 'lottery' ? 'text-accent-400' : 'text-gold'
-                }`}>
-                  {slot.type === 'auction' && <Gavel className="w-4 h-4" />}
-                  {slot.type === 'lottery' && <Ticket className="w-4 h-4" />}
-                  {slot.type === 'prime' && <Crown className="w-4 h-4" />}
-                </div>
+                return (
+                  <motion.div
+                    key={slot.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: i * 0.03 }}
+                    className={`flex items-center gap-4 px-4 sm:px-6 py-4 transition-colors ${
+                      displayStatus === 'live'
+                        ? 'bg-primary-500/5 border-l-2 border-l-primary-500'
+                        : displayStatus === 'past'
+                        ? 'opacity-50'
+                        : 'hover:bg-white/[0.02]'
+                    }`}
+                  >
+                    {/* Time */}
+                    <div className="w-20 sm:w-28 shrink-0">
+                      <span className="text-sm font-mono text-gray-400">{formatTime(slot.startTime)}</span>
+                      <span className="text-xs text-gray-600 block">to {formatTime(slot.endTime)}</span>
+                    </div>
 
-                {/* Streamer Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-white truncate">{slot.streamer}</span>
-                    {slot.status === 'live' && <LiveIndicator />}
-                  </div>
-                  {slot.description && (
-                    <span className="text-xs text-gray-500 truncate block">{slot.description}</span>
-                  )}
-                </div>
+                    {/* Type indicator */}
+                    <div className={`w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 ${typeColor(slot.type)}`}>
+                      {typeIcon(slot.type)}
+                    </div>
 
-                {/* Slot Type Badge */}
-                <Badge
-                  variant={slot.type === 'prime' ? 'gold' : slot.type === 'lottery' ? 'purple' : 'blue'}
-                  className="hidden sm:inline-flex"
-                >
-                  {slot.type === 'auction' ? 'Auction' : slot.type === 'lottery' ? 'Lottery' : 'Prime Time'}
-                </Badge>
-              </motion.div>
-            ))}
+                    {/* Streamer Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-white truncate">{streamerName}</span>
+                        {displayStatus === 'live' && <LiveIndicator />}
+                      </div>
+                      {slot.description && (
+                        <span className="text-xs text-gray-500 truncate block">{slot.description}</span>
+                      )}
+                      {slot.type === 'auction' && slot.bids.length > 0 && displayStatus === 'upcoming' && (
+                        <span className="text-xs text-cyan-400/70">{slot.bids.length} bid{slot.bids.length !== 1 ? 's' : ''}</span>
+                      )}
+                      {slot.type === 'lottery' && slot.lotteryEntrants.length > 0 && displayStatus === 'upcoming' && (
+                        <span className="text-xs text-accent-400/70">{slot.lotteryEntrants.length} entr{slot.lotteryEntrants.length !== 1 ? 'ies' : 'y'}</span>
+                      )}
+                    </div>
+
+                    {/* Status / Type Badge */}
+                    <div className="flex items-center gap-2">
+                      {slot.status === 'pending_deposit' && <Badge variant="gold">Awaiting Deposit</Badge>}
+                      {slot.status === 'confirmed' && <Badge variant="green">Confirmed</Badge>}
+                      <Badge
+                        variant={slot.type === 'prime' ? 'gold' : slot.type === 'lottery' ? 'purple' : 'blue'}
+                        className="hidden sm:inline-flex"
+                      >
+                        {slot.type === 'auction' ? 'Auction' : slot.type === 'lottery' ? 'Lottery' : 'Prime Time'}
+                      </Badge>
+                    </div>
+                  </motion.div>
+                )
+              })
+            )}
           </div>
         </Card>
 
