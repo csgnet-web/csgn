@@ -64,7 +64,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user)
       if (user) {
-        await fetchProfile(user.uid)
+        try {
+          await fetchProfile(user.uid)
+        } catch (err) {
+          console.warn('Failed to fetch user profile from Firestore:', err)
+        }
       } else {
         setProfile(null)
       }
@@ -75,13 +79,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const { user } = await signInWithEmailAndPassword(auth, email, password)
-    await fetchProfile(user.uid)
+    try {
+      await fetchProfile(user.uid)
+    } catch (err) {
+      console.warn('Failed to fetch profile on sign-in:', err)
+      setProfile({
+        uid: user.uid,
+        email: user.email || '',
+        displayName: user.displayName || 'User',
+        photoURL: user.photoURL,
+        role: 'viewer',
+        createdAt: null,
+      })
+    }
   }
 
   const signUp = async (email: string, password: string, displayName: string) => {
     const { user } = await createUserWithEmailAndPassword(auth, email, password)
     await updateProfile(user, { displayName })
-    await createProfile(user, displayName)
+    try {
+      await createProfile(user, displayName)
+    } catch (err) {
+      console.warn('Failed to create Firestore profile (user still created in Auth):', err)
+      setProfile({
+        uid: user.uid,
+        email: user.email || '',
+        displayName,
+        photoURL: user.photoURL,
+        role: 'viewer',
+        createdAt: null,
+      })
+    }
   }
 
 
