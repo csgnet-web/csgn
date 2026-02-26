@@ -54,7 +54,7 @@ function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
 
   return (
     <div
-      className={`relative rounded-xl overflow-hidden flex flex-col transition-all duration-300 ${
+      className={`relative rounded-xl overflow-hidden flex flex-col min-h-[178px] transition-all duration-300 ${
         isLive
           ? 'ring-2 ring-red-500 shadow-[0_0_24px_rgba(255,35,70,0.5)]'
           : 'ring-1 ring-white/10 hover:ring-white/20'
@@ -78,15 +78,15 @@ function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
       </div>
 
       {/* Avatar area */}
-      <div className="flex items-end justify-center pt-5 pb-0 px-4 min-h-[72px]">
+      <div className="flex flex-1 items-end justify-center pt-6 pb-1 px-3 min-h-[100px]">
         <AvatarSilhouette hue={slot.avatarHue} />
       </div>
 
       {/* Info */}
-      <div className="px-3 pb-3 pt-2 bg-gradient-to-t from-black/70 to-transparent">
-        <p className="text-white font-black font-display text-sm leading-tight truncate">{slot.handle}</p>
-        <p className="text-white/50 text-[10px] truncate">{slot.specialty}</p>
-        <p className="text-white/40 text-[10px] font-mono mt-0.5">{slot.time} EST</p>
+      <div className="px-3 pb-3 pt-2.5 bg-gradient-to-t from-black/80 to-transparent space-y-1">
+        <p className="text-white font-black font-display text-sm leading-tight break-words">{slot.handle}</p>
+        <p className="text-white/60 text-[11px] leading-snug break-words">{slot.specialty}</p>
+        <p className="text-white/60 text-[11px] font-mono leading-none">{slot.time} EST</p>
       </div>
     </div>
   )
@@ -95,7 +95,7 @@ function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
 export default function Watch() {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
   const [isScheduleOpen, setIsScheduleOpen] = useState(true)
-  const [isChatOpen, setIsChatOpen] = useState(true)
+  const [isChatOpen, setIsChatOpen] = useState(false)
 
   const playerSrc = `https://player.twitch.tv/?channel=shrood&parent=${hostname}&autoplay=true`
   const chatSrc   = `https://www.twitch.tv/embed/${CHANNEL}/chat?parent=${hostname}&darkpopout`
