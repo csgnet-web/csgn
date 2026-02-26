@@ -163,7 +163,7 @@ function PersonalityCard({ p, index }: { p: typeof personalities[0]; index: numb
         style={{ boxShadow: isLive ? `0 0 40px -10px ${p.accentColor}55` : undefined }}
       >
         {/* Avatar area */}
-        <div className="relative aspect-[4/3] overflow-hidden">
+        <div className="relative aspect-[16/9] lg:aspect-[8/3] overflow-hidden">
           {/* Background gradient */}
           <div className={`absolute inset-0 bg-gradient-to-br ${p.color} opacity-${isOpen ? '10' : '20'}`} />
           {/* Grid pattern */}
