@@ -1,6 +1,6 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
 
 /* ── Twitch channel ── */
 const CHANNEL = 'caborgg'
@@ -54,7 +54,7 @@ function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
 
   return (
     <div
-      className={`relative rounded-xl overflow-hidden flex flex-col transition-all duration-300 ${
+      className={`relative rounded-xl overflow-hidden flex flex-col min-h-[178px] transition-all duration-300 ${
         isLive
           ? 'ring-2 ring-red-500 shadow-[0_0_24px_rgba(255,35,70,0.5)]'
           : 'ring-1 ring-white/10 hover:ring-white/20'
@@ -78,15 +78,15 @@ function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
       </div>
 
       {/* Avatar area */}
-      <div className="flex-1 flex items-end justify-center pt-8 pb-0 px-4 min-h-[110px]">
+      <div className="flex flex-1 items-end justify-center pt-6 pb-1 px-3 min-h-[100px]">
         <AvatarSilhouette hue={slot.avatarHue} />
       </div>
 
       {/* Info */}
-      <div className="px-3 pb-3 pt-2 bg-gradient-to-t from-black/70 to-transparent">
-        <p className="text-white font-black font-display text-sm leading-tight truncate">{slot.handle}</p>
-        <p className="text-white/50 text-[10px] truncate">{slot.specialty}</p>
-        <p className="text-white/40 text-[10px] font-mono mt-0.5">{slot.time} EST</p>
+      <div className="px-3 pb-3 pt-2.5 bg-gradient-to-t from-black/80 to-transparent space-y-1">
+        <p className="text-white font-black font-display text-sm leading-tight break-words">{slot.handle}</p>
+        <p className="text-white/60 text-[11px] leading-snug break-words">{slot.specialty}</p>
+        <p className="text-white/60 text-[11px] font-mono leading-none">{slot.time} EST</p>
       </div>
     </div>
   )
@@ -94,6 +94,8 @@ function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
 
 export default function Watch() {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
+  const [isScheduleOpen, setIsScheduleOpen] = useState(true)
+  const [isChatOpen, setIsChatOpen] = useState(false)
 
   const playerSrc = `https://player.twitch.tv/?channel=shrood&parent=${hostname}&autoplay=true`
   const chatSrc   = `https://www.twitch.tv/embed/${CHANNEL}/chat?parent=${hostname}&darkpopout`
@@ -141,31 +143,43 @@ export default function Watch() {
 
         {/* TODAY'S SCHEDULE */}
         <div className="shrink-0 px-5 py-5 border-b border-white/[0.06]">
-          <div className="flex items-center justify-between mb-4">
+          <button
+            type="button"
+            className="w-full flex items-center justify-between mb-4"
+            onClick={() => setIsScheduleOpen((prev) => !prev)}
+            aria-expanded={isScheduleOpen}
+          >
             <h2 className="text-xs font-black tracking-[0.25em] uppercase text-gray-400">
               Today's Schedule
             </h2>
-            <div className="text-right">
-              <p className="text-[11px] text-gray-500 uppercase tracking-wider leading-none">In the Hole</p>
-              <p className="text-sm font-display font-bold text-white mt-0.5">SolanaSteve</p>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-[11px] text-gray-500 uppercase tracking-wider leading-none">In the Hole</p>
+                <p className="text-sm font-display font-bold text-white mt-0.5">SolanaSteve</p>
+              </div>
+              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isScheduleOpen ? 'rotate-180' : ''}`} />
             </div>
-          </div>
+          </button>
 
-          {/* Blue schedule cards — the "blue squares" */}
-          <div className="grid grid-cols-3 gap-3">
-            {todaySchedule.map((slot) => (
-              <ScheduleCard key={slot.handle} slot={slot} />
-            ))}
-          </div>
+          {isScheduleOpen && (
+            <>
+              {/* Blue schedule cards — the "blue squares" */}
+              <div className="grid grid-cols-3 gap-3">
+                {todaySchedule.map((slot) => (
+                  <ScheduleCard key={slot.handle} slot={slot} />
+                ))}
+              </div>
 
-          <div className="mt-4 text-center">
-            <Link
-              to="/schedule"
-              className="inline-flex items-center gap-1.5 px-5 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all font-medium"
-            >
-              View Full Schedule <ChevronRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
+              <div className="mt-4 text-center">
+                <Link
+                  to="/schedule"
+                  className="inline-flex items-center gap-1.5 px-5 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all font-medium"
+                >
+                  View Full Schedule <ChevronRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Game buttons */}
@@ -184,32 +198,50 @@ export default function Watch() {
 
         {/* Mobile chat (shown below game buttons on small screens) */}
         <div className="lg:hidden shrink-0 px-5 pb-5">
-          <div className="rounded-xl overflow-hidden border border-white/10" style={{ height: 400 }}>
-            <div className="bg-[#0e0e1a] border-b border-white/[0.06] px-4 py-3">
+          <div className="rounded-xl overflow-hidden border border-white/10">
+            <button
+              type="button"
+              className="w-full bg-[#0e0e1a] px-4 py-3 flex items-center justify-between"
+              onClick={() => setIsChatOpen((prev) => !prev)}
+              aria-expanded={isChatOpen}
+            >
               <span className="text-xs font-bold tracking-[0.2em] uppercase text-gray-400">Live Chat</span>
-            </div>
-            <iframe
-              src={chatSrc}
-              className="w-full"
-              style={{ height: 'calc(100% - 41px)', background: '#0a0a14' }}
-              title="CSGN Chat"
-            />
+              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isChatOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isChatOpen && (
+              <iframe
+                src={chatSrc}
+                className="w-full"
+                style={{ height: 360, background: '#0a0a14' }}
+                title="CSGN Chat"
+              />
+            )}
           </div>
         </div>
       </div>
 
       {/* ── Right: Chat sidebar (desktop only) ── */}
       <aside className="hidden lg:flex w-[340px] shrink-0 flex-col border-l border-white/[0.06] bg-[#07070f]">
-        <div className="px-4 py-3 border-b border-white/[0.06] flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-          <span className="text-xs font-bold tracking-[0.2em] uppercase text-gray-400">Live Chat</span>
-        </div>
-        <iframe
-          src={chatSrc}
-          className="flex-1 w-full"
-          style={{ background: '#07070f' }}
-          title="CSGN Chat"
-        />
+        <button
+          type="button"
+          className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between"
+          onClick={() => setIsChatOpen((prev) => !prev)}
+          aria-expanded={isChatOpen}
+        >
+          <div className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-xs font-bold tracking-[0.2em] uppercase text-gray-400">Live Chat</span>
+          </div>
+          <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isChatOpen ? 'rotate-180' : ''}`} />
+        </button>
+        {isChatOpen && (
+          <iframe
+            src={chatSrc}
+            className="flex-1 w-full"
+            style={{ background: '#07070f' }}
+            title="CSGN Chat"
+          />
+        )}
       </aside>
     </div>
   )
