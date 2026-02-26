@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   Shield, Users, FileText, Radio, Clock, Check, X, Eye,
-  Search, BarChart3, TrendingUp,
+  Search, BarChart3, TrendingUp, Plus, Gavel, Ticket, Crown,
+  Trash2, UserCheck, AlertTriangle,
 } from 'lucide-react'
 import {
   collection, query, getDocs, doc, updateDoc, orderBy,
@@ -14,6 +15,17 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import {
+  generateSlotsForDate,
+  fetchSlots,
+  assignPrimeSlot,
+  resolveAuction,
+  resolveLottery,
+  deleteSlot,
+  getMinimumBid,
+  type Slot,
+  type SlotType,
+} from '@/lib/slots'
 
 type Tab = 'overview' | 'applications' | 'streamers' | 'schedule'
 
@@ -47,18 +59,47 @@ export default function Admin() {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
 
+  // Schedule state
+  const [slots, setSlots] = useState<Slot[]>([])
+  const [slotsLoading, setSlotsLoading] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [assignModal, setAssignModal] = useState<Slot | null>(null)
+  const [assignUid, setAssignUid] = useState('')
+  const [assignName, setAssignName] = useState('')
+  const [assignDesc, setAssignDesc] = useState('')
+  const [actionError, setActionError] = useState<string | null>(null)
+
   useEffect(() => {
     const fetchData = async () => {
-      // Fetch applications
-      const appsSnap = await getDocs(query(collection(db, 'applications'), orderBy('createdAt', 'desc')))
-      setApplications(appsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as AppData)))
+      try {
+        const appsSnap = await getDocs(query(collection(db, 'applications'), orderBy('createdAt', 'desc')))
+        setApplications(appsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as AppData)))
+      } catch { /* Firestore may not have these collections yet */ }
 
-      // Fetch users
-      const usersSnap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc')))
-      setUsers(usersSnap.docs.map((d) => ({ ...d.data() } as UserData)))
+      try {
+        const usersSnap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc')))
+        setUsers(usersSnap.docs.map((d) => ({ ...d.data() } as UserData)))
+      } catch { /* ignore */ }
     }
     fetchData()
   }, [])
+
+  const loadSlots = useCallback(async () => {
+    setSlotsLoading(true)
+    const now = new Date()
+    const future = new Date(now.getTime() + 48 * 60 * 60 * 1000)
+    try {
+      const data = await fetchSlots(now, future)
+      setSlots(data)
+    } catch (err) {
+      console.warn('Failed to fetch slots:', err)
+    }
+    setSlotsLoading(false)
+  }, [])
+
+  useEffect(() => {
+    if (activeTab === 'schedule') loadSlots()
+  }, [activeTab, loadSlots])
 
   const handleAppStatus = async (appId: string, status: 'approved' | 'rejected') => {
     await updateDoc(doc(db, 'applications', appId), { status })
@@ -68,7 +109,6 @@ export default function Admin() {
     if (status === 'approved') {
       const app = applications.find((a) => a.id === appId)
       if (app) {
-        // Promote user to streamer
         const usersQ = query(collection(db, 'users'), where('email', '==', app.email))
         const usersSnap = await getDocs(usersQ)
         if (!usersSnap.empty) {
@@ -77,6 +117,68 @@ export default function Admin() {
       }
     }
     setSelectedApp(null)
+  }
+
+  const handleGenerateSlots = async () => {
+    setGenerating(true)
+    setActionError(null)
+    try {
+      const tomorrow = new Date()
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      tomorrow.setUTCHours(0, 0, 0, 0)
+      await generateSlotsForDate(tomorrow)
+      await loadSlots()
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to generate slots.')
+    }
+    setGenerating(false)
+  }
+
+  const handleResolveAuction = async (slotId: string) => {
+    setActionError(null)
+    try {
+      const result = await resolveAuction(slotId)
+      if (result) {
+        setActionError(null)
+      }
+      await loadSlots()
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to resolve auction.')
+    }
+  }
+
+  const handleResolveLottery = async (slotId: string) => {
+    setActionError(null)
+    try {
+      await resolveLottery(slotId)
+      await loadSlots()
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to resolve lottery.')
+    }
+  }
+
+  const handleAssignPrime = async () => {
+    if (!assignModal || !assignUid.trim() || !assignName.trim()) return
+    setActionError(null)
+    try {
+      await assignPrimeSlot(assignModal.id, assignUid, assignName, assignDesc)
+      setAssignModal(null)
+      setAssignUid('')
+      setAssignName('')
+      setAssignDesc('')
+      await loadSlots()
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to assign slot.')
+    }
+  }
+
+  const handleDeleteSlot = async (slotId: string) => {
+    try {
+      await deleteSlot(slotId)
+      await loadSlots()
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to delete slot.')
+    }
   }
 
   const filteredApps = applications.filter((app) => {
@@ -108,6 +210,18 @@ export default function Admin() {
     { id: 'streamers' as Tab, label: 'Streamers', icon: Users },
     { id: 'schedule' as Tab, label: 'Schedule', icon: Clock },
   ]
+
+  const typeIcon = (type: SlotType) => {
+    if (type === 'auction') return <Gavel className="w-4 h-4" />
+    if (type === 'lottery') return <Ticket className="w-4 h-4" />
+    return <Crown className="w-4 h-4" />
+  }
+
+  const typeColor = (type: SlotType) => {
+    if (type === 'auction') return 'text-cyan-400'
+    if (type === 'lottery') return 'text-accent-400'
+    return 'text-gold'
+  }
 
   return (
     <div className="min-h-screen pt-24 lg:pt-32 pb-24">
@@ -158,7 +272,6 @@ export default function Admin() {
               ))}
             </div>
 
-            {/* Recent Applications */}
             <Card hover={false} className="overflow-hidden">
               <div className="p-4 border-b border-white/[0.06]">
                 <h3 className="font-semibold text-white">Recent Applications</h3>
@@ -186,7 +299,6 @@ export default function Admin() {
         {/* Applications Tab */}
         {activeTab === 'applications' && (
           <div className="space-y-4">
-            {/* Filters */}
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
@@ -210,7 +322,6 @@ export default function Admin() {
               </select>
             </div>
 
-            {/* Applications List */}
             <Card hover={false} className="overflow-hidden">
               <div className="divide-y divide-white/[0.04]">
                 {filteredApps.map((app) => (
@@ -358,15 +469,200 @@ export default function Admin() {
 
         {/* Schedule Tab */}
         {activeTab === 'schedule' && (
-          <Card hover={false} className="p-8 text-center">
-            <Clock className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-white mb-2">Schedule Management</h3>
-            <p className="text-sm text-gray-400 max-w-md mx-auto mb-6">
-              Schedule management with drag-and-drop slot assignment, auction management, and lottery draws
-              is coming in Phase 2.
-            </p>
-            <Badge variant="blue">Coming Q3 2026</Badge>
-          </Card>
+          <div className="space-y-6">
+            {actionError && (
+              <Card hover={false} className="p-4 bg-red-500/5 border-red-500/20">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+                  <p className="text-sm text-red-400">{actionError}</p>
+                  <button onClick={() => setActionError(null)} className="ml-auto text-gray-400 hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
+                </div>
+              </Card>
+            )}
+
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-white">Upcoming Slots (Next 48h)</h3>
+                <p className="text-sm text-gray-400">Generate tomorrow's slots, resolve auctions/lotteries, and assign prime time.</p>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                leftIcon={<Plus className="w-4 h-4" />}
+                isLoading={generating}
+                onClick={handleGenerateSlots}
+              >
+                Generate Tomorrow's Slots
+              </Button>
+            </div>
+
+            {slotsLoading ? (
+              <div className="py-16 text-center">
+                <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                <p className="text-sm text-gray-500">Loading slots...</p>
+              </div>
+            ) : slots.length === 0 ? (
+              <Card hover={false} className="p-8 text-center">
+                <Clock className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-white mb-2">No Upcoming Slots</h3>
+                <p className="text-sm text-gray-400 max-w-md mx-auto">
+                  Click "Generate Tomorrow's Slots" to create the next day's schedule from the template.
+                </p>
+              </Card>
+            ) : (
+              <Card hover={false} className="overflow-hidden">
+                <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
+                  <h3 className="font-semibold text-white flex items-center gap-2">
+                    <Radio className="w-4 h-4 text-primary-400" />
+                    {slots.length} slots
+                  </h3>
+                  <Button variant="ghost" size="sm" onClick={loadSlots}>Refresh</Button>
+                </div>
+
+                <div className="divide-y divide-white/[0.04]">
+                  {slots.map((slot) => {
+                    const startTime = new Date(slot.startTime)
+                    const hoursUntil = (startTime.getTime() - Date.now()) / (1000 * 60 * 60)
+                    const canResolve = hoursUntil <= 2 && slot.status === 'open'
+
+                    return (
+                      <div key={slot.id} className="px-4 sm:px-6 py-4 hover:bg-white/[0.02] transition-colors">
+                        <div className="flex items-center gap-4">
+                          {/* Type icon */}
+                          <div className={`w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 ${typeColor(slot.type)}`}>
+                            {typeIcon(slot.type)}
+                          </div>
+
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-white">{slot.label}</span>
+                              <Badge variant={slot.type === 'prime' ? 'gold' : slot.type === 'lottery' ? 'purple' : 'blue'}>
+                                {slot.type}
+                              </Badge>
+                              <Badge variant={
+                                slot.status === 'open' ? 'blue' :
+                                slot.status === 'confirmed' ? 'green' :
+                                slot.status === 'pending_deposit' ? 'gold' :
+                                slot.status === 'unfilled' ? 'red' : 'default'
+                              }>
+                                {slot.status}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-gray-500">
+                              {startTime.toLocaleDateString()} {startTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                              {slot.assignedName && <span className="text-emerald-400"> — {slot.assignedName}</span>}
+                              {slot.type === 'auction' && ` — ${slot.bids.length} bid${slot.bids.length !== 1 ? 's' : ''}`}
+                              {slot.type === 'auction' && slot.bids.length > 0 && ` (high: ${Math.max(...slot.bids.map(b => b.amount)).toFixed(4)} SOL, next: ${getMinimumBid(slot.bids.length).toFixed(4)} SOL)`}
+                              {slot.type === 'lottery' && ` — ${slot.lotteryEntrants.length} entrant${slot.lotteryEntrants.length !== 1 ? 's' : ''}`}
+                            </p>
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex items-center gap-2">
+                            {slot.type === 'auction' && canResolve && slot.bids.length > 0 && (
+                              <Button variant="primary" size="sm" onClick={() => handleResolveAuction(slot.id)}>
+                                <Gavel className="w-3 h-3" /> Resolve
+                              </Button>
+                            )}
+                            {slot.type === 'lottery' && canResolve && slot.lotteryEntrants.length > 0 && (
+                              <Button variant="primary" size="sm" onClick={() => handleResolveLottery(slot.id)}>
+                                <Ticket className="w-3 h-3" /> Draw
+                              </Button>
+                            )}
+                            {slot.type === 'prime' && slot.status === 'open' && (
+                              <Button variant="secondary" size="sm" onClick={() => setAssignModal(slot)}>
+                                <UserCheck className="w-3 h-3" /> Assign
+                              </Button>
+                            )}
+                            <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-300" onClick={() => handleDeleteSlot(slot.id)}>
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </Card>
+            )}
+
+            {/* Assign Prime Time Modal */}
+            {assignModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setAssignModal(null)} />
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="relative w-full max-w-md bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+                >
+                  <div className="p-6 border-b border-white/[0.06] flex items-center justify-between">
+                    <h3 className="font-bold text-white">Assign Prime Time Slot</h3>
+                    <button onClick={() => setAssignModal(null)} className="p-1 text-gray-400 hover:text-white cursor-pointer">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <div>
+                      <p className="text-sm text-gray-400 mb-1">Slot</p>
+                      <p className="text-white font-medium">{assignModal.label}</p>
+                      <p className="text-xs text-gray-500">{new Date(assignModal.startTime).toLocaleString()}</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm text-gray-300 mb-1">Streamer UID</label>
+                      <select
+                        value={assignUid}
+                        onChange={(e) => {
+                          setAssignUid(e.target.value)
+                          const u = users.find((u) => u.uid === e.target.value)
+                          if (u) setAssignName(u.displayName)
+                        }}
+                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50 appearance-none cursor-pointer"
+                      >
+                        <option value="">Select a streamer...</option>
+                        {users.filter((u) => u.role === 'streamer' || u.role === 'admin').map((u) => (
+                          <option key={u.uid} value={u.uid}>{u.displayName} ({u.email})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm text-gray-300 mb-1">Display Name</label>
+                      <input
+                        type="text"
+                        value={assignName}
+                        onChange={(e) => setAssignName(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50"
+                        placeholder="Streamer name"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm text-gray-300 mb-1">Description</label>
+                      <input
+                        type="text"
+                        value={assignDesc}
+                        onChange={(e) => setAssignDesc(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50"
+                        placeholder="e.g. Crypto Drama Roundup"
+                      />
+                    </div>
+
+                    <Button
+                      variant="primary"
+                      size="md"
+                      className="w-full"
+                      disabled={!assignUid || !assignName.trim()}
+                      onClick={handleAssignPrime}
+                    >
+                      Assign & Notify User
+                    </Button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

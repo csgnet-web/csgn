@@ -174,7 +174,7 @@ function PersonalityCard({ p, index }: { p: typeof personalities[0]; index: numb
           )}
 
           {/* Avatar silhouette placeholder */}
-          <div className="absolute inset-0 flex items-end justify-center pb-0">
+          <div className="absolute inset-0 flex items-end justify-center">
             {isOpen ? (
               /* Empty slot — invite design */
               <div className="flex flex-col items-center justify-center h-full w-full gap-3">
@@ -184,18 +184,18 @@ function PersonalityCard({ p, index }: { p: typeof personalities[0]; index: numb
                 <span className="text-xs tracking-widest text-white/20 uppercase">Open Slot</span>
               </div>
             ) : (
-              /* Streamer silhouette */
-              <svg viewBox="0 0 200 240" className="w-full h-full opacity-25" fill="none">
+              /* Streamer silhouette — top of head touches the upper border */
+              <svg viewBox="0 0 200 200" className="w-full h-full opacity-25" preserveAspectRatio="xMidYMax meet" fill="none">
                 <defs>
-                  <linearGradient id={`avatarGrad${index}`} x1="100" y1="0" x2="100" y2="240" gradientUnits="userSpaceOnUse">
+                  <linearGradient id={`avatarGrad${index}`} x1="100" y1="0" x2="100" y2="200" gradientUnits="userSpaceOnUse">
                     <stop offset="0%" stopColor={p.accentColor} stopOpacity="0.9" />
                     <stop offset="100%" stopColor={p.accentColor} stopOpacity="0.2" />
                   </linearGradient>
                 </defs>
                 {/* Head */}
-                <ellipse cx="100" cy="70" rx="40" ry="48" fill={`url(#avatarGrad${index})`} />
+                <ellipse cx="100" cy="50" rx="38" ry="45" fill={`url(#avatarGrad${index})`} />
                 {/* Shoulders / body */}
-                <path d="M10 240 C10 160, 50 130, 100 125 C150 130, 190 160, 190 240 Z" fill={`url(#avatarGrad${index})`} />
+                <path d="M10 200 C10 130, 50 105, 100 100 C150 105, 190 130, 190 200 Z" fill={`url(#avatarGrad${index})`} />
               </svg>
             )}
           </div>

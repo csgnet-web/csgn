@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { User, Mail, Wallet, Twitter, LogIn, UserPlus, Trophy, Ticket, CalendarCheck } from 'lucide-react'
-import { useAuth } from '@/contexts/AuthContext'
+import { User, Mail, Wallet, Twitter, LogIn, UserPlus, Trophy, Ticket, CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock } from 'lucide-react'
+import { useAuth, type UserNotification } from '@/contexts/AuthContext'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { queueStore } from '@/lib/queue'
 import { Card } from '@/components/ui/Card'
@@ -9,17 +9,22 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 
 export default function Dashboard() {
-  const { user, profile, signIn, signUp } = useAuth()
+  const { user, profile, signIn, signUp, resendVerification } = useAuth()
   const { walletAddress, balance, connect, disconnect, isConnecting, error } = usePhantomWallet()
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [authError, setAuthError] = useState('')
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({ name: '', email: '', password: '' })
   const [xHandle, setXHandle] = useState(profile?.socialLinks?.twitter || '')
+  const [verificationSent, setVerificationSent] = useState(false)
+  const [resending, setResending] = useState(false)
 
   const bids = useMemo(() => user ? queueStore.getBids().filter((bid) => bid.uid === user.uid) : [], [user])
   const lottery = useMemo(() => user ? queueStore.getLotteryEntries().filter((entry) => entry.uid === user.uid) : [], [user])
   const assigned = useMemo(() => user ? queueStore.getAssignedSlots().filter((slot) => slot.uid === user.uid) : [], [user])
+
+  const notifications: UserNotification[] = profile?.notifications || []
+  const unreadCount = notifications.filter((n) => !n.read).length
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -30,6 +35,7 @@ export default function Dashboard() {
         await signIn(form.email, form.password)
       } else {
         await signUp(form.email, form.password, form.name || 'CSGN Viewer')
+        setVerificationSent(true)
       }
     } catch {
       setAuthError('Authentication failed. Please verify your credentials.')
@@ -43,21 +49,39 @@ export default function Dashboard() {
       <div className="min-h-screen pt-24 lg:pt-32 pb-24">
         <div className="max-w-md mx-auto px-4">
           <Card hover={false} className="p-6 border-red-500/25 bg-white/[0.03]">
-            <h1 className="text-3xl font-display font-bold text-white mb-1">Account</h1>
-            <p className="text-sm text-gray-400 mb-5">Use your account as the login point for Apply, Queue, and slot management.</p>
-            <div className="flex gap-2 mb-4">
-              <Button variant={mode === 'login' ? 'primary' : 'secondary'} size="sm" onClick={() => setMode('login')}><LogIn className="w-3.5 h-3.5" /> Sign In</Button>
-              <Button variant={mode === 'signup' ? 'primary' : 'secondary'} size="sm" onClick={() => setMode('signup')}><UserPlus className="w-3.5 h-3.5" /> Create Account</Button>
-            </div>
-            <form onSubmit={onSubmit} className="space-y-3">
-              {mode === 'signup' && (
-                <input type="text" placeholder="Display name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
-              )}
-              <input type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
-              <input type="password" placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
-              {authError && <p className="text-xs text-red-300">{authError}</p>}
-              <Button variant="primary" size="md" className="w-full" isLoading={loading}>{mode === 'login' ? 'Sign In' : 'Create Account'}</Button>
-            </form>
+            {verificationSent ? (
+              <div className="text-center py-4">
+                <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle2 className="w-7 h-7 text-emerald-400" />
+                </div>
+                <h2 className="text-2xl font-display font-bold text-white mb-2">Check Your Email</h2>
+                <p className="text-sm text-gray-400 mb-4">
+                  A verification link has been sent to <span className="text-white font-medium">{form.email}</span>.
+                </p>
+                <p className="text-xs text-gray-500 mb-5">You can browse CSGN while unverified, but verification is required to bid and enter lotteries.</p>
+                <Button variant="primary" size="md" className="w-full" onClick={() => setVerificationSent(false)}>
+                  Sign in to continue
+                </Button>
+              </div>
+            ) : (
+              <>
+                <h1 className="text-3xl font-display font-bold text-white mb-1">Account</h1>
+                <p className="text-sm text-gray-400 mb-5">Use your account as the login point for Apply, Queue, and slot management.</p>
+                <div className="flex gap-2 mb-4">
+                  <Button variant={mode === 'login' ? 'primary' : 'secondary'} size="sm" onClick={() => setMode('login')}><LogIn className="w-3.5 h-3.5" /> Sign In</Button>
+                  <Button variant={mode === 'signup' ? 'primary' : 'secondary'} size="sm" onClick={() => setMode('signup')}><UserPlus className="w-3.5 h-3.5" /> Create Account</Button>
+                </div>
+                <form onSubmit={onSubmit} className="space-y-3">
+                  {mode === 'signup' && (
+                    <input type="text" placeholder="Display name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
+                  )}
+                  <input type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
+                  <input type="password" placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
+                  {authError && <p className="text-xs text-red-300">{authError}</p>}
+                  <Button variant="primary" size="md" className="w-full" isLoading={loading}>{mode === 'login' ? 'Sign In' : 'Create Account'}</Button>
+                </form>
+              </>
+            )}
           </Card>
         </div>
       </div>
@@ -67,6 +91,32 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen pt-24 lg:pt-32 pb-24">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+
+        {/* Email verification banner */}
+        {!user.emailVerified && (
+          <Card hover={false} className="p-4 bg-amber-500/5 border-amber-500/20">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm text-white font-medium">Email not verified</p>
+                <p className="text-xs text-gray-400">Please verify your email to bid on auction slots and enter lotteries.</p>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                isLoading={resending}
+                onClick={async () => {
+                  setResending(true)
+                  try { await resendVerification() } catch { /* ignore */ }
+                  setResending(false)
+                }}
+              >
+                Resend
+              </Button>
+            </div>
+          </Card>
+        )}
+
         <Card hover={false} className="p-6 bg-white/[0.03] border-red-500/25">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -94,6 +144,37 @@ export default function Dashboard() {
           </div>
           {error && <p className="text-xs text-red-300 mt-2">{error}</p>}
         </Card>
+
+        {/* Notifications */}
+        {notifications.length > 0 && (
+          <Card hover={false} className="p-5">
+            <h3 className="text-white font-semibold flex items-center gap-2 mb-4">
+              <Bell className="w-4 h-4 text-amber-400" />
+              Notifications
+              {unreadCount > 0 && <Badge variant="red">{unreadCount} new</Badge>}
+            </h3>
+            <div className="space-y-2">
+              {notifications.slice(0, 8).map((n) => (
+                <div key={n.id} className={`rounded-xl border p-3 text-sm ${n.read ? 'border-white/5 bg-white/[0.01]' : 'border-primary-500/20 bg-primary-500/5'}`}>
+                  <div className="flex items-start gap-2">
+                    {n.type === 'auction_won' && <Trophy className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />}
+                    {n.type === 'lottery_selected' && <Ticket className="w-4 h-4 text-purple-400 mt-0.5 shrink-0" />}
+                    {n.type === 'prime_assigned' && <CalendarCheck className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />}
+                    <div className="flex-1">
+                      <p className="text-gray-300">{n.message}</p>
+                      {n.depositRequired && n.depositDeadline && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <Badge variant="gold"><Clock className="w-3 h-3" /> Deposit {n.depositRequired} SOL by {new Date(n.depositDeadline).toLocaleTimeString()}</Badge>
+                        </div>
+                      )}
+                      <p className="text-xs text-gray-600 mt-1">{new Date(n.createdAt).toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
 
         <div className="grid lg:grid-cols-3 gap-6">
           <Card hover={false} className="p-5">
