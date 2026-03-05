@@ -97,7 +97,7 @@ export default function Watch() {
   const [isScheduleOpen, setIsScheduleOpen] = useState(true)
   const [isChatOpen, setIsChatOpen] = useState(false)
 
-  const playerSrc = `https://player.twitch.tv/?channel=shrood&parent=${hostname}&autoplay=true`
+  const playerSrc = `https://player.twitch.tv/?channel=shrood&parent=${hostname}&autoplay=true&muted=false`
   const chatSrc   = `https://www.twitch.tv/embed/${CHANNEL}/chat?parent=${hostname}&darkpopout`
 
   return (
@@ -118,13 +118,29 @@ export default function Watch() {
         </div>
 
         {/* Video player */}
-        <div className="shrink-0 bg-black w-full" style={{ aspectRatio: '16/9' }}>
-          <iframe
-            src={playerSrc}
-            className="w-full h-full"
-            allowFullScreen
-            title="CSGN Live"
-          />
+        <div className="shrink-0 px-4 sm:px-5 pt-4 sm:pt-5 pb-2">
+          <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)]">
+            <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(255,0,90,0.28),transparent_42%),radial-gradient(circle_at_85%_10%,rgba(80,0,255,0.26),transparent_35%)]" />
+            <div className="relative flex items-center justify-between px-4 py-2.5 border-b border-white/10 bg-black/75 backdrop-blur-sm">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                <span className="text-[10px] sm:text-xs tracking-[0.3em] font-black uppercase text-white/80">CSGN PRIME FEED</span>
+              </div>
+              <span className="text-[10px] sm:text-xs font-mono text-red-300">UNMUTED · LIVE</span>
+            </div>
+
+            <div className="w-full" style={{ aspectRatio: '16/9' }}>
+              <iframe
+                src={playerSrc}
+                className="w-full h-full"
+                allow="autoplay; fullscreen"
+                allowFullScreen
+                title="CSGN Live"
+              />
+            </div>
+
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/55 to-transparent" />
+          </div>
         </div>
 
         {/* Streamer info row */}
@@ -184,14 +200,14 @@ export default function Watch() {
 
         {/* Game buttons */}
         <div className="shrink-0 grid grid-cols-2 gap-3 px-5 py-5">
-          <button className="relative overflow-hidden flex flex-col items-center justify-center gap-2 py-5 px-3 bg-red-600 hover:bg-red-500 active:scale-[0.98] rounded-xl font-black font-display text-white text-sm sm:text-base uppercase tracking-wider transition-all shadow-lg shadow-red-900/40 cursor-pointer">
+          <button className="relative overflow-hidden flex flex-col items-center justify-center gap-1.5 py-2.5 sm:py-5 px-3 bg-red-600 hover:bg-red-500 active:scale-[0.98] rounded-xl font-black font-display text-white text-sm sm:text-base uppercase tracking-wider transition-all shadow-lg shadow-red-900/40 cursor-pointer">
             <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
-            <Gamepad2 className="w-6 h-6 shrink-0" />
+            <Gamepad2 className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
             <span className="text-center leading-tight">Play Starting 5<br /><span className="font-normal text-xs text-white/80">for free!</span></span>
           </button>
-          <button className="relative overflow-hidden flex flex-col items-center justify-center gap-2 py-5 px-3 bg-red-600 hover:bg-red-500 active:scale-[0.98] rounded-xl font-black font-display text-white text-sm sm:text-base uppercase tracking-wider transition-all shadow-lg shadow-red-900/40 cursor-pointer">
+          <button className="relative overflow-hidden flex flex-col items-center justify-center gap-1.5 py-2.5 sm:py-5 px-3 bg-red-600 hover:bg-red-500 active:scale-[0.98] rounded-xl font-black font-display text-white text-sm sm:text-base uppercase tracking-wider transition-all shadow-lg shadow-red-900/40 cursor-pointer">
             <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
-            <Grid3X3 className="w-6 h-6 shrink-0" />
+            <Grid3X3 className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
             <span className="text-center leading-tight">Play Squares</span>
           </button>
         </div>
