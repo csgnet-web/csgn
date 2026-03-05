@@ -54,7 +54,7 @@ function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
 
   return (
     <div
-      className={`relative rounded-xl overflow-hidden flex flex-col min-h-[178px] transition-all duration-300 ${
+      className={`relative rounded-xl overflow-hidden flex flex-col min-h-[89px] sm:min-h-[178px] transition-all duration-300 ${
         isLive
           ? 'ring-2 ring-red-500 shadow-[0_0_24px_rgba(255,35,70,0.5)]'
           : 'ring-1 ring-white/10 hover:ring-white/20'
@@ -78,15 +78,15 @@ function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
       </div>
 
       {/* Avatar area */}
-      <div className="flex flex-1 items-end justify-center pt-6 pb-1 px-3 min-h-[100px]">
+      <div className="flex flex-1 items-end justify-center pt-2 sm:pt-6 pb-0.5 sm:pb-1 px-2 sm:px-3 min-h-[48px] sm:min-h-[100px]">
         <AvatarSilhouette hue={slot.avatarHue} />
       </div>
 
       {/* Info */}
-      <div className="px-3 pb-3 pt-2.5 bg-gradient-to-t from-black/80 to-transparent space-y-1">
-        <p className="text-white font-black font-display text-sm leading-tight break-words">{slot.handle}</p>
-        <p className="text-white/60 text-[11px] leading-snug break-words">{slot.specialty}</p>
-        <p className="text-white/60 text-[11px] font-mono leading-none">{slot.time} EST</p>
+      <div className="px-2 sm:px-3 pb-1.5 sm:pb-3 pt-1 sm:pt-2.5 bg-gradient-to-t from-black/80 to-transparent space-y-0.5 sm:space-y-1">
+        <p className="text-white font-black font-display text-[10px] sm:text-sm leading-tight break-words">{slot.handle}</p>
+        <p className="text-white/60 text-[9px] sm:text-[11px] leading-snug break-words">{slot.specialty}</p>
+        <p className="text-white/60 text-[9px] sm:text-[11px] font-mono leading-none">{slot.time} EST</p>
       </div>
     </div>
   )
