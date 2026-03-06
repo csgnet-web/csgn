@@ -4,8 +4,6 @@ import { ChevronDown, ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 
-/* ── Default channel (fallback) ── */
-const DEFAULT_CHANNEL = 'caborgg'
 
 const bannerItems = [
   'Starting 5 \u2022 $14.70',
@@ -128,29 +126,38 @@ function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
 
 /* ── CSGN Player: renders Twitch or YouTube ── */
 function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: string }) {
+  if (!streamUrl) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-black gap-3">
+        <div className="w-3 h-3 rounded-full bg-gray-600" />
+        <p className="text-gray-500 text-sm font-medium tracking-wide uppercase">No Stream Active</p>
+      </div>
+    )
+  }
+
   const stream = detectStream(streamUrl)
 
   if (stream?.type === 'youtube') {
-    const embedSrc = `https://www.youtube.com/embed/${stream.id}?autoplay=1&rel=0&modestbranding=1`
+    const embedSrc = `https://www.youtube.com/embed/${stream.id}?autoplay=1&mute=0&rel=0&modestbranding=1`
     return (
       <iframe
         src={embedSrc}
         className="w-full h-full"
-        allow="autoplay; fullscreen; encrypted-media"
+        allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
         allowFullScreen
         title="CSGN Live"
       />
     )
   }
 
-  // Default: Twitch player
-  const channel = stream?.id || DEFAULT_CHANNEL
+  // Twitch: use parsed channel id, or treat the raw streamUrl value as a channel name
+  const channel = stream?.id ?? streamUrl.trim()
   const twitchSrc = `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${encodeURIComponent(hostname)}&autoplay=true&muted=false`
   return (
     <iframe
       src={twitchSrc}
       className="w-full h-full"
-      allow="autoplay; fullscreen"
+      allow="autoplay; fullscreen; encrypted-media"
       allowFullScreen
       title="CSGN Live"
     />
@@ -185,9 +192,9 @@ export default function Watch() {
 
   // Determine chat source — only show Twitch chat for Twitch streams
   const stream = detectStream(streamUrl)
-  const isTwitch = !stream || stream.type === 'twitch'
-  const chatChannel = stream?.type === 'twitch' ? stream.id : DEFAULT_CHANNEL
-  const chatSrc = `https://www.twitch.tv/embed/${chatChannel}/chat?parent=${hostname}&darkpopout`
+  const isTwitch = !!streamUrl && (!stream || stream.type === 'twitch')
+  const chatChannel = stream?.type === 'twitch' ? stream.id : streamUrl.trim()
+  const chatSrc = `https://www.twitch.tv/embed/${encodeURIComponent(chatChannel)}/chat?parent=${hostname}&darkpopout`
 
   return (
     <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
