@@ -52,7 +52,7 @@ export function Header() {
           <div className="flex items-center justify-between h-16 lg:h-20">
 
             {/* Logo */}
-            <Logo showTagline size="md" />
+            <Logo showText={false} size="md" />
 
             {/* Desktop Nav */}
             <nav className="hidden lg:flex items-center gap-0.5">
