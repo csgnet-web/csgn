@@ -1,36 +1,69 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
+import { doc, onSnapshot } from 'firebase/firestore'
+import { db } from '@/config/firebase'
 
-/* ── Twitch channel ── */
-const CHANNEL = 'caborgg'
+/* ── Default channel (fallback) ── */
+const DEFAULT_CHANNEL = 'caborgg'
+
 const bannerItems = [
-  'Starting 5 • $14.70',
+  'Starting 5 \u2022 $14.70',
   'Squares Entries: 25',
   'Squares Closing in 04:03:20:55',
   'Starting 5 Closing in 01:02:23',
 ] as const
+
+/* ── Helpers to parse stream URLs ── */
+function parseTwitchChannel(url: string): string | null {
+  const m = url.match(/(?:twitch\.tv\/)([a-zA-Z0-9_]+)/i)
+  return m ? m[1] : null
+}
+
+function parseYouTubeId(url: string): string | null {
+  const patterns = [
+    /(?:youtube\.com\/watch\?.*v=)([a-zA-Z0-9_-]{11})/,
+    /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/,
+    /(?:youtube\.com\/live\/)([a-zA-Z0-9_-]{11})/,
+    /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+  ]
+  for (const p of patterns) {
+    const m = url.match(p)
+    if (m) return m[1]
+  }
+  return null
+}
+
+type StreamType = 'twitch' | 'youtube'
+
+function detectStream(url: string): { type: StreamType; id: string } | null {
+  const twitchChannel = parseTwitchChannel(url)
+  if (twitchChannel) return { type: 'twitch', id: twitchChannel }
+  const ytId = parseYouTubeId(url)
+  if (ytId) return { type: 'youtube', id: ytId }
+  return null
+}
 
 /* ── Schedule data ── */
 const todaySchedule = [
   {
     handle: 'TRAPKINGZ',
     specialty: 'NBA Picks',
-    time: '6:00–8:00PM',
+    time: '6:00\u20138:00PM',
     status: 'live' as const,
     avatarHue: 220,
   },
   {
     handle: 'SolanaSteve',
     specialty: 'Crypto Markets',
-    time: '8:00–10:00PM',
+    time: '8:00\u201310:00PM',
     status: 'upcoming' as const,
     avatarHue: 260,
   },
   {
     handle: 'CEO Show',
     specialty: 'Prime Time',
-    time: '10:00PM–12AM',
+    time: '10:00PM\u201312AM',
     status: 'upcoming' as const,
     avatarHue: 200,
   },
@@ -46,15 +79,13 @@ function AvatarSilhouette({ hue }: { hue: number }) {
           <stop offset="100%" stopColor={`hsl(${hue},60%,25%)`} stopOpacity="0.4" />
         </linearGradient>
       </defs>
-      {/* Head */}
       <ellipse cx="60" cy="52" rx="26" ry="30" fill={`url(#ag${hue})`} />
-      {/* Shoulders/body */}
       <path d="M0 160 C0 110 28 88 60 85 C92 88 120 110 120 160 Z" fill={`url(#ag${hue})`} />
     </svg>
   )
 }
 
-/* ── Schedule card (the "blue squares") ── */
+/* ── Schedule card ── */
 function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
   const isLive = slot.status === 'live'
 
@@ -69,7 +100,6 @@ function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
         background: `linear-gradient(160deg, hsl(${slot.avatarHue},70%,30%) 0%, hsl(${slot.avatarHue},60%,12%) 100%)`,
       }}
     >
-      {/* Status badge */}
       <div className="absolute top-2 left-2 z-10">
         {isLive ? (
           <span className="flex items-center gap-1 px-2 py-0.5 bg-red-600 rounded-full text-[10px] font-bold text-white uppercase tracking-wider">
@@ -83,12 +113,10 @@ function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
         )}
       </div>
 
-      {/* Avatar area */}
       <div className="flex flex-1 items-end justify-center pt-2 sm:pt-6 pb-0.5 sm:pb-1 px-2 sm:px-3 min-h-[48px] sm:min-h-[100px]">
         <AvatarSilhouette hue={slot.avatarHue} />
       </div>
 
-      {/* Info */}
       <div className="px-2 sm:px-3 pb-1.5 sm:pb-3 pt-1 sm:pt-2.5 bg-gradient-to-t from-black/80 to-transparent space-y-0.5 sm:space-y-1">
         <p className="text-white font-black font-display text-[10px] sm:text-sm leading-tight break-words">{slot.handle}</p>
         <p className="text-white/60 text-[9px] sm:text-[11px] leading-snug break-words">{slot.specialty}</p>
@@ -98,13 +126,68 @@ function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
   )
 }
 
+/* ── CSGN Player: renders Twitch or YouTube ── */
+function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: string }) {
+  const stream = detectStream(streamUrl)
+
+  if (stream?.type === 'youtube') {
+    const embedSrc = `https://www.youtube.com/embed/${stream.id}?autoplay=1&rel=0&modestbranding=1`
+    return (
+      <iframe
+        src={embedSrc}
+        className="w-full h-full"
+        allow="autoplay; fullscreen; encrypted-media"
+        allowFullScreen
+        title="CSGN Live"
+      />
+    )
+  }
+
+  // Default: Twitch player
+  const channel = stream?.id || DEFAULT_CHANNEL
+  const twitchSrc = `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${encodeURIComponent(hostname)}&autoplay=true&muted=false`
+  return (
+    <iframe
+      src={twitchSrc}
+      className="w-full h-full"
+      allow="autoplay; fullscreen"
+      allowFullScreen
+      title="CSGN Live"
+    />
+  )
+}
+
 export default function Watch() {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
   const [isChatOpen, setIsChatOpen] = useState(false)
 
-  const playerSrc = `https://player.twitch.tv/?channel=${CHANNEL}&parent=${hostname}&autoplay=true&muted=false`
-  const chatSrc   = `https://www.twitch.tv/embed/${CHANNEL}/chat?parent=${hostname}&darkpopout`
+  // Live stream URL from Firestore (admin-controlled)
+  const [streamUrl, setStreamUrl] = useState('')
+  const [streamerName, setStreamerName] = useState('TRAPKINGZ')
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, 'config', 'liveStream'),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data()
+          if (data.url) setStreamUrl(data.url)
+          if (data.streamerName) setStreamerName(data.streamerName)
+        }
+      },
+      () => {
+        // Firestore doc may not exist yet — use defaults
+      }
+    )
+    return unsub
+  }, [])
+
+  // Determine chat source — only show Twitch chat for Twitch streams
+  const stream = detectStream(streamUrl)
+  const isTwitch = !stream || stream.type === 'twitch'
+  const chatChannel = stream?.type === 'twitch' ? stream.id : DEFAULT_CHANNEL
+  const chatSrc = `https://www.twitch.tv/embed/${chatChannel}/chat?parent=${hostname}&darkpopout`
 
   return (
     <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
@@ -138,13 +221,7 @@ export default function Watch() {
           <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)]">
             <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(255,0,90,0.28),transparent_42%),radial-gradient(circle_at_85%_10%,rgba(80,0,255,0.26),transparent_35%)]" />
             <div className="w-full" style={{ aspectRatio: '16/9' }}>
-              <iframe
-                src={playerSrc}
-                className="w-full h-full"
-                allow="autoplay; fullscreen"
-                allowFullScreen
-                title="CSGN Live"
-              />
+              <CSGNPlayer streamUrl={streamUrl} hostname={hostname} />
             </div>
 
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/55 to-transparent" />
@@ -155,7 +232,7 @@ export default function Watch() {
         <div className="shrink-0 flex items-start justify-between px-5 py-4 border-b border-white/[0.06]">
           <div>
             <h1 className="text-3xl sm:text-4xl font-black font-display text-white tracking-tight leading-none">
-              TRAPKINGZ
+              {streamerName}
             </h1>
             <p className="text-sm text-gray-400 mt-1 font-mono">8:00 – 10:00 PM EST</p>
           </div>
@@ -187,7 +264,6 @@ export default function Watch() {
 
           {isScheduleOpen && (
             <>
-              {/* Blue schedule cards — the "blue squares" */}
               <div className="grid grid-cols-3 gap-3">
                 {todaySchedule.map((slot) => (
                   <ScheduleCard key={slot.handle} slot={slot} />
@@ -221,52 +297,56 @@ export default function Watch() {
         </div>
 
         {/* Mobile chat (shown below game buttons on small screens) */}
-        <div className="lg:hidden shrink-0 px-5 pb-5">
-          <div className="rounded-xl overflow-hidden border border-white/10">
-            <button
-              type="button"
-              className="w-full bg-[#0e0e1a] px-4 py-3 flex items-center justify-between"
-              onClick={() => setIsChatOpen((prev) => !prev)}
-              aria-expanded={isChatOpen}
-            >
-              <span className="text-xs font-bold tracking-[0.2em] uppercase text-gray-400">Live Chat</span>
-              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isChatOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {isChatOpen && (
-              <iframe
-                src={chatSrc}
-                className="w-full"
-                style={{ height: 360, background: '#0a0a14' }}
-                title="CSGN Chat"
-              />
-            )}
+        {isTwitch && (
+          <div className="lg:hidden shrink-0 px-5 pb-5">
+            <div className="rounded-xl overflow-hidden border border-white/10">
+              <button
+                type="button"
+                className="w-full bg-[#0e0e1a] px-4 py-3 flex items-center justify-between"
+                onClick={() => setIsChatOpen((prev) => !prev)}
+                aria-expanded={isChatOpen}
+              >
+                <span className="text-xs font-bold tracking-[0.2em] uppercase text-gray-400">Live Chat</span>
+                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isChatOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {isChatOpen && (
+                <iframe
+                  src={chatSrc}
+                  className="w-full"
+                  style={{ height: 360, background: '#0a0a14' }}
+                  title="CSGN Chat"
+                />
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* ── Right: Chat sidebar (desktop only) ── */}
-      <aside className="hidden lg:flex w-[340px] shrink-0 flex-col border-l border-white/[0.06] bg-[#07070f]">
-        <button
-          type="button"
-          className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between"
-          onClick={() => setIsChatOpen((prev) => !prev)}
-          aria-expanded={isChatOpen}
-        >
-          <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-xs font-bold tracking-[0.2em] uppercase text-gray-400">Live Chat</span>
-          </div>
-          <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isChatOpen ? 'rotate-180' : ''}`} />
-        </button>
-        {isChatOpen && (
-          <iframe
-            src={chatSrc}
-            className="flex-1 w-full"
-            style={{ background: '#07070f' }}
-            title="CSGN Chat"
-          />
-        )}
-      </aside>
+      {isTwitch && (
+        <aside className="hidden lg:flex w-[340px] shrink-0 flex-col border-l border-white/[0.06] bg-[#07070f]">
+          <button
+            type="button"
+            className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between"
+            onClick={() => setIsChatOpen((prev) => !prev)}
+            aria-expanded={isChatOpen}
+          >
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+              <span className="text-xs font-bold tracking-[0.2em] uppercase text-gray-400">Live Chat</span>
+            </div>
+            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isChatOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {isChatOpen && (
+            <iframe
+              src={chatSrc}
+              className="flex-1 w-full"
+              style={{ background: '#07070f' }}
+              title="CSGN Chat"
+            />
+          )}
+        </aside>
+      )}
     </div>
   )
 }

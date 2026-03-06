@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
 import { SectionHeading } from '@/components/ui/SectionHeading'
+import { RotatingText } from '@/components/ui/RotatingText'
 
 const fadeUp = {
   hidden: { opacity: 0, y: 28 },
@@ -310,7 +311,11 @@ export default function Home() {
           >
             <span className="text-white">THE FUTURE OF</span>
             <br />
-            <span className="text-gradient">SPORTS BROADCASTING</span>
+            <RotatingText
+              texts={['SPORTS BROADCASTING', 'CRYPTO MEDIA', 'GAMING NETWORKS', 'LIVE ENTERTAINMENT']}
+              interval={7000}
+              className="text-gradient"
+            />
           </motion.h1>
 
           <motion.p

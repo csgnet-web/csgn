@@ -4,10 +4,10 @@ import { motion } from 'framer-motion'
 import {
   Shield, Users, FileText, Radio, Clock, Check, X, Eye,
   Search, BarChart3, TrendingUp, Plus, Gavel, Ticket, Crown,
-  Trash2, UserCheck, AlertTriangle,
+  Trash2, UserCheck, AlertTriangle, Tv,
 } from 'lucide-react'
 import {
-  collection, query, getDocs, doc, updateDoc, orderBy,
+  collection, query, getDocs, doc, updateDoc, setDoc, onSnapshot, orderBy,
   where,
 } from 'firebase/firestore'
 import { db } from '@/config/firebase'
@@ -68,6 +68,47 @@ export default function Admin() {
   const [assignName, setAssignName] = useState('')
   const [assignDesc, setAssignDesc] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
+
+  // Live stream push state
+  const [liveStreamUrl, setLiveStreamUrl] = useState('')
+  const [liveStreamerName, setLiveStreamerName] = useState('')
+  const [currentLiveUrl, setCurrentLiveUrl] = useState('')
+  const [currentLiveStreamer, setCurrentLiveStreamer] = useState('')
+  const [pushingStream, setPushingStream] = useState(false)
+
+  // Listen to current live stream config
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, 'config', 'liveStream'),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data()
+          setCurrentLiveUrl(data.url || '')
+          setCurrentLiveStreamer(data.streamerName || '')
+        }
+      },
+      () => { /* doc may not exist yet */ }
+    )
+    return unsub
+  }, [])
+
+  const handlePushStream = async () => {
+    if (!liveStreamUrl.trim()) return
+    setPushingStream(true)
+    setActionError(null)
+    try {
+      await setDoc(doc(db, 'config', 'liveStream'), {
+        url: liveStreamUrl.trim(),
+        streamerName: liveStreamerName.trim() || 'CSGN',
+        updatedAt: new Date().toISOString(),
+      })
+      setLiveStreamUrl('')
+      setLiveStreamerName('')
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to push stream.')
+    }
+    setPushingStream(false)
+  }
 
   useEffect(() => {
     const fetchData = async () => {
@@ -271,6 +312,54 @@ export default function Admin() {
                 </Card>
               ))}
             </div>
+
+            {/* Push Stream Live */}
+            <Card hover={false} className="overflow-hidden">
+              <div className="p-4 border-b border-white/[0.06] flex items-center gap-2">
+                <Tv className="w-5 h-5 text-red-400" />
+                <h3 className="font-semibold text-white">Push Stream Live</h3>
+              </div>
+              <div className="p-4 space-y-4">
+                {currentLiveUrl && (
+                  <div className="p-3 bg-white/[0.03] border border-white/[0.06] rounded-xl">
+                    <p className="text-[11px] text-gray-500 uppercase tracking-wider mb-1">Currently Live</p>
+                    <p className="text-sm font-medium text-white">{currentLiveStreamer || 'CSGN'}</p>
+                    <p className="text-xs text-gray-400 font-mono truncate">{currentLiveUrl}</p>
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm text-gray-300 mb-1">Stream URL (Twitch or YouTube)</label>
+                  <input
+                    type="text"
+                    value={liveStreamUrl}
+                    onChange={(e) => setLiveStreamUrl(e.target.value)}
+                    placeholder="https://twitch.tv/channel or https://youtube.com/watch?v=..."
+                    className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-300 mb-1">Streamer Name</label>
+                  <input
+                    type="text"
+                    value={liveStreamerName}
+                    onChange={(e) => setLiveStreamerName(e.target.value)}
+                    placeholder="e.g. TRAPKINGZ"
+                    className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                  />
+                </div>
+                <Button
+                  variant="primary"
+                  size="md"
+                  className="w-full"
+                  disabled={!liveStreamUrl.trim()}
+                  isLoading={pushingStream}
+                  leftIcon={<Tv className="w-4 h-4" />}
+                  onClick={handlePushStream}
+                >
+                  Push to Live
+                </Button>
+              </div>
+            </Card>
 
             <Card hover={false} className="overflow-hidden">
               <div className="p-4 border-b border-white/[0.06]">

@@ -115,7 +115,7 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
   width: 100%;
   height: 100%;
   transform-style: preserve-3d;
-  animation: watch-roll 16s infinite ease-in-out;
+  animation: watch-roll 28s infinite ease-in-out;
 }
 
 .watch-roll-banner__face {
@@ -134,13 +134,15 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
   overflow: hidden;
   text-overflow: ellipsis;
   padding-left: 0.4rem;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 @keyframes watch-roll {
-  0%, 20% { transform: rotateX(0deg); }
-  25%, 45% { transform: rotateX(-90deg); }
-  50%, 70% { transform: rotateX(-180deg); }
-  75%, 95% { transform: rotateX(-270deg); }
+  0%, 23% { transform: rotateX(0deg); }
+  25%, 48% { transform: rotateX(-90deg); }
+  50%, 73% { transform: rotateX(-180deg); }
+  75%, 98% { transform: rotateX(-270deg); }
   100% { transform: rotateX(-360deg); }
 }
 
@@ -148,9 +150,5 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
 @media (max-width: 640px) {
   .watch-roll-banner {
     max-width: none;
-  }
-
-  .watch-roll-banner__inner {
-    animation-duration: 14s;
   }
 }

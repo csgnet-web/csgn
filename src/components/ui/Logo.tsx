@@ -45,9 +45,14 @@ export function Logo({
             CSGN
           </span>
           {showTagline && (
-            <span className="text-[9.5px] text-gray-500 tracking-[0.18em] uppercase leading-none mt-[3px]">
-              Crypto Sports &amp; Gaming
-            </span>
+            <div className="flex flex-col mt-[2px]">
+              <span className="text-[13px] sm:text-[15px] font-black tracking-[0.12em] uppercase leading-none text-white/90">
+                CRYPTO SPORTS &
+              </span>
+              <span className="text-[13px] sm:text-[15px] font-black tracking-[0.12em] uppercase leading-none text-white/90 mt-[2px]">
+                GAMING NETWORK
+              </span>
+            </div>
           )}
         </div>
       )}
