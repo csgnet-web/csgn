@@ -4,6 +4,12 @@ import { ChevronDown, ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
 
 /* ── Twitch channel ── */
 const CHANNEL = 'caborgg'
+const bannerItems = [
+  'Starting 5 • $14.70',
+  'Squares Entries: 25',
+  'Squares Closing in 04:03:20:55',
+  'Starting 5 Closing in 01:02:23',
+] as const
 
 /* ── Schedule data ── */
 const todaySchedule = [
@@ -94,10 +100,10 @@ function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
 
 export default function Watch() {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
-  const [isScheduleOpen, setIsScheduleOpen] = useState(true)
+  const [isScheduleOpen, setIsScheduleOpen] = useState(false)
   const [isChatOpen, setIsChatOpen] = useState(false)
 
-  const playerSrc = `https://player.twitch.tv/?channel=shrood&parent=${hostname}&autoplay=true&muted=false`
+  const playerSrc = `https://player.twitch.tv/?channel=${CHANNEL}&parent=${hostname}&autoplay=true&muted=false`
   const chatSrc   = `https://www.twitch.tv/embed/${CHANNEL}/chat?parent=${hostname}&darkpopout`
 
   return (
@@ -107,28 +113,30 @@ export default function Watch() {
       <div className="flex-1 flex flex-col overflow-y-auto min-w-0">
 
         {/* Status bar */}
-        <div className="shrink-0 flex items-center justify-between bg-red-600 px-4 py-2">
+        <div className="shrink-0 flex items-center gap-3 bg-red-600 px-4 py-2">
           <div className="flex items-center gap-2.5">
             <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
             <span className="text-white font-black tracking-[0.25em] text-sm uppercase">LIVE</span>
           </div>
-          <span className="text-white/90 text-xs font-mono tracking-wider uppercase">
-            STARTING 5 &nbsp;·&nbsp; POT: $14.70
-          </span>
+          <div className="watch-roll-banner flex-1 min-w-0" aria-label="Live game updates">
+            <div className="watch-roll-banner__inner">
+              {bannerItems.map((item, index) => (
+                <span
+                  key={item}
+                  className="watch-roll-banner__face"
+                  style={{ transform: `rotateX(${index * 90}deg) translateZ(12px)` }}
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Video player */}
         <div className="shrink-0 px-4 sm:px-5 pt-4 sm:pt-5 pb-2">
           <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)]">
             <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(255,0,90,0.28),transparent_42%),radial-gradient(circle_at_85%_10%,rgba(80,0,255,0.26),transparent_35%)]" />
-            <div className="relative flex items-center justify-between px-4 py-2.5 border-b border-white/10 bg-black/75 backdrop-blur-sm">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-[10px] sm:text-xs tracking-[0.3em] font-black uppercase text-white/80">CSGN PRIME FEED</span>
-              </div>
-              <span className="text-[10px] sm:text-xs font-mono text-red-300">UNMUTED · LIVE</span>
-            </div>
-
             <div className="w-full" style={{ aspectRatio: '16/9' }}>
               <iframe
                 src={playerSrc}
