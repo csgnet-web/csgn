@@ -122,12 +122,20 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
   )
 }
 
-/* ── CSGN Player: renders Twitch or YouTube ── */
+/* ── CSGN Player: renders Twitch or YouTube, or NO STREAM ACTIVE ── */
 function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: string }) {
-  // Always fallback to shrood — never show empty player
-  const url = streamUrl || DEFAULT_STREAM_URL
+  if (!streamUrl) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-[#050507] gap-4">
+        <svg viewBox="0 0 120 40" className="h-8 w-auto fill-white/20" xmlns="http://www.w3.org/2000/svg">
+          <text x="0" y="32" fontFamily="system-ui, sans-serif" fontWeight="900" fontSize="38" letterSpacing="2">CSGN</text>
+        </svg>
+        <p className="text-gray-500 font-mono text-sm tracking-widest uppercase">No Stream Active</p>
+      </div>
+    )
+  }
 
-  const stream = detectStream(url)
+  const stream = detectStream(streamUrl)
 
   if (stream?.type === 'youtube') {
     const embedSrc = `https://www.youtube.com/embed/${stream.id}?autoplay=1&mute=0&rel=0&modestbranding=1`
@@ -143,7 +151,7 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
   }
 
   // Twitch: use parsed channel or treat raw value as channel name
-  const channel = stream?.id ?? url.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '')
+  const channel = stream?.id ?? streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '')
   const twitchSrc = `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${encodeURIComponent(hostname)}&autoplay=true&muted=false`
   return (
     <iframe
@@ -206,15 +214,15 @@ export default function Watch() {
     return unsub
   }, [])
 
-  // Derive stream URL from current slot (default to shrood)
-  const streamUrl = currentSlot?.streamUrl || DEFAULT_STREAM_URL
-  const streamerName = currentSlot?.assignedName || 'shrood'
-  const slotLabel = currentSlot?.label || 'Live Now'
+  // Derive stream URL from current slot — empty if no slot or no URL set
+  const streamUrl = currentSlot?.streamUrl || ''
+  const streamerName = currentSlot?.assignedName || ''
+  const slotLabel = currentSlot?.label || ''
 
-  // Determine chat source
-  const stream = detectStream(streamUrl)
+  // Determine chat source (only shown when a stream is active)
+  const stream = streamUrl ? detectStream(streamUrl) : null
   const isTwitch = !stream || stream.type === 'twitch'
-  const chatChannel = stream?.type === 'twitch' ? stream.id : (streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '') || 'shrood')
+  const chatChannel = stream?.type === 'twitch' ? stream.id : (streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '') || '')
   const chatSrc = `https://www.twitch.tv/embed/${encodeURIComponent(chatChannel)}/chat?parent=${hostname}&darkpopout`
 
   // Next upcoming slot
