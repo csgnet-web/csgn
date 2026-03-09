@@ -68,13 +68,13 @@ async function sendCSGNBid(
   const sourceATA = await findATA(fromWalletAddress, CSGN_MINT_PUBKEY)
   const destATA = await findATA(CSGN_TREASURY, CSGN_MINT_PUBKEY)
 
-  // Amount in base units (multiply by 10^6 for CSGN decimals)
+  // Amount in base units (multiply by 10^6 for CSGN decimals) — browser-safe, no Buffer
   const amountBaseUnits = BigInt(amountTokens) * BigInt(Math.pow(10, CSGN_DECIMALS))
 
-  // Build SPL Transfer instruction (instruction type = 3)
-  const transferData = Buffer.alloc(9)
-  transferData.writeUInt8(3, 0) // Transfer instruction discriminator
-  transferData.writeBigUInt64LE(amountBaseUnits, 1)
+  // Build SPL Transfer instruction data (type=3, u64 LE amount) using DataView
+  const transferData = new Uint8Array(9)
+  transferData[0] = 3 // Transfer instruction discriminator
+  new DataView(transferData.buffer).setBigUint64(1, amountBaseUnits, true) // LE
 
   const transferIx = new TransactionInstruction({
     programId: tokenProgramPubkey,
@@ -83,33 +83,31 @@ async function sendCSGNBid(
       { pubkey: new PublicKey(destATA), isSigner: false, isWritable: true },
       { pubkey: fromPubkey, isSigner: true, isWritable: false },
     ],
-    data: transferData,
+    data: transferData as any,
   })
 
-  // Also ensure the destination ATA exists — if not, create it
-  // Check dest ATA balance. If account doesn't exist, add CreateAssociatedTokenAccount instruction.
+  // Ensure destination ATA exists — create it if not
   const destAtaPubkey = new PublicKey(destATA)
-  let createATAIx: TransactionInstruction | null = null
+  let createATAIx: InstanceType<typeof TransactionInstruction> | null = null
   try {
     const destAtaInfo = await connection.getAccountInfo(destAtaPubkey)
     if (!destAtaInfo) {
-      // Create the ATA
       const assocProgram = new PublicKey(ASSOCIATED_TOKEN_PROGRAM_ID)
       createATAIx = new TransactionInstruction({
         programId: assocProgram,
         keys: [
-          { pubkey: fromPubkey, isSigner: true, isWritable: true },           // payer
-          { pubkey: destAtaPubkey, isSigner: false, isWritable: true },        // ata
-          { pubkey: toPubkey, isSigner: false, isWritable: false },            // owner
-          { pubkey: mintPubkey, isSigner: false, isWritable: false },          // mint
-          { pubkey: new PublicKey('11111111111111111111111111111111'), isSigner: false, isWritable: false }, // system
-          { pubkey: tokenProgramPubkey, isSigner: false, isWritable: false },  // token program
+          { pubkey: fromPubkey, isSigner: true, isWritable: true },
+          { pubkey: destAtaPubkey, isSigner: false, isWritable: true },
+          { pubkey: toPubkey, isSigner: false, isWritable: false },
+          { pubkey: mintPubkey, isSigner: false, isWritable: false },
+          { pubkey: new PublicKey('11111111111111111111111111111111'), isSigner: false, isWritable: false },
+          { pubkey: tokenProgramPubkey, isSigner: false, isWritable: false },
         ],
-        data: Buffer.alloc(0),
+        data: new Uint8Array(0) as any,
       })
     }
   } catch {
-    // If we can't check, proceed without creating
+    // proceed without creating
   }
 
   const { blockhash } = await connection.getLatestBlockhash()

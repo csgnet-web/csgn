@@ -1,5 +1,5 @@
 import {
-  collection, doc, getDocs, setDoc, updateDoc, deleteDoc,
+  collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc,
   query, where, orderBy, onSnapshot, serverTimestamp,
   type Unsubscribe,
 } from 'firebase/firestore'
@@ -438,7 +438,7 @@ export async function updateCreatorFees(slotId: string, fees: CreatorFees): Prom
 }
 
 /** Admin: mark creator fees as paid. */
-export async function markFeesPaid(slotId: string, streamerUid: string): Promise<void> {
+export async function markFeesPaid(slotId: string): Promise<void> {
   const snap = await getDocs(query(collection(db, SLOTS_COLLECTION), where('id', '==', slotId)))
   if (snap.empty) throw new Error('Slot not found')
 
@@ -509,8 +509,7 @@ export async function addUserNotification(
   },
 ): Promise<void> {
   const userRef = doc(db, 'users', uid)
-  const { getDoc: gd } = await import('firebase/firestore')
-  const snap = await gd(userRef)
+  const snap = await getDoc(userRef)
   if (!snap.exists()) return
 
   const existing = (snap.data().notifications || []) as any[]

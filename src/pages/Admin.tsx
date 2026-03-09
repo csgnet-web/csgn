@@ -330,7 +330,7 @@ export default function Admin() {
     if (!slot.assignedUid) return
     setFeeActionLoading(slot.id)
     try {
-      await markFeesPaid(slot.id, slot.assignedUid)
+      await markFeesPaid(slot.id)
       await loadFeeSlots()
     } catch (err: any) {
       setActionError(err?.message || 'Failed to mark as paid.')

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
-import { subscribeToCurrentSlot, subscribeToSlots, DEFAULT_STREAM_URL, type Slot } from '@/lib/slots'
+import { subscribeToCurrentSlot, subscribeToSlots, type Slot } from '@/lib/slots'
 
 const bannerItems = [
   'Starting 5 \u2022 $14.70',
@@ -40,9 +40,6 @@ function detectStream(url: string): { type: StreamType; id: string } | null {
   return null
 }
 
-function formatSlotTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-}
 
 /* ── CSGN Wipe Overlay ── */
 function CSGNWipeOverlay({ visible }: { visible: boolean }) {
