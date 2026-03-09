@@ -3,8 +3,9 @@ import { Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   Shield, Users, FileText, Radio, Clock, Check, X, Eye,
-  Search, BarChart3, TrendingUp, Plus, Gavel, Ticket, Crown,
-  Trash2, UserCheck, AlertTriangle, Tv,
+  Search, BarChart3, TrendingUp, Plus, Gavel, Crown,
+  Trash2, UserCheck, AlertTriangle, Tv, DollarSign,
+  Wallet, CheckCircle2, XCircle, RefreshCw, Link as LinkIcon,
 } from 'lucide-react'
 import {
   collection, query, getDocs, doc, updateDoc, setDoc, onSnapshot, orderBy,
@@ -16,18 +17,26 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import {
-  generateSlotsForDate,
+  generateNextThreeDays,
   fetchSlots,
-  assignPrimeSlot,
+  assignCEOSlot,
+  assignSlot,
+  updateSlotStreamUrl,
   resolveAuction,
-  resolveLottery,
   deleteSlot,
+  acceptSlotRequest,
+  declineSlotRequest,
+  updateCreatorFees,
+  markFeesPaid,
+  declineFeesPayment,
   getMinimumBid,
+  DEFAULT_STREAM_URL,
   type Slot,
   type SlotType,
+  type CreatorFees,
 } from '@/lib/slots'
 
-type Tab = 'overview' | 'applications' | 'streamers' | 'schedule'
+type Tab = 'overview' | 'applications' | 'streamers' | 'schedule' | 'fees'
 
 interface AppData {
   id: string
@@ -47,6 +56,7 @@ interface UserData {
   displayName: string
   email: string
   role: string
+  walletAddress?: string
   createdAt: any
 }
 
@@ -67,7 +77,16 @@ export default function Admin() {
   const [assignUid, setAssignUid] = useState('')
   const [assignName, setAssignName] = useState('')
   const [assignDesc, setAssignDesc] = useState('')
+  const [assignStreamUrl, setAssignStreamUrl] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
+
+  // Slot stream URL override
+  const [streamOverrideModal, setStreamOverrideModal] = useState<Slot | null>(null)
+  const [overrideUrl, setOverrideUrl] = useState('')
+
+  // Slot request handling
+  const [requestModal, setRequestModal] = useState<Slot | null>(null)
+  const [declineReason, setDeclineReason] = useState('')
 
   // Live stream push state
   const [liveStreamUrl, setLiveStreamUrl] = useState('')
@@ -75,6 +94,15 @@ export default function Admin() {
   const [currentLiveUrl, setCurrentLiveUrl] = useState('')
   const [currentLiveStreamer, setCurrentLiveStreamer] = useState('')
   const [pushingStream, setPushingStream] = useState(false)
+
+  // Fees tab state
+  const [feeSlots, setFeeSlots] = useState<Slot[]>([])
+  const [feeSlotsLoading, setFeeSlotsLoading] = useState(false)
+  const [feeModal, setFeeModal] = useState<Slot | null>(null)
+  const [feeVolume, setFeeVolume] = useState('')
+  const [feeWallet, setFeeWallet] = useState('')
+  const [feeDeclineReason, setFeeDeclineReason] = useState('')
+  const [feeActionLoading, setFeeActionLoading] = useState<string | null>(null)
 
   // Listen to current live stream config
   useEffect(() => {
@@ -87,7 +115,7 @@ export default function Admin() {
           setCurrentLiveStreamer(data.streamerName || '')
         }
       },
-      () => { /* doc may not exist yet */ }
+      () => {}
     )
     return unsub
   }, [])
@@ -115,12 +143,12 @@ export default function Admin() {
       try {
         const appsSnap = await getDocs(query(collection(db, 'applications'), orderBy('createdAt', 'desc')))
         setApplications(appsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as AppData)))
-      } catch { /* Firestore may not have these collections yet */ }
+      } catch {}
 
       try {
         const usersSnap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc')))
         setUsers(usersSnap.docs.map((d) => ({ ...d.data() } as UserData)))
-      } catch { /* ignore */ }
+      } catch {}
     }
     fetchData()
   }, [])
@@ -128,7 +156,7 @@ export default function Admin() {
   const loadSlots = useCallback(async () => {
     setSlotsLoading(true)
     const now = new Date()
-    const future = new Date(now.getTime() + 48 * 60 * 60 * 1000)
+    const future = new Date(now.getTime() + 72 * 60 * 60 * 1000)
     try {
       const data = await fetchSlots(now, future)
       setSlots(data)
@@ -138,15 +166,27 @@ export default function Admin() {
     setSlotsLoading(false)
   }, [])
 
+  const loadFeeSlots = useCallback(async () => {
+    setFeeSlotsLoading(true)
+    // Fetch completed slots from the past 14 days
+    const now = new Date()
+    const past = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
+    try {
+      const data = await fetchSlots(past, now)
+      // Show completed slots that had an assigned streamer
+      setFeeSlots(data.filter((s) => s.assignedUid && (s.status === 'completed' || new Date(s.endTime).getTime() < Date.now())))
+    } catch {}
+    setFeeSlotsLoading(false)
+  }, [])
+
   useEffect(() => {
     if (activeTab === 'schedule') loadSlots()
-  }, [activeTab, loadSlots])
+    if (activeTab === 'fees') loadFeeSlots()
+  }, [activeTab, loadSlots, loadFeeSlots])
 
   const handleAppStatus = async (appId: string, status: 'approved' | 'rejected') => {
     await updateDoc(doc(db, 'applications', appId), { status })
-    setApplications((prev) =>
-      prev.map((a) => (a.id === appId ? { ...a, status } : a))
-    )
+    setApplications((prev) => prev.map((a) => (a.id === appId ? { ...a, status } : a)))
     if (status === 'approved') {
       const app = applications.find((a) => a.id === appId)
       if (app) {
@@ -160,15 +200,16 @@ export default function Admin() {
     setSelectedApp(null)
   }
 
-  const handleGenerateSlots = async () => {
+  const handleGenerateThreeDays = async () => {
     setGenerating(true)
     setActionError(null)
     try {
-      const tomorrow = new Date()
-      tomorrow.setDate(tomorrow.getDate() + 1)
-      tomorrow.setUTCHours(0, 0, 0, 0)
-      await generateSlotsForDate(tomorrow)
+      const result = await generateNextThreeDays()
+      setActionError(null)
       await loadSlots()
+      if (result.generated === 0) {
+        setActionError('All slots for the next 3 days already exist.')
+      }
     } catch (err: any) {
       setActionError(err?.message || 'Failed to generate slots.')
     }
@@ -178,38 +219,43 @@ export default function Admin() {
   const handleResolveAuction = async (slotId: string) => {
     setActionError(null)
     try {
-      const result = await resolveAuction(slotId)
-      if (result) {
-        setActionError(null)
-      }
+      await resolveAuction(slotId)
       await loadSlots()
     } catch (err: any) {
       setActionError(err?.message || 'Failed to resolve auction.')
     }
   }
 
-  const handleResolveLottery = async (slotId: string) => {
-    setActionError(null)
-    try {
-      await resolveLottery(slotId)
-      await loadSlots()
-    } catch (err: any) {
-      setActionError(err?.message || 'Failed to resolve lottery.')
-    }
-  }
-
-  const handleAssignPrime = async () => {
+  const handleAssignSlot = async () => {
     if (!assignModal || !assignUid.trim() || !assignName.trim()) return
     setActionError(null)
     try {
-      await assignPrimeSlot(assignModal.id, assignUid, assignName, assignDesc)
+      if (assignModal.type === 'ceo') {
+        await assignCEOSlot(assignModal.id, assignUid, assignName, assignStreamUrl || DEFAULT_STREAM_URL, assignDesc)
+      } else {
+        await assignSlot(assignModal.id, assignUid, assignName, assignStreamUrl || DEFAULT_STREAM_URL, assignDesc)
+      }
       setAssignModal(null)
       setAssignUid('')
       setAssignName('')
       setAssignDesc('')
+      setAssignStreamUrl('')
       await loadSlots()
     } catch (err: any) {
       setActionError(err?.message || 'Failed to assign slot.')
+    }
+  }
+
+  const handleStreamOverride = async () => {
+    if (!streamOverrideModal) return
+    setActionError(null)
+    try {
+      await updateSlotStreamUrl(streamOverrideModal.id, overrideUrl || DEFAULT_STREAM_URL)
+      setStreamOverrideModal(null)
+      setOverrideUrl('')
+      await loadSlots()
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to update stream URL.')
     }
   }
 
@@ -220,6 +266,92 @@ export default function Admin() {
     } catch (err: any) {
       setActionError(err?.message || 'Failed to delete slot.')
     }
+  }
+
+  const handleAcceptRequest = async (slotId: string, requestId: string, note?: string) => {
+    setActionError(null)
+    try {
+      await acceptSlotRequest(slotId, requestId, note)
+      setRequestModal(null)
+      await loadSlots()
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to accept request.')
+    }
+  }
+
+  const handleDeclineRequest = async (slotId: string, requestId: string) => {
+    if (!declineReason.trim()) {
+      setActionError('Please provide a reason for declining.')
+      return
+    }
+    setActionError(null)
+    try {
+      await declineSlotRequest(slotId, requestId, declineReason)
+      setDeclineReason('')
+      setRequestModal(null)
+      await loadSlots()
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to decline request.')
+    }
+  }
+
+  // Fees management
+  const handleSaveFeeRecord = async (slot: Slot) => {
+    if (!feeModal || !feeVolume) return
+    setFeeActionLoading(slot.id)
+    try {
+      const volumeSOL = parseFloat(feeVolume)
+      if (isNaN(volumeSOL) || volumeSOL < 0) throw new Error('Invalid volume amount')
+
+      // pump.fun creator fee: 0.5% creator fee on each trade
+      // 30% of that goes to the streamer
+      // So streamer gets: volume * 0.005 * 0.30 = volume * 0.0015
+      const feeOwedSOL = volumeSOL * 0.005 * 0.30
+
+      const fees: CreatorFees = {
+        tradingVolumeSOL: volumeSOL,
+        feeOwedSOL,
+        paymentStatus: 'pending',
+        streamerWalletAddress: feeWallet || slot.creatorFees?.streamerWalletAddress || '',
+        updatedAt: new Date().toISOString(),
+      }
+      await updateCreatorFees(slot.id, fees)
+      setFeeModal(null)
+      setFeeVolume('')
+      setFeeWallet('')
+      await loadFeeSlots()
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to save fee record.')
+    }
+    setFeeActionLoading(null)
+  }
+
+  const handleMarkPaid = async (slot: Slot) => {
+    if (!slot.assignedUid) return
+    setFeeActionLoading(slot.id)
+    try {
+      await markFeesPaid(slot.id, slot.assignedUid)
+      await loadFeeSlots()
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to mark as paid.')
+    }
+    setFeeActionLoading(null)
+  }
+
+  const handleDeclineFee = async (slot: Slot) => {
+    if (!feeDeclineReason.trim()) {
+      setActionError('Please provide a reason.')
+      return
+    }
+    setFeeActionLoading(slot.id)
+    try {
+      await declineFeesPayment(slot.id, feeDeclineReason)
+      setFeeDeclineReason('')
+      await loadFeeSlots()
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to decline payment.')
+    }
+    setFeeActionLoading(null)
   }
 
   const filteredApps = applications.filter((app) => {
@@ -247,20 +379,19 @@ export default function Admin() {
 
   const tabs = [
     { id: 'overview' as Tab, label: 'Overview', icon: BarChart3 },
-    { id: 'applications' as Tab, label: `Applications ${pendingCount ? `(${pendingCount})` : ''}`, icon: FileText },
+    { id: 'applications' as Tab, label: `Applications${pendingCount ? ` (${pendingCount})` : ''}`, icon: FileText },
     { id: 'streamers' as Tab, label: 'Streamers', icon: Users },
     { id: 'schedule' as Tab, label: 'Schedule', icon: Clock },
+    { id: 'fees' as Tab, label: 'Creator Fees', icon: DollarSign },
   ]
 
   const typeIcon = (type: SlotType) => {
     if (type === 'auction') return <Gavel className="w-4 h-4" />
-    if (type === 'lottery') return <Ticket className="w-4 h-4" />
     return <Crown className="w-4 h-4" />
   }
 
   const typeColor = (type: SlotType) => {
     if (type === 'auction') return 'text-cyan-400'
-    if (type === 'lottery') return 'text-accent-400'
     return 'text-gold'
   }
 
@@ -293,7 +424,18 @@ export default function Admin() {
           ))}
         </div>
 
-        {/* Overview Tab */}
+        {/* Global error */}
+        {actionError && (
+          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+            <p className="text-sm text-red-400">{actionError}</p>
+            <button onClick={() => setActionError(null)} className="ml-auto text-gray-400 hover:text-white cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* ── Overview Tab ── */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -317,7 +459,7 @@ export default function Admin() {
             <Card hover={false} className="overflow-hidden">
               <div className="p-4 border-b border-white/[0.06] flex items-center gap-2">
                 <Tv className="w-5 h-5 text-red-400" />
-                <h3 className="font-semibold text-white">Push Stream Live</h3>
+                <h3 className="font-semibold text-white">Push Stream Live (Manual Override)</h3>
               </div>
               <div className="p-4 space-y-4">
                 {currentLiveUrl && (
@@ -343,7 +485,7 @@ export default function Admin() {
                     type="text"
                     value={liveStreamerName}
                     onChange={(e) => setLiveStreamerName(e.target.value)}
-                    placeholder="e.g. TRAPKINGZ"
+                    placeholder="e.g. shrood"
                     className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
                   />
                 </div>
@@ -385,7 +527,7 @@ export default function Admin() {
           </div>
         )}
 
-        {/* Applications Tab */}
+        {/* ── Applications Tab ── */}
         {activeTab === 'applications' && (
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row gap-3">
@@ -414,10 +556,7 @@ export default function Admin() {
             <Card hover={false} className="overflow-hidden">
               <div className="divide-y divide-white/[0.04]">
                 {filteredApps.map((app) => (
-                  <div
-                    key={app.id}
-                    className="flex items-center gap-4 px-4 sm:px-6 py-4 hover:bg-white/[0.02] transition-colors"
-                  >
+                  <div key={app.id} className="flex items-center gap-4 px-4 sm:px-6 py-4 hover:bg-white/[0.02] transition-colors">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500/20 to-accent-600/20 flex items-center justify-center text-sm font-bold text-primary-400 shrink-0">
                       {(app.displayName || '?')[0].toUpperCase()}
                     </div>
@@ -469,22 +608,17 @@ export default function Admin() {
                     </button>
                   </div>
                   <div className="p-6 space-y-4">
-                    <div>
-                      <span className="text-xs text-gray-500 uppercase tracking-wider">Name</span>
-                      <p className="text-white">{selectedApp.displayName}</p>
-                    </div>
-                    <div>
-                      <span className="text-xs text-gray-500 uppercase tracking-wider">Email</span>
-                      <p className="text-white">{selectedApp.email}</p>
-                    </div>
-                    <div>
-                      <span className="text-xs text-gray-500 uppercase tracking-wider">Content Type</span>
-                      <p className="text-white">{selectedApp.contentType}</p>
-                    </div>
-                    <div>
-                      <span className="text-xs text-gray-500 uppercase tracking-wider">Twitter</span>
-                      <p className="text-white">{selectedApp.twitterHandle || 'N/A'}</p>
-                    </div>
+                    {[
+                      ['Name', selectedApp.displayName],
+                      ['Email', selectedApp.email],
+                      ['Content Type', selectedApp.contentType],
+                      ['Twitter', selectedApp.twitterHandle || 'N/A'],
+                    ].map(([label, value]) => (
+                      <div key={label}>
+                        <span className="text-xs text-gray-500 uppercase tracking-wider">{label}</span>
+                        <p className="text-white">{value}</p>
+                      </div>
+                    ))}
                     <div>
                       <span className="text-xs text-gray-500 uppercase tracking-wider">Experience</span>
                       <p className="text-gray-300 text-sm">{selectedApp.experience}</p>
@@ -503,22 +637,10 @@ export default function Admin() {
                     )}
                     {selectedApp.status === 'pending' && (
                       <div className="flex gap-3 pt-4 border-t border-white/[0.06]">
-                        <Button
-                          variant="primary"
-                          size="md"
-                          className="flex-1"
-                          leftIcon={<Check className="w-4 h-4" />}
-                          onClick={() => handleAppStatus(selectedApp.id, 'approved')}
-                        >
+                        <Button variant="primary" size="md" className="flex-1" leftIcon={<Check className="w-4 h-4" />} onClick={() => handleAppStatus(selectedApp.id, 'approved')}>
                           Approve
                         </Button>
-                        <Button
-                          variant="danger"
-                          size="md"
-                          className="flex-1"
-                          leftIcon={<X className="w-4 h-4" />}
-                          onClick={() => handleAppStatus(selectedApp.id, 'rejected')}
-                        >
+                        <Button variant="danger" size="md" className="flex-1" leftIcon={<X className="w-4 h-4" />} onClick={() => handleAppStatus(selectedApp.id, 'rejected')}>
                           Reject
                         </Button>
                       </div>
@@ -530,7 +652,7 @@ export default function Admin() {
           </div>
         )}
 
-        {/* Streamers Tab */}
+        {/* ── Streamers Tab ── */}
         {activeTab === 'streamers' && (
           <Card hover={false} className="overflow-hidden">
             <div className="p-4 border-b border-white/[0.06]">
@@ -545,44 +667,44 @@ export default function Admin() {
                   <div className="flex-1">
                     <span className="text-sm font-medium text-white">{user.displayName}</span>
                     <span className="text-xs text-gray-500 block">{user.email}</span>
+                    {user.walletAddress && (
+                      <span className="text-xs text-gray-600 font-mono flex items-center gap-1 mt-0.5">
+                        <Wallet className="w-3 h-3" /> {user.walletAddress.slice(0, 8)}...{user.walletAddress.slice(-6)}
+                      </span>
+                    )}
                   </div>
                   <Badge variant="green">Streamer</Badge>
                 </div>
               ))}
               {users.filter((u) => u.role === 'streamer').length === 0 && (
-                <div className="text-center py-12 text-gray-500 text-sm">No streamers yet. Approve applications to add streamers.</div>
+                <div className="text-center py-12 text-gray-500 text-sm">No streamers yet.</div>
               )}
             </div>
           </Card>
         )}
 
-        {/* Schedule Tab */}
+        {/* ── Schedule Tab ── */}
         {activeTab === 'schedule' && (
           <div className="space-y-6">
-            {actionError && (
-              <Card hover={false} className="p-4 bg-red-500/5 border-red-500/20">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
-                  <p className="text-sm text-red-400">{actionError}</p>
-                  <button onClick={() => setActionError(null)} className="ml-auto text-gray-400 hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
-                </div>
-              </Card>
-            )}
-
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-white">Upcoming Slots (Next 48h)</h3>
-                <p className="text-sm text-gray-400">Generate tomorrow's slots, resolve auctions/lotteries, and assign prime time.</p>
+                <h3 className="text-lg font-semibold text-white">Upcoming Slots (Next 72h)</h3>
+                <p className="text-sm text-gray-400">Generate 3 days of slots, resolve auctions, assign CEO Schedule, manage stream URLs.</p>
               </div>
-              <Button
-                variant="primary"
-                size="sm"
-                leftIcon={<Plus className="w-4 h-4" />}
-                isLoading={generating}
-                onClick={handleGenerateSlots}
-              >
-                Generate Tomorrow's Slots
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" leftIcon={<RefreshCw className="w-4 h-4" />} onClick={loadSlots}>
+                  Refresh
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  leftIcon={<Plus className="w-4 h-4" />}
+                  isLoading={generating}
+                  onClick={handleGenerateThreeDays}
+                >
+                  Generate Next 3 Days
+                </Button>
+              </div>
             </div>
 
             {slotsLoading ? (
@@ -595,7 +717,7 @@ export default function Admin() {
                 <Clock className="w-12 h-12 text-gray-600 mx-auto mb-4" />
                 <h3 className="text-lg font-semibold text-white mb-2">No Upcoming Slots</h3>
                 <p className="text-sm text-gray-400 max-w-md mx-auto">
-                  Click "Generate Tomorrow's Slots" to create the next day's schedule from the template.
+                  Click "Generate Next 3 Days" to create the upcoming schedule (72 hours of slots at once).
                 </p>
               </Card>
             ) : (
@@ -605,7 +727,6 @@ export default function Admin() {
                     <Radio className="w-4 h-4 text-primary-400" />
                     {slots.length} slots
                   </h3>
-                  <Button variant="ghost" size="sm" onClick={loadSlots}>Refresh</Button>
                 </div>
 
                 <div className="divide-y divide-white/[0.04]">
@@ -613,21 +734,20 @@ export default function Admin() {
                     const startTime = new Date(slot.startTime)
                     const hoursUntil = (startTime.getTime() - Date.now()) / (1000 * 60 * 60)
                     const canResolve = hoursUntil <= 2 && slot.status === 'open'
+                    const pendingRequests = slot.requests?.filter((r) => r.status === 'pending') ?? []
 
                     return (
                       <div key={slot.id} className="px-4 sm:px-6 py-4 hover:bg-white/[0.02] transition-colors">
                         <div className="flex items-center gap-4">
-                          {/* Type icon */}
                           <div className={`w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 ${typeColor(slot.type)}`}>
                             {typeIcon(slot.type)}
                           </div>
 
-                          {/* Info */}
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span className="text-sm font-medium text-white">{slot.label}</span>
-                              <Badge variant={slot.type === 'prime' ? 'gold' : slot.type === 'lottery' ? 'purple' : 'blue'}>
-                                {slot.type}
+                              <Badge variant={slot.type === 'ceo' ? 'gold' : 'blue'}>
+                                {slot.type === 'auction' ? 'Auction' : 'CEO'}
                               </Badge>
                               <Badge variant={
                                 slot.status === 'open' ? 'blue' :
@@ -637,33 +757,52 @@ export default function Admin() {
                               }>
                                 {slot.status}
                               </Badge>
+                              {pendingRequests.length > 0 && (
+                                <Badge variant="purple">{pendingRequests.length} request{pendingRequests.length !== 1 ? 's' : ''}</Badge>
+                              )}
                             </div>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-gray-500 mt-0.5">
                               {startTime.toLocaleDateString()} {startTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                               {slot.assignedName && <span className="text-emerald-400"> — {slot.assignedName}</span>}
                               {slot.type === 'auction' && ` — ${slot.bids.length} bid${slot.bids.length !== 1 ? 's' : ''}`}
-                              {slot.type === 'auction' && slot.bids.length > 0 && ` (high: ${Math.max(...slot.bids.map(b => b.amount)).toFixed(4)} SOL, next: ${getMinimumBid(slot.bids.length).toFixed(4)} SOL)`}
-                              {slot.type === 'lottery' && ` — ${slot.lotteryEntrants.length} entrant${slot.lotteryEntrants.length !== 1 ? 's' : ''}`}
+                              {slot.type === 'auction' && slot.bids.length > 0 && ` (top: ${Math.max(...slot.bids.map(b => b.amount)).toLocaleString()} CSGN, next: ${getMinimumBid(slot.bids.length).toLocaleString()} CSGN)`}
+                            </p>
+                            <p className="text-xs text-gray-600 font-mono truncate mt-0.5">
+                              Stream: {slot.streamUrl || DEFAULT_STREAM_URL}
                             </p>
                           </div>
 
-                          {/* Actions */}
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap justify-end">
                             {slot.type === 'auction' && canResolve && slot.bids.length > 0 && (
                               <Button variant="primary" size="sm" onClick={() => handleResolveAuction(slot.id)}>
-                                <Gavel className="w-3 h-3" /> Resolve
+                                <Gavel className="w-3 h-3 mr-1" /> Resolve
                               </Button>
                             )}
-                            {slot.type === 'lottery' && canResolve && slot.lotteryEntrants.length > 0 && (
-                              <Button variant="primary" size="sm" onClick={() => handleResolveLottery(slot.id)}>
-                                <Ticket className="w-3 h-3" /> Draw
+                            {pendingRequests.length > 0 && (
+                              <Button variant="secondary" size="sm" onClick={() => setRequestModal(slot)}>
+                                Requests ({pendingRequests.length})
                               </Button>
                             )}
-                            {slot.type === 'prime' && slot.status === 'open' && (
-                              <Button variant="secondary" size="sm" onClick={() => setAssignModal(slot)}>
-                                <UserCheck className="w-3 h-3" /> Assign
-                              </Button>
-                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-blue-400 hover:text-blue-300"
+                              onClick={() => {
+                                setStreamOverrideModal(slot)
+                                setOverrideUrl(slot.streamUrl || DEFAULT_STREAM_URL)
+                              }}
+                            >
+                              <LinkIcon className="w-3 h-3" />
+                            </Button>
+                            <Button variant="secondary" size="sm" onClick={() => {
+                              setAssignModal(slot)
+                              setAssignStreamUrl(slot.streamUrl || '')
+                              setAssignName(slot.assignedName || '')
+                              setAssignUid(slot.assignedUid || '')
+                              setAssignDesc(slot.description || '')
+                            }}>
+                              <UserCheck className="w-3 h-3" />
+                            </Button>
                             <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-300" onClick={() => handleDeleteSlot(slot.id)}>
                               <Trash2 className="w-3 h-3" />
                             </Button>
@@ -676,7 +815,7 @@ export default function Admin() {
               </Card>
             )}
 
-            {/* Assign Prime Time Modal */}
+            {/* Assign / Switch Slot Modal */}
             {assignModal && (
               <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                 <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setAssignModal(null)} />
@@ -686,7 +825,9 @@ export default function Admin() {
                   className="relative w-full max-w-md bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
                 >
                   <div className="p-6 border-b border-white/[0.06] flex items-center justify-between">
-                    <h3 className="font-bold text-white">Assign Prime Time Slot</h3>
+                    <h3 className="font-bold text-white">
+                      {assignModal.type === 'ceo' ? 'Assign CEO Schedule Slot' : 'Switch Slot Assignment'}
+                    </h3>
                     <button onClick={() => setAssignModal(null)} className="p-1 text-gray-400 hover:text-white cursor-pointer">
                       <X className="w-5 h-5" />
                     </button>
@@ -699,7 +840,7 @@ export default function Admin() {
                     </div>
 
                     <div>
-                      <label className="block text-sm text-gray-300 mb-1">Streamer UID</label>
+                      <label className="block text-sm text-gray-300 mb-1">Streamer</label>
                       <select
                         value={assignUid}
                         onChange={(e) => {
@@ -728,6 +869,17 @@ export default function Admin() {
                     </div>
 
                     <div>
+                      <label className="block text-sm text-gray-300 mb-1">Stream URL</label>
+                      <input
+                        type="text"
+                        value={assignStreamUrl}
+                        onChange={(e) => setAssignStreamUrl(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono text-xs focus:outline-none focus:border-primary-500/50"
+                        placeholder={DEFAULT_STREAM_URL}
+                      />
+                    </div>
+
+                    <div>
                       <label className="block text-sm text-gray-300 mb-1">Description</label>
                       <input
                         type="text"
@@ -742,10 +894,347 @@ export default function Admin() {
                       variant="primary"
                       size="md"
                       className="w-full"
-                      disabled={!assignUid || !assignName.trim()}
-                      onClick={handleAssignPrime}
+                      disabled={!assignName.trim()}
+                      onClick={handleAssignSlot}
                     >
-                      Assign & Notify User
+                      Assign & Notify
+                    </Button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+
+            {/* Stream URL Override Modal */}
+            {streamOverrideModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setStreamOverrideModal(null)} />
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="relative w-full max-w-md bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+                >
+                  <div className="p-6 border-b border-white/[0.06] flex items-center justify-between">
+                    <h3 className="font-bold text-white">Override Stream URL</h3>
+                    <button onClick={() => setStreamOverrideModal(null)} className="p-1 text-gray-400 hover:text-white cursor-pointer">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <div>
+                      <p className="text-sm text-gray-400 mb-1">Slot: {streamOverrideModal.label}</p>
+                      <p className="text-xs text-gray-500">This URL will be auto-loaded when this slot goes live.</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-300 mb-1">Stream URL</label>
+                      <input
+                        type="text"
+                        value={overrideUrl}
+                        onChange={(e) => setOverrideUrl(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono focus:outline-none focus:border-primary-500/50"
+                        placeholder={DEFAULT_STREAM_URL}
+                      />
+                    </div>
+                    <Button variant="primary" size="md" className="w-full" onClick={handleStreamOverride}>
+                      Save URL
+                    </Button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+
+            {/* Slot Requests Modal */}
+            {requestModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setRequestModal(null)} />
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="relative w-full max-w-lg bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden max-h-[80vh] overflow-y-auto"
+                >
+                  <div className="p-6 border-b border-white/[0.06] flex items-center justify-between sticky top-0 bg-[#0c0c1a]">
+                    <h3 className="font-bold text-white">Slot Requests — {requestModal.label}</h3>
+                    <button onClick={() => setRequestModal(null)} className="p-1 text-gray-400 hover:text-white cursor-pointer">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    {(requestModal.requests ?? []).length === 0 ? (
+                      <p className="text-sm text-gray-500">No requests for this slot.</p>
+                    ) : (
+                      requestModal.requests!.map((req) => (
+                        <div key={req.id} className="p-4 bg-white/[0.03] border border-white/[0.06] rounded-xl space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-white font-medium text-sm">{req.displayName}</p>
+                              <p className="text-xs text-gray-500">{new Date(req.createdAt).toLocaleString()}</p>
+                            </div>
+                            <Badge variant={req.status === 'accepted' ? 'green' : req.status === 'declined' ? 'red' : 'gold'}>
+                              {req.status}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-gray-300">{req.message}</p>
+                          {req.responseNote && (
+                            <p className="text-xs text-gray-500 italic">Response: {req.responseNote}</p>
+                          )}
+                          {req.status === 'pending' && (
+                            <div className="space-y-2">
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  className="flex-1"
+                                  leftIcon={<CheckCircle2 className="w-4 h-4" />}
+                                  onClick={() => handleAcceptRequest(requestModal.id, req.id)}
+                                >
+                                  Accept
+                                </Button>
+                                <Button
+                                  variant="danger"
+                                  size="sm"
+                                  className="flex-1"
+                                  leftIcon={<XCircle className="w-4 h-4" />}
+                                  onClick={() => handleDeclineRequest(requestModal.id, req.id)}
+                                >
+                                  Decline
+                                </Button>
+                              </div>
+                              <input
+                                type="text"
+                                placeholder="Decline reason (required to decline)"
+                                value={declineReason}
+                                onChange={(e) => setDeclineReason(e.target.value)}
+                                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Creator Fees Tab ── */}
+        {activeTab === 'fees' && (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Creator Fee Payouts</h3>
+              <p className="text-sm text-gray-400 mt-1">
+                Streamers earn 30% of pump.fun creator fees (0.5% of each trade) generated during their slot.
+                Enter trading volume to calculate owed amounts.
+              </p>
+            </div>
+
+            <Card hover={false} className="p-4 bg-cyan-500/5 border-cyan-500/20">
+              <div className="flex items-start gap-3">
+                <DollarSign className="w-5 h-5 text-cyan-400 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm text-white font-medium">Fee Formula</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    pump.fun charges 1% per trade (buy/sell). 0.5% goes to the creator.
+                    Streamers receive 30% of that → <span className="font-mono text-cyan-400">Volume × 0.005 × 0.30 = Owed SOL</span>
+                  </p>
+                </div>
+              </div>
+            </Card>
+
+            {feeSlotsLoading ? (
+              <div className="py-16 text-center">
+                <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                <p className="text-sm text-gray-500">Loading completed slots...</p>
+              </div>
+            ) : feeSlots.length === 0 ? (
+              <Card hover={false} className="p-8 text-center">
+                <DollarSign className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-white mb-2">No Completed Slots</h3>
+                <p className="text-sm text-gray-400 max-w-md mx-auto">
+                  Completed slots with assigned streamers will appear here for fee management.
+                </p>
+              </Card>
+            ) : (
+              <Card hover={false} className="overflow-hidden">
+                <div className="p-4 border-b border-white/[0.06]">
+                  <h3 className="font-semibold text-white">{feeSlots.length} completed slot{feeSlots.length !== 1 ? 's' : ''}</h3>
+                </div>
+                <div className="divide-y divide-white/[0.04]">
+                  {feeSlots.map((slot) => {
+                    const fees = slot.creatorFees
+                    const streamerUser = users.find((u) => u.uid === slot.assignedUid)
+
+                    return (
+                      <div key={slot.id} className="px-4 sm:px-6 py-4">
+                        <div className="flex items-start gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                              <span className="text-sm font-medium text-white">{slot.label}</span>
+                              <span className="text-xs text-gray-500">{new Date(slot.startTime).toLocaleDateString()}</span>
+                              {fees && (
+                                <Badge variant={fees.paymentStatus === 'paid' ? 'green' : fees.paymentStatus === 'declined' ? 'red' : 'gold'}>
+                                  {fees.paymentStatus}
+                                </Badge>
+                              )}
+                            </div>
+
+                            <p className="text-sm text-emerald-400 font-medium">{slot.assignedName}</p>
+
+                            {streamerUser?.walletAddress && (
+                              <div className="flex items-center gap-1 mt-1">
+                                <Wallet className="w-3 h-3 text-gray-500" />
+                                <span className="text-xs text-gray-400 font-mono">{streamerUser.walletAddress}</span>
+                              </div>
+                            )}
+
+                            {fees ? (
+                              <div className="mt-2 p-3 bg-white/[0.03] border border-white/[0.06] rounded-lg space-y-1">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-gray-500">Trading Volume</span>
+                                  <span className="text-white font-mono">{fees.tradingVolumeSOL.toFixed(4)} SOL</span>
+                                </div>
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-gray-500">Creator Fee (0.5%)</span>
+                                  <span className="text-white font-mono">{(fees.tradingVolumeSOL * 0.005).toFixed(6)} SOL</span>
+                                </div>
+                                <div className="flex items-center justify-between text-sm font-semibold border-t border-white/[0.06] pt-1 mt-1">
+                                  <span className="text-gray-300">Owed to Streamer (30%)</span>
+                                  <span className="text-yellow-400 font-mono">{fees.feeOwedSOL.toFixed(6)} SOL</span>
+                                </div>
+                                {fees.streamerWalletAddress && (
+                                  <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
+                                    <Wallet className="w-3 h-3" />
+                                    <span className="font-mono truncate">{fees.streamerWalletAddress}</span>
+                                  </div>
+                                )}
+                                {fees.paymentStatus === 'declined' && fees.declineReason && (
+                                  <p className="text-xs text-red-400 mt-1">Declined: {fees.declineReason}</p>
+                                )}
+                                {fees.paidAt && (
+                                  <p className="text-xs text-emerald-400 mt-1">Paid: {new Date(fees.paidAt).toLocaleString()}</p>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-gray-600 mt-1">No fee record — click "Enter Fees" to add.</p>
+                            )}
+                          </div>
+
+                          <div className="flex flex-col gap-2 shrink-0">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-cyan-400 hover:text-cyan-300"
+                              onClick={() => {
+                                setFeeModal(slot)
+                                setFeeVolume(slot.creatorFees?.tradingVolumeSOL?.toString() ?? '')
+                                setFeeWallet(slot.creatorFees?.streamerWalletAddress ?? streamerUser?.walletAddress ?? '')
+                              }}
+                            >
+                              <DollarSign className="w-3 h-3 mr-1" />
+                              {fees ? 'Edit' : 'Enter Fees'}
+                            </Button>
+                            {fees && fees.paymentStatus === 'pending' && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-emerald-400 hover:text-emerald-300"
+                                  isLoading={feeActionLoading === slot.id}
+                                  onClick={() => handleMarkPaid(slot)}
+                                >
+                                  <CheckCircle2 className="w-3 h-3 mr-1" /> Mark Paid
+                                </Button>
+                                <div className="space-y-1">
+                                  <input
+                                    type="text"
+                                    placeholder="Decline reason..."
+                                    value={feeDeclineReason}
+                                    onChange={(e) => setFeeDeclineReason(e.target.value)}
+                                    className="w-36 px-2 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs text-white placeholder-gray-500 focus:outline-none"
+                                  />
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="w-full text-red-400 hover:text-red-300 text-xs"
+                                    isLoading={feeActionLoading === slot.id}
+                                    onClick={() => handleDeclineFee(slot)}
+                                  >
+                                    <XCircle className="w-3 h-3 mr-1" /> Decline
+                                  </Button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </Card>
+            )}
+
+            {/* Fee Entry Modal */}
+            {feeModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setFeeModal(null)} />
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="relative w-full max-w-md bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+                >
+                  <div className="p-6 border-b border-white/[0.06] flex items-center justify-between">
+                    <h3 className="font-bold text-white">Enter Fee Data — {feeModal.label}</h3>
+                    <button onClick={() => setFeeModal(null)} className="p-1 text-gray-400 hover:text-white cursor-pointer">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <div>
+                      <p className="text-sm text-gray-400">Streamer: <span className="text-white">{feeModal.assignedName}</span></p>
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-300 mb-1">CSGN Trading Volume (in SOL) during this slot</label>
+                      <input
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        value={feeVolume}
+                        onChange={(e) => setFeeVolume(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono focus:outline-none focus:border-primary-500/50"
+                        placeholder="e.g. 1000.5"
+                      />
+                    </div>
+                    {feeVolume && !isNaN(parseFloat(feeVolume)) && (
+                      <div className="p-3 bg-white/[0.03] rounded-lg border border-white/[0.06] text-sm space-y-1">
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Creator fee (0.5%)</span>
+                          <span className="text-white font-mono">{(parseFloat(feeVolume) * 0.005).toFixed(6)} SOL</span>
+                        </div>
+                        <div className="flex justify-between font-semibold">
+                          <span className="text-gray-300">Owed to streamer (30%)</span>
+                          <span className="text-yellow-400 font-mono">{(parseFloat(feeVolume) * 0.005 * 0.30).toFixed(6)} SOL</span>
+                        </div>
+                      </div>
+                    )}
+                    <div>
+                      <label className="block text-sm text-gray-300 mb-1">Streamer Wallet Address (SOL)</label>
+                      <input
+                        type="text"
+                        value={feeWallet}
+                        onChange={(e) => setFeeWallet(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono focus:outline-none focus:border-primary-500/50"
+                        placeholder="Solana wallet address"
+                      />
+                    </div>
+                    <Button
+                      variant="primary"
+                      size="md"
+                      className="w-full"
+                      disabled={!feeVolume}
+                      isLoading={feeActionLoading === feeModal.id}
+                      onClick={() => handleSaveFeeRecord(feeModal)}
+                    >
+                      Save Fee Record
                     </Button>
                   </div>
                 </motion.div>

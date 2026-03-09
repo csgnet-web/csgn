@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Navigate } from 'react-router-dom'
-import { Gavel, Ticket, Wallet, Clock3, AlertTriangle, TrendingUp } from 'lucide-react'
+import { Gavel, Wallet, Clock3, AlertTriangle, TrendingUp, Crown, Info } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { Card } from '@/components/ui/Card'
@@ -9,13 +9,121 @@ import { Badge } from '@/components/ui/Badge'
 import {
   fetchSlots,
   placeBid,
-  enterLottery,
+  requestSlot,
   getMinimumBid,
+  formatCSGN,
+  CSGN_MINT,
+  CSGN_TREASURY,
+  CSGN_DECIMALS,
   type Slot,
 } from '@/lib/slots'
 
+const CSGN_MINT_PUBKEY = CSGN_MINT
+const TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+const ASSOCIATED_TOKEN_PROGRAM_ID = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bEp'
+
 function formatDate(date: Date) {
   return date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
+/**
+ * Compute the Associated Token Account (ATA) for an owner + mint.
+ * Uses PublicKey.findProgramAddressSync from @solana/web3.js.
+ */
+async function findATA(ownerAddress: string, mintAddress: string): Promise<string> {
+  const { PublicKey } = await import('@solana/web3.js')
+  const owner = new PublicKey(ownerAddress)
+  const mint = new PublicKey(mintAddress)
+  const tokenProgram = new PublicKey(TOKEN_PROGRAM_ID)
+  const associatedTokenProgram = new PublicKey(ASSOCIATED_TOKEN_PROGRAM_ID)
+
+  const [ata] = PublicKey.findProgramAddressSync(
+    [owner.toBuffer(), tokenProgram.toBuffer(), mint.toBuffer()],
+    associatedTokenProgram,
+  )
+  return ata.toBase58()
+}
+
+/**
+ * Build and send a CSGN SPL token transfer via Phantom.
+ * Returns the tx signature.
+ */
+async function sendCSGNBid(
+  fromWalletAddress: string,
+  amountTokens: number,
+): Promise<string> {
+  const { PublicKey, Transaction, TransactionInstruction, Connection } = await import('@solana/web3.js')
+
+  const provider = window.solana
+  if (!provider?.isPhantom) throw new Error('Phantom wallet not detected.')
+
+  const connection = new Connection('https://api.mainnet-beta.solana.com')
+
+  const fromPubkey = new PublicKey(fromWalletAddress)
+  const toPubkey = new PublicKey(CSGN_TREASURY)
+  const mintPubkey = new PublicKey(CSGN_MINT_PUBKEY)
+  const tokenProgramPubkey = new PublicKey(TOKEN_PROGRAM_ID)
+
+  // Find ATAs for source (bidder) and destination (treasury)
+  const sourceATA = await findATA(fromWalletAddress, CSGN_MINT_PUBKEY)
+  const destATA = await findATA(CSGN_TREASURY, CSGN_MINT_PUBKEY)
+
+  // Amount in base units (multiply by 10^6 for CSGN decimals)
+  const amountBaseUnits = BigInt(amountTokens) * BigInt(Math.pow(10, CSGN_DECIMALS))
+
+  // Build SPL Transfer instruction (instruction type = 3)
+  const transferData = Buffer.alloc(9)
+  transferData.writeUInt8(3, 0) // Transfer instruction discriminator
+  transferData.writeBigUInt64LE(amountBaseUnits, 1)
+
+  const transferIx = new TransactionInstruction({
+    programId: tokenProgramPubkey,
+    keys: [
+      { pubkey: new PublicKey(sourceATA), isSigner: false, isWritable: true },
+      { pubkey: new PublicKey(destATA), isSigner: false, isWritable: true },
+      { pubkey: fromPubkey, isSigner: true, isWritable: false },
+    ],
+    data: transferData,
+  })
+
+  // Also ensure the destination ATA exists — if not, create it
+  // Check dest ATA balance. If account doesn't exist, add CreateAssociatedTokenAccount instruction.
+  const destAtaPubkey = new PublicKey(destATA)
+  let createATAIx: TransactionInstruction | null = null
+  try {
+    const destAtaInfo = await connection.getAccountInfo(destAtaPubkey)
+    if (!destAtaInfo) {
+      // Create the ATA
+      const assocProgram = new PublicKey(ASSOCIATED_TOKEN_PROGRAM_ID)
+      createATAIx = new TransactionInstruction({
+        programId: assocProgram,
+        keys: [
+          { pubkey: fromPubkey, isSigner: true, isWritable: true },           // payer
+          { pubkey: destAtaPubkey, isSigner: false, isWritable: true },        // ata
+          { pubkey: toPubkey, isSigner: false, isWritable: false },            // owner
+          { pubkey: mintPubkey, isSigner: false, isWritable: false },          // mint
+          { pubkey: new PublicKey('11111111111111111111111111111111'), isSigner: false, isWritable: false }, // system
+          { pubkey: tokenProgramPubkey, isSigner: false, isWritable: false },  // token program
+        ],
+        data: Buffer.alloc(0),
+      })
+    }
+  } catch {
+    // If we can't check, proceed without creating
+  }
+
+  const { blockhash } = await connection.getLatestBlockhash()
+  const transaction = new Transaction()
+  transaction.recentBlockhash = blockhash
+  transaction.feePayer = fromPubkey
+
+  if (createATAIx) transaction.add(createATAIx)
+  transaction.add(transferIx)
+
+  const signed = await (provider as any).signAndSendTransaction(transaction)
+  await connection.confirmTransaction(signed.signature)
+
+  return signed.signature as string
 }
 
 export default function Queue() {
@@ -25,6 +133,7 @@ export default function Queue() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [requestMessages, setRequestMessages] = useState<Record<string, string>>({})
 
   const loadSlots = useCallback(async () => {
     const now = new Date()
@@ -46,7 +155,7 @@ export default function Queue() {
 
   const now = Date.now()
   const auctionSlots = slots.filter((s) => s.type === 'auction' && s.status === 'open')
-  const lotterySlots = slots.filter((s) => s.type === 'lottery' && s.status === 'open')
+  const ceoSlots = slots.filter((s) => s.type === 'ceo' && s.status === 'open')
 
   const handlePlaceBid = async (slot: Slot) => {
     if (!user || !profile || !walletAddress) return
@@ -56,42 +165,16 @@ export default function Queue() {
     const bidAmount = getMinimumBid(slot.bids.length)
 
     try {
-      // Request SOL transfer via Phantom
-      const provider = window.solana
-      if (!provider?.isPhantom) {
-        setActionError('Phantom wallet not detected.')
-        setActionLoading(null)
-        return
-      }
-
-      // Encode a transfer instruction to the CSGN treasury
-      // For MVP we use Phantom's signAndSendTransaction with a system transfer
-      const { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } = await import('@solana/web3.js')
-      const connection = new Connection('https://api.mainnet-beta.solana.com')
-
-      const TREASURY_PUBKEY = new PublicKey('CSGNUgUpBqTNM7EBZSMeA5jzPLFNR2hELhLjbHLpbEY4')
-      const lamports = Math.round(bidAmount * LAMPORTS_PER_SOL)
-
-      const transaction = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: new PublicKey(walletAddress),
-          toPubkey: TREASURY_PUBKEY,
-          lamports,
-        })
-      )
-
-      const { blockhash } = await connection.getLatestBlockhash()
-      transaction.recentBlockhash = blockhash
-      transaction.feePayer = new PublicKey(walletAddress)
-
-      const signed = await (provider as any).signAndSendTransaction(transaction)
-      await connection.confirmTransaction(signed.signature)
+      // Send CSGN tokens via Phantom
+      const txSignature = await sendCSGNBid(walletAddress, bidAmount)
 
       // Record the bid in Firestore
       await placeBid(slot.id, {
         uid: user.uid,
         displayName: profile.displayName || 'User',
         amount: bidAmount,
+        walletAddress,
+        txSignature,
         createdAt: new Date().toISOString(),
       })
 
@@ -106,16 +189,29 @@ export default function Queue() {
     setActionLoading(null)
   }
 
-  const handleEnterLottery = async (slot: Slot) => {
-    if (!user) return
+  const handleRequestSlot = async (slot: Slot) => {
+    if (!user || !profile) return
     setActionError(null)
     setActionLoading(slot.id)
 
+    const message = requestMessages[slot.id] || ''
+    if (!message.trim()) {
+      setActionError('Please add a message with your request.')
+      setActionLoading(null)
+      return
+    }
+
     try {
-      await enterLottery(slot.id, user.uid)
+      await requestSlot(slot.id, {
+        uid: user.uid,
+        displayName: profile.displayName || 'User',
+        message: message.trim(),
+        createdAt: new Date().toISOString(),
+      })
+      setRequestMessages((prev) => ({ ...prev, [slot.id]: '' }))
       await loadSlots()
     } catch (err: any) {
-      setActionError(err?.message || 'Failed to enter lottery.')
+      setActionError(err?.message || 'Failed to submit request.')
     }
     setActionLoading(null)
   }
@@ -126,14 +222,21 @@ export default function Queue() {
         <Card hover={false} className="p-5 bg-white/5 border-red-500/20">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-display font-bold text-white">Queue & Bidding</h1>
-              <p className="text-sm text-gray-400 mt-1">Auction opens 24h before each slot and closes 2h before air time. Bid price follows a quadratic curve.</p>
+              <h1 className="text-3xl font-display font-bold text-white">Bidding Queue</h1>
+              <p className="text-sm text-gray-400 mt-1">
+                Auction slots (3 AM–7 PM) accept CSGN bids on a quadratic curve. CEO Schedule (7 PM–3 AM) is admin-curated — request a slot below.
+              </p>
             </div>
             <div className="flex items-center gap-2">
               {walletAddress ? (
-                <Badge variant="purple"><Wallet className="w-3 h-3" /> {walletAddress.slice(0, 4)}...{walletAddress.slice(-4)} {balance !== null ? `(${balance.toFixed(3)} SOL)` : ''}</Badge>
+                <Badge variant="purple">
+                  <Wallet className="w-3 h-3" /> {walletAddress.slice(0, 4)}...{walletAddress.slice(-4)}{' '}
+                  {balance !== null ? `(${balance.toFixed(3)} SOL)` : ''}
+                </Badge>
               ) : (
-                <Button variant="primary" size="sm" onClick={connect} isLoading={isConnecting}>Connect Phantom</Button>
+                <Button variant="primary" size="sm" onClick={connect} isLoading={isConnecting}>
+                  Connect Phantom
+                </Button>
               )}
             </div>
           </div>
@@ -146,11 +249,25 @@ export default function Queue() {
           )}
         </Card>
 
+        {/* CSGN Token info */}
+        <Card hover={false} className="p-4 bg-cyan-500/5 border-cyan-500/20">
+          <div className="flex items-start gap-3">
+            <Info className="w-5 h-5 text-cyan-400 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm text-white font-medium">Bids are paid in CSGN tokens</p>
+              <p className="text-xs text-gray-400 mt-1">
+                Connect your Phantom wallet to bid. CSGN is transferred on-chain to the treasury.{' '}
+                <span className="font-mono text-[10px] text-gray-500">Mint: {CSGN_MINT_PUBKEY}</span>
+              </p>
+            </div>
+          </div>
+        </Card>
+
         {!user.emailVerified && (
           <Card hover={false} className="p-4 bg-amber-500/5 border-amber-500/20">
             <div className="flex items-center gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
-              <p className="text-sm text-gray-300">Verify your email to place bids and enter lotteries.</p>
+              <p className="text-sm text-gray-300">Verify your email to place bids and submit slot requests.</p>
             </div>
           </Card>
         )}
@@ -164,7 +281,10 @@ export default function Queue() {
           <div className="grid lg:grid-cols-2 gap-6">
             {/* Auction Slots */}
             <Card hover={false} className="p-5 space-y-4">
-              <h2 className="text-white font-semibold flex items-center gap-2"><Gavel className="w-4 h-4 text-red-400" /> Auction Slots</h2>
+              <h2 className="text-white font-semibold flex items-center gap-2">
+                <Gavel className="w-4 h-4 text-red-400" /> Auction Slots
+                <span className="text-xs text-gray-500 font-normal">3 AM – 7 PM EST</span>
+              </h2>
               {auctionSlots.length === 0 ? (
                 <p className="text-sm text-gray-500 py-4">No auction slots open right now. Check back soon.</p>
               ) : (
@@ -179,7 +299,9 @@ export default function Queue() {
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-white font-medium">{slot.label}</p>
-                          <p className="text-xs text-gray-500 flex items-center gap-1"><Clock3 className="w-3 h-3" /> Airs {formatDate(new Date(slot.startTime))}</p>
+                          <p className="text-xs text-gray-500 flex items-center gap-1">
+                            <Clock3 className="w-3 h-3" /> Airs {formatDate(new Date(slot.startTime))}
+                          </p>
                         </div>
                         <div className="flex gap-2">
                           {index === 0 && <Badge variant="blue">Soonest</Badge>}
@@ -190,15 +312,21 @@ export default function Queue() {
                       {/* Quadratic curve visualization */}
                       <div className="mt-3 p-3 bg-white/[0.03] rounded-lg border border-white/5">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs text-gray-400 flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Bid Price (Quadratic Curve)</span>
-                          <span className="text-xs text-gray-500">y = 0.03 + 0.005x²</span>
+                          <span className="text-xs text-gray-400 flex items-center gap-1">
+                            <TrendingUp className="w-3 h-3" /> Bid Price (Quadratic Curve)
+                          </span>
+                          <span className="text-xs text-gray-500">y = 100k + 10k·x²</span>
                         </div>
-                        <div className="text-2xl font-bold font-mono text-white">{bidPrice.toFixed(4)} <span className="text-sm text-gray-400">SOL</span></div>
-                        <p className="text-xs text-gray-600 mt-1">Price is fixed based on current bid count. Next bid: {getMinimumBid(slot.bids.length + 1).toFixed(4)} SOL</p>
+                        <div className="text-2xl font-bold font-mono text-white">
+                          {bidPrice.toLocaleString()} <span className="text-sm text-cyan-400">CSGN</span>
+                        </div>
+                        <p className="text-xs text-gray-600 mt-1">
+                          Next bid: {getMinimumBid(slot.bids.length + 1).toLocaleString()} CSGN
+                        </p>
                       </div>
 
                       <div className="mt-3 flex items-center justify-between">
-                        <p className="text-xs text-gray-500">SOL is transferred via Phantom on bid.</p>
+                        <p className="text-xs text-gray-500">CSGN transferred via Phantom on bid.</p>
                         <Button
                           variant="primary"
                           size="sm"
@@ -206,7 +334,13 @@ export default function Queue() {
                           isLoading={actionLoading === slot.id}
                           onClick={() => handlePlaceBid(slot)}
                         >
-                          {userAlreadyBid ? 'Bid Placed' : !isWindowOpen ? 'Bidding Closed' : `Bid ${bidPrice.toFixed(4)} SOL`}
+                          {userAlreadyBid
+                            ? 'Bid Placed'
+                            : !isWindowOpen
+                            ? 'Bidding Closed'
+                            : !walletAddress
+                            ? 'Connect Wallet'
+                            : `Bid ${formatCSGN(bidPrice)}`}
                         </Button>
                       </div>
                     </div>
@@ -215,46 +349,76 @@ export default function Queue() {
               )}
             </Card>
 
-            {/* Lottery Slots */}
+            {/* CEO Schedule Slots */}
             <Card hover={false} className="p-5 space-y-4">
-              <h2 className="text-white font-semibold flex items-center gap-2"><Ticket className="w-4 h-4 text-purple-400" /> Lottery Slots</h2>
-              {lotterySlots.length === 0 ? (
-                <p className="text-sm text-gray-500 py-4">No lottery slots open right now. Check back soon.</p>
+              <h2 className="text-white font-semibold flex items-center gap-2">
+                <Crown className="w-4 h-4 text-yellow-400" /> CEO Schedule
+                <span className="text-xs text-gray-500 font-normal">7 PM – 3 AM EST</span>
+              </h2>
+              {ceoSlots.length === 0 ? (
+                <p className="text-sm text-gray-500 py-4">No CEO Schedule slots open for requests right now.</p>
               ) : (
-                lotterySlots.map((slot) => {
-                  const closesAt = new Date(slot.startTime).getTime() - 2 * 60 * 60 * 1000
-                  const isWindowOpen = now <= closesAt
-                  const alreadyEntered = slot.lotteryEntrants.includes(user.uid)
+                ceoSlots.map((slot) => {
+                  const alreadyRequested = slot.requests?.some((r) => r.uid === user.uid)
+                  const myRequest = slot.requests?.find((r) => r.uid === user.uid)
 
                   return (
-                    <div key={slot.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                    <div key={slot.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-white font-medium">{slot.label}</p>
-                          <p className="text-xs text-gray-500">Closes {formatDate(new Date(closesAt))}</p>
+                          <p className="text-xs text-gray-500">
+                            <Clock3 className="w-3 h-3 inline mr-1" />
+                            Airs {formatDate(new Date(slot.startTime))}
+                          </p>
                         </div>
                         <div className="flex gap-2">
-                          <Badge variant="purple">{slot.lotteryEntrants.length} entr{slot.lotteryEntrants.length !== 1 ? 'ies' : 'y'}</Badge>
-                          <Badge variant="green">Free</Badge>
+                          <Badge variant="gold">{slot.requests?.length ?? 0} request{(slot.requests?.length ?? 0) !== 1 ? 's' : ''}</Badge>
                         </div>
                       </div>
-                      <div className="mt-3 flex items-center justify-between">
-                        <p className="text-xs text-gray-400">Lottery is free — winner selected 2h before air.</p>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          disabled={!isWindowOpen || alreadyEntered || !user.emailVerified}
-                          isLoading={actionLoading === slot.id}
-                          onClick={() => handleEnterLottery(slot)}
-                        >
-                          {alreadyEntered ? 'Entered' : isWindowOpen ? 'Join Lottery' : 'Window Closed'}
-                        </Button>
-                      </div>
+
+                      {alreadyRequested ? (
+                        <div className="p-2 bg-white/5 rounded-lg border border-white/10 text-xs">
+                          <p className="text-gray-400">Request submitted:</p>
+                          <p className="text-white mt-0.5">{myRequest?.message}</p>
+                          <Badge
+                            variant={myRequest?.status === 'accepted' ? 'green' : myRequest?.status === 'declined' ? 'red' : 'gold'}
+                            className="mt-1"
+                          >
+                            {myRequest?.status}
+                          </Badge>
+                          {myRequest?.responseNote && (
+                            <p className="text-gray-400 text-xs mt-1">Note: {myRequest.responseNote}</p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <textarea
+                            value={requestMessages[slot.id] || ''}
+                            onChange={(e) => setRequestMessages((prev) => ({ ...prev, [slot.id]: e.target.value }))}
+                            placeholder="Tell us why you'd like this slot..."
+                            rows={2}
+                            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50 resize-none"
+                          />
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="w-full"
+                            disabled={!user.emailVerified || !requestMessages[slot.id]?.trim()}
+                            isLoading={actionLoading === slot.id}
+                            onClick={() => handleRequestSlot(slot)}
+                          >
+                            Submit Request
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   )
                 })
               )}
-              <p className="text-xs text-gray-500">Lottery winners are selected automatically and notified in their Account page.</p>
+              <p className="text-xs text-gray-500">
+                CEO Schedule slots are admin-curated. Submit a request and you'll be notified in your Account page.
+              </p>
             </Card>
           </div>
         )}
