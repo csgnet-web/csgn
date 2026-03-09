@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Gavel, Ticket, Crown, Radio, Info } from 'lucide-react'
+import { Gavel, Crown, Radio, Info } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { SectionHeading } from '@/components/ui/SectionHeading'
@@ -51,14 +51,17 @@ export default function Schedule() {
 
   const typeIcon = (type: SlotType) => {
     if (type === 'auction') return <Gavel className="w-4 h-4" />
-    if (type === 'lottery') return <Ticket className="w-4 h-4" />
     return <Crown className="w-4 h-4" />
   }
 
   const typeColor = (type: SlotType) => {
     if (type === 'auction') return 'text-cyan-400'
-    if (type === 'lottery') return 'text-accent-400'
     return 'text-gold'
+  }
+
+  const typeLabel = (type: SlotType, slot: Slot) => {
+    if (type === 'auction') return slot.assignedName || 'Open for Bidding'
+    return slot.assignedName || 'CEO Schedule'
   }
 
   return (
@@ -68,7 +71,6 @@ export default function Schedule() {
           badge="Schedule"
           title="Broadcast"
           highlight="Schedule"
-          description="CSGN runs 24/7 with a structured 3-tier time slot system. Every day, every hour — someone is live."
         />
 
         {/* Day Selector */}
@@ -107,12 +109,12 @@ export default function Schedule() {
             ) : slots.length === 0 ? (
               <div className="py-16 text-center">
                 <p className="text-sm text-gray-500">No slots scheduled for this day yet.</p>
-                <p className="text-xs text-gray-600 mt-1">Slots are generated 24 hours ahead of time by the admin.</p>
+                <p className="text-xs text-gray-600 mt-1">Slots are generated 72 hours in advance.</p>
               </div>
             ) : (
               slots.map((slot, i) => {
                 const displayStatus = getSlotDisplayStatus(slot)
-                const streamerName = slot.assignedName || (slot.type === 'lottery' ? 'TBA (Lottery)' : slot.type === 'auction' ? 'Open for Bidding' : 'TBA')
+                const streamerName = typeLabel(slot.type, slot)
 
                 return (
                   <motion.div
@@ -151,20 +153,17 @@ export default function Schedule() {
                       {slot.type === 'auction' && slot.bids.length > 0 && displayStatus === 'upcoming' && (
                         <span className="text-xs text-cyan-400/70">{slot.bids.length} bid{slot.bids.length !== 1 ? 's' : ''}</span>
                       )}
-                      {slot.type === 'lottery' && slot.lotteryEntrants.length > 0 && displayStatus === 'upcoming' && (
-                        <span className="text-xs text-accent-400/70">{slot.lotteryEntrants.length} entr{slot.lotteryEntrants.length !== 1 ? 'ies' : 'y'}</span>
-                      )}
                     </div>
 
                     {/* Status / Type Badge */}
                     <div className="flex items-center gap-2">
-                      {slot.status === 'pending_deposit' && <Badge variant="gold">Awaiting Deposit</Badge>}
+                      {slot.status === 'pending_deposit' && <Badge variant="gold">Awaiting Confirm</Badge>}
                       {slot.status === 'confirmed' && <Badge variant="green">Confirmed</Badge>}
                       <Badge
-                        variant={slot.type === 'prime' ? 'gold' : slot.type === 'lottery' ? 'purple' : 'blue'}
+                        variant={slot.type === 'ceo' ? 'gold' : 'blue'}
                         className="hidden sm:inline-flex"
                       >
-                        {slot.type === 'auction' ? 'Auction' : slot.type === 'lottery' ? 'Lottery' : 'Prime Time'}
+                        {slot.type === 'auction' ? 'Auction' : 'CEO Schedule'}
                       </Badge>
                     </div>
                   </motion.div>
@@ -189,8 +188,8 @@ export default function Schedule() {
               <div>
                 <h4 className="font-semibold text-white mb-1">Want to be on the schedule?</h4>
                 <p className="text-sm text-gray-400 leading-relaxed">
-                  Apply to become a CSGN streamer. Once approved, you can bid on auction slots, enter the daily lottery,
-                  or be selected for prime time. Streamers earn 50% of all token trading fees during their time slot.
+                  Apply to become a CSGN streamer. Once approved, you can bid on auction slots (3 AM–7 PM) using CSGN tokens,
+                  or be selected for the CEO Schedule (7 PM–3 AM). Streamers earn 30% of all CSGN creator fees during their time slot.
                 </p>
               </div>
             </div>

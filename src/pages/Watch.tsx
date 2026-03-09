@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
-import { doc, onSnapshot } from 'firebase/firestore'
-import { db } from '@/config/firebase'
-
+import { subscribeToCurrentSlot, subscribeToSlots, type Slot } from '@/lib/slots'
 
 const bannerItems = [
   'Starting 5 \u2022 $14.70',
@@ -42,64 +40,52 @@ function detectStream(url: string): { type: StreamType; id: string } | null {
   return null
 }
 
-/* ── Schedule data ── */
-const todaySchedule = [
-  {
-    handle: 'TRAPKINGZ',
-    specialty: 'NBA Picks',
-    time: '6:00\u20138:00PM',
-    status: 'live' as const,
-    avatarHue: 220,
-  },
-  {
-    handle: 'SolanaSteve',
-    specialty: 'Crypto Markets',
-    time: '8:00\u201310:00PM',
-    status: 'upcoming' as const,
-    avatarHue: 260,
-  },
-  {
-    handle: 'CEO Show',
-    specialty: 'Prime Time',
-    time: '10:00PM\u201312AM',
-    status: 'upcoming' as const,
-    avatarHue: 200,
-  },
-]
 
-/* ── Streamer silhouette (shown inside blue cards) ── */
-function AvatarSilhouette({ hue }: { hue: number }) {
+/* ── CSGN Wipe Overlay ── */
+function CSGNWipeOverlay({ visible }: { visible: boolean }) {
   return (
-    <svg viewBox="0 0 120 160" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
-      <defs>
-        <linearGradient id={`ag${hue}`} x1="60" y1="0" x2="60" y2="160" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor={`hsl(${hue},80%,65%)`} stopOpacity="0.85" />
-          <stop offset="100%" stopColor={`hsl(${hue},60%,25%)`} stopOpacity="0.4" />
-        </linearGradient>
-      </defs>
-      <ellipse cx="60" cy="52" rx="26" ry="30" fill={`url(#ag${hue})`} />
-      <path d="M0 160 C0 110 28 88 60 85 C92 88 120 110 120 160 Z" fill={`url(#ag${hue})`} />
-    </svg>
+    <div
+      className={`absolute inset-0 z-20 pointer-events-none transition-all duration-700 ease-in-out ${
+        visible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-full'
+      }`}
+      style={{
+        background: 'linear-gradient(135deg, #ff2346 0%, #0a0a14 60%)',
+      }}
+    >
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          {/* CSGN Logo SVG */}
+          <svg viewBox="0 0 120 40" className="h-12 w-auto fill-white opacity-90" xmlns="http://www.w3.org/2000/svg">
+            <text x="0" y="32" fontFamily="system-ui, sans-serif" fontWeight="900" fontSize="38" letterSpacing="2">CSGN</text>
+          </svg>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+            <span className="text-white/80 text-sm font-bold tracking-[0.2em] uppercase">Now Live</span>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
-/* ── Schedule card ── */
-function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
-  const isLive = slot.status === 'live'
-
+/* ── Schedule card for today's lineup ── */
+function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) {
+  const streamer = slot.assignedName || (slot.type === 'auction' ? 'Open Bid' : 'CEO Schedule')
   return (
     <div
       className={`relative rounded-xl overflow-hidden flex flex-col min-h-[89px] sm:min-h-[178px] transition-all duration-300 ${
-        isLive
+        isCurrent
           ? 'ring-2 ring-red-500 shadow-[0_0_24px_rgba(255,35,70,0.5)]'
           : 'ring-1 ring-white/10 hover:ring-white/20'
       }`}
       style={{
-        background: `linear-gradient(160deg, hsl(${slot.avatarHue},70%,30%) 0%, hsl(${slot.avatarHue},60%,12%) 100%)`,
+        background: isCurrent
+          ? 'linear-gradient(160deg, hsl(350,70%,30%) 0%, hsl(350,60%,12%) 100%)'
+          : 'linear-gradient(160deg, hsl(220,70%,20%) 0%, hsl(220,60%,8%) 100%)',
       }}
     >
       <div className="absolute top-2 left-2 z-10">
-        {isLive ? (
+        {isCurrent ? (
           <span className="flex items-center gap-1 px-2 py-0.5 bg-red-600 rounded-full text-[10px] font-bold text-white uppercase tracking-wider">
             <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
             LIVE
@@ -112,25 +98,36 @@ function ScheduleCard({ slot }: { slot: typeof todaySchedule[0] }) {
       </div>
 
       <div className="flex flex-1 items-end justify-center pt-2 sm:pt-6 pb-0.5 sm:pb-1 px-2 sm:px-3 min-h-[48px] sm:min-h-[100px]">
-        <AvatarSilhouette hue={slot.avatarHue} />
+        <svg viewBox="0 0 120 160" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
+          <defs>
+            <linearGradient id={`ag${slot.id}`} x1="60" y1="0" x2="60" y2="160" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor={isCurrent ? 'hsl(350,80%,65%)' : 'hsl(220,80%,65%)'} stopOpacity="0.85" />
+              <stop offset="100%" stopColor={isCurrent ? 'hsl(350,60%,25%)' : 'hsl(220,60%,25%)'} stopOpacity="0.4" />
+            </linearGradient>
+          </defs>
+          <ellipse cx="60" cy="52" rx="26" ry="30" fill={`url(#ag${slot.id})`} />
+          <path d="M0 160 C0 110 28 88 60 85 C92 88 120 110 120 160 Z" fill={`url(#ag${slot.id})`} />
+        </svg>
       </div>
 
       <div className="px-2 sm:px-3 pb-1.5 sm:pb-3 pt-1 sm:pt-2.5 bg-gradient-to-t from-black/80 to-transparent space-y-0.5 sm:space-y-1">
-        <p className="text-white font-black font-display text-[10px] sm:text-sm leading-tight break-words">{slot.handle}</p>
-        <p className="text-white/60 text-[9px] sm:text-[11px] leading-snug break-words">{slot.specialty}</p>
-        <p className="text-white/60 text-[9px] sm:text-[11px] font-mono leading-none">{slot.time} EST</p>
+        <p className="text-white font-black font-display text-[10px] sm:text-sm leading-tight break-words">{streamer}</p>
+        <p className="text-white/60 text-[9px] sm:text-[11px] leading-snug break-words">{slot.type === 'auction' ? 'Auction Slot' : 'CEO Schedule'}</p>
+        <p className="text-white/60 text-[9px] sm:text-[11px] font-mono leading-none">{slot.label} EST</p>
       </div>
     </div>
   )
 }
 
-/* ── CSGN Player: renders Twitch or YouTube ── */
+/* ── CSGN Player: renders Twitch or YouTube, or NO STREAM ACTIVE ── */
 function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: string }) {
   if (!streamUrl) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center bg-black gap-3">
-        <div className="w-3 h-3 rounded-full bg-gray-600" />
-        <p className="text-gray-500 text-sm font-medium tracking-wide uppercase">No Stream Active</p>
+      <div className="w-full h-full flex flex-col items-center justify-center bg-[#050507] gap-4">
+        <svg viewBox="0 0 120 40" className="h-8 w-auto fill-white/20" xmlns="http://www.w3.org/2000/svg">
+          <text x="0" y="32" fontFamily="system-ui, sans-serif" fontWeight="900" fontSize="38" letterSpacing="2">CSGN</text>
+        </svg>
+        <p className="text-gray-500 font-mono text-sm tracking-widest uppercase">No Stream Active</p>
       </div>
     )
   }
@@ -150,8 +147,8 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
     )
   }
 
-  // Twitch: use parsed channel id, or treat the raw streamUrl value as a channel name
-  const channel = stream?.id ?? streamUrl.trim()
+  // Twitch: use parsed channel or treat raw value as channel name
+  const channel = stream?.id ?? streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '')
   const twitchSrc = `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${encodeURIComponent(hostname)}&autoplay=true&muted=false`
   return (
     <iframe
@@ -169,32 +166,66 @@ export default function Watch() {
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
   const [isChatOpen, setIsChatOpen] = useState(false)
 
-  // Live stream URL from Firestore (admin-controlled)
-  const [streamUrl, setStreamUrl] = useState('')
-  const [streamerName, setStreamerName] = useState('TRAPKINGZ')
+  // Current live slot from Firestore (auto-detected by time)
+  const [currentSlot, setCurrentSlot] = useState<Slot | null>(null)
+  // Today's upcoming slots for the schedule sidebar
+  const [todaySlots, setTodaySlots] = useState<Slot[]>([])
 
+  // Wipe animation state
+  const [showWipe, setShowWipe] = useState(false)
+  const prevSlotIdRef = useRef<string | null>(null)
+  const wipeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Subscribe to the current live slot
   useEffect(() => {
-    const unsub = onSnapshot(
-      doc(db, 'config', 'liveStream'),
-      (snap) => {
-        if (snap.exists()) {
-          const data = snap.data()
-          if (data.url) setStreamUrl(data.url)
-          if (data.streamerName) setStreamerName(data.streamerName)
-        }
-      },
-      () => {
-        // Firestore doc may not exist yet — use defaults
+    const unsub = subscribeToCurrentSlot((slot) => {
+      const newId = slot?.id ?? null
+
+      if (prevSlotIdRef.current !== null && newId !== prevSlotIdRef.current) {
+        // Slot has changed — trigger wipe animation
+        setShowWipe(true)
+        if (wipeTimerRef.current) clearTimeout(wipeTimerRef.current)
+        wipeTimerRef.current = setTimeout(() => setShowWipe(false), 1400)
       }
-    )
+
+      prevSlotIdRef.current = newId
+      setCurrentSlot(slot)
+    })
+    return () => {
+      unsub()
+      if (wipeTimerRef.current) clearTimeout(wipeTimerRef.current)
+    }
+  }, [])
+
+  // Subscribe to today's slots for the schedule list
+  useEffect(() => {
+    const from = new Date()
+    from.setHours(0, 0, 0, 0)
+    const to = new Date(from)
+    to.setDate(to.getDate() + 1)
+    to.setHours(23, 59, 59, 999)
+
+    const unsub = subscribeToSlots(from, to, (slots) => {
+      setTodaySlots(slots)
+    })
     return unsub
   }, [])
 
-  // Determine chat source — only show Twitch chat for Twitch streams
-  const stream = detectStream(streamUrl)
-  const isTwitch = !!streamUrl && (!stream || stream.type === 'twitch')
-  const chatChannel = stream?.type === 'twitch' ? stream.id : streamUrl.trim()
+  // Derive stream URL from current slot — empty if no slot or no URL set
+  const streamUrl = currentSlot?.streamUrl || ''
+  const streamerName = currentSlot?.assignedName || ''
+  const slotLabel = currentSlot?.label || ''
+
+  // Determine chat source (only shown when a stream is active)
+  const stream = streamUrl ? detectStream(streamUrl) : null
+  const isTwitch = !stream || stream.type === 'twitch'
+  const chatChannel = stream?.type === 'twitch' ? stream.id : (streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '') || '')
   const chatSrc = `https://www.twitch.tv/embed/${encodeURIComponent(chatChannel)}/chat?parent=${hostname}&darkpopout`
+
+  // Next upcoming slot
+  const now = Date.now()
+  const upcomingSlots = todaySlots.filter((s) => new Date(s.startTime).getTime() > now)
+  const nextSlot = upcomingSlots[0]
 
   return (
     <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
@@ -227,8 +258,9 @@ export default function Watch() {
         <div className="shrink-0 px-4 sm:px-5 pt-4 sm:pt-5 pb-2">
           <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)]">
             <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(255,0,90,0.28),transparent_42%),radial-gradient(circle_at_85%_10%,rgba(80,0,255,0.26),transparent_35%)]" />
-            <div className="w-full" style={{ aspectRatio: '16/9' }}>
+            <div className="w-full relative" style={{ aspectRatio: '16/9' }}>
               <CSGNPlayer streamUrl={streamUrl} hostname={hostname} />
+              <CSGNWipeOverlay visible={showWipe} />
             </div>
 
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/55 to-transparent" />
@@ -241,7 +273,7 @@ export default function Watch() {
             <h1 className="text-3xl sm:text-4xl font-black font-display text-white tracking-tight leading-none">
               {streamerName}
             </h1>
-            <p className="text-sm text-gray-400 mt-1 font-mono">8:00 – 10:00 PM EST</p>
+            <p className="text-sm text-gray-400 mt-1 font-mono">{slotLabel} EST</p>
           </div>
           <div className="text-right">
             <p className="text-2xl sm:text-3xl font-black font-mono text-yellow-400">$123.69</p>
@@ -261,10 +293,14 @@ export default function Watch() {
               Today's Schedule
             </h2>
             <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-[11px] text-gray-500 uppercase tracking-wider leading-none">In the Hole</p>
-                <p className="text-sm font-display font-bold text-white mt-0.5">SolanaSteve</p>
-              </div>
+              {nextSlot && (
+                <div className="text-right">
+                  <p className="text-[11px] text-gray-500 uppercase tracking-wider leading-none">In the Hole</p>
+                  <p className="text-sm font-display font-bold text-white mt-0.5">
+                    {nextSlot.assignedName || (nextSlot.type === 'auction' ? 'Open Bid' : 'CEO')}
+                  </p>
+                </div>
+              )}
               <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isScheduleOpen ? 'rotate-180' : ''}`} />
             </div>
           </button>
@@ -272,9 +308,14 @@ export default function Watch() {
           {isScheduleOpen && (
             <>
               <div className="grid grid-cols-3 gap-3">
-                {todaySchedule.map((slot) => (
-                  <ScheduleCard key={slot.handle} slot={slot} />
-                ))}
+                {todaySlots.slice(0, 3).map((slot) => {
+                  const slotStart = new Date(slot.startTime).getTime()
+                  const slotEnd = new Date(slot.endTime).getTime()
+                  const isCurrent = now >= slotStart && now < slotEnd
+                  return (
+                    <TodaySlotCard key={slot.id} slot={slot} isCurrent={isCurrent} />
+                  )
+                })}
               </div>
 
               <div className="mt-4 text-center">
@@ -303,7 +344,7 @@ export default function Watch() {
           </button>
         </div>
 
-        {/* Mobile chat (shown below game buttons on small screens) */}
+        {/* Mobile chat */}
         {isTwitch && (
           <div className="lg:hidden shrink-0 px-5 pb-5">
             <div className="rounded-xl overflow-hidden border border-white/10">

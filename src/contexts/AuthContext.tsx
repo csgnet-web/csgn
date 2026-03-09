@@ -13,7 +13,7 @@ import { auth, db } from '@/config/firebase'
 
 export interface UserNotification {
   id: string
-  type: 'auction_won' | 'lottery_selected' | 'prime_assigned'
+  type: 'auction_won' | 'prime_assigned' | 'slot_request_accepted' | 'slot_request_declined' | 'fee_paid' | 'fee_declined'
   slotId: string
   slotLabel: string
   slotStart: string
@@ -32,6 +32,7 @@ export interface UserProfile {
   role: 'viewer' | 'streamer' | 'admin'
   createdAt: unknown
   bio?: string
+  walletAddress?: string
   socialLinks?: { twitter?: string; twitch?: string; youtube?: string }
   notifications?: UserNotification[]
 }
