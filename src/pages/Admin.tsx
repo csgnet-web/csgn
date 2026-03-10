@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import {
   generateNextThreeDays,
+  wipeAndRegenerateSlots,
   fetchSlots,
   assignCEOSlot,
   assignSlot,
@@ -91,9 +92,13 @@ export default function Admin() {
   // Live stream push state
   const [liveStreamUrl, setLiveStreamUrl] = useState('')
   const [liveStreamerName, setLiveStreamerName] = useState('')
+  const [liveStreamTitle, setLiveStreamTitle] = useState('')
   const [currentLiveUrl, setCurrentLiveUrl] = useState('')
   const [currentLiveStreamer, setCurrentLiveStreamer] = useState('')
+  const [currentLiveTitle, setCurrentLiveTitle] = useState('')
   const [pushingStream, setPushingStream] = useState(false)
+  const [wipingSlots, setWipingSlots] = useState(false)
+  const [confirmWipe, setConfirmWipe] = useState(false)
 
   // Fees tab state
   const [feeSlots, setFeeSlots] = useState<Slot[]>([])
@@ -113,6 +118,7 @@ export default function Admin() {
           const data = snap.data()
           setCurrentLiveUrl(data.url || '')
           setCurrentLiveStreamer(data.streamerName || '')
+          setCurrentLiveTitle(data.title || '')
         }
       },
       () => {}
@@ -128,10 +134,12 @@ export default function Admin() {
       await setDoc(doc(db, 'config', 'liveStream'), {
         url: liveStreamUrl.trim(),
         streamerName: liveStreamerName.trim() || 'CSGN',
+        title: liveStreamTitle.trim(),
         updatedAt: new Date().toISOString(),
       })
       setLiveStreamUrl('')
       setLiveStreamerName('')
+      setLiveStreamTitle('')
     } catch (err: any) {
       setActionError(err?.message || 'Failed to push stream.')
     }
@@ -214,6 +222,25 @@ export default function Admin() {
       setActionError(err?.message || 'Failed to generate slots.')
     }
     setGenerating(false)
+  }
+
+  const handleWipeAndRegenerate = async () => {
+    setWipingSlots(true)
+    setActionError(null)
+    setConfirmWipe(false)
+    try {
+      // Start from March 10, 2026 — wipeAndRegenerateSlots will generate slots
+      // for that ET calendar day and the next 2 days.
+      // Pass noon UTC on Mar 10 so the ET date resolves to Mar 10.
+      const result = await wipeAndRegenerateSlots(new Date('2026-03-10T16:00:00.000Z'))
+      await loadSlots()
+      if (result.generated === 0) {
+        setActionError('No slots were generated.')
+      }
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to wipe and regenerate slots.')
+    }
+    setWipingSlots(false)
   }
 
   const handleResolveAuction = async (slotId: string) => {
@@ -466,7 +493,8 @@ export default function Admin() {
                   <div className="p-3 bg-white/[0.03] border border-white/[0.06] rounded-xl">
                     <p className="text-[11px] text-gray-500 uppercase tracking-wider mb-1">Currently Live</p>
                     <p className="text-sm font-medium text-white">{currentLiveStreamer || 'CSGN'}</p>
-                    <p className="text-xs text-gray-400 font-mono truncate">{currentLiveUrl}</p>
+                    {currentLiveTitle && <p className="text-xs text-primary-300 font-medium mt-0.5">"{currentLiveTitle}"</p>}
+                    <p className="text-xs text-gray-400 font-mono truncate mt-0.5">{currentLiveUrl}</p>
                   </div>
                 )}
                 <div>
@@ -486,6 +514,16 @@ export default function Admin() {
                     value={liveStreamerName}
                     onChange={(e) => setLiveStreamerName(e.target.value)}
                     placeholder="e.g. shrood"
+                    className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-300 mb-1">Stream Title <span className="text-gray-500 text-xs">(shown instead of "No Stream")</span></label>
+                  <input
+                    type="text"
+                    value={liveStreamTitle}
+                    onChange={(e) => setLiveStreamTitle(e.target.value)}
+                    placeholder="e.g. Late Night Crypto Talk"
                     className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
                   />
                 </div>
@@ -655,8 +693,39 @@ export default function Admin() {
         {/* ── Streamers Tab ── */}
         {activeTab === 'streamers' && (
           <Card hover={false} className="overflow-hidden">
-            <div className="p-4 border-b border-white/[0.06]">
+            <div className="p-4 border-b border-white/[0.06] flex items-center justify-between gap-3">
               <h3 className="font-semibold text-white">Active Streamers</h3>
+              <Button
+                variant="secondary"
+                size="sm"
+                leftIcon={<UserCheck className="w-4 h-4" />}
+                onClick={async () => {
+                  setActionError(null)
+                  try {
+                    const approvedApps = applications.filter((a) => a.status === 'approved')
+                    let synced = 0
+                    for (const app of approvedApps) {
+                      const q = query(collection(db, 'users'), where('email', '==', app.email))
+                      const snap = await getDocs(q)
+                      if (!snap.empty) {
+                        const userDoc = snap.docs[0]
+                        if (userDoc.data().role !== 'streamer' && userDoc.data().role !== 'admin') {
+                          await updateDoc(doc(db, 'users', userDoc.id), { role: 'streamer' })
+                          synced++
+                        }
+                      }
+                    }
+                    const usersSnap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc')))
+                    setUsers(usersSnap.docs.map((d) => ({ ...d.data() } as UserData)))
+                    setActionError(synced > 0 ? null : 'All approved applicants are already Active Streamers.')
+                    if (synced > 0) alert(`Synced ${synced} user(s) to Active Streamer status.`)
+                  } catch (err: any) {
+                    setActionError(err?.message || 'Sync failed.')
+                  }
+                }}
+              >
+                Sync Approved → Streamer
+              </Button>
             </div>
             <div className="divide-y divide-white/[0.04]">
               {users.filter((u) => u.role === 'streamer').map((user) => (
@@ -691,7 +760,7 @@ export default function Admin() {
                 <h3 className="text-lg font-semibold text-white">Upcoming Slots (Next 72h)</h3>
                 <p className="text-sm text-gray-400">Generate 3 days of slots, resolve auctions, assign CEO Schedule, manage stream URLs.</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <Button variant="ghost" size="sm" leftIcon={<RefreshCw className="w-4 h-4" />} onClick={loadSlots}>
                   Refresh
                 </Button>
@@ -704,6 +773,32 @@ export default function Admin() {
                 >
                   Generate Next 3 Days
                 </Button>
+                {!confirmWipe ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-400 hover:text-red-300 border border-red-500/30"
+                    onClick={() => setConfirmWipe(true)}
+                  >
+                    <Trash2 className="w-4 h-4 mr-1" /> Wipe & Reseed
+                  </Button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-red-400">Wipe all slots & reseed from 3/10 1AM ET?</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-400 hover:text-red-300"
+                      isLoading={wipingSlots}
+                      onClick={handleWipeAndRegenerate}
+                    >
+                      Yes, Wipe
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setConfirmWipe(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -762,7 +857,7 @@ export default function Admin() {
                               )}
                             </div>
                             <p className="text-xs text-gray-500 mt-0.5">
-                              {startTime.toLocaleDateString()} {startTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                              {startTime.toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' })} {startTime.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}
                               {slot.assignedName && <span className="text-emerald-400"> — {slot.assignedName}</span>}
                               {slot.type === 'auction' && ` — ${slot.bids.length} bid${slot.bids.length !== 1 ? 's' : ''}`}
                               {slot.type === 'auction' && slot.bids.length > 0 && ` (top: ${Math.max(...slot.bids.map(b => b.amount)).toLocaleString()} CSGN, next: ${getMinimumBid(slot.bids.length).toLocaleString()} CSGN)`}
@@ -836,7 +931,7 @@ export default function Admin() {
                     <div>
                       <p className="text-sm text-gray-400 mb-1">Slot</p>
                       <p className="text-white font-medium">{assignModal.label}</p>
-                      <p className="text-xs text-gray-500">{new Date(assignModal.startTime).toLocaleString()}</p>
+                      <p className="text-xs text-gray-500">{new Date(assignModal.startTime).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}</p>
                     </div>
 
                     <div>

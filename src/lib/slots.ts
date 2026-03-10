@@ -66,10 +66,11 @@ export interface Slot {
   id: string
   type: SlotType
   label: string
-  startTime: string           // ISO
-  endTime: string             // ISO
+  startTime: string           // ISO UTC
+  endTime: string             // ISO UTC
   status: SlotStatus
   streamUrl: string           // defaults to twitch.tv/shrood
+  streamTitle: string         // display title for the stream
   assignedUid: string | null
   assignedName: string | null
   description: string
@@ -101,44 +102,86 @@ export function formatCSGN(amount: number): string {
 /* ─── Schedule template ─── */
 
 interface TemplateSlot {
-  hourOffset: number  // hours from midnight EST
-  duration: number    // hours
+  hourET: number    // hour in Eastern Time (0-23)
+  duration: number  // hours
   type: SlotType
 }
 
 /**
- * Schedule (EST):
- *  Auction (bidding):    3:00 AM – 7:00 PM  (8 two-hour slots)
- *  CEO Schedule (admin): 7:00 PM – 3:00 AM  (4 two-hour slots)
+ * Schedule (ET, DST-aware):
+ *  Slot 1:  1:00 AM – 3:00 AM   (auction)
+ *  Slots 2-9:  3:00 AM – 7:00 PM (auction, 8 slots)
+ *  Slots 10-12: 7:00 PM – 1:00 AM next day (CEO, 3 slots)
  */
 const SCHEDULE_TEMPLATE: TemplateSlot[] = [
-  // Auction block: 3 AM – 7 PM
-  { hourOffset: 3,  duration: 2, type: 'auction' },
-  { hourOffset: 5,  duration: 2, type: 'auction' },
-  { hourOffset: 7,  duration: 2, type: 'auction' },
-  { hourOffset: 9,  duration: 2, type: 'auction' },
-  { hourOffset: 11, duration: 2, type: 'auction' },
-  { hourOffset: 13, duration: 2, type: 'auction' },
-  { hourOffset: 15, duration: 2, type: 'auction' },
-  { hourOffset: 17, duration: 2, type: 'auction' },
-  // CEO Schedule block: 7 PM – 3 AM
-  { hourOffset: 19, duration: 2, type: 'ceo' },
-  { hourOffset: 21, duration: 2, type: 'ceo' },
-  { hourOffset: 23, duration: 2, type: 'ceo' },
-  { hourOffset: 25, duration: 2, type: 'ceo' }, // 1 AM – 3 AM next day
+  // 1 AM slot + auction block: 1 AM – 7 PM
+  { hourET: 1,  duration: 2, type: 'auction' },
+  { hourET: 3,  duration: 2, type: 'auction' },
+  { hourET: 5,  duration: 2, type: 'auction' },
+  { hourET: 7,  duration: 2, type: 'auction' },
+  { hourET: 9,  duration: 2, type: 'auction' },
+  { hourET: 11, duration: 2, type: 'auction' },
+  { hourET: 13, duration: 2, type: 'auction' },
+  { hourET: 15, duration: 2, type: 'auction' },
+  { hourET: 17, duration: 2, type: 'auction' },
+  // CEO Schedule block: 7 PM – 1 AM next day
+  { hourET: 19, duration: 2, type: 'ceo' },
+  { hourET: 21, duration: 2, type: 'ceo' },
+  { hourET: 23, duration: 2, type: 'ceo' },
 ]
 
-/* ─── Helpers ─── */
+/* ─── Timezone helpers ─── */
 
-function toEST(date: Date): Date {
-  // Approximate EST (UTC-5). DST not handled for simplicity.
-  return new Date(date.getTime() - 5 * 60 * 60 * 1000)
+/**
+ * Convert a wall-clock hour in Eastern Time on a given calendar date to UTC.
+ * Correctly handles DST (US Eastern: UTC-5 in winter, UTC-4 in summer).
+ *
+ * @param year  4-digit year
+ * @param month 1-indexed month
+ * @param day   day of month
+ * @param hourET  0-23 local Eastern hour
+ */
+function etToUTC(year: number, month: number, day: number, hourET: number): Date {
+  // Estimate: try UTC-5 (EST) first
+  let candidate = new Date(Date.UTC(year, month - 1, day, hourET + 5, 0, 0))
+
+  // Check what hour this actually maps to in America/New_York
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hour: 'numeric',
+    hour12: false,
+  }).formatToParts(candidate)
+  const nyHour = parseInt(parts.find((p) => p.type === 'hour')!.value, 10)
+
+  // If off by an hour (DST), correct
+  if (nyHour !== hourET) {
+    candidate = new Date(candidate.getTime() + (hourET - nyHour) * 60 * 60 * 1000)
+  }
+
+  return candidate
 }
 
-function dateToSlotId(date: Date, hourOffset: number): string {
-  const d = toEST(date)
-  const ymd = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
-  return `slot-${ymd}-${String(hourOffset).padStart(2, '0')}`
+/**
+ * Get the Eastern Time date components for a given UTC Date.
+ * Returns { year, month (1-indexed), day, hour (0-23) }.
+ */
+function utcToETComponents(date: Date): { year: number; month: number; day: number; hour: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    hour12: false,
+  }).formatToParts(date)
+
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '0'
+  return {
+    year: parseInt(get('year'), 10),
+    month: parseInt(get('month'), 10),
+    day: parseInt(get('day'), 10),
+    hour: parseInt(get('hour'), 10) % 24, // handle '24' → 0
+  }
 }
 
 function formatTimeLabel(hour: number): string {
@@ -167,21 +210,23 @@ export function formatESTRange(slot: Pick<Slot, 'startTime' | 'endTime'>): strin
 
 const SLOTS_COLLECTION = 'slots'
 
-/** Generate slot documents for a given day. */
+/** Generate slot documents for a given calendar day in Eastern Time. */
 export async function generateSlotsForDate(targetDate: Date): Promise<Slot[]> {
   const slots: Slot[] = []
 
+  // Extract ET year/month/day from the target date
+  const { year, month, day } = utcToETComponents(targetDate)
+
   for (const template of SCHEDULE_TEMPLATE) {
-    const startDate = new Date(targetDate)
-    startDate.setUTCHours(template.hourOffset + 5, 0, 0, 0) // +5 to convert EST to UTC
+    // Handle slots that cross midnight (e.g., 23 + 2 = 1 AM next day in ET)
+    const startUTC = etToUTC(year, month, day, template.hourET)
+    const endUTC = new Date(startUTC.getTime() + template.duration * 60 * 60 * 1000)
 
-    const endDate = new Date(startDate)
-    endDate.setUTCHours(startDate.getUTCHours() + template.duration)
+    // Slot ID based on Eastern Time hour on the base date
+    const slotId = `slot-${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}-${String(template.hourET).padStart(2, '0')}`
+    const label = `${formatTimeLabel(template.hourET)} – ${formatTimeLabel(template.hourET + template.duration)}`
 
-    const slotId = dateToSlotId(targetDate, template.hourOffset)
-    const label = `${formatTimeLabel(template.hourOffset)} – ${formatTimeLabel(template.hourOffset + template.duration)}`
-
-    // Check if slot already exists to avoid duplicates
+    // Skip if already exists
     const existingSnap = await getDocs(query(collection(db, SLOTS_COLLECTION), where('id', '==', slotId)))
     if (!existingSnap.empty) continue
 
@@ -189,10 +234,11 @@ export async function generateSlotsForDate(targetDate: Date): Promise<Slot[]> {
       id: slotId,
       type: template.type,
       label,
-      startTime: startDate.toISOString(),
-      endTime: endDate.toISOString(),
+      startTime: startUTC.toISOString(),
+      endTime: endUTC.toISOString(),
       status: 'open',
       streamUrl: DEFAULT_STREAM_URL,
+      streamTitle: '',
       assignedUid: null,
       assignedName: null,
       description: '',
@@ -220,14 +266,36 @@ export async function generateNextThreeDays(): Promise<{ generated: number; date
   for (let i = 1; i <= 3; i++) {
     const targetDate = new Date()
     targetDate.setUTCDate(targetDate.getUTCDate() + i)
-    targetDate.setUTCHours(0, 0, 0, 0)
+    targetDate.setUTCHours(12, 0, 0, 0) // use noon UTC to avoid date boundary issues
 
     const newSlots = await generateSlotsForDate(targetDate)
     generated += newSlots.length
-    dates.push(targetDate.toISOString().split('T')[0])
+    const { year, month, day } = utcToETComponents(targetDate)
+    dates.push(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
   }
 
   return { generated, dates }
+}
+
+/**
+ * Wipe ALL existing slots and seed fresh slots starting from the given ET date.
+ * Generates slots for today + next 2 days.
+ */
+export async function wipeAndRegenerateSlots(startDate: Date): Promise<{ generated: number }> {
+  // Delete all existing slots
+  const allSnap = await getDocs(collection(db, SLOTS_COLLECTION))
+  const deletes = allSnap.docs.map((d) => deleteDoc(d.ref))
+  await Promise.all(deletes)
+
+  // Generate 3 days starting from startDate
+  let generated = 0
+  for (let i = 0; i < 3; i++) {
+    const targetDate = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000)
+    const newSlots = await generateSlotsForDate(targetDate)
+    generated += newSlots.length
+  }
+
+  return { generated }
 }
 
 /** Fetch all slots for a date range. */

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   User, Mail, Wallet, Twitter, LogIn, UserPlus, Trophy,
-  CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Crown,
+  CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Crown, X as XIcon,
 } from 'lucide-react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
@@ -79,6 +79,34 @@ export default function Dashboard() {
       console.warn('Failed to save X handle:', err)
     }
     setSavingHandle(false)
+  }
+
+  const handleDismissNotification = async (notifId: string) => {
+    if (!user) return
+    const updatedNotifs = notifications.filter((n) => n.id !== notifId)
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { notifications: updatedNotifs })
+      await refreshProfile()
+    } catch (err) {
+      console.warn('Failed to dismiss notification:', err)
+    }
+  }
+
+  const handleMarkAllRead = async () => {
+    if (!user) return
+    const updatedNotifs = notifications.map((n) => ({ ...n, read: true }))
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { notifications: updatedNotifs })
+      await refreshProfile()
+    } catch (err) {
+      console.warn('Failed to mark notifications read:', err)
+    }
+  }
+
+  const handleConnectX = () => {
+    // Open X OAuth authorization flow
+    // For now, opens Twitter login in a new tab — full OAuth requires backend
+    window.open('https://twitter.com/i/oauth2/authorize', '_blank', 'noopener,noreferrer')
   }
 
   // Notification icon mapping
@@ -226,22 +254,53 @@ export default function Dashboard() {
               </p>
             )}
 
-            <div className="flex items-center gap-2 flex-wrap">
-              <Twitter className="w-4 h-4 text-gray-400 shrink-0" />
-              <input
-                value={xHandle}
-                onChange={(e) => setXHandle(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSaveHandle()}
-                placeholder="@handle"
-                className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white w-40"
-              />
-              <Button variant="secondary" size="sm" isLoading={savingHandle} onClick={handleSaveHandle}>
-                Save
-              </Button>
-              {profile?.socialLinks?.twitter && (
-                <span className="text-xs text-emerald-400 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> @{profile.socialLinks.twitter}
-                </span>
+            {/* X / Twitter connection */}
+            <div className="space-y-2">
+              {profile?.socialLinks?.twitter ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="flex items-center gap-2 px-3 py-1.5 bg-black border border-white/20 rounded-lg text-sm text-white">
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                    </svg>
+                    @{profile.socialLinks.twitter}
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      value={xHandle}
+                      onChange={(e) => setXHandle(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSaveHandle()}
+                      placeholder="Update handle"
+                      className="px-2 py-1 bg-white/5 border border-white/10 rounded-lg text-xs text-white w-32"
+                    />
+                    <Button variant="secondary" size="sm" isLoading={savingHandle} onClick={handleSaveHandle}>
+                      Update
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={handleConnectX}
+                    className="flex items-center gap-2 px-4 py-2 bg-black hover:bg-gray-900 border border-white/20 hover:border-white/40 rounded-lg text-sm font-semibold text-white transition-all cursor-pointer"
+                  >
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                    </svg>
+                    Connect X Account
+                  </button>
+                  <span className="text-xs text-gray-500">or enter handle manually:</span>
+                  <input
+                    value={xHandle}
+                    onChange={(e) => setXHandle(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSaveHandle()}
+                    placeholder="@handle"
+                    className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white w-36"
+                  />
+                  <Button variant="secondary" size="sm" isLoading={savingHandle} onClick={handleSaveHandle}>
+                    Save
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -252,11 +311,18 @@ export default function Dashboard() {
         {/* Notifications */}
         {notifications.length > 0 && (
           <Card hover={false} className="p-5">
-            <h3 className="text-white font-semibold flex items-center gap-2 mb-4">
-              <Bell className="w-4 h-4 text-amber-400" />
-              Notifications
-              {unreadCount > 0 && <Badge variant="red">{unreadCount} new</Badge>}
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-semibold flex items-center gap-2">
+                <Bell className="w-4 h-4 text-amber-400" />
+                Notifications
+                {unreadCount > 0 && <Badge variant="red">{unreadCount} new</Badge>}
+              </h3>
+              {unreadCount > 0 && (
+                <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white text-xs" onClick={handleMarkAllRead}>
+                  Mark all read
+                </Button>
+              )}
+            </div>
             <div className="space-y-2">
               {notifications.slice(0, 10).map((n) => (
                 <div key={n.id} className={`rounded-xl border p-3 text-sm ${n.read ? 'border-white/5 bg-white/[0.01]' : 'border-primary-500/20 bg-primary-500/5'}`}>
@@ -271,6 +337,13 @@ export default function Dashboard() {
                       )}
                       <p className="text-xs text-gray-600 mt-1">{new Date(n.createdAt).toLocaleString()}</p>
                     </div>
+                    <button
+                      onClick={() => handleDismissNotification(n.id)}
+                      className="ml-1 p-1 text-gray-600 hover:text-gray-300 rounded transition-colors cursor-pointer shrink-0"
+                      title="Dismiss"
+                    >
+                      <XIcon className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               ))}

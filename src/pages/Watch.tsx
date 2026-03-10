@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
+import { onSnapshot, doc } from 'firebase/firestore'
+import { db } from '@/config/firebase'
 import { subscribeToCurrentSlot, subscribeToSlots, formatESTRange, type Slot } from '@/lib/slots'
 import { startFeeTracker } from '@/lib/dexscreener'
 
@@ -121,14 +123,18 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
 }
 
 /* ── CSGN Player: renders Twitch or YouTube, or NO STREAM ACTIVE ── */
-function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: string }) {
+function CSGNPlayer({ streamUrl, hostname, streamTitle }: { streamUrl: string; hostname: string; streamTitle?: string }) {
   if (!streamUrl) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center bg-[#050507] gap-4">
         <svg viewBox="0 0 120 40" className="h-8 w-auto fill-white/20" xmlns="http://www.w3.org/2000/svg">
           <text x="0" y="32" fontFamily="system-ui, sans-serif" fontWeight="900" fontSize="38" letterSpacing="2">CSGN</text>
         </svg>
-        <p className="text-gray-500 font-mono text-sm tracking-widest uppercase">No Stream Active</p>
+        {streamTitle ? (
+          <p className="text-gray-300 font-display font-bold text-base tracking-wide text-center px-4">{streamTitle}</p>
+        ) : (
+          <p className="text-gray-500 font-mono text-sm tracking-widest uppercase">No Stream Active</p>
+        )}
       </div>
     )
   }
@@ -172,6 +178,9 @@ export default function Watch() {
   // Today's upcoming slots for the schedule sidebar
   const [todaySlots, setTodaySlots] = useState<Slot[]>([])
 
+  // Manual override from admin config/liveStream
+  const [manualOverride, setManualOverride] = useState<{ url: string; streamerName: string; title: string } | null>(null)
+
   // Live fee tracking
   const [liveFeeSOL, setLiveFeeSOL] = useState<number>(0)
   const [liveVolumeSOL, setLiveVolumeSOL] = useState<number>(0)
@@ -180,6 +189,23 @@ export default function Watch() {
   const [showWipe, setShowWipe] = useState(false)
   const prevSlotIdRef = useRef<string | null>(null)
   const wipeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Subscribe to admin manual override config
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'config', 'liveStream'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data()
+        if (data.url) {
+          setManualOverride({ url: data.url, streamerName: data.streamerName || '', title: data.title || '' })
+        } else {
+          setManualOverride(null)
+        }
+      } else {
+        setManualOverride(null)
+      }
+    }, () => setManualOverride(null))
+    return unsub
+  }, [])
 
   // Subscribe to the current live slot
   useEffect(() => {
@@ -234,9 +260,10 @@ export default function Watch() {
     return unsub
   }, [])
 
-  // Derive stream URL from current slot — empty if no slot or no URL set
-  const streamUrl = currentSlot?.streamUrl || ''
-  const streamerName = currentSlot?.assignedName || ''
+  // Derive stream URL — manual override takes priority over current slot
+  const streamUrl = manualOverride?.url || currentSlot?.streamUrl || ''
+  const streamerName = manualOverride?.streamerName || currentSlot?.assignedName || ''
+  const streamTitle = manualOverride?.title || currentSlot?.streamTitle || currentSlot?.description || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
 
   // Determine chat source (only shown when a stream is active)
@@ -282,7 +309,7 @@ export default function Watch() {
           <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)]">
             <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(255,0,90,0.28),transparent_42%),radial-gradient(circle_at_85%_10%,rgba(80,0,255,0.26),transparent_35%)]" />
             <div className="w-full relative" style={{ aspectRatio: '16/9' }}>
-              <CSGNPlayer streamUrl={streamUrl} hostname={hostname} />
+              <CSGNPlayer streamUrl={streamUrl} hostname={hostname} streamTitle={streamTitle} />
               <CSGNWipeOverlay visible={showWipe} />
             </div>
 
@@ -294,8 +321,11 @@ export default function Watch() {
         <div className="shrink-0 flex items-start justify-between px-5 py-4 border-b border-white/[0.06]">
           <div>
             <h1 className="text-3xl sm:text-4xl font-black font-display text-white tracking-tight leading-none">
-              {streamerName}
+              {streamerName || <span className="text-gray-600">No Stream</span>}
             </h1>
+            {streamTitle && (
+              <p className="text-sm text-primary-300 font-medium mt-0.5 italic">"{streamTitle}"</p>
+            )}
             <p className="text-sm text-gray-400 mt-1 font-mono">{slotLabel}</p>
           </div>
           <div className="text-right">
