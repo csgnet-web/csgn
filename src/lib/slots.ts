@@ -101,44 +101,82 @@ export function formatCSGN(amount: number): string {
 /* ─── Schedule template ─── */
 
 interface TemplateSlot {
-  hourOffset: number  // hours from midnight EST
-  duration: number    // hours
+  hourOffsetET: number  // hours from midnight ET (can exceed 24 for cross-midnight slots)
+  duration: number      // hours
   type: SlotType
 }
 
 /**
- * Schedule (EST):
- *  Auction (bidding):    3:00 AM – 7:00 PM  (8 two-hour slots)
- *  CEO Schedule (admin): 7:00 PM – 3:00 AM  (4 two-hour slots)
+ * Schedule (ET, DST-aware):
+ *  CEO Schedule (admin):  11:00 PM – 3:00 AM  (2 two-hour slots)
+ *  Auction (bidding):      3:00 AM – 7:00 PM  (8 two-hour slots)
+ *  CEO Schedule (admin):   7:00 PM – 11:00 PM (2 two-hour slots)
+ *
+ * Each calendar day is anchored to its own 11 PM start.
+ * hourOffsetET is hours from midnight ET of the target date.
  */
 const SCHEDULE_TEMPLATE: TemplateSlot[] = [
+  // CEO block: 11 PM – 3 AM
+  { hourOffsetET: 23, duration: 2, type: 'ceo' },    // 11 PM – 1 AM  (crosses midnight)
+  { hourOffsetET: 25, duration: 2, type: 'ceo' },    // 1 AM – 3 AM
   // Auction block: 3 AM – 7 PM
-  { hourOffset: 3,  duration: 2, type: 'auction' },
-  { hourOffset: 5,  duration: 2, type: 'auction' },
-  { hourOffset: 7,  duration: 2, type: 'auction' },
-  { hourOffset: 9,  duration: 2, type: 'auction' },
-  { hourOffset: 11, duration: 2, type: 'auction' },
-  { hourOffset: 13, duration: 2, type: 'auction' },
-  { hourOffset: 15, duration: 2, type: 'auction' },
-  { hourOffset: 17, duration: 2, type: 'auction' },
-  // CEO Schedule block: 7 PM – 3 AM
-  { hourOffset: 19, duration: 2, type: 'ceo' },
-  { hourOffset: 21, duration: 2, type: 'ceo' },
-  { hourOffset: 23, duration: 2, type: 'ceo' },
-  { hourOffset: 25, duration: 2, type: 'ceo' }, // 1 AM – 3 AM next day
+  { hourOffsetET: 3,  duration: 2, type: 'auction' }, // 3 AM – 5 AM
+  { hourOffsetET: 5,  duration: 2, type: 'auction' }, // 5 AM – 7 AM
+  { hourOffsetET: 7,  duration: 2, type: 'auction' }, // 7 AM – 9 AM
+  { hourOffsetET: 9,  duration: 2, type: 'auction' }, // 9 AM – 11 AM
+  { hourOffsetET: 11, duration: 2, type: 'auction' }, // 11 AM – 1 PM
+  { hourOffsetET: 13, duration: 2, type: 'auction' }, // 1 PM – 3 PM
+  { hourOffsetET: 15, duration: 2, type: 'auction' }, // 3 PM – 5 PM
+  { hourOffsetET: 17, duration: 2, type: 'auction' }, // 5 PM – 7 PM
+  // CEO block: 7 PM – 11 PM
+  { hourOffsetET: 19, duration: 2, type: 'ceo' },    // 7 PM – 9 PM
+  { hourOffsetET: 21, duration: 2, type: 'ceo' },    // 9 PM – 11 PM
 ]
 
 /* ─── Helpers ─── */
 
-function toEST(date: Date): Date {
-  // Approximate EST (UTC-5). DST not handled for simplicity.
-  return new Date(date.getTime() - 5 * 60 * 60 * 1000)
+/**
+ * Returns the UTC offset (in hours, positive = behind UTC) for America/New_York
+ * on the given date. Handles DST correctly: EDT = 4, EST = 5.
+ */
+function getNewYorkUtcOffsetHours(date: Date): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  }).formatToParts(date)
+  const get = (type: string) => parseInt(parts.find((p) => p.type === type)?.value ?? '0', 10)
+  const nyAsUtcMs = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'))
+  return Math.round((date.getTime() - nyAsUtcMs) / 3_600_000)
 }
 
-function dateToSlotId(date: Date, hourOffset: number): string {
-  const d = toEST(date)
-  const ymd = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
-  return `slot-${ymd}-${String(hourOffset).padStart(2, '0')}`
+/**
+ * Build a UTC Date representing a specific hour in ET on a given calendar date.
+ * Handles DST automatically.
+ * @param etMidnight - UTC Date representing midnight ET of the target day
+ * @param hourOffsetET - hours from midnight ET (may exceed 24)
+ */
+function etHourToUtc(etMidnight: Date, hourOffsetET: number): Date {
+  // Approximate UTC timestamp for midnight + hourOffsetET in ET
+  const approx = new Date(etMidnight.getTime() + hourOffsetET * 3_600_000)
+  const offset = getNewYorkUtcOffsetHours(approx)
+  return new Date(etMidnight.getTime() + (hourOffsetET + offset) * 3_600_000)
+}
+
+/**
+ * Returns a UTC Date representing midnight ET for the given calendar date string "YYYY-MM-DD".
+ */
+function etMidnightUtc(dateStr: string): Date {
+  // Parse the date in ET by using noon UTC as a reference, then computing ET midnight
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const noonUtc = new Date(Date.UTC(y, m - 1, d, 12, 0, 0))
+  const offset = getNewYorkUtcOffsetHours(noonUtc) // 4 (EDT) or 5 (EST)
+  return new Date(Date.UTC(y, m - 1, d, offset, 0, 0))  // midnight ET = offset hours UTC
+}
+
+function dateToSlotId(dateStr: string, hourOffsetET: number): string {
+  return `slot-${dateStr}-${String(hourOffsetET).padStart(2, '0')}`
 }
 
 function formatTimeLabel(hour: number): string {
@@ -167,19 +205,21 @@ export function formatESTRange(slot: Pick<Slot, 'startTime' | 'endTime'>): strin
 
 const SLOTS_COLLECTION = 'slots'
 
-/** Generate slot documents for a given day. */
-export async function generateSlotsForDate(targetDate: Date): Promise<Slot[]> {
+/**
+ * Generate slot documents for a given calendar date string "YYYY-MM-DD".
+ * The schedule starts at 11 PM ET on targetDateStr and covers 12 two-hour slots
+ * (identical to 24 hours of programming starting at 11 PM ET).
+ */
+export async function generateSlotsForDate(targetDateStr: string): Promise<Slot[]> {
   const slots: Slot[] = []
+  const midnight = etMidnightUtc(targetDateStr)
 
   for (const template of SCHEDULE_TEMPLATE) {
-    const startDate = new Date(targetDate)
-    startDate.setUTCHours(template.hourOffset + 5, 0, 0, 0) // +5 to convert EST to UTC
+    const startDate = etHourToUtc(midnight, template.hourOffsetET)
+    const endDate = new Date(startDate.getTime() + template.duration * 3_600_000)
 
-    const endDate = new Date(startDate)
-    endDate.setUTCHours(startDate.getUTCHours() + template.duration)
-
-    const slotId = dateToSlotId(targetDate, template.hourOffset)
-    const label = `${formatTimeLabel(template.hourOffset)} – ${formatTimeLabel(template.hourOffset + template.duration)}`
+    const slotId = dateToSlotId(targetDateStr, template.hourOffsetET)
+    const label = `${formatTimeLabel(template.hourOffsetET)} – ${formatTimeLabel(template.hourOffsetET + template.duration)}`
 
     // Check if slot already exists to avoid duplicates
     const existingSnap = await getDocs(query(collection(db, SLOTS_COLLECTION), where('id', '==', slotId)))
@@ -218,16 +258,48 @@ export async function generateNextThreeDays(): Promise<{ generated: number; date
   let generated = 0
 
   for (let i = 1; i <= 3; i++) {
-    const targetDate = new Date()
-    targetDate.setUTCDate(targetDate.getUTCDate() + i)
-    targetDate.setUTCHours(0, 0, 0, 0)
+    const d = new Date()
+    d.setDate(d.getDate() + i)
+    const dateStr = d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) // YYYY-MM-DD in ET
 
-    const newSlots = await generateSlotsForDate(targetDate)
+    const newSlots = await generateSlotsForDate(dateStr)
     generated += newSlots.length
-    dates.push(targetDate.toISOString().split('T')[0])
+    dates.push(dateStr)
   }
 
   return { generated, dates }
+}
+
+/**
+ * Delete ALL slots in Firestore. Use before regenerating from scratch.
+ */
+export async function clearAllSlots(): Promise<number> {
+  const snap = await getDocs(collection(db, SLOTS_COLLECTION))
+  const deletes = snap.docs.map((d) => deleteDoc(doc(db, SLOTS_COLLECTION, d.id)))
+  await Promise.all(deletes)
+  return snap.docs.length
+}
+
+/**
+ * Clear all existing slots and regenerate fresh slots for today + next 6 days.
+ * Slots start at 11 PM ET on each day and run for 24 hours.
+ */
+export async function clearAndRegenerateSlots(): Promise<{ deleted: number; generated: number; dates: string[] }> {
+  const deleted = await clearAllSlots()
+
+  const dates: string[] = []
+  let generated = 0
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date()
+    d.setDate(d.getDate() + i)
+    const dateStr = d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) // YYYY-MM-DD in ET
+    const newSlots = await generateSlotsForDate(dateStr)
+    generated += newSlots.length
+    dates.push(dateStr)
+  }
+
+  return { deleted, generated, dates }
 }
 
 /** Fetch all slots for a date range. */

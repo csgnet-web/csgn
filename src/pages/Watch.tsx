@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
 import { subscribeToCurrentSlot, subscribeToSlots, formatESTRange, type Slot } from '@/lib/slots'
-import { startFeeTracker } from '@/lib/dexscreener'
+import { startFeeTracker, fetchDailyEarningsUSD } from '@/lib/dexscreener'
 
 const bannerItems = [
   'Starting 5 \u2022 $14.70',
@@ -69,9 +69,12 @@ function CSGNWipeOverlay({ visible }: { visible: boolean }) {
   )
 }
 
+type SlotPosition = 'now' | 'next' | 'after' | 'past'
+
 /* ── Schedule card for today's lineup ── */
-function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) {
+function TodaySlotCard({ slot, position }: { slot: Slot; position: SlotPosition }) {
   const streamer = slot.assignedName || (slot.type === 'auction' ? 'Open Bid' : 'CEO Schedule')
+  const isCurrent = position === 'now'
   return (
     <div
       className={`relative rounded-xl overflow-hidden flex flex-col min-h-[89px] sm:min-h-[178px] transition-all duration-300 ${
@@ -86,14 +89,18 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
       }}
     >
       <div className="absolute top-2 left-2 z-10">
-        {isCurrent ? (
+        {position === 'now' ? (
           <span className="flex items-center gap-1 px-2 py-0.5 bg-red-600 rounded-full text-[10px] font-bold text-white uppercase tracking-wider">
             <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-            LIVE
+            ON NOW
+          </span>
+        ) : position === 'next' ? (
+          <span className="px-2 py-0.5 bg-black/40 border border-white/20 rounded-full text-[10px] text-white/70 uppercase tracking-wider">
+            ON DECK
           </span>
         ) : (
           <span className="px-2 py-0.5 bg-black/40 border border-white/20 rounded-full text-[10px] text-white/70 uppercase tracking-wider">
-            UP NEXT
+            IN THE HOLE
           </span>
         )}
       </div>
@@ -175,6 +182,7 @@ export default function Watch() {
   // Live fee tracking
   const [liveFeeSOL, setLiveFeeSOL] = useState<number>(0)
   const [liveVolumeSOL, setLiveVolumeSOL] = useState<number>(0)
+  const [dailyEarningsUsd, setDailyEarningsUsd] = useState<number | null>(null)
 
   // Wipe animation state
   const [showWipe, setShowWipe] = useState(false)
@@ -200,6 +208,13 @@ export default function Watch() {
       unsub()
       if (wipeTimerRef.current) clearTimeout(wipeTimerRef.current)
     }
+  }, [])
+
+  // Fetch 24h earnings once on mount for the fallback display
+  useEffect(() => {
+    fetchDailyEarningsUSD().then((usd) => {
+      if (usd !== null) setDailyEarningsUsd(usd)
+    })
   }, [])
 
   // Start live fee tracker when a slot is active
@@ -245,10 +260,16 @@ export default function Watch() {
   const chatChannel = stream?.type === 'twitch' ? stream.id : (streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '') || '')
   const chatSrc = `https://www.twitch.tv/embed/${encodeURIComponent(chatChannel)}/chat?parent=${hostname}&darkpopout`
 
-  // Next upcoming slot
+  // Derive slot positions
   const now = Date.now()
+  const currentTodaySlot = todaySlots.find((s) => {
+    const start = new Date(s.startTime).getTime()
+    const end = new Date(s.endTime).getTime()
+    return now >= start && now < end
+  })
   const upcomingSlots = todaySlots.filter((s) => new Date(s.startTime).getTime() > now)
   const nextSlot = upcomingSlots[0]
+  const afterNextSlot = upcomingSlots[1]
 
   return (
     <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
@@ -294,26 +315,37 @@ export default function Watch() {
         <div className="shrink-0 flex items-start justify-between px-5 py-4 border-b border-white/[0.06]">
           <div>
             <h1 className="text-3xl sm:text-4xl font-black font-display text-white tracking-tight leading-none">
-              {streamerName}
+              {streamerName || <span className="text-gray-600">No Stream</span>}
             </h1>
-            <p className="text-sm text-gray-400 mt-1 font-mono">{slotLabel}</p>
           </div>
           <div className="text-right">
             {currentSlot ? (
               <>
+                <p className="text-[11px] text-gray-400 font-mono mb-0.5">{slotLabel}</p>
                 <p className="text-2xl sm:text-3xl font-black font-mono text-yellow-400">
-                  {liveFeeSOL > 0 ? `${liveFeeSOL.toFixed(4)} SOL` : '—'}
+                  {liveFeeSOL > 0
+                    ? `${liveFeeSOL.toFixed(4)} SOL`
+                    : dailyEarningsUsd !== null
+                    ? `$${dailyEarningsUsd.toFixed(2)}`
+                    : '—'}
                 </p>
                 <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">
-                  {liveVolumeSOL > 0
+                  {liveFeeSOL > 0
                     ? `${liveVolumeSOL.toFixed(2)} SOL vol · 0.3%`
+                    : dailyEarningsUsd !== null
+                    ? '24h Earnings'
                     : 'Live Earnings'}
                 </p>
               </>
             ) : (
               <>
-                <p className="text-2xl sm:text-3xl font-black font-mono text-gray-600">—</p>
-                <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">Earnings</p>
+                <p className="text-[11px] text-gray-500 font-mono mb-0.5 opacity-0">–</p>
+                <p className="text-2xl sm:text-3xl font-black font-mono text-yellow-400">
+                  {dailyEarningsUsd !== null ? `$${dailyEarningsUsd.toFixed(2)}` : '—'}
+                </p>
+                <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">
+                  {dailyEarningsUsd !== null ? '24h Earnings' : 'Earnings'}
+                </p>
               </>
             )}
           </div>
@@ -333,7 +365,7 @@ export default function Watch() {
             <div className="flex items-center gap-4">
               {nextSlot && (
                 <div className="text-right">
-                  <p className="text-[11px] text-gray-500 uppercase tracking-wider leading-none">In the Hole</p>
+                  <p className="text-[11px] text-gray-500 uppercase tracking-wider leading-none">On Deck</p>
                   <p className="text-sm font-display font-bold text-white mt-0.5">
                     {nextSlot.assignedName || (nextSlot.type === 'auction' ? 'Open Bid' : 'CEO')}
                   </p>
@@ -346,14 +378,22 @@ export default function Watch() {
           {isScheduleOpen && (
             <>
               <div className="grid grid-cols-3 gap-3">
-                {todaySlots.slice(0, 3).map((slot) => {
-                  const slotStart = new Date(slot.startTime).getTime()
-                  const slotEnd = new Date(slot.endTime).getTime()
-                  const isCurrent = now >= slotStart && now < slotEnd
-                  return (
-                    <TodaySlotCard key={slot.id} slot={slot} isCurrent={isCurrent} />
-                  )
-                })}
+                {(() => {
+                  // Show: current slot (or next if none), then next two upcoming
+                  const displaySlots: { slot: Slot; position: SlotPosition }[] = []
+                  if (currentTodaySlot) {
+                    displaySlots.push({ slot: currentTodaySlot, position: 'now' })
+                    if (upcomingSlots[0]) displaySlots.push({ slot: upcomingSlots[0], position: 'next' })
+                    if (upcomingSlots[1]) displaySlots.push({ slot: upcomingSlots[1], position: 'after' })
+                  } else {
+                    if (upcomingSlots[0]) displaySlots.push({ slot: upcomingSlots[0], position: 'next' })
+                    if (upcomingSlots[1]) displaySlots.push({ slot: upcomingSlots[1], position: 'after' })
+                    if (upcomingSlots[2]) displaySlots.push({ slot: upcomingSlots[2], position: 'after' })
+                  }
+                  return displaySlots.map(({ slot, position }) => (
+                    <TodaySlotCard key={slot.id} slot={slot} position={position} />
+                  ))
+                })()}
               </div>
 
               <div className="mt-4 text-center">

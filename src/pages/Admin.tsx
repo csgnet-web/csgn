@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import {
   generateNextThreeDays,
+  clearAndRegenerateSlots,
   fetchSlots,
   assignCEOSlot,
   assignSlot,
@@ -73,6 +74,7 @@ export default function Admin() {
   const [slots, setSlots] = useState<Slot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
+  const [clearing, setClearing] = useState(false)
   const [assignModal, setAssignModal] = useState<Slot | null>(null)
   const [assignUid, setAssignUid] = useState('')
   const [assignName, setAssignName] = useState('')
@@ -214,6 +216,20 @@ export default function Admin() {
       setActionError(err?.message || 'Failed to generate slots.')
     }
     setGenerating(false)
+  }
+
+  const handleClearAndRegenerate = async () => {
+    if (!window.confirm('This will DELETE all existing slots and regenerate 7 days from scratch. Continue?')) return
+    setClearing(true)
+    setActionError(null)
+    try {
+      const result = await clearAndRegenerateSlots()
+      await loadSlots()
+      setActionError(`Cleared ${result.deleted} slots. Generated ${result.generated} new slots across ${result.dates.length} days.`)
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to clear and regenerate slots.')
+    }
+    setClearing(false)
   }
 
   const handleResolveAuction = async (slotId: string) => {
@@ -691,7 +707,17 @@ export default function Admin() {
                 <h3 className="text-lg font-semibold text-white">Upcoming Slots (Next 72h)</h3>
                 <p className="text-sm text-gray-400">Generate 3 days of slots, resolve auctions, assign CEO Schedule, manage stream URLs.</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  leftIcon={<Trash2 className="w-4 h-4" />}
+                  isLoading={clearing}
+                  onClick={handleClearAndRegenerate}
+                  className="text-red-400 hover:text-red-300"
+                >
+                  Clear &amp; Regenerate
+                </Button>
                 <Button variant="ghost" size="sm" leftIcon={<RefreshCw className="w-4 h-4" />} onClick={loadSlots}>
                   Refresh
                 </Button>

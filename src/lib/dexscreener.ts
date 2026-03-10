@@ -88,6 +88,16 @@ async function saveFeeToFirestore(
   }
 }
 
+/**
+ * Fetch the rolling 24-hour creator fee earnings in USD.
+ * Returns 0.3% of the 24h trading volume in USD, or null if unavailable.
+ */
+export async function fetchDailyEarningsUSD(): Promise<number | null> {
+  const data = await fetchCsgnData()
+  if (!data) return null
+  return data.volumeH24Usd * 0.003
+}
+
 export interface FeeTrackerOptions {
   /** Firestore slot document ID */
   slotId: string

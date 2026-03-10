@@ -16,26 +16,47 @@ function getSlotDisplayStatus(slot: Slot): 'past' | 'live' | 'upcoming' {
   return 'upcoming'
 }
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+// formatLocalTime is defined below inside the component scope so it can
+// reference browser locale; kept as a standalone helper for the slot rows.
+
+/** Build an array of 7 day descriptors anchored to today in the user's local timezone. */
+function buildDayList() {
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date()
+    d.setDate(d.getDate() + i)
+    const label = i === 0
+      ? `Today · ${d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })}`
+      : i === 1
+      ? `Tomorrow · ${d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })}`
+      : d.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' })
+    return { label, date: d }
+  })
+}
+
+function formatLocalTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
 }
 
 export default function Schedule() {
   const [selectedDay, setSelectedDay] = useState(0)
   const [slots, setSlots] = useState<Slot[]>([])
   const [loading, setLoading] = useState(true)
-  const days = ['Today', 'Tomorrow', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7']
+  const days = buildDayList()
 
   useEffect(() => {
     const loadSlots = async () => {
       setLoading(true)
-      const from = new Date()
-      from.setHours(0, 0, 0, 0)
-      from.setDate(from.getDate() + selectedDay)
+      const { date } = days[selectedDay]
 
-      const to = new Date(from)
-      to.setDate(to.getDate() + 1)
+      // Fetch a 26-hour window starting from 11 PM the previous day (ET ≈ 3 AM UTC)
+      // so we always capture the 11 PM ET slot that anchors each schedule day.
+      const from = new Date(date)
+      from.setHours(0, 0, 0, 0)
+      from.setTime(from.getTime() - 2 * 60 * 60 * 1000) // 2 h buffer before midnight
+
+      const to = new Date(date)
       to.setHours(23, 59, 59, 999)
+      to.setTime(to.getTime() + 2 * 60 * 60 * 1000) // 2 h buffer past midnight
 
       try {
         const data = await fetchSlots(from, to)
@@ -47,6 +68,7 @@ export default function Schedule() {
       setLoading(false)
     }
     loadSlots()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDay])
 
   const typeIcon = (type: SlotType) => {
@@ -75,9 +97,9 @@ export default function Schedule() {
 
         {/* Day Selector */}
         <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2">
-          {days.map((day, i) => (
+          {days.map(({ label }, i) => (
             <button
-              key={day}
+              key={label}
               onClick={() => setSelectedDay(i)}
               className={`px-4 py-2 text-sm font-medium rounded-xl whitespace-nowrap transition-all cursor-pointer ${
                 selectedDay === i
@@ -85,7 +107,7 @@ export default function Schedule() {
                   : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
               }`}
             >
-              {day}
+              {label}
             </button>
           ))}
         </div>
@@ -95,9 +117,9 @@ export default function Schedule() {
           <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
             <h3 className="font-semibold font-display text-white flex items-center gap-2">
               <Radio className="w-4 h-4 text-primary-400" />
-              {days[selectedDay]}'s Schedule
+              {days[selectedDay].label} Schedule
             </h3>
-            <Badge variant="blue">All times EST</Badge>
+            <Badge variant="blue">Your local time</Badge>
           </div>
 
           <div className="divide-y divide-white/[0.04]">
@@ -131,9 +153,9 @@ export default function Schedule() {
                     }`}
                   >
                     {/* Time */}
-                    <div className="w-20 sm:w-28 shrink-0">
-                      <span className="text-sm font-mono text-gray-400">{formatTime(slot.startTime)}</span>
-                      <span className="text-xs text-gray-600 block">to {formatTime(slot.endTime)}</span>
+                    <div className="w-28 sm:w-36 shrink-0">
+                      <span className="text-sm font-mono text-gray-400">{formatLocalTime(slot.startTime)}</span>
+                      <span className="text-xs text-gray-600 block">to {formatLocalTime(slot.endTime)}</span>
                     </div>
 
                     {/* Type indicator */}
