@@ -148,6 +148,21 @@ function formatTimeLabel(hour: number): string {
   return `${display}:00 ${ampm}`
 }
 
+/**
+ * Format a slot's start–end as a DST-aware Eastern Time range.
+ * e.g. "9:00 PM – 11:00 PM ET"
+ */
+export function formatESTRange(slot: Pick<Slot, 'startTime' | 'endTime'>): string {
+  const fmt = (iso: string) =>
+    new Date(iso).toLocaleTimeString('en-US', {
+      timeZone: 'America/New_York',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    })
+  return `${fmt(slot.startTime)} – ${fmt(slot.endTime)} ET`
+}
+
 /* ─── Firestore operations ─── */
 
 const SLOTS_COLLECTION = 'slots'
@@ -243,9 +258,9 @@ export function subscribeToSlots(from: Date, to: Date, callback: (slots: Slot[])
 /** Get the currently active slot based on current time. */
 export function subscribeToCurrentSlot(callback: (slot: Slot | null) => void): Unsubscribe {
   const now = new Date()
-  // Query a 48h window to catch current slot
-  const from = new Date(now.getTime() - 4 * 60 * 60 * 1000) // 4h ago
-  const to = new Date(now.getTime() + 4 * 60 * 60 * 1000)   // 4h ahead
+  // Use ±24h window so any timezone offset in stored startTime is always matched
+  const from = new Date(now.getTime() - 24 * 60 * 60 * 1000) // 24h ago
+  const to = new Date(now.getTime() + 24 * 60 * 60 * 1000)   // 24h ahead
 
   const q = query(
     collection(db, SLOTS_COLLECTION),

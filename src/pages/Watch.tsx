@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
-import { subscribeToCurrentSlot, subscribeToSlots, type Slot } from '@/lib/slots'
+import { subscribeToCurrentSlot, subscribeToSlots, formatESTRange, type Slot } from '@/lib/slots'
+import { startFeeTracker } from '@/lib/dexscreener'
 
 const bannerItems = [
   'Starting 5 \u2022 $14.70',
@@ -164,12 +165,16 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
 export default function Watch() {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
-  const [isChatOpen, setIsChatOpen] = useState(false)
+  const [isChatOpen, setIsChatOpen] = useState(true)
 
   // Current live slot from Firestore (auto-detected by time)
   const [currentSlot, setCurrentSlot] = useState<Slot | null>(null)
   // Today's upcoming slots for the schedule sidebar
   const [todaySlots, setTodaySlots] = useState<Slot[]>([])
+
+  // Live fee tracking
+  const [liveFeeSOL, setLiveFeeSOL] = useState<number>(0)
+  const [liveVolumeSOL, setLiveVolumeSOL] = useState<number>(0)
 
   // Wipe animation state
   const [showWipe, setShowWipe] = useState(false)
@@ -197,6 +202,24 @@ export default function Watch() {
     }
   }, [])
 
+  // Start live fee tracker when a slot is active
+  useEffect(() => {
+    if (!currentSlot) {
+      setLiveFeeSOL(0)
+      setLiveVolumeSOL(0)
+      return
+    }
+    const stop = startFeeTracker({
+      slotId: currentSlot.id,
+      slotEndTime: currentSlot.endTime,
+      onUpdate: (feeSOL, volumeSOL) => {
+        setLiveFeeSOL(feeSOL)
+        setLiveVolumeSOL(volumeSOL)
+      },
+    })
+    return stop
+  }, [currentSlot?.id])
+
   // Subscribe to today's slots for the schedule list
   useEffect(() => {
     const from = new Date()
@@ -214,7 +237,7 @@ export default function Watch() {
   // Derive stream URL from current slot — empty if no slot or no URL set
   const streamUrl = currentSlot?.streamUrl || ''
   const streamerName = currentSlot?.assignedName || ''
-  const slotLabel = currentSlot?.label || ''
+  const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
 
   // Determine chat source (only shown when a stream is active)
   const stream = streamUrl ? detectStream(streamUrl) : null
@@ -273,11 +296,26 @@ export default function Watch() {
             <h1 className="text-3xl sm:text-4xl font-black font-display text-white tracking-tight leading-none">
               {streamerName}
             </h1>
-            <p className="text-sm text-gray-400 mt-1 font-mono">{slotLabel} EST</p>
+            <p className="text-sm text-gray-400 mt-1 font-mono">{slotLabel}</p>
           </div>
           <div className="text-right">
-            <p className="text-2xl sm:text-3xl font-black font-mono text-yellow-400">$123.69</p>
-            <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">Earnings</p>
+            {currentSlot ? (
+              <>
+                <p className="text-2xl sm:text-3xl font-black font-mono text-yellow-400">
+                  {liveFeeSOL > 0 ? `${liveFeeSOL.toFixed(4)} SOL` : '—'}
+                </p>
+                <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">
+                  {liveVolumeSOL > 0
+                    ? `${liveVolumeSOL.toFixed(2)} SOL vol · 0.3%`
+                    : 'Live Earnings'}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-2xl sm:text-3xl font-black font-mono text-gray-600">—</p>
+                <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">Earnings</p>
+              </>
+            )}
           </div>
         </div>
 
