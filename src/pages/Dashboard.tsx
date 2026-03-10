@@ -24,6 +24,7 @@ export default function Dashboard() {
   const [verificationSent, setVerificationSent] = useState(false)
   const [resending, setResending] = useState(false)
   const [savingWallet, setSavingWallet] = useState(false)
+  const [savingHandle, setSavingHandle] = useState(false)
 
   const bids = useMemo(() => user ? queueStore.getBids().filter((bid) => bid.uid === user.uid) : [], [user])
   const assigned = useMemo(() => user ? queueStore.getAssignedSlots().filter((slot) => slot.uid === user.uid) : [], [user])
@@ -64,6 +65,20 @@ export default function Dashboard() {
   const handleConnectAndSave = async () => {
     await connect()
     // wallet address will be set after connect — save happens via useEffect below
+  }
+
+  const handleSaveHandle = async () => {
+    if (!user) return
+    setSavingHandle(true)
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        'socialLinks.twitter': xHandle.replace(/^@/, ''),
+      })
+      await refreshProfile()
+    } catch (err) {
+      console.warn('Failed to save X handle:', err)
+    }
+    setSavingHandle(false)
   }
 
   // Notification icon mapping
@@ -211,14 +226,23 @@ export default function Dashboard() {
               </p>
             )}
 
-            <div className="flex items-center gap-2">
-              <Twitter className="w-4 h-4 text-gray-400" />
+            <div className="flex items-center gap-2 flex-wrap">
+              <Twitter className="w-4 h-4 text-gray-400 shrink-0" />
               <input
                 value={xHandle}
                 onChange={(e) => setXHandle(e.target.value)}
-                placeholder="Connect X (@handle)"
-                className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white"
+                onKeyDown={(e) => e.key === 'Enter' && handleSaveHandle()}
+                placeholder="@handle"
+                className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white w-40"
               />
+              <Button variant="secondary" size="sm" isLoading={savingHandle} onClick={handleSaveHandle}>
+                Save
+              </Button>
+              {profile?.socialLinks?.twitter && (
+                <span className="text-xs text-emerald-400 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> @{profile.socialLinks.twitter}
+                </span>
+              )}
             </div>
           </div>
 
