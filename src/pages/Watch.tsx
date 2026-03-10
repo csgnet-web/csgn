@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
-import { subscribeToCurrentSlot, subscribeToSlots, type Slot } from '@/lib/slots'
+import { subscribeToCurrentSlot, subscribeToSlots, updateCreatorFees, type Slot } from '@/lib/slots'
+import { fetchCSGNPair, estimateSlotVolumeSOL, calcFeeSOL, type DexPair } from '@/lib/dexscreener'
 
 const bannerItems = [
   'Starting 5 \u2022 $14.70',
@@ -40,6 +41,16 @@ function detectStream(url: string): { type: StreamType; id: string } | null {
   return null
 }
 
+/* ── Format EST time range from ISO start/end ── */
+function formatESTRange(startISO: string, endISO: string): string {
+  const fmt = (d: Date) =>
+    d.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: 'America/New_York',
+    })
+  return `${fmt(new Date(startISO))} – ${fmt(new Date(endISO))} ET`
+}
 
 /* ── CSGN Wipe Overlay ── */
 function CSGNWipeOverlay({ visible }: { visible: boolean }) {
@@ -54,7 +65,6 @@ function CSGNWipeOverlay({ visible }: { visible: boolean }) {
     >
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          {/* CSGN Logo SVG */}
           <svg viewBox="0 0 120 40" className="h-12 w-auto fill-white opacity-90" xmlns="http://www.w3.org/2000/svg">
             <text x="0" y="32" fontFamily="system-ui, sans-serif" fontWeight="900" fontSize="38" letterSpacing="2">CSGN</text>
           </svg>
@@ -71,6 +81,9 @@ function CSGNWipeOverlay({ visible }: { visible: boolean }) {
 /* ── Schedule card for today's lineup ── */
 function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) {
   const streamer = slot.assignedName || (slot.type === 'auction' ? 'Open Bid' : 'CEO Schedule')
+  const timeLabel = slot.startTime && slot.endTime
+    ? formatESTRange(slot.startTime, slot.endTime)
+    : slot.label + ' ET'
   return (
     <div
       className={`relative rounded-xl overflow-hidden flex flex-col min-h-[89px] sm:min-h-[178px] transition-all duration-300 ${
@@ -113,7 +126,7 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
       <div className="px-2 sm:px-3 pb-1.5 sm:pb-3 pt-1 sm:pt-2.5 bg-gradient-to-t from-black/80 to-transparent space-y-0.5 sm:space-y-1">
         <p className="text-white font-black font-display text-[10px] sm:text-sm leading-tight break-words">{streamer}</p>
         <p className="text-white/60 text-[9px] sm:text-[11px] leading-snug break-words">{slot.type === 'auction' ? 'Auction Slot' : 'CEO Schedule'}</p>
-        <p className="text-white/60 text-[9px] sm:text-[11px] font-mono leading-none">{slot.label} EST</p>
+        <p className="text-white/60 text-[9px] sm:text-[11px] font-mono leading-none">{timeLabel}</p>
       </div>
     </div>
   )
@@ -161,6 +174,29 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
   )
 }
 
+/* ── Live Earnings Widget ── */
+function EarningsWidget({ feeSOL, volumeSOL, loading }: { feeSOL: number; volumeSOL: number; loading: boolean }) {
+  return (
+    <div className="text-right">
+      {loading ? (
+        <>
+          <p className="text-2xl sm:text-3xl font-black font-mono text-yellow-400 animate-pulse">…</p>
+          <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">Fetching…</p>
+        </>
+      ) : (
+        <>
+          <p className="text-2xl sm:text-3xl font-black font-mono text-yellow-400">
+            {feeSOL.toFixed(4)} <span className="text-lg text-yellow-500/70">SOL</span>
+          </p>
+          <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-0.5">
+            Creator Fee · {volumeSOL.toFixed(2)} SOL vol
+          </p>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function Watch() {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
@@ -176,6 +212,15 @@ export default function Watch() {
   const prevSlotIdRef = useRef<string | null>(null)
   const wipeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Dexscreener fee tracking
+  const [feeSOL, setFeeSOL] = useState(0)
+  const [volumeSOL, setVolumeSOL] = useState(0)
+  const [feeLoading, setFeeLoading] = useState(false)
+  const baselineH24Ref = useRef<number | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _lastPairRef = useRef<DexPair | null>(null)
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
   // Subscribe to the current live slot
   useEffect(() => {
     const unsub = subscribeToCurrentSlot((slot) => {
@@ -186,6 +231,10 @@ export default function Watch() {
         setShowWipe(true)
         if (wipeTimerRef.current) clearTimeout(wipeTimerRef.current)
         wipeTimerRef.current = setTimeout(() => setShowWipe(false), 1400)
+        // Reset baseline for new slot
+        baselineH24Ref.current = null
+        setFeeSOL(0)
+        setVolumeSOL(0)
       }
 
       prevSlotIdRef.current = newId
@@ -196,6 +245,66 @@ export default function Watch() {
       if (wipeTimerRef.current) clearTimeout(wipeTimerRef.current)
     }
   }, [])
+
+  // Save current fee data to Firestore so admin panel shows live values
+  const saveFeeToFirestore = useCallback(async (slot: Slot, volSOL: number, fee: number) => {
+    const winnerBid = slot.assignedUid
+      ? slot.bids.find((b) => b.uid === slot.assignedUid)
+      : undefined
+
+    try {
+      await updateCreatorFees(slot.id, {
+        tradingVolumeSOL: parseFloat(volSOL.toFixed(6)),
+        feeOwedSOL: parseFloat(fee.toFixed(6)),
+        paymentStatus: 'pending',
+        streamerWalletAddress: winnerBid?.walletAddress ?? '',
+        updatedAt: new Date().toISOString(),
+      })
+    } catch {
+      // Non-critical — admin will see last saved value
+    }
+  }, [])
+
+  // Poll dexscreener every 30 seconds while a slot is active
+  useEffect(() => {
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current)
+
+    if (!currentSlot) {
+      setFeeSOL(0)
+      setVolumeSOL(0)
+      return
+    }
+
+    const fetchAndUpdate = async () => {
+      const pair = await fetchCSGNPair()
+      if (!pair) return
+
+      // Set baseline h24 volume on first fetch for this slot
+      if (baselineH24Ref.current === null) {
+        baselineH24Ref.current = pair.volume.h24
+        setFeeLoading(false)
+      }
+
+      _lastPairRef.current = pair
+      const vol = estimateSlotVolumeSOL(pair, baselineH24Ref.current)
+      const fee = calcFeeSOL(vol)
+      setVolumeSOL(vol)
+      setFeeSOL(fee)
+
+      // Auto-save to Firestore for admin visibility
+      if (currentSlot.assignedUid) {
+        void saveFeeToFirestore(currentSlot, vol, fee)
+      }
+    }
+
+    setFeeLoading(true)
+    void fetchAndUpdate()
+    pollTimerRef.current = setInterval(() => { void fetchAndUpdate() }, 30_000)
+
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current)
+    }
+  }, [currentSlot, saveFeeToFirestore])
 
   // Subscribe to today's slots for the schedule list
   useEffect(() => {
@@ -211,10 +320,12 @@ export default function Watch() {
     return unsub
   }, [])
 
-  // Derive stream URL from current slot — empty if no slot or no URL set
-  const streamUrl = currentSlot?.streamUrl || ''
-  const streamerName = currentSlot?.assignedName || ''
-  const slotLabel = currentSlot?.label || ''
+  // Derive stream URL and metadata from current slot
+  const streamUrl = currentSlot?.streamUrl ?? ''
+  const streamerName = currentSlot?.assignedName ?? (currentSlot ? 'Live Now' : '')
+  const slotTimeLabel = currentSlot?.startTime && currentSlot?.endTime
+    ? formatESTRange(currentSlot.startTime, currentSlot.endTime)
+    : (currentSlot?.label ? currentSlot.label + ' ET' : '')
 
   // Determine chat source (only shown when a stream is active)
   const stream = streamUrl ? detectStream(streamUrl) : null
@@ -271,14 +382,15 @@ export default function Watch() {
         <div className="shrink-0 flex items-start justify-between px-5 py-4 border-b border-white/[0.06]">
           <div>
             <h1 className="text-3xl sm:text-4xl font-black font-display text-white tracking-tight leading-none">
-              {streamerName}
+              {streamerName || <span className="text-white/30">No Stream</span>}
             </h1>
-            <p className="text-sm text-gray-400 mt-1 font-mono">{slotLabel} EST</p>
+            {slotTimeLabel && (
+              <p className="text-sm text-gray-400 mt-1 font-mono">{slotTimeLabel}</p>
+            )}
           </div>
-          <div className="text-right">
-            <p className="text-2xl sm:text-3xl font-black font-mono text-yellow-400">$123.69</p>
-            <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">Earnings</p>
-          </div>
+          {currentSlot?.assignedUid && (
+            <EarningsWidget feeSOL={feeSOL} volumeSOL={volumeSOL} loading={feeLoading} />
+          )}
         </div>
 
         {/* TODAY'S SCHEDULE */}

@@ -243,9 +243,9 @@ export function subscribeToSlots(from: Date, to: Date, callback: (slots: Slot[])
 /** Get the currently active slot based on current time. */
 export function subscribeToCurrentSlot(callback: (slot: Slot | null) => void): Unsubscribe {
   const now = new Date()
-  // Query a 48h window to catch current slot
-  const from = new Date(now.getTime() - 4 * 60 * 60 * 1000) // 4h ago
-  const to = new Date(now.getTime() + 4 * 60 * 60 * 1000)   // 4h ahead
+  // Use a wide ±24h window to handle any timezone offset in stored startTimes
+  const from = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+  const to = new Date(now.getTime() + 24 * 60 * 60 * 1000)
 
   const q = query(
     collection(db, SLOTS_COLLECTION),
