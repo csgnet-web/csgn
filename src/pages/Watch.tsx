@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
+import { onSnapshot, doc } from 'firebase/firestore'
+import { db } from '@/config/firebase'
 import { subscribeToCurrentSlot, subscribeToSlots, formatESTRange, type Slot } from '@/lib/slots'
 import { startFeeTracker, fetchDailyEarningsUSD } from '@/lib/dexscreener'
 
@@ -178,6 +180,9 @@ export default function Watch() {
   const [currentSlot, setCurrentSlot] = useState<Slot | null>(null)
   // Today's upcoming slots for the schedule sidebar
   const [todaySlots, setTodaySlots] = useState<Slot[]>([])
+  // Admin manual stream override (config/liveStream)
+  const [overrideUrl, setOverrideUrl] = useState<string | null>(null)
+  const [overrideName, setOverrideName] = useState<string | null>(null)
 
   // Live fee tracking
   const [liveFeeSOL, setLiveFeeSOL] = useState<number>(0)
@@ -210,6 +215,25 @@ export default function Watch() {
     }
   }, [])
 
+  // Subscribe to admin manual stream override (config/liveStream)
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, 'config', 'liveStream'),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data()
+          setOverrideUrl(data.url ?? null)
+          setOverrideName(data.streamerName ?? null)
+        } else {
+          setOverrideUrl(null)
+          setOverrideName(null)
+        }
+      },
+      () => {},
+    )
+    return unsub
+  }, [])
+
   // Fetch 24h earnings once on mount for the fallback display
   useEffect(() => {
     fetchDailyEarningsUSD().then((usd) => {
@@ -236,12 +260,14 @@ export default function Watch() {
   }, [currentSlot?.id])
 
   // Subscribe to today's slots for the schedule list
+  // Window starts 2h before local midnight to include the 11 PM ET anchor slot.
   useEffect(() => {
     const from = new Date()
     from.setHours(0, 0, 0, 0)
-    const to = new Date(from)
-    to.setDate(to.getDate() + 1)
+    from.setTime(from.getTime() - 2 * 60 * 60 * 1000) // 2h buffer for 11 PM slots
+    const to = new Date()
     to.setHours(23, 59, 59, 999)
+    to.setTime(to.getTime() + 2 * 60 * 60 * 1000) // 2h buffer past midnight
 
     const unsub = subscribeToSlots(from, to, (slots) => {
       setTodaySlots(slots)
@@ -249,9 +275,9 @@ export default function Watch() {
     return unsub
   }, [])
 
-  // Derive stream URL from current slot — empty if no slot or no URL set
-  const streamUrl = currentSlot?.streamUrl || ''
-  const streamerName = currentSlot?.assignedName || ''
+  // Admin override takes priority over slot-derived values
+  const streamUrl = overrideUrl || currentSlot?.streamUrl || ''
+  const streamerName = overrideName || currentSlot?.assignedName || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
 
   // Determine chat source (only shown when a stream is active)
@@ -269,7 +295,6 @@ export default function Watch() {
   })
   const upcomingSlots = todaySlots.filter((s) => new Date(s.startTime).getTime() > now)
   const nextSlot = upcomingSlots[0]
-  const afterNextSlot = upcomingSlots[1]
 
   return (
     <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
