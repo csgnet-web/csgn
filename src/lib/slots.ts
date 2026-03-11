@@ -109,13 +109,13 @@ interface TemplateSlot {
 
 /**
  * Schedule (ET, DST-aware):
- *  Slot 1:  1:00 AM – 3:00 AM   (auction)
- *  Slots 2-9:  3:00 AM – 7:00 PM (auction, 8 slots)
- *  Slots 10-12: 7:00 PM – 1:00 AM next day (CEO, 3 slots)
+ *  CEO Schedule: 7:00 PM – 3:00 AM (4 slots, crosses midnight)
+ *  Auction Slots: 3:00 AM – 7:00 PM (8 slots)
  */
 const SCHEDULE_TEMPLATE: TemplateSlot[] = [
-  // 1 AM slot + auction block: 1 AM – 7 PM
-  { hourET: 1,  duration: 2, type: 'auction' },
+  // CEO carry-over block (from prior evening): 1 AM – 3 AM
+  { hourET: 1,  duration: 2, type: 'ceo' },
+  // Auction block: 3 AM – 7 PM
   { hourET: 3,  duration: 2, type: 'auction' },
   { hourET: 5,  duration: 2, type: 'auction' },
   { hourET: 7,  duration: 2, type: 'auction' },
@@ -124,7 +124,7 @@ const SCHEDULE_TEMPLATE: TemplateSlot[] = [
   { hourET: 13, duration: 2, type: 'auction' },
   { hourET: 15, duration: 2, type: 'auction' },
   { hourET: 17, duration: 2, type: 'auction' },
-  // CEO Schedule block: 7 PM – 1 AM next day
+  // CEO Schedule block: 7 PM – 3 AM next day
   { hourET: 19, duration: 2, type: 'ceo' },
   { hourET: 21, duration: 2, type: 'ceo' },
   { hourET: 23, duration: 2, type: 'ceo' },

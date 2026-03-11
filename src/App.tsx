@@ -6,7 +6,6 @@ import { Footer } from '@/components/layout/Footer'
 import { CSGNMark } from '@/components/ui/Logo'
 import { lazy, Suspense } from 'react'
 
-const Home = lazy(() => import('@/pages/Home'))
 const Watch = lazy(() => import('@/pages/Watch'))
 const Schedule = lazy(() => import('@/pages/Schedule'))
 const Apply = lazy(() => import('@/pages/Apply'))
@@ -28,7 +27,7 @@ function Loading() {
 
 function AppContent() {
   const location = useLocation()
-  const hideFooter = location.pathname === '/watch'
+  const hideFooter = location.pathname === '/watch' || location.pathname === '/'
 
   return (
     <div className="min-h-screen bg-[#050507] csgn-bg">
@@ -37,8 +36,9 @@ function AppContent() {
       <Suspense fallback={<Loading />}>
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={<Watch />} />
             <Route path="/watch" element={<Watch />} />
+            <Route path="/home" element={<Navigate to="/watch" replace />} />
             <Route path="/schedule" element={<Schedule />} />
             <Route path="/apply" element={<Apply />} />
             <Route path="/about" element={<About />} />

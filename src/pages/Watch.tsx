@@ -142,7 +142,7 @@ function CSGNPlayer({ streamUrl, hostname, streamTitle }: { streamUrl: string; h
   const stream = detectStream(streamUrl)
 
   if (stream?.type === 'youtube') {
-    const embedSrc = `https://www.youtube.com/embed/${stream.id}?autoplay=1&mute=0&rel=0&modestbranding=1`
+    const embedSrc = `https://www.youtube.com/embed/${stream.id}?autoplay=1&mute=0&controls=0&disablekb=1&rel=0&modestbranding=1&playsinline=1&iv_load_policy=3`
     return (
       <iframe
         src={embedSrc}
@@ -156,7 +156,7 @@ function CSGNPlayer({ streamUrl, hostname, streamTitle }: { streamUrl: string; h
 
   // Twitch: use parsed channel or treat raw value as channel name
   const channel = stream?.id ?? streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '')
-  const twitchSrc = `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${encodeURIComponent(hostname)}&autoplay=true&muted=false`
+  const twitchSrc = `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${encodeURIComponent(hostname)}&autoplay=true&muted=false&volume=1`
   return (
     <iframe
       src={twitchSrc}
@@ -254,24 +254,38 @@ export default function Watch() {
     const to   = new Date(Date.now() + 28 * 60 * 60 * 1000)  // 28h ahead (full ET day + buffer)
 
     const unsub = subscribeToSlots(from, to, (slots) => {
-      // Determine today's date string in Eastern Time
-      const todayET = new Date().toLocaleDateString('en-US', {
+      const nowMs = Date.now()
+      const etDate = (d: Date) => d.toLocaleDateString('en-US', {
         timeZone: 'America/New_York',
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
       })
-      // Keep only slots whose start time falls on today's ET calendar date
-      setTodaySlots(
-        slots.filter((s) =>
-          new Date(s.startTime).toLocaleDateString('en-US', {
-            timeZone: 'America/New_York',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-          }) === todayET
-        )
-      )
+
+      const today = new Date()
+      const tomorrow = new Date()
+      tomorrow.setDate(tomorrow.getDate() + 1)
+
+      const todayET = etDate(today)
+      const tomorrowET = etDate(tomorrow)
+
+      const sorted = [...slots].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+      const todayUpcoming = sorted.filter((s) => {
+        const isToday = etDate(new Date(s.startTime)) === todayET
+        return isToday && new Date(s.endTime).getTime() > nowMs
+      })
+
+      if (todayUpcoming.length >= 3) {
+        setTodaySlots(todayUpcoming)
+        return
+      }
+
+      const tomorrowUpcoming = sorted.filter((s) => {
+        const isTomorrow = etDate(new Date(s.startTime)) === tomorrowET
+        return isTomorrow && new Date(s.endTime).getTime() > nowMs
+      })
+
+      setTodaySlots([...todayUpcoming, ...tomorrowUpcoming].slice(0, 3))
     })
     return unsub
   }, [])
@@ -336,6 +350,12 @@ export default function Watch() {
             <div className="w-full relative" style={{ aspectRatio: '16/9' }}>
               <CSGNPlayer streamUrl={streamUrl} hostname={hostname} streamTitle={streamTitle} />
               <CSGNWipeOverlay visible={showWipe} />
+              <div className="absolute top-3 left-3 z-10 pointer-events-none">
+                <span className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-black/60 px-3 py-1 text-[10px] font-black tracking-[0.2em] text-white uppercase">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                  CSGN Live
+                </span>
+              </div>
             </div>
 
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/55 to-transparent" />
