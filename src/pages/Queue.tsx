@@ -281,7 +281,7 @@ export default function Queue() {
             <Card hover={false} className="p-5 space-y-4">
               <h2 className="text-white font-semibold flex items-center gap-2">
                 <Gavel className="w-4 h-4 text-red-400" /> Auction Slots
-                <span className="text-xs text-gray-500 font-normal">3 AM – 7 PM EST</span>
+                <span className="text-xs text-gray-500 font-normal">3 AM – 7 PM ET</span>
               </h2>
               {auctionSlots.length === 0 ? (
                 <p className="text-sm text-gray-500 py-4">No auction slots open right now. Check back soon.</p>
@@ -351,7 +351,7 @@ export default function Queue() {
             <Card hover={false} className="p-5 space-y-4">
               <h2 className="text-white font-semibold flex items-center gap-2">
                 <Crown className="w-4 h-4 text-yellow-400" /> CEO Schedule
-                <span className="text-xs text-gray-500 font-normal">7 PM – 3 AM EST</span>
+                <span className="text-xs text-gray-500 font-normal">7 PM – 3 AM ET</span>
               </h2>
               {ceoSlots.length === 0 ? (
                 <p className="text-sm text-gray-500 py-4">No CEO Schedule slots open for requests right now.</p>

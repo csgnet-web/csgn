@@ -7,6 +7,8 @@ import { SectionHeading } from '@/components/ui/SectionHeading'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
 import { fetchSlots, type Slot, type SlotType } from '@/lib/slots'
 
+const EASTERN_TIME_ZONE = 'America/New_York'
+
 function getSlotDisplayStatus(slot: Slot): 'past' | 'live' | 'upcoming' {
   const now = Date.now()
   const start = new Date(slot.startTime).getTime()
@@ -17,29 +19,54 @@ function getSlotDisplayStatus(slot: Slot): 'past' | 'live' | 'upcoming' {
 }
 
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return new Date(iso).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: EASTERN_TIME_ZONE,
+  })
+}
+
+
+function formatETDateHeading(date: Date): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: EASTERN_TIME_ZONE,
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  }).format(date)
+}
+
+function isSameETDate(iso: string, targetDate: Date): boolean {
+  const slotDate = new Date(iso).toLocaleDateString('en-US', { timeZone: EASTERN_TIME_ZONE })
+  const compareDate = targetDate.toLocaleDateString('en-US', { timeZone: EASTERN_TIME_ZONE })
+  return slotDate === compareDate
 }
 
 export default function Schedule() {
   const [selectedDay, setSelectedDay] = useState(0)
   const [slots, setSlots] = useState<Slot[]>([])
   const [loading, setLoading] = useState(true)
+  const [selectedDateLabel, setSelectedDateLabel] = useState('')
   const days = ['Today', 'Tomorrow', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7']
 
   useEffect(() => {
     const loadSlots = async () => {
       setLoading(true)
-      const from = new Date()
-      from.setHours(0, 0, 0, 0)
-      from.setDate(from.getDate() + selectedDay)
+      const selectedDate = new Date()
+      selectedDate.setDate(selectedDate.getDate() + selectedDay)
+      setSelectedDateLabel(formatETDateHeading(selectedDate))
 
-      const to = new Date(from)
-      to.setDate(to.getDate() + 1)
-      to.setHours(23, 59, 59, 999)
+      const from = new Date(Date.now() - 24 * 60 * 60 * 1000)
+      const to = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000)
 
       try {
         const data = await fetchSlots(from, to)
-        setSlots(data)
+        const nextTwelveSlots = data
+          .filter((slot) => isSameETDate(slot.startTime, selectedDate))
+          .filter((slot) => (selectedDay === 0 ? new Date(slot.endTime).getTime() > Date.now() : true))
+          .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+          .slice(0, 12)
+        setSlots(nextTwelveSlots)
       } catch (err) {
         console.warn('Failed to fetch slots from Firestore:', err)
         setSlots([])
@@ -69,8 +96,8 @@ export default function Schedule() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <SectionHeading
           badge="Schedule"
-          title="Broadcast"
-          highlight="Schedule"
+          title="Live"
+          highlight="Lineup"
         />
 
         {/* Day Selector */}
@@ -95,9 +122,9 @@ export default function Schedule() {
           <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
             <h3 className="font-semibold font-display text-white flex items-center gap-2">
               <Radio className="w-4 h-4 text-primary-400" />
-              {days[selectedDay]}'s Schedule
+              {selectedDateLabel}
             </h3>
-            <Badge variant="blue">All times EST</Badge>
+            <Badge variant="blue">All times ET</Badge>
           </div>
 
           <div className="divide-y divide-white/[0.04]">
@@ -109,7 +136,7 @@ export default function Schedule() {
             ) : slots.length === 0 ? (
               <div className="py-16 text-center">
                 <p className="text-sm text-gray-500">No slots scheduled for this day yet.</p>
-                <p className="text-xs text-gray-600 mt-1">Slots are generated 72 hours in advance.</p>
+                <p className="text-xs text-gray-600 mt-1">Showing up to the next 12 ET slots for this day.</p>
               </div>
             ) : (
               slots.map((slot, i) => {

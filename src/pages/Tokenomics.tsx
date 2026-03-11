@@ -208,7 +208,7 @@ export default function Tokenomics() {
               {
                 icon: Gavel,
                 title: 'Auction Slots',
-                time: '3 AM – 2 PM EST',
+                time: '3 AM – 2 PM ET',
                 desc: 'Highest bidder wins. Bid revenue goes to the network. Competitive pricing ensures streamers who value the slot most get access.',
                 color: 'from-cyan-500 to-blue-500',
                 deadline: 'Bids close 1 hour before slot',
@@ -216,7 +216,7 @@ export default function Tokenomics() {
               {
                 icon: Ticket,
                 title: 'Lottery Slots',
-                time: '2 PM – 6 PM EST',
+                time: '2 PM – 6 PM ET',
                 desc: 'Random selection from all entries. Democratic access for emerging talent. Low barrier, high upside.',
                 color: 'from-accent-500 to-pink-500',
                 deadline: 'Enter by 1:00 PM daily',
@@ -224,7 +224,7 @@ export default function Tokenomics() {
               {
                 icon: Crown,
                 title: 'Prime Time',
-                time: '6 PM – 3 AM EST',
+                time: '6 PM – 3 AM ET',
                 desc: 'CEO-curated programming. The flagship block where brand-defining content airs. Reserved for proven talent.',
                 color: 'from-amber-500 to-orange-500',
                 deadline: 'Assigned by 6:00 PM daily',
