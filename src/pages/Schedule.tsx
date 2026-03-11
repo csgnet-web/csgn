@@ -97,7 +97,7 @@ export default function Schedule() {
               <Radio className="w-4 h-4 text-primary-400" />
               {days[selectedDay]}'s Schedule
             </h3>
-            <Badge variant="blue">All times EST</Badge>
+            <Badge variant="blue">All times ET</Badge>
           </div>
 
           <div className="divide-y divide-white/[0.04]">
@@ -188,8 +188,8 @@ export default function Schedule() {
               <div>
                 <h4 className="font-semibold text-white mb-1">Want to be on the schedule?</h4>
                 <p className="text-sm text-gray-400 leading-relaxed">
-                  Apply to become a CSGN streamer. Once approved, you can bid on auction slots (3 AM–7 PM) using CSGN tokens,
-                  or be selected for the CEO Schedule (7 PM–3 AM). Streamers earn 30% of all CSGN creator fees during their time slot.
+                  Apply to become a CSGN streamer. Once approved, you can bid on auction slots (3 AM–7 PM ET) using CSGN tokens,
+                  or be selected for the CEO Schedule (7 PM–3 AM ET). Streamers earn 30% of pump.fun creator fees during their time slot.
                 </p>
               </div>
             </div>

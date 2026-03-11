@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Navigate } from 'react-router-dom'
 import { Gavel, Wallet, Clock3, AlertTriangle, TrendingUp, Crown, Info } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
@@ -149,8 +148,6 @@ export default function Queue() {
     loadSlots()
   }, [loadSlots])
 
-  if (!user) return <Navigate to="/account" replace />
-
   const now = Date.now()
   const auctionSlots = slots.filter((s) => s.type === 'auction' && s.status === 'open')
   const ceoSlots = slots.filter((s) => s.type === 'ceo' && s.status === 'open')
@@ -238,6 +235,7 @@ export default function Queue() {
               )}
             </div>
           </div>
+          {!user && <p className="text-xs text-amber-300 mt-2">You can view all slots without logging in. Sign in to bid or submit CEO requests.</p>}
           {walletError && <p className="text-xs text-red-300 mt-2">{walletError}</p>}
           {actionError && (
             <div className="mt-3 flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-400">
@@ -261,7 +259,7 @@ export default function Queue() {
           </div>
         </Card>
 
-        {!user.emailVerified && (
+        {user && !user.emailVerified && (
           <Card hover={false} className="p-4 bg-amber-500/5 border-amber-500/20">
             <div className="flex items-center gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
@@ -281,7 +279,7 @@ export default function Queue() {
             <Card hover={false} className="p-5 space-y-4">
               <h2 className="text-white font-semibold flex items-center gap-2">
                 <Gavel className="w-4 h-4 text-red-400" /> Auction Slots
-                <span className="text-xs text-gray-500 font-normal">3 AM – 7 PM EST</span>
+                <span className="text-xs text-gray-500 font-normal">3 AM – 7 PM ET</span>
               </h2>
               {auctionSlots.length === 0 ? (
                 <p className="text-sm text-gray-500 py-4">No auction slots open right now. Check back soon.</p>
@@ -290,7 +288,7 @@ export default function Queue() {
                   const bidPrice = getMinimumBid(slot.bids.length)
                   const closesAt = new Date(slot.startTime).getTime() - 2 * 60 * 60 * 1000
                   const isWindowOpen = now <= closesAt
-                  const userAlreadyBid = slot.bids.some((b) => b.uid === user.uid)
+                  const userAlreadyBid = user ? slot.bids.some((b) => b.uid === user.uid) : false
 
                   return (
                     <div key={slot.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
@@ -328,12 +326,14 @@ export default function Queue() {
                         <Button
                           variant="primary"
                           size="sm"
-                          disabled={!isWindowOpen || !walletAddress || userAlreadyBid || !user.emailVerified}
+                          disabled={!user || !isWindowOpen || !walletAddress || userAlreadyBid || !user.emailVerified}
                           isLoading={actionLoading === slot.id}
                           onClick={() => handlePlaceBid(slot)}
                         >
                           {userAlreadyBid
                             ? 'Bid Placed'
+                            : !user
+                            ? 'Log in to Bid'
                             : !isWindowOpen
                             ? 'Bidding Closed'
                             : !walletAddress
@@ -351,14 +351,14 @@ export default function Queue() {
             <Card hover={false} className="p-5 space-y-4">
               <h2 className="text-white font-semibold flex items-center gap-2">
                 <Crown className="w-4 h-4 text-yellow-400" /> CEO Schedule
-                <span className="text-xs text-gray-500 font-normal">7 PM – 3 AM EST</span>
+                <span className="text-xs text-gray-500 font-normal">7 PM – 3 AM ET</span>
               </h2>
               {ceoSlots.length === 0 ? (
                 <p className="text-sm text-gray-500 py-4">No CEO Schedule slots open for requests right now.</p>
               ) : (
                 ceoSlots.map((slot) => {
-                  const alreadyRequested = slot.requests?.some((r) => r.uid === user.uid)
-                  const myRequest = slot.requests?.find((r) => r.uid === user.uid)
+                  const alreadyRequested = user ? slot.requests?.some((r) => r.uid === user.uid) : false
+                  const myRequest = user ? slot.requests?.find((r) => r.uid === user.uid) : undefined
 
                   return (
                     <div key={slot.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
@@ -402,11 +402,11 @@ export default function Queue() {
                             variant="secondary"
                             size="sm"
                             className="w-full"
-                            disabled={!user.emailVerified || !requestMessages[slot.id]?.trim()}
+                            disabled={!user || !user.emailVerified || !requestMessages[slot.id]?.trim()}
                             isLoading={actionLoading === slot.id}
                             onClick={() => handleRequestSlot(slot)}
                           >
-                            Submit Request
+                            {!user ? 'Log in to Request' : 'Submit Request'}
                           </Button>
                         </div>
                       )}

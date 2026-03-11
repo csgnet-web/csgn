@@ -96,13 +96,13 @@ export default function Apply() {
           badge="Apply"
           title="Become a"
           highlight="CSGN Streamer"
-          description="Join the network. Get your own time slot. Earn 50% of token trading fees while you broadcast to the CSGN community."
+          description="Join the network. Get your own time slot. Earn 30% of creator fees while you broadcast to the CSGN community."
         />
 
         {/* Benefits */}
         <div className="grid sm:grid-cols-3 gap-4 mb-12">
           {[
-            { title: '50% Revenue Share', desc: 'Earn half of all trading fees during your slot', icon: '💰' },
+            { title: '30% Creator Fee Share', desc: 'Earn 30% of creator fees during your slot', icon: '💰' },
             { title: 'Built-in Audience', desc: 'Tap into CSGN\'s growing viewer base from day one', icon: '👥' },
             { title: 'Network Support', desc: 'Production tools, promotion, and a professional platform', icon: '🚀' },
           ].map((benefit) => (
@@ -230,9 +230,9 @@ export default function Apply() {
                   className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/20 transition-all appearance-none cursor-pointer"
                 >
                   <option value="any">No Preference</option>
-                  <option value="auction">Auction (3AM-2PM)</option>
-                  <option value="lottery">Lottery (2PM-6PM)</option>
-                  <option value="prime">Prime Time (6PM-3AM)</option>
+                  <option value="auction">Auction (3AM-7PM ET)</option>
+                  <option value="lottery">CEO Schedule (7PM-3AM ET)</option>
+                  <option value="prime">CEO Schedule (7PM-3AM ET)</option>
                 </select>
               </div>
               <div>
