@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
+import { onSnapshot, doc } from 'firebase/firestore'
+import { db } from '@/config/firebase'
 import { subscribeToCurrentSlot, subscribeToSlots, formatESTRange, type Slot } from '@/lib/slots'
 import { startFeeTracker } from '@/lib/dexscreener'
 
@@ -114,21 +116,25 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
       <div className="px-2 sm:px-3 pb-1.5 sm:pb-3 pt-1 sm:pt-2.5 bg-gradient-to-t from-black/80 to-transparent space-y-0.5 sm:space-y-1">
         <p className="text-white font-black font-display text-[10px] sm:text-sm leading-tight break-words">{streamer}</p>
         <p className="text-white/60 text-[9px] sm:text-[11px] leading-snug break-words">{slot.type === 'auction' ? 'Auction Slot' : 'CEO Schedule'}</p>
-        <p className="text-white/60 text-[9px] sm:text-[11px] font-mono leading-none">{slot.label} EST</p>
+        <p className="text-white/60 text-[9px] sm:text-[11px] font-mono leading-none">{formatESTRange(slot)}</p>
       </div>
     </div>
   )
 }
 
 /* ── CSGN Player: renders Twitch or YouTube, or NO STREAM ACTIVE ── */
-function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: string }) {
+function CSGNPlayer({ streamUrl, hostname, streamTitle }: { streamUrl: string; hostname: string; streamTitle?: string }) {
   if (!streamUrl) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center bg-[#050507] gap-4">
         <svg viewBox="0 0 120 40" className="h-8 w-auto fill-white/20" xmlns="http://www.w3.org/2000/svg">
           <text x="0" y="32" fontFamily="system-ui, sans-serif" fontWeight="900" fontSize="38" letterSpacing="2">CSGN</text>
         </svg>
-        <p className="text-gray-500 font-mono text-sm tracking-widest uppercase">No Stream Active</p>
+        {streamTitle ? (
+          <p className="text-gray-300 font-display font-bold text-base tracking-wide text-center px-4">{streamTitle}</p>
+        ) : (
+          <p className="text-gray-500 font-mono text-sm tracking-widest uppercase">No Stream Active</p>
+        )}
       </div>
     )
   }
@@ -165,12 +171,15 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
 export default function Watch() {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
-  const [isChatOpen, setIsChatOpen] = useState(true)
+  const [isChatOpen, setIsChatOpen] = useState(false)
 
   // Current live slot from Firestore (auto-detected by time)
   const [currentSlot, setCurrentSlot] = useState<Slot | null>(null)
   // Today's upcoming slots for the schedule sidebar
   const [todaySlots, setTodaySlots] = useState<Slot[]>([])
+
+  // Manual override from admin config/liveStream
+  const [manualOverride, setManualOverride] = useState<{ url: string; streamerName: string; title: string } | null>(null)
 
   // Live fee tracking
   const [liveFeeSOL, setLiveFeeSOL] = useState<number>(0)
@@ -180,6 +189,23 @@ export default function Watch() {
   const [showWipe, setShowWipe] = useState(false)
   const prevSlotIdRef = useRef<string | null>(null)
   const wipeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Subscribe to admin manual override config
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'config', 'liveStream'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data()
+        if (data.url) {
+          setManualOverride({ url: data.url, streamerName: data.streamerName || '', title: data.title || '' })
+        } else {
+          setManualOverride(null)
+        }
+      } else {
+        setManualOverride(null)
+      }
+    }, () => setManualOverride(null))
+    return unsub
+  }, [])
 
   // Subscribe to the current live slot
   useEffect(() => {
@@ -221,22 +247,39 @@ export default function Watch() {
   }, [currentSlot?.id])
 
   // Subscribe to today's slots for the schedule list
+  // Use a wide UTC window and filter client-side by ET date, so the correct
+  // slots are shown regardless of the browser's local timezone.
   useEffect(() => {
-    const from = new Date()
-    from.setHours(0, 0, 0, 0)
-    const to = new Date(from)
-    to.setDate(to.getDate() + 1)
-    to.setHours(23, 59, 59, 999)
+    const from = new Date(Date.now() - 4 * 60 * 60 * 1000)   // 4h ago (catch current slot)
+    const to   = new Date(Date.now() + 28 * 60 * 60 * 1000)  // 28h ahead (full ET day + buffer)
 
     const unsub = subscribeToSlots(from, to, (slots) => {
-      setTodaySlots(slots)
+      // Determine today's date string in Eastern Time
+      const todayET = new Date().toLocaleDateString('en-US', {
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      })
+      // Keep only slots whose start time falls on today's ET calendar date
+      setTodaySlots(
+        slots.filter((s) =>
+          new Date(s.startTime).toLocaleDateString('en-US', {
+            timeZone: 'America/New_York',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          }) === todayET
+        )
+      )
     })
     return unsub
   }, [])
 
-  // Derive stream URL from current slot — empty if no slot or no URL set
-  const streamUrl = currentSlot?.streamUrl || ''
-  const streamerName = currentSlot?.assignedName || ''
+  // Derive stream URL — manual override takes priority over current slot
+  const streamUrl = manualOverride?.url || currentSlot?.streamUrl || ''
+  const streamerName = manualOverride?.streamerName || currentSlot?.assignedName || ''
+  const streamTitle = manualOverride?.title || currentSlot?.streamTitle || currentSlot?.description || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
 
   // Determine chat source (only shown when a stream is active)
@@ -245,10 +288,19 @@ export default function Watch() {
   const chatChannel = stream?.type === 'twitch' ? stream.id : (streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '') || '')
   const chatSrc = `https://www.twitch.tv/embed/${encodeURIComponent(chatChannel)}/chat?parent=${hostname}&darkpopout`
 
-  // Next upcoming slot
+  // Next upcoming slots
   const now = Date.now()
   const upcomingSlots = todaySlots.filter((s) => new Date(s.startTime).getTime() > now)
-  const nextSlot = upcomingSlots[0]
+
+  // For the schedule grid: current slot (if any) + next 2, otherwise next 3
+  const currentTodaySlot = todaySlots.find((s) => {
+    const start = new Date(s.startTime).getTime()
+    const end = new Date(s.endTime).getTime()
+    return now >= start && now < end
+  })
+  const scheduleGridSlots = currentTodaySlot
+    ? [currentTodaySlot, ...upcomingSlots.slice(0, 2)]
+    : upcomingSlots.slice(0, 3)
 
   return (
     <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
@@ -282,7 +334,7 @@ export default function Watch() {
           <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)]">
             <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(255,0,90,0.28),transparent_42%),radial-gradient(circle_at_85%_10%,rgba(80,0,255,0.26),transparent_35%)]" />
             <div className="w-full relative" style={{ aspectRatio: '16/9' }}>
-              <CSGNPlayer streamUrl={streamUrl} hostname={hostname} />
+              <CSGNPlayer streamUrl={streamUrl} hostname={hostname} streamTitle={streamTitle} />
               <CSGNWipeOverlay visible={showWipe} />
             </div>
 
@@ -294,8 +346,11 @@ export default function Watch() {
         <div className="shrink-0 flex items-start justify-between px-5 py-4 border-b border-white/[0.06]">
           <div>
             <h1 className="text-3xl sm:text-4xl font-black font-display text-white tracking-tight leading-none">
-              {streamerName}
+              {streamerName || <span className="text-gray-600">No Stream</span>}
             </h1>
+            {streamTitle && (
+              <p className="text-sm text-primary-300 font-medium mt-0.5 italic">"{streamTitle}"</p>
+            )}
             <p className="text-sm text-gray-400 mt-1 font-mono">{slotLabel}</p>
           </div>
           <div className="text-right">
@@ -331,12 +386,15 @@ export default function Watch() {
               Today's Schedule
             </h2>
             <div className="flex items-center gap-4">
-              {nextSlot && (
-                <div className="text-right">
-                  <p className="text-[11px] text-gray-500 uppercase tracking-wider leading-none">In the Hole</p>
-                  <p className="text-sm font-display font-bold text-white mt-0.5">
-                    {nextSlot.assignedName || (nextSlot.type === 'auction' ? 'Open Bid' : 'CEO')}
-                  </p>
+              {upcomingSlots.length > 0 && (
+                <div className="text-right space-y-0.5">
+                  <p className="text-[11px] text-gray-500 uppercase tracking-wider leading-none mb-1">Up Next</p>
+                  {upcomingSlots.slice(0, 3).map((s) => (
+                    <p key={s.id} className="text-xs font-display font-bold text-white leading-snug">
+                      {s.assignedName || (s.type === 'auction' ? 'Open Bid' : 'CEO')}{' '}
+                      <span className="font-normal text-gray-500">{formatESTRange(s)}</span>
+                    </p>
+                  ))}
                 </div>
               )}
               <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isScheduleOpen ? 'rotate-180' : ''}`} />
@@ -346,7 +404,7 @@ export default function Watch() {
           {isScheduleOpen && (
             <>
               <div className="grid grid-cols-3 gap-3">
-                {todaySlots.slice(0, 3).map((slot) => {
+                {scheduleGridSlots.map((slot) => {
                   const slotStart = new Date(slot.startTime).getTime()
                   const slotEnd = new Date(slot.endTime).getTime()
                   const isCurrent = now >= slotStart && now < slotEnd

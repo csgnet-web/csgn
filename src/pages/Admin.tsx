@@ -18,10 +18,12 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import {
   generateNextThreeDays,
+  wipeAndRegenerateSlots,
   fetchSlots,
   assignCEOSlot,
   assignSlot,
   updateSlotStreamUrl,
+  updateSlotStatus,
   resolveAuction,
   deleteSlot,
   acceptSlotRequest,
@@ -30,9 +32,11 @@ import {
   markFeesPaid,
   declineFeesPayment,
   getMinimumBid,
+  formatESTRange,
   DEFAULT_STREAM_URL,
   type Slot,
   type SlotType,
+  type SlotStatus,
   type CreatorFees,
 } from '@/lib/slots'
 
@@ -91,9 +95,13 @@ export default function Admin() {
   // Live stream push state
   const [liveStreamUrl, setLiveStreamUrl] = useState('')
   const [liveStreamerName, setLiveStreamerName] = useState('')
+  const [liveStreamTitle, setLiveStreamTitle] = useState('')
   const [currentLiveUrl, setCurrentLiveUrl] = useState('')
   const [currentLiveStreamer, setCurrentLiveStreamer] = useState('')
+  const [currentLiveTitle, setCurrentLiveTitle] = useState('')
   const [pushingStream, setPushingStream] = useState(false)
+  const [wipingSlots, setWipingSlots] = useState(false)
+  const [confirmWipe, setConfirmWipe] = useState(false)
 
   // Fees tab state
   const [feeSlots, setFeeSlots] = useState<Slot[]>([])
@@ -113,6 +121,7 @@ export default function Admin() {
           const data = snap.data()
           setCurrentLiveUrl(data.url || '')
           setCurrentLiveStreamer(data.streamerName || '')
+          setCurrentLiveTitle(data.title || '')
         }
       },
       () => {}
@@ -128,14 +137,30 @@ export default function Admin() {
       await setDoc(doc(db, 'config', 'liveStream'), {
         url: liveStreamUrl.trim(),
         streamerName: liveStreamerName.trim() || 'CSGN',
+        title: liveStreamTitle.trim(),
         updatedAt: new Date().toISOString(),
       })
       setLiveStreamUrl('')
       setLiveStreamerName('')
+      setLiveStreamTitle('')
     } catch (err: any) {
-      setActionError(err?.message || 'Failed to push stream.')
+      setActionError('Push Stream failed: ' + (err?.message || 'Unknown error. Check Firestore rules for config/liveStream.'))
     }
     setPushingStream(false)
+  }
+
+  const handleClearStream = async () => {
+    setActionError(null)
+    try {
+      await setDoc(doc(db, 'config', 'liveStream'), {
+        url: '',
+        streamerName: '',
+        title: '',
+        updatedAt: new Date().toISOString(),
+      })
+    } catch (err: any) {
+      setActionError('Clear failed: ' + (err?.message || 'Unknown error.'))
+    }
   }
 
   useEffect(() => {
@@ -156,10 +181,21 @@ export default function Admin() {
   const loadSlots = useCallback(async () => {
     setSlotsLoading(true)
     const now = new Date()
+    // Look back 4h so any currently-running slot is included
+    const from = new Date(now.getTime() - 4 * 60 * 60 * 1000)
     const future = new Date(now.getTime() + 72 * 60 * 60 * 1000)
     try {
-      const data = await fetchSlots(now, future)
-      setSlots(data)
+      const data = await fetchSlots(from, future)
+      const nowMs = now.getTime()
+      // Sort: currently-active slot first, then ascending by startTime
+      const sorted = [...data].sort((a, b) => {
+        const aActive = nowMs >= new Date(a.startTime).getTime() && nowMs < new Date(a.endTime).getTime()
+        const bActive = nowMs >= new Date(b.startTime).getTime() && nowMs < new Date(b.endTime).getTime()
+        if (aActive && !bActive) return -1
+        if (bActive && !aActive) return 1
+        return new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+      })
+      setSlots(sorted)
     } catch (err) {
       console.warn('Failed to fetch slots:', err)
     }
@@ -214,6 +250,24 @@ export default function Admin() {
       setActionError(err?.message || 'Failed to generate slots.')
     }
     setGenerating(false)
+  }
+
+  const handleWipeAndRegenerate = async () => {
+    setWipingSlots(true)
+    setActionError(null)
+    setConfirmWipe(false)
+    try {
+      // Start from today — wipeAndRegenerateSlots generates slots for today (ET)
+      // and the next 2 days. Pass the current time so the ET date resolves correctly.
+      const result = await wipeAndRegenerateSlots(new Date())
+      await loadSlots()
+      if (result.generated === 0) {
+        setActionError('No slots were generated.')
+      }
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to wipe and regenerate slots.')
+    }
+    setWipingSlots(false)
   }
 
   const handleResolveAuction = async (slotId: string) => {
@@ -463,10 +517,23 @@ export default function Admin() {
               </div>
               <div className="p-4 space-y-4">
                 {currentLiveUrl && (
-                  <div className="p-3 bg-white/[0.03] border border-white/[0.06] rounded-xl">
-                    <p className="text-[11px] text-gray-500 uppercase tracking-wider mb-1">Currently Live</p>
-                    <p className="text-sm font-medium text-white">{currentLiveStreamer || 'CSGN'}</p>
-                    <p className="text-xs text-gray-400 font-mono truncate">{currentLiveUrl}</p>
+                  <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-xl">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[11px] text-red-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse inline-block" /> Override Active
+                        </p>
+                        <p className="text-sm font-medium text-white">{currentLiveStreamer || 'CSGN'}</p>
+                        {currentLiveTitle && <p className="text-xs text-primary-300 font-medium mt-0.5">"{currentLiveTitle}"</p>}
+                        <p className="text-xs text-gray-400 font-mono truncate mt-0.5">{currentLiveUrl}</p>
+                      </div>
+                      <button
+                        onClick={handleClearStream}
+                        className="shrink-0 px-2 py-1 text-xs text-red-400 border border-red-500/30 rounded hover:bg-red-500/10 transition-colors cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    </div>
                   </div>
                 )}
                 <div>
@@ -486,6 +553,16 @@ export default function Admin() {
                     value={liveStreamerName}
                     onChange={(e) => setLiveStreamerName(e.target.value)}
                     placeholder="e.g. shrood"
+                    className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-300 mb-1">Stream Title <span className="text-gray-500 text-xs">(shown instead of "No Stream")</span></label>
+                  <input
+                    type="text"
+                    value={liveStreamTitle}
+                    onChange={(e) => setLiveStreamTitle(e.target.value)}
+                    placeholder="e.g. Late Night Crypto Talk"
                     className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
                   />
                 </div>
@@ -655,8 +732,39 @@ export default function Admin() {
         {/* ── Streamers Tab ── */}
         {activeTab === 'streamers' && (
           <Card hover={false} className="overflow-hidden">
-            <div className="p-4 border-b border-white/[0.06]">
+            <div className="p-4 border-b border-white/[0.06] flex items-center justify-between gap-3">
               <h3 className="font-semibold text-white">Active Streamers</h3>
+              <Button
+                variant="secondary"
+                size="sm"
+                leftIcon={<UserCheck className="w-4 h-4" />}
+                onClick={async () => {
+                  setActionError(null)
+                  try {
+                    const approvedApps = applications.filter((a) => a.status === 'approved')
+                    let synced = 0
+                    for (const app of approvedApps) {
+                      const q = query(collection(db, 'users'), where('email', '==', app.email))
+                      const snap = await getDocs(q)
+                      if (!snap.empty) {
+                        const userDoc = snap.docs[0]
+                        if (userDoc.data().role !== 'streamer' && userDoc.data().role !== 'admin') {
+                          await updateDoc(doc(db, 'users', userDoc.id), { role: 'streamer' })
+                          synced++
+                        }
+                      }
+                    }
+                    const usersSnap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc')))
+                    setUsers(usersSnap.docs.map((d) => ({ ...d.data() } as UserData)))
+                    setActionError(synced > 0 ? null : 'All approved applicants are already Active Streamers.')
+                    if (synced > 0) alert(`Synced ${synced} user(s) to Active Streamer status.`)
+                  } catch (err: any) {
+                    setActionError(err?.message || 'Sync failed.')
+                  }
+                }}
+              >
+                Sync Approved → Streamer
+              </Button>
             </div>
             <div className="divide-y divide-white/[0.04]">
               {users.filter((u) => u.role === 'streamer').map((user) => (
@@ -691,7 +799,7 @@ export default function Admin() {
                 <h3 className="text-lg font-semibold text-white">Upcoming Slots (Next 72h)</h3>
                 <p className="text-sm text-gray-400">Generate 3 days of slots, resolve auctions, assign CEO Schedule, manage stream URLs.</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <Button variant="ghost" size="sm" leftIcon={<RefreshCw className="w-4 h-4" />} onClick={loadSlots}>
                   Refresh
                 </Button>
@@ -704,6 +812,32 @@ export default function Admin() {
                 >
                   Generate Next 3 Days
                 </Button>
+                {!confirmWipe ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-400 hover:text-red-300 border border-red-500/30"
+                    onClick={() => setConfirmWipe(true)}
+                  >
+                    <Trash2 className="w-4 h-4 mr-1" /> Wipe & Reseed
+                  </Button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-red-400">Wipe all slots & reseed from today (ET)?</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-400 hover:text-red-300"
+                      isLoading={wipingSlots}
+                      onClick={handleWipeAndRegenerate}
+                    >
+                      Yes, Wipe
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setConfirmWipe(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -732,12 +866,14 @@ export default function Admin() {
                 <div className="divide-y divide-white/[0.04]">
                   {slots.map((slot) => {
                     const startTime = new Date(slot.startTime)
-                    const hoursUntil = (startTime.getTime() - Date.now()) / (1000 * 60 * 60)
+                    const nowMs = Date.now()
+                    const isActive = nowMs >= startTime.getTime() && nowMs < new Date(slot.endTime).getTime()
+                    const hoursUntil = (startTime.getTime() - nowMs) / (1000 * 60 * 60)
                     const canResolve = hoursUntil <= 2 && slot.status === 'open'
                     const pendingRequests = slot.requests?.filter((r) => r.status === 'pending') ?? []
 
                     return (
-                      <div key={slot.id} className="px-4 sm:px-6 py-4 hover:bg-white/[0.02] transition-colors">
+                      <div key={slot.id} className={`px-4 sm:px-6 py-4 transition-colors ${isActive ? 'bg-red-500/5 border-l-2 border-red-500' : 'hover:bg-white/[0.02]'}`}>
                         <div className="flex items-center gap-4">
                           <div className={`w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 ${typeColor(slot.type)}`}>
                             {typeIcon(slot.type)}
@@ -745,24 +881,38 @@ export default function Admin() {
 
                           <div className="flex-1 min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-sm font-medium text-white">{slot.label}</span>
+                              <span className="text-sm font-medium text-white">{formatESTRange(slot)}</span>
+                              {isActive && <Badge variant="red">● LIVE NOW</Badge>}
                               <Badge variant={slot.type === 'ceo' ? 'gold' : 'blue'}>
                                 {slot.type === 'auction' ? 'Auction' : 'CEO'}
                               </Badge>
-                              <Badge variant={
-                                slot.status === 'open' ? 'blue' :
-                                slot.status === 'confirmed' ? 'green' :
-                                slot.status === 'pending_deposit' ? 'gold' :
-                                slot.status === 'unfilled' ? 'red' : 'default'
-                              }>
-                                {slot.status}
-                              </Badge>
+                              {/* Inline status selector */}
+                              <select
+                                value={slot.status}
+                                onChange={async (e) => {
+                                  try {
+                                    await updateSlotStatus(slot.id, e.target.value as SlotStatus)
+                                    await loadSlots()
+                                  } catch (err: any) {
+                                    setActionError(err?.message || 'Failed to update status.')
+                                  }
+                                }}
+                                className="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-xs text-white focus:outline-none focus:border-primary-500/50 cursor-pointer appearance-none"
+                              >
+                                <option value="open">open</option>
+                                <option value="closing">closing</option>
+                                <option value="pending_deposit">pending_deposit</option>
+                                <option value="confirmed">confirmed</option>
+                                <option value="live">live</option>
+                                <option value="completed">completed</option>
+                                <option value="unfilled">unfilled</option>
+                              </select>
                               {pendingRequests.length > 0 && (
                                 <Badge variant="purple">{pendingRequests.length} request{pendingRequests.length !== 1 ? 's' : ''}</Badge>
                               )}
                             </div>
                             <p className="text-xs text-gray-500 mt-0.5">
-                              {startTime.toLocaleDateString()} {startTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                              {startTime.toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' })} {startTime.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}
                               {slot.assignedName && <span className="text-emerald-400"> — {slot.assignedName}</span>}
                               {slot.type === 'auction' && ` — ${slot.bids.length} bid${slot.bids.length !== 1 ? 's' : ''}`}
                               {slot.type === 'auction' && slot.bids.length > 0 && ` (top: ${Math.max(...slot.bids.map(b => b.amount)).toLocaleString()} CSGN, next: ${getMinimumBid(slot.bids.length).toLocaleString()} CSGN)`}
@@ -836,7 +986,7 @@ export default function Admin() {
                     <div>
                       <p className="text-sm text-gray-400 mb-1">Slot</p>
                       <p className="text-white font-medium">{assignModal.label}</p>
-                      <p className="text-xs text-gray-500">{new Date(assignModal.startTime).toLocaleString()}</p>
+                      <p className="text-xs text-gray-500">{new Date(assignModal.startTime).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}</p>
                     </div>
 
                     <div>
