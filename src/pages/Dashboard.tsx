@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  User, Mail, Wallet, Twitter, LogIn, UserPlus, Trophy,
+  User, Mail, Wallet, LogIn, UserPlus, Trophy,
   CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Crown, X as XIcon,
 } from 'lucide-react'
 import { doc, updateDoc } from 'firebase/firestore'
@@ -101,12 +101,6 @@ export default function Dashboard() {
     } catch (err) {
       console.warn('Failed to mark notifications read:', err)
     }
-  }
-
-  const handleConnectX = () => {
-    // Open X OAuth authorization flow
-    // For now, opens Twitter login in a new tab — full OAuth requires backend
-    window.open('https://twitter.com/i/oauth2/authorize', '_blank', 'noopener,noreferrer')
   }
 
   // Notification icon mapping
@@ -281,15 +275,17 @@ export default function Dashboard() {
               ) : (
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
-                    onClick={handleConnectX}
-                    className="flex items-center gap-2 px-4 py-2 bg-black hover:bg-gray-900 border border-white/20 hover:border-white/40 rounded-lg text-sm font-semibold text-white transition-all cursor-pointer"
+                    disabled
+                    title="X OAuth coming soon — enter your handle manually below"
+                    className="flex items-center gap-2 px-4 py-2 bg-black border border-white/10 rounded-lg text-sm font-semibold text-gray-500 cursor-not-allowed opacity-50"
                   >
-                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white" xmlns="http://www.w3.org/2000/svg">
+                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current" xmlns="http://www.w3.org/2000/svg">
                       <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
                     </svg>
                     Connect X Account
+                    <span className="text-[10px] font-normal bg-white/10 px-1.5 py-0.5 rounded">Coming Soon</span>
                   </button>
-                  <span className="text-xs text-gray-500">or enter handle manually:</span>
+                  <span className="text-xs text-gray-500">enter handle manually:</span>
                   <input
                     value={xHandle}
                     onChange={(e) => setXHandle(e.target.value)}
