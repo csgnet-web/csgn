@@ -116,7 +116,7 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
       <div className="px-2 sm:px-3 pb-1.5 sm:pb-3 pt-1 sm:pt-2.5 bg-gradient-to-t from-black/80 to-transparent space-y-0.5 sm:space-y-1">
         <p className="text-white font-black font-display text-[10px] sm:text-sm leading-tight break-words">{streamer}</p>
         <p className="text-white/60 text-[9px] sm:text-[11px] leading-snug break-words">{slot.type === 'auction' ? 'Auction Slot' : 'CEO Schedule'}</p>
-        <p className="text-white/60 text-[9px] sm:text-[11px] font-mono leading-none">{slot.label} EST</p>
+        <p className="text-white/60 text-[9px] sm:text-[11px] font-mono leading-none">{formatESTRange(slot)}</p>
       </div>
     </div>
   )
@@ -247,15 +247,31 @@ export default function Watch() {
   }, [currentSlot?.id])
 
   // Subscribe to today's slots for the schedule list
+  // Use a wide UTC window and filter client-side by ET date, so the correct
+  // slots are shown regardless of the browser's local timezone.
   useEffect(() => {
-    const from = new Date()
-    from.setHours(0, 0, 0, 0)
-    const to = new Date(from)
-    to.setDate(to.getDate() + 1)
-    to.setHours(23, 59, 59, 999)
+    const from = new Date(Date.now() - 4 * 60 * 60 * 1000)   // 4h ago (catch current slot)
+    const to   = new Date(Date.now() + 28 * 60 * 60 * 1000)  // 28h ahead (full ET day + buffer)
 
     const unsub = subscribeToSlots(from, to, (slots) => {
-      setTodaySlots(slots)
+      // Determine today's date string in Eastern Time
+      const todayET = new Date().toLocaleDateString('en-US', {
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      })
+      // Keep only slots whose start time falls on today's ET calendar date
+      setTodaySlots(
+        slots.filter((s) =>
+          new Date(s.startTime).toLocaleDateString('en-US', {
+            timeZone: 'America/New_York',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          }) === todayET
+        )
+      )
     })
     return unsub
   }, [])
@@ -376,7 +392,7 @@ export default function Watch() {
                   {upcomingSlots.slice(0, 3).map((s) => (
                     <p key={s.id} className="text-xs font-display font-bold text-white leading-snug">
                       {s.assignedName || (s.type === 'auction' ? 'Open Bid' : 'CEO')}{' '}
-                      <span className="font-normal text-gray-500">{s.label}</span>
+                      <span className="font-normal text-gray-500">{formatESTRange(s)}</span>
                     </p>
                   ))}
                 </div>

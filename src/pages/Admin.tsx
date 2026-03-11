@@ -32,6 +32,7 @@ import {
   markFeesPaid,
   declineFeesPayment,
   getMinimumBid,
+  formatESTRange,
   DEFAULT_STREAM_URL,
   type Slot,
   type SlotType,
@@ -256,10 +257,9 @@ export default function Admin() {
     setActionError(null)
     setConfirmWipe(false)
     try {
-      // Start from March 10, 2026 — wipeAndRegenerateSlots will generate slots
-      // for that ET calendar day and the next 2 days.
-      // Pass noon UTC on Mar 10 so the ET date resolves to Mar 10.
-      const result = await wipeAndRegenerateSlots(new Date('2026-03-10T16:00:00.000Z'))
+      // Start from today — wipeAndRegenerateSlots generates slots for today (ET)
+      // and the next 2 days. Pass the current time so the ET date resolves correctly.
+      const result = await wipeAndRegenerateSlots(new Date())
       await loadSlots()
       if (result.generated === 0) {
         setActionError('No slots were generated.')
@@ -823,7 +823,7 @@ export default function Admin() {
                   </Button>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-red-400">Wipe all slots & reseed from 3/10 1AM ET?</span>
+                    <span className="text-xs text-red-400">Wipe all slots & reseed from today (ET)?</span>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -881,7 +881,7 @@ export default function Admin() {
 
                           <div className="flex-1 min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-sm font-medium text-white">{slot.label}</span>
+                              <span className="text-sm font-medium text-white">{formatESTRange(slot)}</span>
                               {isActive && <Badge variant="red">● LIVE NOW</Badge>}
                               <Badge variant={slot.type === 'ceo' ? 'gold' : 'blue'}>
                                 {slot.type === 'auction' ? 'Auction' : 'CEO'}
