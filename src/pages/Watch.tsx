@@ -171,7 +171,7 @@ function CSGNPlayer({ streamUrl, hostname, streamTitle }: { streamUrl: string; h
 export default function Watch() {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
-  const [isChatOpen, setIsChatOpen] = useState(true)
+  const [isChatOpen, setIsChatOpen] = useState(false)
 
   // Current live slot from Firestore (auto-detected by time)
   const [currentSlot, setCurrentSlot] = useState<Slot | null>(null)
@@ -272,10 +272,19 @@ export default function Watch() {
   const chatChannel = stream?.type === 'twitch' ? stream.id : (streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '') || '')
   const chatSrc = `https://www.twitch.tv/embed/${encodeURIComponent(chatChannel)}/chat?parent=${hostname}&darkpopout`
 
-  // Next upcoming slot
+  // Next upcoming slots
   const now = Date.now()
   const upcomingSlots = todaySlots.filter((s) => new Date(s.startTime).getTime() > now)
-  const nextSlot = upcomingSlots[0]
+
+  // For the schedule grid: current slot (if any) + next 2, otherwise next 3
+  const currentTodaySlot = todaySlots.find((s) => {
+    const start = new Date(s.startTime).getTime()
+    const end = new Date(s.endTime).getTime()
+    return now >= start && now < end
+  })
+  const scheduleGridSlots = currentTodaySlot
+    ? [currentTodaySlot, ...upcomingSlots.slice(0, 2)]
+    : upcomingSlots.slice(0, 3)
 
   return (
     <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
@@ -361,12 +370,15 @@ export default function Watch() {
               Today's Schedule
             </h2>
             <div className="flex items-center gap-4">
-              {nextSlot && (
-                <div className="text-right">
-                  <p className="text-[11px] text-gray-500 uppercase tracking-wider leading-none">In the Hole</p>
-                  <p className="text-sm font-display font-bold text-white mt-0.5">
-                    {nextSlot.assignedName || (nextSlot.type === 'auction' ? 'Open Bid' : 'CEO')}
-                  </p>
+              {upcomingSlots.length > 0 && (
+                <div className="text-right space-y-0.5">
+                  <p className="text-[11px] text-gray-500 uppercase tracking-wider leading-none mb-1">Up Next</p>
+                  {upcomingSlots.slice(0, 3).map((s) => (
+                    <p key={s.id} className="text-xs font-display font-bold text-white leading-snug">
+                      {s.assignedName || (s.type === 'auction' ? 'Open Bid' : 'CEO')}{' '}
+                      <span className="font-normal text-gray-500">{s.label}</span>
+                    </p>
+                  ))}
                 </div>
               )}
               <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isScheduleOpen ? 'rotate-180' : ''}`} />
@@ -376,7 +388,7 @@ export default function Watch() {
           {isScheduleOpen && (
             <>
               <div className="grid grid-cols-3 gap-3">
-                {todaySlots.slice(0, 3).map((slot) => {
+                {scheduleGridSlots.map((slot) => {
                   const slotStart = new Date(slot.startTime).getTime()
                   const slotEnd = new Date(slot.endTime).getTime()
                   const isCurrent = now >= slotStart && now < slotEnd

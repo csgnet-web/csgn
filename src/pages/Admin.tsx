@@ -23,6 +23,7 @@ import {
   assignCEOSlot,
   assignSlot,
   updateSlotStreamUrl,
+  updateSlotStatus,
   resolveAuction,
   deleteSlot,
   acceptSlotRequest,
@@ -34,6 +35,7 @@ import {
   DEFAULT_STREAM_URL,
   type Slot,
   type SlotType,
+  type SlotStatus,
   type CreatorFees,
 } from '@/lib/slots'
 
@@ -141,9 +143,23 @@ export default function Admin() {
       setLiveStreamerName('')
       setLiveStreamTitle('')
     } catch (err: any) {
-      setActionError(err?.message || 'Failed to push stream.')
+      setActionError('Push Stream failed: ' + (err?.message || 'Unknown error. Check Firestore rules for config/liveStream.'))
     }
     setPushingStream(false)
+  }
+
+  const handleClearStream = async () => {
+    setActionError(null)
+    try {
+      await setDoc(doc(db, 'config', 'liveStream'), {
+        url: '',
+        streamerName: '',
+        title: '',
+        updatedAt: new Date().toISOString(),
+      })
+    } catch (err: any) {
+      setActionError('Clear failed: ' + (err?.message || 'Unknown error.'))
+    }
   }
 
   useEffect(() => {
@@ -164,10 +180,21 @@ export default function Admin() {
   const loadSlots = useCallback(async () => {
     setSlotsLoading(true)
     const now = new Date()
+    // Look back 4h so any currently-running slot is included
+    const from = new Date(now.getTime() - 4 * 60 * 60 * 1000)
     const future = new Date(now.getTime() + 72 * 60 * 60 * 1000)
     try {
-      const data = await fetchSlots(now, future)
-      setSlots(data)
+      const data = await fetchSlots(from, future)
+      const nowMs = now.getTime()
+      // Sort: currently-active slot first, then ascending by startTime
+      const sorted = [...data].sort((a, b) => {
+        const aActive = nowMs >= new Date(a.startTime).getTime() && nowMs < new Date(a.endTime).getTime()
+        const bActive = nowMs >= new Date(b.startTime).getTime() && nowMs < new Date(b.endTime).getTime()
+        if (aActive && !bActive) return -1
+        if (bActive && !aActive) return 1
+        return new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+      })
+      setSlots(sorted)
     } catch (err) {
       console.warn('Failed to fetch slots:', err)
     }
@@ -490,11 +517,23 @@ export default function Admin() {
               </div>
               <div className="p-4 space-y-4">
                 {currentLiveUrl && (
-                  <div className="p-3 bg-white/[0.03] border border-white/[0.06] rounded-xl">
-                    <p className="text-[11px] text-gray-500 uppercase tracking-wider mb-1">Currently Live</p>
-                    <p className="text-sm font-medium text-white">{currentLiveStreamer || 'CSGN'}</p>
-                    {currentLiveTitle && <p className="text-xs text-primary-300 font-medium mt-0.5">"{currentLiveTitle}"</p>}
-                    <p className="text-xs text-gray-400 font-mono truncate mt-0.5">{currentLiveUrl}</p>
+                  <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-xl">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[11px] text-red-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse inline-block" /> Override Active
+                        </p>
+                        <p className="text-sm font-medium text-white">{currentLiveStreamer || 'CSGN'}</p>
+                        {currentLiveTitle && <p className="text-xs text-primary-300 font-medium mt-0.5">"{currentLiveTitle}"</p>}
+                        <p className="text-xs text-gray-400 font-mono truncate mt-0.5">{currentLiveUrl}</p>
+                      </div>
+                      <button
+                        onClick={handleClearStream}
+                        className="shrink-0 px-2 py-1 text-xs text-red-400 border border-red-500/30 rounded hover:bg-red-500/10 transition-colors cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    </div>
                   </div>
                 )}
                 <div>
@@ -827,12 +866,14 @@ export default function Admin() {
                 <div className="divide-y divide-white/[0.04]">
                   {slots.map((slot) => {
                     const startTime = new Date(slot.startTime)
-                    const hoursUntil = (startTime.getTime() - Date.now()) / (1000 * 60 * 60)
+                    const nowMs = Date.now()
+                    const isActive = nowMs >= startTime.getTime() && nowMs < new Date(slot.endTime).getTime()
+                    const hoursUntil = (startTime.getTime() - nowMs) / (1000 * 60 * 60)
                     const canResolve = hoursUntil <= 2 && slot.status === 'open'
                     const pendingRequests = slot.requests?.filter((r) => r.status === 'pending') ?? []
 
                     return (
-                      <div key={slot.id} className="px-4 sm:px-6 py-4 hover:bg-white/[0.02] transition-colors">
+                      <div key={slot.id} className={`px-4 sm:px-6 py-4 transition-colors ${isActive ? 'bg-red-500/5 border-l-2 border-red-500' : 'hover:bg-white/[0.02]'}`}>
                         <div className="flex items-center gap-4">
                           <div className={`w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 ${typeColor(slot.type)}`}>
                             {typeIcon(slot.type)}
@@ -841,17 +882,31 @@ export default function Admin() {
                           <div className="flex-1 min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="text-sm font-medium text-white">{slot.label}</span>
+                              {isActive && <Badge variant="red">● LIVE NOW</Badge>}
                               <Badge variant={slot.type === 'ceo' ? 'gold' : 'blue'}>
                                 {slot.type === 'auction' ? 'Auction' : 'CEO'}
                               </Badge>
-                              <Badge variant={
-                                slot.status === 'open' ? 'blue' :
-                                slot.status === 'confirmed' ? 'green' :
-                                slot.status === 'pending_deposit' ? 'gold' :
-                                slot.status === 'unfilled' ? 'red' : 'default'
-                              }>
-                                {slot.status}
-                              </Badge>
+                              {/* Inline status selector */}
+                              <select
+                                value={slot.status}
+                                onChange={async (e) => {
+                                  try {
+                                    await updateSlotStatus(slot.id, e.target.value as SlotStatus)
+                                    await loadSlots()
+                                  } catch (err: any) {
+                                    setActionError(err?.message || 'Failed to update status.')
+                                  }
+                                }}
+                                className="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-xs text-white focus:outline-none focus:border-primary-500/50 cursor-pointer appearance-none"
+                              >
+                                <option value="open">open</option>
+                                <option value="closing">closing</option>
+                                <option value="pending_deposit">pending_deposit</option>
+                                <option value="confirmed">confirmed</option>
+                                <option value="live">live</option>
+                                <option value="completed">completed</option>
+                                <option value="unfilled">unfilled</option>
+                              </select>
                               {pendingRequests.length > 0 && (
                                 <Badge variant="purple">{pendingRequests.length} request{pendingRequests.length !== 1 ? 's' : ''}</Badge>
                               )}
