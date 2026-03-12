@@ -250,24 +250,9 @@ export default function Watch() {
     const to   = new Date(Date.now() + 28 * 60 * 60 * 1000)  // 28h ahead (full ET day + buffer)
 
     const unsub = subscribeToSlots(from, to, (slots) => {
-      // Determine today's date string in Eastern Time
-      const todayET = new Date().toLocaleDateString('en-US', {
-        timeZone: 'America/New_York',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      })
-      // Keep only slots whose start time falls on today's ET calendar date
-      setTodaySlots(
-        slots.filter((s) =>
-          new Date(s.startTime).toLocaleDateString('en-US', {
-            timeZone: 'America/New_York',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-          }) === todayET
-        )
-      )
+      // Keep ET-ordered slots so the Today panel can always render current + next 2
+      // (spilling into the next ET day when needed).
+      setTodaySlots([...slots].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()))
     })
     return unsub
   }, [])

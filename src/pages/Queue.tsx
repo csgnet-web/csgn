@@ -22,7 +22,7 @@ const TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
 const ASSOCIATED_TOKEN_PROGRAM_ID = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bEp'
 
 function formatDate(date: Date) {
-  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  return date.toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' ET'
 }
 
 /**
@@ -134,7 +134,7 @@ export default function Queue() {
 
   const loadSlots = useCallback(async () => {
     const now = new Date()
-    const future = new Date(now.getTime() + 48 * 60 * 60 * 1000)
+    const future = new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000)
     try {
       const data = await fetchSlots(now, future)
       setSlots(data)
@@ -151,6 +151,45 @@ export default function Queue() {
   const now = Date.now()
   const auctionSlots = slots.filter((s) => s.type === 'auction' && s.status === 'open')
   const ceoSlots = slots.filter((s) => s.type === 'ceo' && s.status === 'open')
+
+  const etDayKey = (date: Date) => date.toLocaleDateString('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const etMiddayFromOffset = (offset: number) => {
+    const nowDate = new Date()
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+    }).formatToParts(nowDate)
+    const get = (type: string) => Number(parts.find((p) => p.type === type)?.value || '0')
+    const base = new Date(Date.UTC(get('year'), get('month') - 1, get('day'), 12, 0, 0, 0))
+    base.setUTCDate(base.getUTCDate() + offset)
+    return base
+  }
+  const dayLabels = ['Today', 'Tomorrow', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7']
+
+  const sortForDay = (daySlots: Slot[], isToday: boolean) => {
+    const live = daySlots.find((s) => now >= new Date(s.startTime).getTime() && now < new Date(s.endTime).getTime())
+    const upcoming = daySlots.filter((s) => new Date(s.startTime).getTime() > now).sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+    return isToday ? (live ? [live, ...upcoming] : upcoming) : [...daySlots].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+  }
+
+  const auctionByDay = dayLabels.map((label, idx) => {
+    const key = etDayKey(etMiddayFromOffset(idx))
+    const daySlots = auctionSlots.filter((s) => etDayKey(new Date(s.startTime)) === key)
+    return { label, slots: sortForDay(daySlots, idx === 0) }
+  }).filter((d) => d.slots.length > 0)
+
+  const ceoByDay = dayLabels.map((label, idx) => {
+    const key = etDayKey(etMiddayFromOffset(idx))
+    const daySlots = ceoSlots.filter((s) => etDayKey(new Date(s.startTime)) === key)
+    return { label, slots: sortForDay(daySlots, idx === 0) }
+  }).filter((d) => d.slots.length > 0)
 
   const handlePlaceBid = async (slot: Slot) => {
     if (!user || !profile || !walletAddress) return
@@ -281,10 +320,13 @@ export default function Queue() {
                 <Gavel className="w-4 h-4 text-red-400" /> Auction Slots
                 <span className="text-xs text-gray-500 font-normal">3 AM – 7 PM ET</span>
               </h2>
-              {auctionSlots.length === 0 ? (
+              {auctionByDay.length === 0 ? (
                 <p className="text-sm text-gray-500 py-4">No auction slots open right now. Check back soon.</p>
               ) : (
-                auctionSlots.map((slot, index) => {
+                auctionByDay.map((day) => (
+                  <div key={day.label} className="space-y-3">
+                    <p className="text-xs uppercase tracking-wider text-gray-500">{day.label}</p>
+                    {day.slots.map((slot, index) => {
                   const bidPrice = getMinimumBid(slot.bids.length)
                   const closesAt = new Date(slot.startTime).getTime() - 2 * 60 * 60 * 1000
                   const isWindowOpen = now <= closesAt
@@ -343,7 +385,9 @@ export default function Queue() {
                       </div>
                     </div>
                   )
-                })
+                    })}
+                  </div>
+                ))
               )}
             </Card>
 
@@ -353,10 +397,13 @@ export default function Queue() {
                 <Crown className="w-4 h-4 text-yellow-400" /> CEO Schedule
                 <span className="text-xs text-gray-500 font-normal">7 PM – 3 AM ET</span>
               </h2>
-              {ceoSlots.length === 0 ? (
+              {ceoByDay.length === 0 ? (
                 <p className="text-sm text-gray-500 py-4">No CEO Schedule slots open for requests right now.</p>
               ) : (
-                ceoSlots.map((slot) => {
+                ceoByDay.map((day) => (
+                  <div key={day.label} className="space-y-3">
+                    <p className="text-xs uppercase tracking-wider text-gray-500">{day.label}</p>
+                    {day.slots.map((slot) => {
                   const alreadyRequested = user ? slot.requests?.some((r) => r.uid === user.uid) : false
                   const myRequest = user ? slot.requests?.find((r) => r.uid === user.uid) : undefined
 
@@ -412,7 +459,9 @@ export default function Queue() {
                       )}
                     </div>
                   )
-                })
+                    })}
+                  </div>
+                ))
               )}
               <p className="text-xs text-gray-500">
                 CEO Schedule slots are admin-curated. Submit a request and you'll be notified in your Account page.

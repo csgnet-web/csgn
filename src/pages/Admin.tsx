@@ -78,6 +78,7 @@ export default function Admin() {
   // Schedule state
   const [slots, setSlots] = useState<Slot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
+  const [scheduleDay, setScheduleDay] = useState(0)
   const [generating, setGenerating] = useState(false)
   const [assignModal, setAssignModal] = useState<Slot | null>(null)
   const [assignUid, setAssignUid] = useState('')
@@ -185,20 +186,12 @@ export default function Admin() {
   const loadSlots = useCallback(async () => {
     setSlotsLoading(true)
     const now = new Date()
-    // Look back 4h so any currently-running slot is included
-    const from = new Date(now.getTime() - 4 * 60 * 60 * 1000)
-    const future = new Date(now.getTime() + 72 * 60 * 60 * 1000)
+    // Include enough range for 7 ET days + safety buffer.
+    const from = new Date(now.getTime() - 16 * 60 * 60 * 1000)
+    const future = new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000)
     try {
       const data = await fetchSlots(from, future)
-      const nowMs = now.getTime()
-      // Sort: currently-active slot first, then ascending by startTime
-      const sorted = [...data].sort((a, b) => {
-        const aActive = nowMs >= new Date(a.startTime).getTime() && nowMs < new Date(a.endTime).getTime()
-        const bActive = nowMs >= new Date(b.startTime).getTime() && nowMs < new Date(b.endTime).getTime()
-        if (aActive && !bActive) return -1
-        if (bActive && !aActive) return 1
-        return new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
-      })
+      const sorted = [...data].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
       setSlots(sorted)
     } catch (err) {
       console.warn('Failed to fetch slots:', err)
@@ -498,6 +491,38 @@ export default function Admin() {
     if (type === 'auction') return 'text-cyan-400'
     return 'text-gold'
   }
+
+  const scheduleDays = ['Today', 'Tomorrow', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7']
+  const etDayKey = (date: Date) => date.toLocaleDateString('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const etMiddayFromOffset = (offset: number) => {
+    const now = new Date()
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+    }).formatToParts(now)
+    const get = (type: string) => Number(parts.find((p) => p.type === type)?.value || '0')
+    const base = new Date(Date.UTC(get('year'), get('month') - 1, get('day'), 12, 0, 0, 0))
+    base.setUTCDate(base.getUTCDate() + offset)
+    return base
+  }
+
+  const targetDayKey = etDayKey(etMiddayFromOffset(scheduleDay))
+  const daySlotsRaw = slots.filter((slot) => etDayKey(new Date(slot.startTime)) === targetDayKey)
+  const nowMs = Date.now()
+  const currentDayLive = daySlotsRaw.find((slot) => nowMs >= new Date(slot.startTime).getTime() && nowMs < new Date(slot.endTime).getTime())
+  const daySlots = scheduleDay === 0
+    ? [
+        ...(currentDayLive ? [currentDayLive] : []),
+        ...daySlotsRaw.filter((slot) => new Date(slot.startTime).getTime() > nowMs).sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
+      ]
+    : [...daySlotsRaw].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
 
   return (
     <div className="min-h-screen pt-24 lg:pt-32 pb-24">
@@ -908,17 +933,33 @@ export default function Admin() {
               </div>
             </div>
 
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {scheduleDays.map((day, idx) => (
+                <button
+                  key={day}
+                  onClick={() => setScheduleDay(idx)}
+                  className={`px-3 py-1.5 text-xs rounded-lg border transition-all cursor-pointer whitespace-nowrap ${
+                    scheduleDay === idx
+                      ? 'bg-primary-500/20 text-primary-300 border-primary-500/30'
+                      : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'
+                  }`}
+                >
+                  {day}
+                </button>
+              ))}
+            </div>
+
             {slotsLoading ? (
               <div className="py-16 text-center">
                 <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
                 <p className="text-sm text-gray-500">Loading slots...</p>
               </div>
-            ) : slots.length === 0 ? (
+            ) : daySlots.length === 0 ? (
               <Card hover={false} className="p-8 text-center">
                 <Clock className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-white mb-2">No Upcoming Slots</h3>
+                <h3 className="text-lg font-semibold text-white mb-2">No Slots for This ET Day</h3>
                 <p className="text-sm text-gray-400 max-w-md mx-auto">
-                  Use "Sync 7 Days" to enforce the canonical 12-slot/day schedule window from any start date.
+                  This day currently has no live/upcoming slots to show. Use "Sync 7 Days" to enforce canonical coverage.
                 </p>
               </Card>
             ) : (
@@ -926,12 +967,12 @@ export default function Admin() {
                 <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
                   <h3 className="font-semibold text-white flex items-center gap-2">
                     <Radio className="w-4 h-4 text-primary-400" />
-                    {slots.length} slots loaded · target {SLOTS_PER_DAY}/day
+                    {daySlots.length} shown · target {SLOTS_PER_DAY}/day
                   </h3>
                 </div>
 
                 <div className="divide-y divide-white/[0.04]">
-                  {slots.map((slot) => {
+                  {daySlots.map((slot) => {
                     const startTime = new Date(slot.startTime)
                     const nowMs = Date.now()
                     const isActive = nowMs >= startTime.getTime() && nowMs < new Date(slot.endTime).getTime()
