@@ -3,7 +3,6 @@ import { motion } from 'framer-motion'
 import { Gavel, Crown, Radio, Info } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { SectionHeading } from '@/components/ui/SectionHeading'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
 import { fetchSlots, type Slot, type SlotType } from '@/lib/slots'
 
@@ -71,7 +70,21 @@ export default function Schedule() {
   const [selectedDay, setSelectedDay] = useState(0)
   const [slots, setSlots] = useState<Slot[]>([])
   const [loading, setLoading] = useState(true)
-  const days = ['Today', 'Tomorrow', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7']
+  const days = useMemo(() => {
+    const labels = ['Today', 'Tomorrow']
+    for (let i = 2; i <= 6; i++) {
+      const d = etMiddayFromOffset(i)
+      labels.push(
+        d.toLocaleDateString('en-US', {
+          timeZone: 'America/New_York',
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+        }),
+      )
+    }
+    return labels
+  }, [])
 
   useEffect(() => {
     const loadSlots = async () => {
@@ -113,10 +126,8 @@ export default function Schedule() {
   const emptyLabel = useMemo(() => (selectedDay === 0 ? 'No remaining slots for today.' : 'No slots scheduled for this day yet.'), [selectedDay])
 
   return (
-    <div className="min-h-screen pt-24 lg:pt-32 pb-24">
+    <div className="min-h-screen pt-20 lg:pt-24 pb-24">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <SectionHeading badge="Schedule" title="Broadcast" highlight="Schedule" />
-
         <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2">
           {days.map((day, i) => (
             <button
@@ -187,10 +198,10 @@ export default function Schedule() {
                       {slot.description && <span className="text-xs text-gray-500 truncate block">{slot.description}</span>}
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      {slot.status === 'pending_deposit' && <Badge variant="gold">Awaiting Confirm</Badge>}
-                      {slot.status === 'confirmed' && <Badge variant="green">Confirmed</Badge>}
-                      <Badge variant={slot.type === 'ceo' ? 'gold' : 'blue'} className="hidden sm:inline-flex">
+                    <div className="flex flex-col items-end gap-0.5 shrink-0">
+                      {slot.status === 'pending_deposit' && <Badge variant="gold" className="!text-[9px] !px-1.5 !py-0.5">Awaiting Confirm</Badge>}
+                      {slot.status === 'confirmed' && <Badge variant="green" className="!text-[9px] !px-1.5 !py-0.5">Confirmed</Badge>}
+                      <Badge variant={slot.type === 'ceo' ? 'gold' : 'blue'} className="!text-[9px] !px-1.5 !py-0.5">
                         {slot.type === 'auction' ? 'Auction' : 'CEO Schedule'}
                       </Badge>
                     </div>

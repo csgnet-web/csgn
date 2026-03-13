@@ -71,6 +71,22 @@ function CSGNWipeOverlay({ visible }: { visible: boolean }) {
   )
 }
 
+/* ── Compact time range: "3-5A ET", "1-3P ET", "11P-1A ET" ── */
+function formatCompactRange(slot: Pick<Slot, 'startTime' | 'endTime'>): string {
+  const parse = (iso: string) => {
+    const formatted = new Date(iso).toLocaleTimeString('en-US', {
+      timeZone: 'America/New_York',
+      hour: 'numeric',
+      hour12: true,
+    })
+    const [hour, period] = formatted.split(' ')
+    return { hour, p: period.charAt(0) }
+  }
+  const s = parse(slot.startTime)
+  const e = parse(slot.endTime)
+  return s.p === e.p ? `${s.hour}-${e.hour}${e.p} ET` : `${s.hour}${s.p}-${e.hour}${e.p} ET`
+}
+
 /* ── Schedule card for today's lineup ── */
 function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) {
   const streamer = slot.assignedName || (slot.type === 'auction' ? 'Open Bid' : 'CEO Schedule')
@@ -116,7 +132,7 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
       <div className="px-2 sm:px-3 pb-1.5 sm:pb-3 pt-1 sm:pt-2.5 bg-gradient-to-t from-black/80 to-transparent space-y-0.5 sm:space-y-1">
         <p className="text-white font-black font-display text-[10px] sm:text-sm leading-tight break-words">{streamer}</p>
         <p className="text-white/60 text-[9px] sm:text-[11px] leading-snug break-words">{slot.type === 'auction' ? 'Auction Slot' : 'CEO Schedule'}</p>
-        <p className="text-white/60 text-[9px] sm:text-[11px] font-mono leading-none">{formatESTRange(slot)}</p>
+        <p className="text-white/60 text-[8px] sm:text-[10px] font-mono leading-none whitespace-nowrap">{formatCompactRange(slot)}</p>
       </div>
     </div>
   )
