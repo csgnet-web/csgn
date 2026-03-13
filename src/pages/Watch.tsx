@@ -152,7 +152,7 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
 
   // Twitch: use parsed channel or treat raw value as channel name
   const channel = stream?.id ?? streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '')
-  const twitchSrc = `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${encodeURIComponent(hostname)}&autoplay=true&muted=true`
+  const twitchSrc = `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${encodeURIComponent(hostname)}&autoplay=true&muted=false`
   return (
     <iframe
       src={twitchSrc}
