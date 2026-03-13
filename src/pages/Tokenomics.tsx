@@ -18,8 +18,8 @@ const fadeUp = {
 }
 
 const revenueStreams = [
-  { icon: Coins, label: 'Token Trading Fees (50%)', desc: 'Network share of pump.fun trading fees during live broadcasts', timeline: 'Active Now', active: true },
-  { icon: Gavel, label: 'Auction Slot Revenue', desc: 'Streamer bids for 3AM-2PM time slots; bid revenue retained by network', timeline: 'Active Now', active: true },
+  { icon: Coins, label: 'Token Creator Fee Share (30%)', desc: 'Network share of pump.fun trading fees during live broadcasts', timeline: 'Active Now', active: true },
+  { icon: Gavel, label: 'Auction Slot Revenue', desc: 'Streamer bids for 3AM-7PM ET time slots; bid revenue retained by network', timeline: 'Active Now', active: true },
   { icon: DollarSign, label: 'Sponsorships & Brand Deals', desc: 'On-stream branding, sponsored segments, and crypto partnerships', timeline: 'Q2 2026' },
   { icon: Target, label: 'Daily Grid & Squares Games', desc: 'Free-to-play prediction games with token-gated premium features', timeline: 'Q3 2026' },
   { icon: Crown, label: 'Tournament Entry Fees', desc: 'Gaming tournaments and prediction leagues with prize pools', timeline: 'Q4 2026' },
@@ -53,7 +53,7 @@ export default function Tokenomics() {
             className="text-xl text-gray-400 leading-relaxed max-w-3xl mx-auto"
           >
             CSGN's token model is the first on pump.fun to implement structured fee-sharing
-            tied to content delivery. Streamers earn 50% of all trading fees during their slot.
+            tied to content delivery. Streamers earn 30% of pump.fun creator fees during their slot.
           </motion.p>
         </div>
 
@@ -61,7 +61,7 @@ export default function Tokenomics() {
         <section className="mb-24">
           <SectionHeading
             badge="Core Model"
-            title="The 50/50"
+            title="The 30/70"
             highlight="Fee Split"
             description="Every buy and sell of the CSGN token on pump.fun generates trading fees. These fees are split transparently."
           />
@@ -73,10 +73,10 @@ export default function Tokenomics() {
                   <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-500/30">
                     <Users className="w-9 h-9 text-white" />
                   </div>
-                  <div className="text-5xl font-black font-display text-white mb-1">50%</div>
-                  <p className="text-lg font-semibold text-emerald-400">To the Streamer</p>
+                  <div className="text-5xl font-black font-display text-white mb-1">30%</div>
+                  <p className="text-lg font-semibold text-emerald-400">To the Streamer (Creator Share)</p>
                   <p className="text-sm text-gray-400 mt-2">
-                    The live streamer earns half of all trading fees generated during their assigned time slot.
+                    The live streamer earns 30% of creator fees generated during their assigned time slot.
                   </p>
                 </div>
 
@@ -84,10 +84,10 @@ export default function Tokenomics() {
                   <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-500 to-accent-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary-500/30">
                     <Radio className="w-9 h-9 text-white" />
                   </div>
-                  <div className="text-5xl font-black font-display text-white mb-1">50%</div>
+                  <div className="text-5xl font-black font-display text-white mb-1">70%</div>
                   <p className="text-lg font-semibold text-primary-400">To the Network</p>
                   <p className="text-sm text-gray-400 mt-2">
-                    CSGN retains half for operations, development, infrastructure, and growth.
+                    CSGN retains the remainder for operations, development, infrastructure, and growth.
                   </p>
                 </div>
               </div>
@@ -208,23 +208,23 @@ export default function Tokenomics() {
               {
                 icon: Gavel,
                 title: 'Auction Slots',
-                time: '3 AM – 2 PM EST',
+                time: '3 AM – 7 PM ET',
                 desc: 'Highest bidder wins. Bid revenue goes to the network. Competitive pricing ensures streamers who value the slot most get access.',
                 color: 'from-cyan-500 to-blue-500',
                 deadline: 'Bids close 1 hour before slot',
               },
               {
                 icon: Ticket,
-                title: 'Lottery Slots',
-                time: '2 PM – 6 PM EST',
-                desc: 'Random selection from all entries. Democratic access for emerging talent. Low barrier, high upside.',
+                title: 'CEO Schedule',
+                time: '7 PM – 3 AM ET',
+                desc: 'CEO-curated programming block for featured creators and strategic broadcasts.',
                 color: 'from-accent-500 to-pink-500',
-                deadline: 'Enter by 1:00 PM daily',
+                deadline: 'Assigned by CSGN admin',
               },
               {
                 icon: Crown,
                 title: 'Prime Time',
-                time: '6 PM – 3 AM EST',
+                time: '7 PM – 3 AM ET',
                 desc: 'CEO-curated programming. The flagship block where brand-defining content airs. Reserved for proven talent.',
                 color: 'from-amber-500 to-orange-500',
                 deadline: 'Assigned by 6:00 PM daily',
@@ -273,7 +273,7 @@ export default function Tokenomics() {
                   <p className="text-xs text-gray-500">Fee-split on pump.fun</p>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-white">50%</div>
+                  <div className="text-2xl font-bold text-white">30%</div>
                   <p className="text-xs text-gray-500">Direct to streamers</p>
                 </div>
                 <div className="text-center">

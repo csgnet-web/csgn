@@ -66,7 +66,7 @@ const roadmap = [
 const values = [
   { icon: Radio, title: 'Always On', desc: '24/7 means 24/7. The network never goes dark.' },
   { icon: Shield, title: 'Quality First', desc: 'Every streamer is vetted. Every slot is curated.' },
-  { icon: Users, title: 'Streamer Partners', desc: '50% fee split. Streamers are partners, not products.' },
+  { icon: Users, title: 'Streamer Partners', desc: '30% creator-fee share. Streamers are partners, not products.' },
   { icon: Zap, title: 'Crypto-Native', desc: 'Built on Solana. Powered by on-chain economics.' },
 ]
 
