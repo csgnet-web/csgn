@@ -5,6 +5,7 @@ import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { subscribeToCurrentSlot, subscribeToSlots, formatESTRange, type Slot } from '@/lib/slots'
 import { startFeeTracker } from '@/lib/dexscreener'
+import { detectStream as _detectStream, buildYouTubeSrc, buildTwitchSrc, PLAYER_ALLOW } from '@/lib/player'
 
 const bannerItems = [
   'Starting 5 \u2022 $14.70',
@@ -13,35 +14,10 @@ const bannerItems = [
   'Starting 5 Closing in 01:02:23',
 ] as const
 
-/* ── Helpers to parse stream URLs ── */
-function parseTwitchChannel(url: string): string | null {
-  const m = url.match(/(?:twitch\.tv\/)([a-zA-Z0-9_]+)/i)
-  return m ? m[1] : null
-}
+/* ── Helpers to parse stream URLs (imported from @/lib/player) ── */
+// parseTwitchChannel, parseYouTubeId, detectStream, buildYouTubeSrc, buildTwitchSrc
 
-function parseYouTubeId(url: string): string | null {
-  const patterns = [
-    /(?:youtube\.com\/watch\?.*v=)([a-zA-Z0-9_-]{11})/,
-    /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/,
-    /(?:youtube\.com\/live\/)([a-zA-Z0-9_-]{11})/,
-    /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
-  ]
-  for (const p of patterns) {
-    const m = url.match(p)
-    if (m) return m[1]
-  }
-  return null
-}
-
-type StreamType = 'twitch' | 'youtube'
-
-function detectStream(url: string): { type: StreamType; id: string } | null {
-  const twitchChannel = parseTwitchChannel(url)
-  if (twitchChannel) return { type: 'twitch', id: twitchChannel }
-  const ytId = parseYouTubeId(url)
-  if (ytId) return { type: 'youtube', id: ytId }
-  return null
-}
+function detectStream(url: string) { return _detectStream(url) }
 
 
 /* ── CSGN Wipe Overlay ── */
@@ -154,12 +130,11 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
   const stream = detectStream(streamUrl)
 
   if (stream?.type === 'youtube') {
-    const embedSrc = `https://www.youtube-nocookie.com/embed/${stream.id}?autoplay=1&mute=0&rel=0&modestbranding=1&controls=0&iv_load_policy=3&disablekb=1&playsinline=1`
     return (
       <iframe
-        src={embedSrc}
+        src={buildYouTubeSrc(stream.id)}
         className="w-full h-full"
-        allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+        allow={PLAYER_ALLOW}
         allowFullScreen
         title="Live Stream"
       />
@@ -168,12 +143,11 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
 
   // Twitch: use parsed channel or treat raw value as channel name
   const channel = stream?.id ?? streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '')
-  const twitchSrc = `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${encodeURIComponent(hostname)}&autoplay=true&muted=false`
   return (
     <iframe
-      src={twitchSrc}
+      src={buildTwitchSrc(channel, hostname)}
       className="w-full h-full"
-      allow="autoplay; fullscreen; encrypted-media"
+      allow={PLAYER_ALLOW}
       allowFullScreen
       title="Live Stream"
     />
