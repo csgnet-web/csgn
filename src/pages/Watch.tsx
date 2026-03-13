@@ -387,9 +387,9 @@ export default function Watch() {
                 <div className="text-right space-y-0.5">
                   <p className="text-[11px] text-gray-500 uppercase tracking-wider leading-none mb-1">Up Next</p>
                   {upcomingSlots.slice(0, 3).map((s) => (
-                    <p key={s.id} className="text-xs font-display font-bold text-white leading-snug">
+                    <p key={s.id} className="text-[10px] font-display font-bold text-white leading-snug whitespace-nowrap">
                       {s.assignedName || (s.type === 'auction' ? 'Open Bid' : 'CEO')}{' '}
-                      <span className="font-normal text-gray-500">{formatESTRange(s)}</span>
+                      <span className="font-normal text-gray-400">{formatCompactRange(s)}</span>
                     </p>
                   ))}
                 </div>

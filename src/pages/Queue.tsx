@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Gavel, Wallet, Clock3, AlertTriangle, TrendingUp, Crown, Info } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
@@ -171,7 +171,21 @@ export default function Queue() {
     base.setUTCDate(base.getUTCDate() + offset)
     return base
   }
-  const dayLabels = ['Today', 'Tomorrow', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7']
+  const dayLabels = useMemo(() => {
+    const labels = ['Today', 'Tomorrow']
+    for (let i = 2; i <= 6; i++) {
+      const d = etMiddayFromOffset(i)
+      labels.push(
+        d.toLocaleDateString('en-US', {
+          timeZone: 'America/New_York',
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+        }),
+      )
+    }
+    return labels
+  }, [])
 
   const sortForDay = (daySlots: Slot[], isToday: boolean) => {
     const live = daySlots.find((s) => now >= new Date(s.startTime).getTime() && now < new Date(s.endTime).getTime())

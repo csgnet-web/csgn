@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Gavel, Crown, Radio, Info } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
-import { fetchSlots, type Slot, type SlotType } from '@/lib/slots'
+import { fetchSlots, getMinimumBid, formatCSGN, type Slot, type SlotType } from '@/lib/slots'
 
 function getSlotDisplayStatus(slot: Slot): 'past' | 'live' | 'upcoming' {
   const now = Date.now()
@@ -201,6 +202,14 @@ export default function Schedule() {
                     <div className="flex flex-col items-end gap-0.5 shrink-0">
                       {slot.status === 'pending_deposit' && <Badge variant="gold" className="!text-[9px] !px-1.5 !py-0.5">Awaiting Confirm</Badge>}
                       {slot.status === 'confirmed' && <Badge variant="green" className="!text-[9px] !px-1.5 !py-0.5">Confirmed</Badge>}
+                      {slot.type === 'auction' && slot.status === 'open' && (
+                        <Link
+                          to="/queue"
+                          className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-semibold rounded-full border bg-cyan-500/20 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/30 transition-colors whitespace-nowrap"
+                        >
+                          {formatCSGN(getMinimumBid(slot.bids.length))}
+                        </Link>
+                      )}
                       <Badge variant={slot.type === 'ceo' ? 'gold' : 'blue'} className="!text-[9px] !px-1.5 !py-0.5">
                         {slot.type === 'auction' ? 'Auction' : 'CEO Schedule'}
                       </Badge>
