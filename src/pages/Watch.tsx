@@ -123,18 +123,14 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
 }
 
 /* ── CSGN Player: renders Twitch or YouTube, or NO STREAM ACTIVE ── */
-function CSGNPlayer({ streamUrl, hostname, streamTitle }: { streamUrl: string; hostname: string; streamTitle?: string }) {
+function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: string }) {
   if (!streamUrl) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center bg-[#050507] gap-4">
         <svg viewBox="0 0 120 40" className="h-8 w-auto fill-white/20" xmlns="http://www.w3.org/2000/svg">
           <text x="0" y="32" fontFamily="system-ui, sans-serif" fontWeight="900" fontSize="38" letterSpacing="2">CSGN</text>
         </svg>
-        {streamTitle ? (
-          <p className="text-gray-300 font-display font-bold text-base tracking-wide text-center px-4">{streamTitle}</p>
-        ) : (
-          <p className="text-gray-500 font-mono text-sm tracking-widest uppercase">No Stream Active</p>
-        )}
+        <p className="text-gray-500 font-mono text-sm tracking-widest uppercase">No Stream Active</p>
       </div>
     )
   }
@@ -142,14 +138,14 @@ function CSGNPlayer({ streamUrl, hostname, streamTitle }: { streamUrl: string; h
   const stream = detectStream(streamUrl)
 
   if (stream?.type === 'youtube') {
-    const embedSrc = `https://www.youtube.com/embed/${stream.id}?autoplay=1&mute=0&rel=0&modestbranding=1`
+    const embedSrc = `https://www.youtube-nocookie.com/embed/${stream.id}?autoplay=1&mute=0&playsinline=1&controls=1&enablejsapi=1&rel=0`
     return (
       <iframe
         src={embedSrc}
         className="w-full h-full"
-        allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+        allow="autoplay; fullscreen; encrypted-media; picture-in-picture; web-share"
         allowFullScreen
-        title="CSGN Live"
+        title="Live Stream"
       />
     )
   }
@@ -163,7 +159,7 @@ function CSGNPlayer({ streamUrl, hostname, streamTitle }: { streamUrl: string; h
       className="w-full h-full"
       allow="autoplay; fullscreen; encrypted-media"
       allowFullScreen
-      title="CSGN Live"
+      title="Live Stream"
     />
   )
 }
@@ -254,24 +250,9 @@ export default function Watch() {
     const to   = new Date(Date.now() + 28 * 60 * 60 * 1000)  // 28h ahead (full ET day + buffer)
 
     const unsub = subscribeToSlots(from, to, (slots) => {
-      // Determine today's date string in Eastern Time
-      const todayET = new Date().toLocaleDateString('en-US', {
-        timeZone: 'America/New_York',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      })
-      // Keep only slots whose start time falls on today's ET calendar date
-      setTodaySlots(
-        slots.filter((s) =>
-          new Date(s.startTime).toLocaleDateString('en-US', {
-            timeZone: 'America/New_York',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-          }) === todayET
-        )
-      )
+      // Keep ET-ordered slots so the Today panel can always render current + next 2
+      // (spilling into the next ET day when needed).
+      setTodaySlots([...slots].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()))
     })
     return unsub
   }, [])
@@ -334,7 +315,7 @@ export default function Watch() {
           <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)]">
             <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(255,0,90,0.28),transparent_42%),radial-gradient(circle_at_85%_10%,rgba(80,0,255,0.26),transparent_35%)]" />
             <div className="w-full relative" style={{ aspectRatio: '16/9' }}>
-              <CSGNPlayer streamUrl={streamUrl} hostname={hostname} streamTitle={streamTitle} />
+              <CSGNPlayer streamUrl={streamUrl} hostname={hostname} />
               <CSGNWipeOverlay visible={showWipe} />
             </div>
 
