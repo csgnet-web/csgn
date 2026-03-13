@@ -36,6 +36,11 @@ export type FeePaymentStatus = 'pending' | 'paid' | 'declined'
 export interface CreatorFees {
   tradingVolumeSOL: number     // admin inputs trading volume in SOL during slot
   feeOwedSOL: number           // 0.003 * tradingVolumeSOL (30% of 1% pump.fun creator fee)
+  activeChannels?: Array<{
+    name: string
+    streamUrl: string
+    durationMinutes: number
+  }>
   paymentStatus: FeePaymentStatus
   streamerWalletAddress: string
   paidAt?: string
@@ -103,19 +108,18 @@ export function formatCSGN(amount: number): string {
 
 interface TemplateSlot {
   hourET: number    // hour in Eastern Time (0-23)
+  dayOffset?: number // day offset relative to schedule anchor date
   duration: number  // hours
   type: SlotType
 }
 
 /**
  * Schedule (ET, DST-aware):
- *  Slot 1:  1:00 AM – 3:00 AM   (auction)
- *  Slots 2-9:  3:00 AM – 7:00 PM (auction, 8 slots)
- *  Slots 10-12: 7:00 PM – 1:00 AM next day (CEO, 3 slots)
+ *  Slots 1-8:  3:00 AM – 7:00 PM (auction, 8 slots)
+ *  Slots 9-12: 7:00 PM – 3:00 AM next day (CEO, 4 slots)
  */
 const SCHEDULE_TEMPLATE: TemplateSlot[] = [
-  // 1 AM slot + auction block: 1 AM – 7 PM
-  { hourET: 1,  duration: 2, type: 'auction' },
+  // Auction block: 3 AM – 7 PM
   { hourET: 3,  duration: 2, type: 'auction' },
   { hourET: 5,  duration: 2, type: 'auction' },
   { hourET: 7,  duration: 2, type: 'auction' },
@@ -124,10 +128,11 @@ const SCHEDULE_TEMPLATE: TemplateSlot[] = [
   { hourET: 13, duration: 2, type: 'auction' },
   { hourET: 15, duration: 2, type: 'auction' },
   { hourET: 17, duration: 2, type: 'auction' },
-  // CEO Schedule block: 7 PM – 1 AM next day
+  // CEO Schedule block: 7 PM – 3 AM next day
   { hourET: 19, duration: 2, type: 'ceo' },
   { hourET: 21, duration: 2, type: 'ceo' },
   { hourET: 23, duration: 2, type: 'ceo' },
+  { hourET: 1,  dayOffset: 1, duration: 2, type: 'ceo' },
 ]
 
 /* ─── Timezone helpers ─── */
@@ -209,50 +214,166 @@ export function formatESTRange(slot: Pick<Slot, 'startTime' | 'endTime'>): strin
 /* ─── Firestore operations ─── */
 
 const SLOTS_COLLECTION = 'slots'
+export const SLOTS_PER_DAY = 12
+
+
+
+interface ExpectedSlotDef {
+  id: string
+  type: SlotType
+  label: string
+  startTime: string
+  endTime: string
+}
+
+function buildExpectedSlotsForDate(targetDate: Date): ExpectedSlotDef[] {
+  const { year, month, day } = utcToETComponents(targetDate)
+  const etMiddayUTC = etToUTC(year, month, day, 12)
+
+  return SCHEDULE_TEMPLATE.map((template) => {
+    const slotDay = new Date(etMiddayUTC.getTime() + (template.dayOffset ?? 0) * 24 * 60 * 60 * 1000)
+    const slotDate = utcToETComponents(slotDay)
+    const startUTC = etToUTC(slotDate.year, slotDate.month, slotDate.day, template.hourET)
+    const endUTC = new Date(startUTC.getTime() + template.duration * 60 * 60 * 1000)
+
+    return {
+      id: `slot-${String(slotDate.year).padStart(4, '0')}-${String(slotDate.month).padStart(2, '0')}-${String(slotDate.day).padStart(2, '0')}-${String(template.hourET).padStart(2, '0')}`,
+      type: template.type,
+      label: `${formatTimeLabel(template.hourET)} – ${formatTimeLabel(template.hourET + template.duration)}`,
+      startTime: startUTC.toISOString(),
+      endTime: endUTC.toISOString(),
+    }
+  })
+}
+
+function overlaps(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
+  const aS = new Date(aStart).getTime()
+  const aE = new Date(aEnd).getTime()
+  const bS = new Date(bStart).getTime()
+  const bE = new Date(bEnd).getTime()
+  return aS < bE && bS < aE
+}
+
+export interface SyncScheduleResult {
+  dateET: string
+  created: number
+  updated: number
+  removed: number
+  conflicts: string[]
+}
+
+/**
+ * Sync one ET schedule day so it always contains the canonical 12 slots
+ * (3 AM–7 PM auction, 7 PM–3 AM CEO) with no duplicate/overlapping stray slots.
+ */
+export async function syncSlotsForDate(targetDate: Date): Promise<SyncScheduleResult> {
+  const expected = buildExpectedSlotsForDate(targetDate)
+  const expectedById = new Map(expected.map((s) => [s.id, s]))
+
+  const minStart = Math.min(...expected.map((s) => new Date(s.startTime).getTime()))
+  const maxEnd = Math.max(...expected.map((s) => new Date(s.endTime).getTime()))
+  const existing = await fetchSlots(new Date(minStart - 60 * 60 * 1000), new Date(maxEnd + 60 * 60 * 1000))
+
+  const existingById = new Map(existing.map((slot) => [slot.id, slot]))
+  let created = 0
+  let updated = 0
+  let removed = 0
+  const conflicts: string[] = []
+
+  for (const exp of expected) {
+    const current = existingById.get(exp.id)
+    if (!current) {
+      const slot: Slot = {
+        id: exp.id,
+        type: exp.type,
+        label: exp.label,
+        startTime: exp.startTime,
+        endTime: exp.endTime,
+        status: 'open',
+        streamUrl: DEFAULT_STREAM_URL,
+        streamTitle: '',
+        assignedUid: null,
+        assignedName: null,
+        description: '',
+        bids: [],
+        lotteryEntrants: [],
+        requests: [],
+        createdAt: serverTimestamp(),
+      }
+      await setDoc(doc(db, SLOTS_COLLECTION, exp.id), slot)
+      created += 1
+      continue
+    }
+
+    const patch: Partial<Slot> = {}
+    if (current.type !== exp.type) patch.type = exp.type
+    if (current.label !== exp.label) patch.label = exp.label
+    if (current.startTime !== exp.startTime) patch.startTime = exp.startTime
+    if (current.endTime !== exp.endTime) patch.endTime = exp.endTime
+
+    if (Object.keys(patch).length > 0) {
+      await updateDoc(doc(db, SLOTS_COLLECTION, exp.id), patch)
+      updated += 1
+    }
+  }
+
+  for (const slot of existing) {
+    if (expectedById.has(slot.id)) continue
+
+    const overlapsWindow = expected.some((exp) => overlaps(slot.startTime, slot.endTime, exp.startTime, exp.endTime))
+    if (!overlapsWindow) continue
+
+    const hasActivity = Boolean(slot.assignedUid) || slot.bids.length > 0 || (slot.requests?.length ?? 0) > 0 || slot.status === 'live'
+    if (hasActivity) {
+      conflicts.push(`Kept non-template active slot ${slot.id}`)
+      continue
+    }
+
+    await deleteDoc(doc(db, SLOTS_COLLECTION, slot.id))
+    removed += 1
+  }
+
+  const { year, month, day } = utcToETComponents(targetDate)
+  return {
+    dateET: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+    created,
+    updated,
+    removed,
+    conflicts,
+  }
+}
+
+export async function syncSevenDaysFrom(startDate: Date): Promise<{ days: string[]; created: number; updated: number; removed: number; conflicts: string[] }> {
+  const days: string[] = []
+  let created = 0
+  let updated = 0
+  let removed = 0
+  const conflicts: string[] = []
+
+  for (let i = 0; i < 7; i++) {
+    const target = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000)
+    const result = await syncSlotsForDate(target)
+    days.push(result.dateET)
+    created += result.created
+    updated += result.updated
+    removed += result.removed
+    conflicts.push(...result.conflicts)
+  }
+
+  return { days, created, updated, removed, conflicts }
+}
 
 /** Generate slot documents for a given calendar day in Eastern Time. */
 export async function generateSlotsForDate(targetDate: Date): Promise<Slot[]> {
-  const slots: Slot[] = []
+  const result = await syncSlotsForDate(targetDate)
+  if (result.created === 0) return []
 
-  // Extract ET year/month/day from the target date
-  const { year, month, day } = utcToETComponents(targetDate)
-
-  for (const template of SCHEDULE_TEMPLATE) {
-    // Handle slots that cross midnight (e.g., 23 + 2 = 1 AM next day in ET)
-    const startUTC = etToUTC(year, month, day, template.hourET)
-    const endUTC = new Date(startUTC.getTime() + template.duration * 60 * 60 * 1000)
-
-    // Slot ID based on Eastern Time hour on the base date
-    const slotId = `slot-${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}-${String(template.hourET).padStart(2, '0')}`
-    const label = `${formatTimeLabel(template.hourET)} – ${formatTimeLabel(template.hourET + template.duration)}`
-
-    // Skip if already exists
-    const existingSnap = await getDocs(query(collection(db, SLOTS_COLLECTION), where('id', '==', slotId)))
-    if (!existingSnap.empty) continue
-
-    const slot: Slot = {
-      id: slotId,
-      type: template.type,
-      label,
-      startTime: startUTC.toISOString(),
-      endTime: endUTC.toISOString(),
-      status: 'open',
-      streamUrl: DEFAULT_STREAM_URL,
-      streamTitle: '',
-      assignedUid: null,
-      assignedName: null,
-      description: '',
-      bids: [],
-      lotteryEntrants: [],
-      requests: [],
-      createdAt: serverTimestamp(),
-    }
-
-    await setDoc(doc(db, SLOTS_COLLECTION, slotId), slot)
-    slots.push(slot)
-  }
-
-  return slots
+  const expected = buildExpectedSlotsForDate(targetDate)
+  const createdIds = new Set(expected.map((s) => s.id))
+  const from = new Date(Math.min(...expected.map((s) => new Date(s.startTime).getTime())) - 60 * 60 * 1000)
+  const to = new Date(Math.max(...expected.map((s) => new Date(s.endTime).getTime())) + 60 * 60 * 1000)
+  const slots = await fetchSlots(from, to)
+  return slots.filter((slot) => createdIds.has(slot.id) && slot.status === 'open')
 }
 
 /**
@@ -268,8 +389,8 @@ export async function generateNextThreeDays(): Promise<{ generated: number; date
     targetDate.setUTCDate(targetDate.getUTCDate() + i)
     targetDate.setUTCHours(12, 0, 0, 0) // use noon UTC to avoid date boundary issues
 
-    const newSlots = await generateSlotsForDate(targetDate)
-    generated += newSlots.length
+    const result = await syncSlotsForDate(targetDate)
+    generated += result.created
     const { year, month, day } = utcToETComponents(targetDate)
     dates.push(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
   }
@@ -291,8 +412,8 @@ export async function wipeAndRegenerateSlots(startDate: Date): Promise<{ generat
   let generated = 0
   for (let i = 0; i < 3; i++) {
     const targetDate = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000)
-    const newSlots = await generateSlotsForDate(targetDate)
-    generated += newSlots.length
+    const result = await syncSlotsForDate(targetDate)
+    generated += result.created
   }
 
   return { generated }

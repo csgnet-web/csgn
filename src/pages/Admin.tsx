@@ -19,6 +19,8 @@ import { Button } from '@/components/ui/Button'
 import {
   generateNextThreeDays,
   wipeAndRegenerateSlots,
+  syncSevenDaysFrom,
+  SLOTS_PER_DAY,
   fetchSlots,
   assignCEOSlot,
   assignSlot,
@@ -76,6 +78,7 @@ export default function Admin() {
   // Schedule state
   const [slots, setSlots] = useState<Slot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
+  const [scheduleDay, setScheduleDay] = useState(0)
   const [generating, setGenerating] = useState(false)
   const [assignModal, setAssignModal] = useState<Slot | null>(null)
   const [assignUid, setAssignUid] = useState('')
@@ -102,6 +105,8 @@ export default function Admin() {
   const [pushingStream, setPushingStream] = useState(false)
   const [wipingSlots, setWipingSlots] = useState(false)
   const [confirmWipe, setConfirmWipe] = useState(false)
+  const [syncingWeek, setSyncingWeek] = useState(false)
+  const [syncStartDate, setSyncStartDate] = useState(() => new Date().toISOString().slice(0, 10))
 
   // Fees tab state
   const [feeSlots, setFeeSlots] = useState<Slot[]>([])
@@ -181,20 +186,12 @@ export default function Admin() {
   const loadSlots = useCallback(async () => {
     setSlotsLoading(true)
     const now = new Date()
-    // Look back 4h so any currently-running slot is included
-    const from = new Date(now.getTime() - 4 * 60 * 60 * 1000)
-    const future = new Date(now.getTime() + 72 * 60 * 60 * 1000)
+    // Include enough range for 7 ET days + safety buffer.
+    const from = new Date(now.getTime() - 16 * 60 * 60 * 1000)
+    const future = new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000)
     try {
       const data = await fetchSlots(from, future)
-      const nowMs = now.getTime()
-      // Sort: currently-active slot first, then ascending by startTime
-      const sorted = [...data].sort((a, b) => {
-        const aActive = nowMs >= new Date(a.startTime).getTime() && nowMs < new Date(a.endTime).getTime()
-        const bActive = nowMs >= new Date(b.startTime).getTime() && nowMs < new Date(b.endTime).getTime()
-        if (aActive && !bActive) return -1
-        if (bActive && !aActive) return 1
-        return new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
-      })
+      const sorted = [...data].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
       setSlots(sorted)
     } catch (err) {
       console.warn('Failed to fetch slots:', err)
@@ -209,11 +206,33 @@ export default function Admin() {
     const past = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
     try {
       const data = await fetchSlots(past, now)
-      // Show completed slots that had an assigned streamer
-      setFeeSlots(data.filter((s) => s.assignedUid && (s.status === 'completed' || new Date(s.endTime).getTime() < Date.now())))
+      const completedWithStreamer = data.filter((s) => s.assignedUid && (s.status === 'completed' || new Date(s.endTime).getTime() < Date.now()))
+
+      await Promise.all(completedWithStreamer.map(async (slot) => {
+        if (slot.creatorFees) return
+
+        const durationMinutes = Math.max(0, Math.round((new Date(slot.endTime).getTime() - new Date(slot.startTime).getTime()) / (60 * 1000)))
+        const autoFees: CreatorFees = {
+          tradingVolumeSOL: 0,
+          feeOwedSOL: 0,
+          paymentStatus: 'pending',
+          streamerWalletAddress: users.find((u) => u.uid === slot.assignedUid)?.walletAddress || '',
+          activeChannels: [{
+            name: slot.assignedName || 'Unknown Channel',
+            streamUrl: slot.streamUrl || DEFAULT_STREAM_URL,
+            durationMinutes,
+          }],
+          updatedAt: new Date().toISOString(),
+        }
+
+        await updateCreatorFees(slot.id, autoFees)
+      }))
+
+      const refreshed = await fetchSlots(past, now)
+      setFeeSlots(refreshed.filter((s) => s.assignedUid && (s.status === 'completed' || new Date(s.endTime).getTime() < Date.now())))
     } catch {}
     setFeeSlotsLoading(false)
-  }, [])
+  }, [users])
 
   useEffect(() => {
     if (activeTab === 'schedule') loadSlots()
@@ -250,6 +269,26 @@ export default function Admin() {
       setActionError(err?.message || 'Failed to generate slots.')
     }
     setGenerating(false)
+  }
+
+
+
+  const handleSyncSevenDays = async () => {
+    setSyncingWeek(true)
+    setActionError(null)
+    try {
+      const [y, m, d] = syncStartDate.split('-').map((v) => parseInt(v, 10))
+      const start = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
+      const result = await syncSevenDaysFrom(start)
+      await loadSlots()
+
+      if (result.conflicts.length > 0) {
+        setActionError(`Schedule synced with ${result.conflicts.length} conflict(s): ${result.conflicts[0]}`)
+      }
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to sync 7-day schedule.')
+    }
+    setSyncingWeek(false)
   }
 
   const handleWipeAndRegenerate = async () => {
@@ -357,16 +396,20 @@ export default function Admin() {
       const volumeSOL = parseFloat(feeVolume)
       if (isNaN(volumeSOL) || volumeSOL < 0) throw new Error('Invalid volume amount')
 
-      // pump.fun creator fee: 0.5% creator fee on each trade
-      // 30% of that goes to the streamer
-      // So streamer gets: volume * 0.005 * 0.30 = volume * 0.0015
-      const feeOwedSOL = volumeSOL * 0.005 * 0.30
+      // pump.fun creator fee: 1% of trading volume
+      // Streamer share: 30% of creator fee => volume * 0.01 * 0.30 = volume * 0.003
+      const feeOwedSOL = volumeSOL * 0.003
 
       const fees: CreatorFees = {
         tradingVolumeSOL: volumeSOL,
         feeOwedSOL,
         paymentStatus: 'pending',
         streamerWalletAddress: feeWallet || slot.creatorFees?.streamerWalletAddress || '',
+        activeChannels: slot.creatorFees?.activeChannels || [{
+          name: slot.assignedName || 'Unknown Channel',
+          streamUrl: slot.streamUrl || DEFAULT_STREAM_URL,
+          durationMinutes: Math.max(0, Math.round((new Date(slot.endTime).getTime() - new Date(slot.startTime).getTime()) / (60 * 1000))),
+        }],
         updatedAt: new Date().toISOString(),
       }
       await updateCreatorFees(slot.id, fees)
@@ -448,6 +491,38 @@ export default function Admin() {
     if (type === 'auction') return 'text-cyan-400'
     return 'text-gold'
   }
+
+  const scheduleDays = ['Today', 'Tomorrow', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7']
+  const etDayKey = (date: Date) => date.toLocaleDateString('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const etMiddayFromOffset = (offset: number) => {
+    const now = new Date()
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+    }).formatToParts(now)
+    const get = (type: string) => Number(parts.find((p) => p.type === type)?.value || '0')
+    const base = new Date(Date.UTC(get('year'), get('month') - 1, get('day'), 12, 0, 0, 0))
+    base.setUTCDate(base.getUTCDate() + offset)
+    return base
+  }
+
+  const targetDayKey = etDayKey(etMiddayFromOffset(scheduleDay))
+  const daySlotsRaw = slots.filter((slot) => etDayKey(new Date(slot.startTime)) === targetDayKey)
+  const nowMs = Date.now()
+  const currentDayLive = daySlotsRaw.find((slot) => nowMs >= new Date(slot.startTime).getTime() && nowMs < new Date(slot.endTime).getTime())
+  const daySlots = scheduleDay === 0
+    ? [
+        ...(currentDayLive ? [currentDayLive] : []),
+        ...daySlotsRaw.filter((slot) => new Date(slot.startTime).getTime() > nowMs).sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
+      ]
+    : [...daySlotsRaw].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
 
   return (
     <div className="min-h-screen pt-24 lg:pt-32 pb-24">
@@ -796,21 +871,38 @@ export default function Admin() {
           <div className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-white">Upcoming Slots (Next 72h)</h3>
-                <p className="text-sm text-gray-400">Generate 3 days of slots, resolve auctions, assign CEO Schedule, manage stream URLs.</p>
+                <h3 className="text-lg font-semibold text-white">Scheduling Module</h3>
+                <p className="text-sm text-gray-400">Canonical rules are fixed: 12 slots/day, Auction 3 AM–7 PM ET, CEO 7 PM–3 AM ET. Sync any 7-day window safely (no duplicate overlaps).</p>
               </div>
               <div className="flex gap-2 flex-wrap">
                 <Button variant="ghost" size="sm" leftIcon={<RefreshCw className="w-4 h-4" />} onClick={loadSlots}>
                   Refresh
                 </Button>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={syncStartDate}
+                    onChange={(e) => setSyncStartDate(e.target.value)}
+                    className="px-2 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs text-white"
+                  />
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    leftIcon={<Plus className="w-4 h-4" />}
+                    isLoading={syncingWeek}
+                    onClick={handleSyncSevenDays}
+                  >
+                    Sync 7 Days
+                  </Button>
+                </div>
                 <Button
-                  variant="primary"
+                  variant="ghost"
                   size="sm"
                   leftIcon={<Plus className="w-4 h-4" />}
                   isLoading={generating}
                   onClick={handleGenerateThreeDays}
                 >
-                  Generate Next 3 Days
+                  Legacy: Next 3 Days
                 </Button>
                 {!confirmWipe ? (
                   <Button
@@ -841,17 +933,33 @@ export default function Admin() {
               </div>
             </div>
 
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {scheduleDays.map((day, idx) => (
+                <button
+                  key={day}
+                  onClick={() => setScheduleDay(idx)}
+                  className={`px-3 py-1.5 text-xs rounded-lg border transition-all cursor-pointer whitespace-nowrap ${
+                    scheduleDay === idx
+                      ? 'bg-primary-500/20 text-primary-300 border-primary-500/30'
+                      : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'
+                  }`}
+                >
+                  {day}
+                </button>
+              ))}
+            </div>
+
             {slotsLoading ? (
               <div className="py-16 text-center">
                 <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
                 <p className="text-sm text-gray-500">Loading slots...</p>
               </div>
-            ) : slots.length === 0 ? (
+            ) : daySlots.length === 0 ? (
               <Card hover={false} className="p-8 text-center">
                 <Clock className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-white mb-2">No Upcoming Slots</h3>
+                <h3 className="text-lg font-semibold text-white mb-2">No Slots for This ET Day</h3>
                 <p className="text-sm text-gray-400 max-w-md mx-auto">
-                  Click "Generate Next 3 Days" to create the upcoming schedule (72 hours of slots at once).
+                  This day currently has no live/upcoming slots to show. Use "Sync 7 Days" to enforce canonical coverage.
                 </p>
               </Card>
             ) : (
@@ -859,12 +967,12 @@ export default function Admin() {
                 <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
                   <h3 className="font-semibold text-white flex items-center gap-2">
                     <Radio className="w-4 h-4 text-primary-400" />
-                    {slots.length} slots
+                    {daySlots.length} shown · target {SLOTS_PER_DAY}/day
                   </h3>
                 </div>
 
                 <div className="divide-y divide-white/[0.04]">
-                  {slots.map((slot) => {
+                  {daySlots.map((slot) => {
                     const startTime = new Date(slot.startTime)
                     const nowMs = Date.now()
                     const isActive = nowMs >= startTime.getTime() && nowMs < new Date(slot.endTime).getTime()
@@ -1173,8 +1281,8 @@ export default function Admin() {
             <div>
               <h3 className="text-lg font-semibold text-white">Creator Fee Payouts</h3>
               <p className="text-sm text-gray-400 mt-1">
-                Streamers earn 30% of pump.fun creator fees (0.5% of each trade) generated during their slot.
-                Enter trading volume to calculate owed amounts.
+                Streamers earn 30% of pump.fun creator fees (1% per trade) generated during their slot.
+                Fee records are auto-created when slots complete, including active channel duration.
               </p>
             </div>
 
@@ -1184,8 +1292,8 @@ export default function Admin() {
                 <div>
                   <p className="text-sm text-white font-medium">Fee Formula</p>
                   <p className="text-xs text-gray-400 mt-1">
-                    pump.fun charges 1% per trade (buy/sell). 0.5% goes to the creator.
-                    Streamers receive 30% of that → <span className="font-mono text-cyan-400">Volume × 0.005 × 0.30 = Owed SOL</span>
+                    pump.fun charges a 1% creator fee per trade (buy/sell).
+                    Streamers receive 30% of that → <span className="font-mono text-cyan-400">Volume × 0.01 × 0.30 = Volume × 0.003 SOL</span>
                   </p>
                 </div>
               </div>
@@ -1244,8 +1352,8 @@ export default function Admin() {
                                   <span className="text-white font-mono">{fees.tradingVolumeSOL.toFixed(4)} SOL</span>
                                 </div>
                                 <div className="flex items-center justify-between text-xs">
-                                  <span className="text-gray-500">Creator Fee (0.5%)</span>
-                                  <span className="text-white font-mono">{(fees.tradingVolumeSOL * 0.005).toFixed(6)} SOL</span>
+                                  <span className="text-gray-500">Creator Fee (1%)</span>
+                                  <span className="text-white font-mono">{(fees.tradingVolumeSOL * 0.01).toFixed(6)} SOL</span>
                                 </div>
                                 <div className="flex items-center justify-between text-sm font-semibold border-t border-white/[0.06] pt-1 mt-1">
                                   <span className="text-gray-300">Owed to Streamer (30%)</span>
@@ -1262,6 +1370,18 @@ export default function Admin() {
                                 )}
                                 {fees.paidAt && (
                                   <p className="text-xs text-emerald-400 mt-1">Paid: {new Date(fees.paidAt).toLocaleString()}</p>
+                                )}
+
+                                {fees.activeChannels && fees.activeChannels.length > 0 && (
+                                  <div className="mt-2 pt-2 border-t border-white/[0.06] space-y-1">
+                                    <p className="text-xs text-gray-500">Active Channels</p>
+                                    {fees.activeChannels.map((channel) => (
+                                      <div key={`${slot.id}-${channel.name}`} className="flex items-center justify-between text-xs">
+                                        <span className="text-gray-300 truncate">{channel.name}</span>
+                                        <span className="text-gray-400 font-mono">{channel.durationMinutes}m</span>
+                                      </div>
+                                    ))}
+                                  </div>
                                 )}
                               </div>
                             ) : (
@@ -1357,12 +1477,12 @@ export default function Admin() {
                     {feeVolume && !isNaN(parseFloat(feeVolume)) && (
                       <div className="p-3 bg-white/[0.03] rounded-lg border border-white/[0.06] text-sm space-y-1">
                         <div className="flex justify-between">
-                          <span className="text-gray-500">Creator fee (0.5%)</span>
-                          <span className="text-white font-mono">{(parseFloat(feeVolume) * 0.005).toFixed(6)} SOL</span>
+                          <span className="text-gray-500">Creator fee (1%)</span>
+                          <span className="text-white font-mono">{(parseFloat(feeVolume) * 0.01).toFixed(6)} SOL</span>
                         </div>
                         <div className="flex justify-between font-semibold">
                           <span className="text-gray-300">Owed to streamer (30%)</span>
-                          <span className="text-yellow-400 font-mono">{(parseFloat(feeVolume) * 0.005 * 0.30).toFixed(6)} SOL</span>
+                          <span className="text-yellow-400 font-mono">{(parseFloat(feeVolume) * 0.003).toFixed(6)} SOL</span>
                         </div>
                       </div>
                     )}

@@ -82,7 +82,7 @@ const personalities = [
 /* ─── Stats ─── */
 const stats = [
   { label: '24/7', sublabel: 'Always Live', icon: Radio },
-  { label: '50%', sublabel: 'Fee Split to Streamers', icon: Coins },
+  { label: '30%', sublabel: 'Fee Split to Streamers', icon: Coins },
   { label: '3-Tier', sublabel: 'Slot System', icon: Clock },
   { label: 'Solana', sublabel: 'Powered by pump.fun', icon: Zap },
 ]
@@ -96,13 +96,13 @@ const features = [
   },
   {
     icon: Coins,
-    title: '50% Revenue to Streamers',
-    desc: 'Streamers earn 50% of CSGN token trading fees generated during their time slot. A transparent, unprecedented incentive model.',
+    title: '30% Revenue to Streamers',
+    desc: 'Streamers earn 30% of pump.fun creator fees generated during their time slot. A transparent, unprecedented incentive model.',
   },
   {
     icon: Clock,
     title: '3-Tier Time Slots',
-    desc: 'Auction bidding (3AM–2PM), lottery entry (2PM–6PM), and CEO-curated prime time (6PM–3AM). Multiple pathways to air.',
+    desc: 'Auction bidding (3AM–7PM ET) and CEO-curated prime time (7PM–3AM ET). Multiple pathways to air.',
   },
   {
     icon: Shield,
@@ -324,7 +324,7 @@ export default function Home() {
             transition={{ duration: 0.8, delay: 0.2 }}
             className="max-w-2xl mx-auto text-lg sm:text-xl text-gray-400 leading-relaxed mb-10"
           >
-            CSGN is the 24/7 crypto-native streaming network where streamers earn 50% of token trading fees.
+            CSGN is the 24/7 crypto-native streaming network where streamers earn 30% of creator fees.
             The ESPN and TMZ of crypto — always live, always curated, always on.
           </motion.p>
 
@@ -504,7 +504,7 @@ export default function Home() {
             {[
               { step: '01', title: 'Apply', desc: 'Submit your application with your content style, experience, and what you bring to the network.', icon: Users },
               { step: '02', title: 'Get Approved', desc: 'Our team reviews your application for quality and fit. Approved streamers get unique RTMP stream keys.', icon: Shield },
-              { step: '03', title: 'Go Live & Earn', desc: 'Bid for slots, enter the lottery, or get CEO-assigned prime time. Earn 50% of trading fees while you stream.', icon: TrendingUp },
+              { step: '03', title: 'Go Live & Earn', desc: 'Bid for slots or get CEO-assigned prime time. Earn 30% of creator fees while you stream.', icon: TrendingUp },
             ].map((item, i) => (
               <motion.div
                 key={item.step}
