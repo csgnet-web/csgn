@@ -5,7 +5,7 @@ import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { subscribeToCurrentSlot, subscribeToSlots, formatESTRange, type Slot } from '@/lib/slots'
 import { startFeeTracker } from '@/lib/dexscreener'
-import { detectStream as _detectStream, buildYouTubeSrc, buildTwitchSrc, PLAYER_ALLOW } from '@/lib/player'
+import { detectStream as _detectStream, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
 
 const bannerItems = [
   'Starting 5 \u2022 $14.70',
@@ -192,7 +192,7 @@ function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string
     // Load Twitch Embed script once, reuse on subsequent renders
     const loadTwitchScript = (): Promise<void> =>
       new Promise((resolve) => {
-        if ((window as Record<string, unknown>).Twitch) { resolve(); return }
+        if ((window as unknown as Record<string, unknown>).Twitch) { resolve(); return }
         const existing = document.querySelector('script[src="https://embed.twitch.tv/embed/v1.js"]')
         if (existing) {
           existing.addEventListener('load', () => resolve(), { once: true })
@@ -204,7 +204,8 @@ function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string
         document.head.appendChild(script)
       })
 
-    let embed: { getPlayer: () => { setMuted: (m: boolean) => void; setVolume: (v: number) => void; play: () => void } } | null = null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let embed: any = null
 
     loadTwitchScript().then(() => {
       if (!containerRef.current) return
