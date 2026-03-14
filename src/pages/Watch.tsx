@@ -114,6 +114,40 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
   )
 }
 
+/* ── YouTube sub-component: autoplays then unmutes via IFrame API ── */
+function YouTubePlayer({ videoId }: { videoId: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+
+  useEffect(() => {
+    const el = iframeRef.current
+    if (!el) return
+    // Post unMute + setVolume(100) immediately when the iframe finishes loading.
+    // The video is already playing (muted autoplay) at this point, so browsers
+    // accept the unmute without treating it as unsolicited audio.
+    const unmute = () => {
+      el.contentWindow?.postMessage(
+        JSON.stringify({ event: 'command', func: 'unMute', args: '' }), '*'
+      )
+      el.contentWindow?.postMessage(
+        JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*'
+      )
+    }
+    el.addEventListener('load', unmute)
+    return () => el.removeEventListener('load', unmute)
+  }, [videoId])
+
+  return (
+    <iframe
+      ref={iframeRef}
+      src={buildYouTubeSrc(videoId)}
+      className="w-full h-full"
+      allow={PLAYER_ALLOW}
+      allowFullScreen
+      title="Live Stream"
+    />
+  )
+}
+
 /* ── CSGN Player: renders Twitch or YouTube, or NO STREAM ACTIVE ── */
 function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: string }) {
   if (!streamUrl) {
@@ -130,15 +164,7 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
   const stream = detectStream(streamUrl)
 
   if (stream?.type === 'youtube') {
-    return (
-      <iframe
-        src={buildYouTubeSrc(stream.id)}
-        className="w-full h-full"
-        allow={PLAYER_ALLOW}
-        allowFullScreen
-        title="Live Stream"
-      />
-    )
+    return <YouTubePlayer videoId={stream.id} />
   }
 
   // Twitch: use parsed channel or treat raw value as channel name

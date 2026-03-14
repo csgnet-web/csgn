@@ -40,17 +40,23 @@ export function detectStream(url: string): DetectedStream | null {
 /**
  * Build a YouTube embed src that autoplays with audio unmuted.
  *
- * Key params:
- *   autoplay=1   — start playback immediately
- *   mute=0       — do NOT mute (audio on)
- *   playsinline=1 — stay inline on iOS (avoids forced fullscreen)
+ * Strategy — muted-start + JS unmute:
+ *   mute=1 + autoplay=1  → muted autoplay is allowed by all browsers; the
+ *                           video starts playing immediately.
+ *   enablejsapi=1        → allows the parent page to post IFrame API commands.
+ *
+ * The CSGNPlayer component then immediately posts `unMute` + `setVolume(100)`
+ * via postMessage once the iframe fires its `load` event. Because the video is
+ * already running when we unmute, the browser accepts it — resulting in
+ * audio-on autoplay from every navigation path.
  *
  * The iframe MUST also carry allow="autoplay" for browsers to honour these.
  */
 export function buildYouTubeSrc(videoId: string): string {
   const params = new URLSearchParams({
     autoplay: '1',
-    mute: '0',
+    mute: '1',        // start muted → guaranteed autoplay; JS unmutes on load
+    enablejsapi: '1', // allows postMessage commands (unMute / setVolume)
     rel: '0',
     modestbranding: '1',
     controls: '0',

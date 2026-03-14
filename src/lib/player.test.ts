@@ -83,6 +83,13 @@ describe('detectStream', () => {
 })
 
 // ── buildYouTubeSrc ─────────────────────────────────────────────────────────
+//
+// Strategy: muted-start + JS unmute.
+//   mute=1 + autoplay=1  → muted autoplay is always permitted by browsers;
+//                           the video starts playing immediately.
+//   enablejsapi=1        → the YouTubePlayer component posts unMute +
+//                           setVolume(100) on iframe load, resulting in
+//                           audio-on playback from every navigation path.
 
 describe('buildYouTubeSrc', () => {
   const src = buildYouTubeSrc('dQw4w9WgXcQ')
@@ -97,8 +104,11 @@ describe('buildYouTubeSrc', () => {
   it('sets autoplay=1 (autoplay ON)', () => {
     expect(url.searchParams.get('autoplay')).toBe('1')
   })
-  it('sets mute=0 (audio ON)', () => {
-    expect(url.searchParams.get('mute')).toBe('0')
+  it('sets mute=1 (starts muted for guaranteed autoplay; JS unmutes on load)', () => {
+    expect(url.searchParams.get('mute')).toBe('1')
+  })
+  it('sets enablejsapi=1 (required for postMessage unMute command)', () => {
+    expect(url.searchParams.get('enablejsapi')).toBe('1')
   })
   it('sets playsinline=1 (inline on iOS, no forced fullscreen)', () => {
     expect(url.searchParams.get('playsinline')).toBe('1')
