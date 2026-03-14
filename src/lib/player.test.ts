@@ -84,12 +84,17 @@ describe('detectStream', () => {
 
 // ── buildYouTubeSrc ─────────────────────────────────────────────────────────
 //
-// Strategy: muted-start + JS unmute.
-//   mute=1 + autoplay=1  → muted autoplay is always permitted by browsers;
-//                           the video starts playing immediately.
-//   enablejsapi=1        → the YouTubePlayer component posts unMute +
-//                           setVolume(100) on iframe load, resulting in
-//                           audio-on playback from every navigation path.
+// Strategy: muted-start + postMessage unmute on onReady.
+//   mute=1 + autoplay=1  → muted autoplay is permitted by all browsers;
+//                           the video starts immediately.
+//   enablejsapi=1        → YouTubePlayer sends {"event":"listening"} on iframe
+//                           load, subscribing to player events. YouTube replies
+//                           with {"event":"onReady"} once its JS player is
+//                           initialised. YouTubePlayer then posts unMute +
+//                           setVolume(100), turning audio on while the video
+//                           is already playing — browsers allow this.
+//                           Retry timers at 1 s and 3 s act as a fallback if
+//                           onReady is missed.
 
 describe('buildYouTubeSrc', () => {
   const src = buildYouTubeSrc('dQw4w9WgXcQ')
@@ -116,6 +121,14 @@ describe('buildYouTubeSrc', () => {
 })
 
 // ── buildTwitchSrc ───────────────────────────────────────────────────────────
+//
+// TwitchPlayer uses the Twitch Embed JS API (Twitch.Embed) loaded dynamically,
+// not a raw iframe. The Embed instance is created with muted:false and
+// setMuted(false) + setVolume(1) are called in the VIDEO_READY event, which
+// fires after the player's JS has fully initialised — guaranteeing audio-on
+// autoplay regardless of browser autoplay policy.
+//
+// buildTwitchSrc remains useful for testing / server-side rendering contexts.
 
 describe('buildTwitchSrc', () => {
   const src = buildTwitchSrc('xqc', 'localhost')

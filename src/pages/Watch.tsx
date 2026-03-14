@@ -121,19 +121,52 @@ function YouTubePlayer({ videoId }: { videoId: string }) {
   useEffect(() => {
     const el = iframeRef.current
     if (!el) return
-    // Post unMute + setVolume(100) immediately when the iframe finishes loading.
-    // The video is already playing (muted autoplay) at this point, so browsers
-    // accept the unmute without treating it as unsolicited audio.
+
+    const sendCmd = (func: string, args: unknown[] | string = '') =>
+      el.contentWindow?.postMessage(
+        JSON.stringify({ event: 'command', func, args }), '*'
+      )
+
     const unmute = () => {
-      el.contentWindow?.postMessage(
-        JSON.stringify({ event: 'command', func: 'unMute', args: '' }), '*'
-      )
-      el.contentWindow?.postMessage(
-        JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*'
-      )
+      sendCmd('unMute')
+      sendCmd('setVolume', [100])
     }
-    el.addEventListener('load', unmute)
-    return () => el.removeEventListener('load', unmute)
+
+    // When the iframe HTML loads, subscribe to YouTube player events.
+    // YouTube will then reply with "onReady" once its JS player is initialised.
+    const subscribe = () =>
+      el.contentWindow?.postMessage(
+        JSON.stringify({ event: 'listening', id: 1 }), '*'
+      )
+
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== el.contentWindow) return
+      try {
+        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data
+        // onReady: player is initialised — unmute immediately
+        if (data.event === 'onReady') unmute()
+        // onStateChange 1 = PLAYING — belt-and-suspenders unmute
+        if (data.event === 'onStateChange' && data.info === 1) unmute()
+      } catch { /* non-JSON messages from other sources */ }
+    }
+
+    // Fallback: retry unmute 1 s and 3 s after load in case onReady is missed
+    let t1: ReturnType<typeof setTimeout>
+    let t2: ReturnType<typeof setTimeout>
+    const onLoad = () => {
+      subscribe()
+      t1 = setTimeout(unmute, 1000)
+      t2 = setTimeout(unmute, 3000)
+    }
+
+    window.addEventListener('message', onMessage)
+    el.addEventListener('load', onLoad)
+    return () => {
+      window.removeEventListener('message', onMessage)
+      el.removeEventListener('load', onLoad)
+      clearTimeout(t1)
+      clearTimeout(t2)
+    }
   }, [videoId])
 
   return (
@@ -146,6 +179,61 @@ function YouTubePlayer({ videoId }: { videoId: string }) {
       title="Live Stream"
     />
   )
+}
+
+/* ── Twitch sub-component: uses Twitch Embed JS to guarantee unmuted audio ── */
+function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+
+    // Load Twitch Embed script once, reuse on subsequent renders
+    const loadTwitchScript = (): Promise<void> =>
+      new Promise((resolve) => {
+        if ((window as Record<string, unknown>).Twitch) { resolve(); return }
+        const existing = document.querySelector('script[src="https://embed.twitch.tv/embed/v1.js"]')
+        if (existing) {
+          existing.addEventListener('load', () => resolve(), { once: true })
+          return
+        }
+        const script = document.createElement('script')
+        script.src = 'https://embed.twitch.tv/embed/v1.js'
+        script.onload = () => resolve()
+        document.head.appendChild(script)
+      })
+
+    let embed: { getPlayer: () => { setMuted: (m: boolean) => void; setVolume: (v: number) => void; play: () => void } } | null = null
+
+    loadTwitchScript().then(() => {
+      if (!containerRef.current) return
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const TwitchAPI = (window as any).Twitch
+      embed = new TwitchAPI.Embed(containerRef.current, {
+        width: '100%',
+        height: '100%',
+        channel,
+        parent: [hostname],
+        autoplay: true,
+        muted: false,
+        layout: 'video',
+      })
+      embed!.addEventListener(TwitchAPI.Embed.VIDEO_READY, () => {
+        const player = embed!.getPlayer()
+        player.setMuted(false)
+        player.setVolume(1)
+        player.play()
+      })
+    })
+
+    return () => {
+      // Clear container so a fresh embed mounts on next render
+      if (containerRef.current) containerRef.current.innerHTML = ''
+    }
+  }, [channel, hostname])
+
+  return <div ref={containerRef} className="w-full h-full" />
 }
 
 /* ── CSGN Player: renders Twitch or YouTube, or NO STREAM ACTIVE ── */
@@ -169,15 +257,7 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
 
   // Twitch: use parsed channel or treat raw value as channel name
   const channel = stream?.id ?? streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '')
-  return (
-    <iframe
-      src={buildTwitchSrc(channel, hostname)}
-      className="w-full h-full"
-      allow={PLAYER_ALLOW}
-      allowFullScreen
-      title="Live Stream"
-    />
-  )
+  return <TwitchPlayer channel={channel} hostname={hostname} />
 }
 
 export default function Watch() {
