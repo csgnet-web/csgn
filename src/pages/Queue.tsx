@@ -25,6 +25,29 @@ function formatDate(date: Date) {
   return date.toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' ET'
 }
 
+function etDayKey(date: Date): string {
+  return date.toLocaleDateString('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+}
+
+function etMiddayFromOffset(offset: number): Date {
+  const now = new Date()
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  }).formatToParts(now)
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value || '0')
+  const base = new Date(Date.UTC(get('year'), get('month') - 1, get('day'), 12, 0, 0, 0))
+  base.setUTCDate(base.getUTCDate() + offset)
+  return base
+}
+
 /**
  * Compute the Associated Token Account (ATA) for an owner + mint.
  * Uses PublicKey.findProgramAddressSync from @solana/web3.js.
@@ -131,6 +154,7 @@ export default function Queue() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [requestMessages, setRequestMessages] = useState<Record<string, string>>({})
+  const [selectedDay, setSelectedDay] = useState(0)
 
   const loadSlots = useCallback(async () => {
     const now = new Date()
@@ -152,25 +176,6 @@ export default function Queue() {
   const auctionSlots = slots.filter((s) => s.type === 'auction' && s.status === 'open')
   const ceoSlots = slots.filter((s) => s.type === 'ceo' && s.status === 'open')
 
-  const etDayKey = (date: Date) => date.toLocaleDateString('en-CA', {
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-  const etMiddayFromOffset = (offset: number) => {
-    const nowDate = new Date()
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/New_York',
-      year: 'numeric',
-      month: 'numeric',
-      day: 'numeric',
-    }).formatToParts(nowDate)
-    const get = (type: string) => Number(parts.find((p) => p.type === type)?.value || '0')
-    const base = new Date(Date.UTC(get('year'), get('month') - 1, get('day'), 12, 0, 0, 0))
-    base.setUTCDate(base.getUTCDate() + offset)
-    return base
-  }
   const dayLabels = useMemo(() => {
     const labels = ['Today', 'Tomorrow']
     for (let i = 2; i <= 6; i++) {
@@ -193,17 +198,15 @@ export default function Queue() {
     return isToday ? (live ? [live, ...upcoming] : upcoming) : [...daySlots].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
   }
 
-  const auctionByDay = dayLabels.map((label, idx) => {
-    const key = etDayKey(etMiddayFromOffset(idx))
-    const daySlots = auctionSlots.filter((s) => etDayKey(new Date(s.startTime)) === key)
-    return { label, slots: sortForDay(daySlots, idx === 0) }
-  }).filter((d) => d.slots.length > 0)
-
-  const ceoByDay = dayLabels.map((label, idx) => {
-    const key = etDayKey(etMiddayFromOffset(idx))
-    const daySlots = ceoSlots.filter((s) => etDayKey(new Date(s.startTime)) === key)
-    return { label, slots: sortForDay(daySlots, idx === 0) }
-  }).filter((d) => d.slots.length > 0)
+  const selectedDayKey = etDayKey(etMiddayFromOffset(selectedDay))
+  const selectedAuctionSlots = sortForDay(
+    auctionSlots.filter((s) => etDayKey(new Date(s.startTime)) === selectedDayKey),
+    selectedDay === 0,
+  )
+  const selectedCeoSlots = sortForDay(
+    ceoSlots.filter((s) => etDayKey(new Date(s.startTime)) === selectedDayKey),
+    selectedDay === 0,
+  )
 
   const handlePlaceBid = async (slot: Slot) => {
     if (!user || !profile || !walletAddress) return
@@ -265,8 +268,25 @@ export default function Queue() {
   }
 
   return (
-    <div className="min-h-screen pt-24 lg:pt-32 pb-24">
+    <div className="min-h-screen pt-20 lg:pt-24 pb-24">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+
+        {/* Day tabs — same pattern as Schedule */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2">
+          {dayLabels.map((day, i) => (
+            <button
+              key={day}
+              onClick={() => setSelectedDay(i)}
+              className={`px-4 py-2 text-sm font-medium rounded-xl whitespace-nowrap transition-all cursor-pointer ${
+                selectedDay === i
+                  ? 'bg-primary-500/20 text-primary-400 border border-primary-500/30'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+              }`}
+            >
+              {day}
+            </button>
+          ))}
+        </div>
         <Card hover={false} className="p-5 bg-white/5 border-red-500/20">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
@@ -334,74 +354,71 @@ export default function Queue() {
                 <Gavel className="w-4 h-4 text-red-400" /> Auction Slots
                 <span className="text-xs text-gray-500 font-normal">3 AM – 7 PM ET</span>
               </h2>
-              {auctionByDay.length === 0 ? (
-                <p className="text-sm text-gray-500 py-4">No auction slots open right now. Check back soon.</p>
+              {selectedAuctionSlots.length === 0 ? (
+                <p className="text-sm text-gray-500 py-4">No auction slots open for {dayLabels[selectedDay].toLowerCase()}. Check back soon.</p>
               ) : (
-                auctionByDay.map((day) => (
-                  <div key={day.label} className="space-y-3">
-                    <p className="text-xs uppercase tracking-wider text-gray-500">{day.label}</p>
-                    {day.slots.map((slot, index) => {
-                  const bidPrice = getMinimumBid(slot.bids.length)
-                  const closesAt = new Date(slot.startTime).getTime() - 2 * 60 * 60 * 1000
-                  const isWindowOpen = now <= closesAt
-                  const userAlreadyBid = user ? slot.bids.some((b) => b.uid === user.uid) : false
+                <div className="space-y-3">
+                  {selectedAuctionSlots.map((slot, index) => {
+                    const bidPrice = getMinimumBid(slot.bids.length)
+                    const closesAt = new Date(slot.startTime).getTime() - 2 * 60 * 60 * 1000
+                    const isWindowOpen = now <= closesAt
+                    const userAlreadyBid = user ? slot.bids.some((b) => b.uid === user.uid) : false
 
-                  return (
-                    <div key={slot.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-white font-medium">{slot.label}</p>
-                          <p className="text-xs text-gray-500 flex items-center gap-1">
-                            <Clock3 className="w-3 h-3" /> Airs {formatDate(new Date(slot.startTime))}
+                    return (
+                      <div key={slot.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-white font-medium">{slot.label}</p>
+                            <p className="text-xs text-gray-500 flex items-center gap-1">
+                              <Clock3 className="w-3 h-3" /> Airs {formatDate(new Date(slot.startTime))}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            {index === 0 && <Badge variant="blue">Soonest</Badge>}
+                            <Badge variant="default">{slot.bids.length} bid{slot.bids.length !== 1 ? 's' : ''}</Badge>
+                          </div>
+                        </div>
+
+                        {/* Quadratic curve visualization */}
+                        <div className="mt-3 p-3 bg-white/[0.03] rounded-lg border border-white/5">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs text-gray-400 flex items-center gap-1">
+                              <TrendingUp className="w-3 h-3" /> Bid Price (Quadratic Curve)
+                            </span>
+                            <span className="text-xs text-gray-500">y = 100k + 10k·x²</span>
+                          </div>
+                          <div className="text-2xl font-bold font-mono text-white">
+                            {bidPrice.toLocaleString()} <span className="text-sm text-cyan-400">CSGN</span>
+                          </div>
+                          <p className="text-xs text-gray-600 mt-1">
+                            Next bid: {getMinimumBid(slot.bids.length + 1).toLocaleString()} CSGN
                           </p>
                         </div>
-                        <div className="flex gap-2">
-                          {index === 0 && <Badge variant="blue">Soonest</Badge>}
-                          <Badge variant="default">{slot.bids.length} bid{slot.bids.length !== 1 ? 's' : ''}</Badge>
-                        </div>
-                      </div>
 
-                      {/* Quadratic curve visualization */}
-                      <div className="mt-3 p-3 bg-white/[0.03] rounded-lg border border-white/5">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs text-gray-400 flex items-center gap-1">
-                            <TrendingUp className="w-3 h-3" /> Bid Price (Quadratic Curve)
-                          </span>
-                          <span className="text-xs text-gray-500">y = 100k + 10k·x²</span>
+                        <div className="mt-3 flex items-center justify-between">
+                          <p className="text-xs text-gray-500">CSGN transferred via Phantom on bid.</p>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            disabled={!user || !isWindowOpen || !walletAddress || userAlreadyBid || !user.emailVerified}
+                            isLoading={actionLoading === slot.id}
+                            onClick={() => handlePlaceBid(slot)}
+                          >
+                            {userAlreadyBid
+                              ? 'Bid Placed'
+                              : !user
+                              ? 'Log in to Bid'
+                              : !isWindowOpen
+                              ? 'Bidding Closed'
+                              : !walletAddress
+                              ? 'Connect Wallet'
+                              : `Bid ${formatCSGN(bidPrice)}`}
+                          </Button>
                         </div>
-                        <div className="text-2xl font-bold font-mono text-white">
-                          {bidPrice.toLocaleString()} <span className="text-sm text-cyan-400">CSGN</span>
-                        </div>
-                        <p className="text-xs text-gray-600 mt-1">
-                          Next bid: {getMinimumBid(slot.bids.length + 1).toLocaleString()} CSGN
-                        </p>
                       </div>
-
-                      <div className="mt-3 flex items-center justify-between">
-                        <p className="text-xs text-gray-500">CSGN transferred via Phantom on bid.</p>
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          disabled={!user || !isWindowOpen || !walletAddress || userAlreadyBid || !user.emailVerified}
-                          isLoading={actionLoading === slot.id}
-                          onClick={() => handlePlaceBid(slot)}
-                        >
-                          {userAlreadyBid
-                            ? 'Bid Placed'
-                            : !user
-                            ? 'Log in to Bid'
-                            : !isWindowOpen
-                            ? 'Bidding Closed'
-                            : !walletAddress
-                            ? 'Connect Wallet'
-                            : `Bid ${formatCSGN(bidPrice)}`}
-                        </Button>
-                      </div>
-                    </div>
-                  )
-                    })}
-                  </div>
-                ))
+                    )
+                  })}
+                </div>
               )}
             </Card>
 
@@ -411,71 +428,68 @@ export default function Queue() {
                 <Crown className="w-4 h-4 text-yellow-400" /> CEO Schedule
                 <span className="text-xs text-gray-500 font-normal">7 PM – 3 AM ET</span>
               </h2>
-              {ceoByDay.length === 0 ? (
-                <p className="text-sm text-gray-500 py-4">No CEO Schedule slots open for requests right now.</p>
+              {selectedCeoSlots.length === 0 ? (
+                <p className="text-sm text-gray-500 py-4">No CEO Schedule slots open for {dayLabels[selectedDay].toLowerCase()}.</p>
               ) : (
-                ceoByDay.map((day) => (
-                  <div key={day.label} className="space-y-3">
-                    <p className="text-xs uppercase tracking-wider text-gray-500">{day.label}</p>
-                    {day.slots.map((slot) => {
-                  const alreadyRequested = user ? slot.requests?.some((r) => r.uid === user.uid) : false
-                  const myRequest = user ? slot.requests?.find((r) => r.uid === user.uid) : undefined
+                <div className="space-y-3">
+                  {selectedCeoSlots.map((slot) => {
+                    const alreadyRequested = user ? slot.requests?.some((r) => r.uid === user.uid) : false
+                    const myRequest = user ? slot.requests?.find((r) => r.uid === user.uid) : undefined
 
-                  return (
-                    <div key={slot.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-white font-medium">{slot.label}</p>
-                          <p className="text-xs text-gray-500">
-                            <Clock3 className="w-3 h-3 inline mr-1" />
-                            Airs {formatDate(new Date(slot.startTime))}
-                          </p>
+                    return (
+                      <div key={slot.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-white font-medium">{slot.label}</p>
+                            <p className="text-xs text-gray-500">
+                              <Clock3 className="w-3 h-3 inline mr-1" />
+                              Airs {formatDate(new Date(slot.startTime))}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Badge variant="gold">{slot.requests?.length ?? 0} request{(slot.requests?.length ?? 0) !== 1 ? 's' : ''}</Badge>
+                          </div>
                         </div>
-                        <div className="flex gap-2">
-                          <Badge variant="gold">{slot.requests?.length ?? 0} request{(slot.requests?.length ?? 0) !== 1 ? 's' : ''}</Badge>
-                        </div>
+
+                        {alreadyRequested ? (
+                          <div className="p-2 bg-white/5 rounded-lg border border-white/10 text-xs">
+                            <p className="text-gray-400">Request submitted:</p>
+                            <p className="text-white mt-0.5">{myRequest?.message}</p>
+                            <Badge
+                              variant={myRequest?.status === 'accepted' ? 'green' : myRequest?.status === 'declined' ? 'red' : 'gold'}
+                              className="mt-1"
+                            >
+                              {myRequest?.status}
+                            </Badge>
+                            {myRequest?.responseNote && (
+                              <p className="text-gray-400 text-xs mt-1">Note: {myRequest.responseNote}</p>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <textarea
+                              value={requestMessages[slot.id] || ''}
+                              onChange={(e) => setRequestMessages((prev) => ({ ...prev, [slot.id]: e.target.value }))}
+                              placeholder="Tell us why you'd like this slot..."
+                              rows={2}
+                              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50 resize-none"
+                            />
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="w-full"
+                              disabled={!user || !user.emailVerified || !requestMessages[slot.id]?.trim()}
+                              isLoading={actionLoading === slot.id}
+                              onClick={() => handleRequestSlot(slot)}
+                            >
+                              {!user ? 'Log in to Request' : 'Submit Request'}
+                            </Button>
+                          </div>
+                        )}
                       </div>
-
-                      {alreadyRequested ? (
-                        <div className="p-2 bg-white/5 rounded-lg border border-white/10 text-xs">
-                          <p className="text-gray-400">Request submitted:</p>
-                          <p className="text-white mt-0.5">{myRequest?.message}</p>
-                          <Badge
-                            variant={myRequest?.status === 'accepted' ? 'green' : myRequest?.status === 'declined' ? 'red' : 'gold'}
-                            className="mt-1"
-                          >
-                            {myRequest?.status}
-                          </Badge>
-                          {myRequest?.responseNote && (
-                            <p className="text-gray-400 text-xs mt-1">Note: {myRequest.responseNote}</p>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          <textarea
-                            value={requestMessages[slot.id] || ''}
-                            onChange={(e) => setRequestMessages((prev) => ({ ...prev, [slot.id]: e.target.value }))}
-                            placeholder="Tell us why you'd like this slot..."
-                            rows={2}
-                            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50 resize-none"
-                          />
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            className="w-full"
-                            disabled={!user || !user.emailVerified || !requestMessages[slot.id]?.trim()}
-                            isLoading={actionLoading === slot.id}
-                            onClick={() => handleRequestSlot(slot)}
-                          >
-                            {!user ? 'Log in to Request' : 'Submit Request'}
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  )
-                    })}
-                  </div>
-                ))
+                    )
+                  })}
+                </div>
               )}
               <p className="text-xs text-gray-500">
                 CEO Schedule slots are admin-curated. Submit a request and you'll be notified in your Account page.
