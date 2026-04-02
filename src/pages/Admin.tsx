@@ -5,7 +5,7 @@ import {
   Shield, Users, FileText, Radio, Clock, Check, X, Eye,
   Search, BarChart3, TrendingUp, Plus, Gavel, Crown,
   Trash2, UserCheck, AlertTriangle, Tv, DollarSign,
-  Wallet, CheckCircle2, XCircle, RefreshCw, Link as LinkIcon,
+  Wallet, CheckCircle2, XCircle, RefreshCw, Link as LinkIcon, ExternalLink, Monitor,
 } from 'lucide-react'
 import {
   collection, query, getDocs, doc, updateDoc, setDoc, onSnapshot, orderBy,
@@ -584,19 +584,39 @@ export default function Admin() {
               ))}
             </div>
 
-            {/* Push Stream Live */}
+            {/* CSGN Stream Output */}
             <Card hover={false} className="overflow-hidden">
-              <div className="p-4 border-b border-white/[0.06] flex items-center gap-2">
-                <Tv className="w-5 h-5 text-red-400" />
-                <h3 className="font-semibold text-white">Push Stream Live (Manual Override)</h3>
+              <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Tv className="w-5 h-5 text-red-400" />
+                  <h3 className="font-semibold text-white">CSGN Stream Output</h3>
+                </div>
+                <a
+                  href="/player"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary-300 border border-primary-500/30 rounded-lg hover:bg-primary-500/10 hover:border-primary-500/50 transition-all"
+                >
+                  <Monitor className="w-3.5 h-3.5" />
+                  Open /player
+                  <ExternalLink className="w-3 h-3 opacity-60" />
+                </a>
               </div>
               <div className="p-4 space-y-4">
+                {/* Workflow hint */}
+                <div className="p-3 bg-white/[0.03] border border-white/[0.06] rounded-xl text-xs text-gray-500 leading-relaxed space-y-1">
+                  <p className="text-gray-400 font-medium">Setup flow</p>
+                  <p>1. Open <span className="font-mono text-primary-400">/player</span> → add as OBS Window Capture source</p>
+                  <p>2. OBS streams to X / pump.fun — copy that stream's URL</p>
+                  <p>3. Paste it below → viewers on <span className="font-mono text-primary-400">/watch</span> see your CSGN output</p>
+                </div>
+
                 {currentLiveUrl && (
                   <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-xl">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="text-[11px] text-red-400 uppercase tracking-wider mb-1 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse inline-block" /> Override Active
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse inline-block" /> Live on /watch
                         </p>
                         <p className="text-sm font-medium text-white">{currentLiveStreamer || 'CSGN'}</p>
                         {currentLiveTitle && <p className="text-xs text-primary-300 font-medium mt-0.5">"{currentLiveTitle}"</p>}
@@ -612,12 +632,12 @@ export default function Admin() {
                   </div>
                 )}
                 <div>
-                  <label className="block text-sm text-gray-300 mb-1">Stream URL (Twitch or YouTube)</label>
+                  <label className="block text-sm text-gray-300 mb-1">CSGN Output URL <span className="text-gray-500 text-xs">(your OBS destination stream)</span></label>
                   <input
                     type="text"
                     value={liveStreamUrl}
                     onChange={(e) => setLiveStreamUrl(e.target.value)}
-                    placeholder="https://twitch.tv/channel or https://youtube.com/watch?v=..."
+                    placeholder="https://x.com/i/broadcasts/... or https://twitch.tv/channel"
                     className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
                   />
                 </div>
@@ -627,12 +647,12 @@ export default function Admin() {
                     type="text"
                     value={liveStreamerName}
                     onChange={(e) => setLiveStreamerName(e.target.value)}
-                    placeholder="e.g. shrood"
+                    placeholder="e.g. CSGN"
                     className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-300 mb-1">Stream Title <span className="text-gray-500 text-xs">(shown instead of "No Stream")</span></label>
+                  <label className="block text-sm text-gray-300 mb-1">Stream Title <span className="text-gray-500 text-xs">(shown on /watch)</span></label>
                   <input
                     type="text"
                     value={liveStreamTitle}
@@ -650,7 +670,7 @@ export default function Admin() {
                   leftIcon={<Tv className="w-4 h-4" />}
                   onClick={handlePushStream}
                 >
-                  Push to Live
+                  Push to /watch
                 </Button>
               </div>
             </Card>
