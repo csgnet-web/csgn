@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // ── slots ────────────────────────────────────────────────────────────────
+    // Public read so /schedule and /watch work for unauthenticated visitors.
+    // Authenticated users can update (place bids, submit slot requests).
+    // Only admins can create or delete slots.
+    match /slots/{slotId} {
+      allow read:             if true;
+      allow update:           if isSignedIn();
+      allow create, delete:   if isAdmin();
+    }
+
+    // ── config ───────────────────────────────────────────────────────────────
+    // Public read so /watch can show the live-stream override for all visitors.
+    // Only admins can write config documents.
+    match /config/{docId} {
+      allow read:   if true;
+      allow write:  if isAdmin();
+    }
+
+    // ── users ─────────────────────────────────────────────────────────────────
+    // Each user can read and write their own profile. Admins can read all.
+    match /users/{userId} {
+      allow read:   if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow write:  if request.auth != null && (request.auth.uid == userId || isAdmin());
+    }
+  }
+}

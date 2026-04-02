@@ -5,6 +5,7 @@ import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { subscribeToCurrentSlot, subscribeToSlots, formatESTRange, type Slot } from '@/lib/slots'
 import { startFeeTracker } from '@/lib/dexscreener'
+import { detectStream as _detectStream, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
 
 const bannerItems = [
   'Starting 5 \u2022 $14.70',
@@ -13,35 +14,10 @@ const bannerItems = [
   'Starting 5 Closing in 01:02:23',
 ] as const
 
-/* ── Helpers to parse stream URLs ── */
-function parseTwitchChannel(url: string): string | null {
-  const m = url.match(/(?:twitch\.tv\/)([a-zA-Z0-9_]+)/i)
-  return m ? m[1] : null
-}
+/* ── Helpers to parse stream URLs (imported from @/lib/player) ── */
+// parseTwitchChannel, parseYouTubeId, detectStream, buildYouTubeSrc, buildTwitchSrc
 
-function parseYouTubeId(url: string): string | null {
-  const patterns = [
-    /(?:youtube\.com\/watch\?.*v=)([a-zA-Z0-9_-]{11})/,
-    /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/,
-    /(?:youtube\.com\/live\/)([a-zA-Z0-9_-]{11})/,
-    /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
-  ]
-  for (const p of patterns) {
-    const m = url.match(p)
-    if (m) return m[1]
-  }
-  return null
-}
-
-type StreamType = 'twitch' | 'youtube'
-
-function detectStream(url: string): { type: StreamType; id: string } | null {
-  const twitchChannel = parseTwitchChannel(url)
-  if (twitchChannel) return { type: 'twitch', id: twitchChannel }
-  const ytId = parseYouTubeId(url)
-  if (ytId) return { type: 'youtube', id: ytId }
-  return null
-}
+function detectStream(url: string) { return _detectStream(url) }
 
 
 /* ── CSGN Wipe Overlay ── */
@@ -69,6 +45,22 @@ function CSGNWipeOverlay({ visible }: { visible: boolean }) {
       </div>
     </div>
   )
+}
+
+/* ── Compact time range: "3-5A ET", "1-3P ET", "11P-1A ET" ── */
+function formatCompactRange(slot: Pick<Slot, 'startTime' | 'endTime'>): string {
+  const parse = (iso: string) => {
+    const formatted = new Date(iso).toLocaleTimeString('en-US', {
+      timeZone: 'America/New_York',
+      hour: 'numeric',
+      hour12: true,
+    })
+    const [hour, period] = formatted.split(' ')
+    return { hour, p: period.charAt(0) }
+  }
+  const s = parse(slot.startTime)
+  const e = parse(slot.endTime)
+  return s.p === e.p ? `${s.hour}-${e.hour}${e.p} ET` : `${s.hour}${s.p}-${e.hour}${e.p} ET`
 }
 
 /* ── Schedule card for today's lineup ── */
@@ -116,10 +108,133 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
       <div className="px-2 sm:px-3 pb-1.5 sm:pb-3 pt-1 sm:pt-2.5 bg-gradient-to-t from-black/80 to-transparent space-y-0.5 sm:space-y-1">
         <p className="text-white font-black font-display text-[10px] sm:text-sm leading-tight break-words">{streamer}</p>
         <p className="text-white/60 text-[9px] sm:text-[11px] leading-snug break-words">{slot.type === 'auction' ? 'Auction Slot' : 'CEO Schedule'}</p>
-        <p className="text-white/60 text-[9px] sm:text-[11px] font-mono leading-none">{formatESTRange(slot)}</p>
+        <p className="text-white/60 text-[8px] sm:text-[10px] font-mono leading-none whitespace-nowrap">{formatCompactRange(slot)}</p>
       </div>
     </div>
   )
+}
+
+/* ── YouTube sub-component: autoplays then unmutes via IFrame API ── */
+function YouTubePlayer({ videoId }: { videoId: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+
+  useEffect(() => {
+    const el = iframeRef.current
+    if (!el) return
+
+    const sendCmd = (func: string, args: unknown[] | string = '') =>
+      el.contentWindow?.postMessage(
+        JSON.stringify({ event: 'command', func, args }), '*'
+      )
+
+    const unmute = () => {
+      sendCmd('unMute')
+      sendCmd('setVolume', [100])
+    }
+
+    // When the iframe HTML loads, subscribe to YouTube player events.
+    // YouTube will then reply with "onReady" once its JS player is initialised.
+    const subscribe = () =>
+      el.contentWindow?.postMessage(
+        JSON.stringify({ event: 'listening', id: 1 }), '*'
+      )
+
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== el.contentWindow) return
+      try {
+        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data
+        // onReady: player is initialised — unmute immediately
+        if (data.event === 'onReady') unmute()
+        // onStateChange 1 = PLAYING — belt-and-suspenders unmute
+        if (data.event === 'onStateChange' && data.info === 1) unmute()
+      } catch { /* non-JSON messages from other sources */ }
+    }
+
+    // Fallback: retry unmute 1 s and 3 s after load in case onReady is missed
+    let t1: ReturnType<typeof setTimeout>
+    let t2: ReturnType<typeof setTimeout>
+    const onLoad = () => {
+      subscribe()
+      t1 = setTimeout(unmute, 1000)
+      t2 = setTimeout(unmute, 3000)
+    }
+
+    window.addEventListener('message', onMessage)
+    el.addEventListener('load', onLoad)
+    return () => {
+      window.removeEventListener('message', onMessage)
+      el.removeEventListener('load', onLoad)
+      clearTimeout(t1)
+      clearTimeout(t2)
+    }
+  }, [videoId])
+
+  return (
+    <iframe
+      ref={iframeRef}
+      src={buildYouTubeSrc(videoId)}
+      className="w-full h-full"
+      allow={PLAYER_ALLOW}
+      allowFullScreen
+      title="Live Stream"
+    />
+  )
+}
+
+/* ── Twitch sub-component: uses Twitch Embed JS to guarantee unmuted audio ── */
+function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+
+    // Load Twitch Embed script once, reuse on subsequent renders
+    const loadTwitchScript = (): Promise<void> =>
+      new Promise((resolve) => {
+        if ((window as unknown as Record<string, unknown>).Twitch) { resolve(); return }
+        const existing = document.querySelector('script[src="https://embed.twitch.tv/embed/v1.js"]')
+        if (existing) {
+          existing.addEventListener('load', () => resolve(), { once: true })
+          return
+        }
+        const script = document.createElement('script')
+        script.src = 'https://embed.twitch.tv/embed/v1.js'
+        script.onload = () => resolve()
+        document.head.appendChild(script)
+      })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let embed: any = null
+
+    loadTwitchScript().then(() => {
+      if (!containerRef.current) return
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const TwitchAPI = (window as any).Twitch
+      embed = new TwitchAPI.Embed(containerRef.current, {
+        width: '100%',
+        height: '100%',
+        channel,
+        parent: [hostname],
+        autoplay: true,
+        muted: false,
+        layout: 'video',
+      })
+      embed!.addEventListener(TwitchAPI.Embed.VIDEO_READY, () => {
+        const player = embed!.getPlayer()
+        player.setMuted(false)
+        player.setVolume(1)
+        player.play()
+      })
+    })
+
+    return () => {
+      // Clear container so a fresh embed mounts on next render
+      if (containerRef.current) containerRef.current.innerHTML = ''
+    }
+  }, [channel, hostname])
+
+  return <div ref={containerRef} className="w-full h-full" />
 }
 
 /* ── CSGN Player: renders Twitch or YouTube, or NO STREAM ACTIVE ── */
@@ -138,30 +253,12 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
   const stream = detectStream(streamUrl)
 
   if (stream?.type === 'youtube') {
-    const embedSrc = `https://www.youtube-nocookie.com/embed/${stream.id}?autoplay=1&mute=0&rel=0&modestbranding=1&controls=0&iv_load_policy=3&disablekb=1&playsinline=1`
-    return (
-      <iframe
-        src={embedSrc}
-        className="w-full h-full"
-        allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-        allowFullScreen
-        title="Live Stream"
-      />
-    )
+    return <YouTubePlayer videoId={stream.id} />
   }
 
   // Twitch: use parsed channel or treat raw value as channel name
   const channel = stream?.id ?? streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '')
-  const twitchSrc = `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${encodeURIComponent(hostname)}&autoplay=true&muted=false`
-  return (
-    <iframe
-      src={twitchSrc}
-      className="w-full h-full"
-      allow="autoplay; fullscreen; encrypted-media"
-      allowFullScreen
-      title="Live Stream"
-    />
-  )
+  return <TwitchPlayer channel={channel} hostname={hostname} />
 }
 
 export default function Watch() {
@@ -371,9 +468,9 @@ export default function Watch() {
                 <div className="text-right space-y-0.5">
                   <p className="text-[11px] text-gray-500 uppercase tracking-wider leading-none mb-1">Up Next</p>
                   {upcomingSlots.slice(0, 3).map((s) => (
-                    <p key={s.id} className="text-xs font-display font-bold text-white leading-snug">
+                    <p key={s.id} className="text-[10px] font-display font-bold text-white leading-snug whitespace-nowrap">
                       {s.assignedName || (s.type === 'auction' ? 'Open Bid' : 'CEO')}{' '}
-                      <span className="font-normal text-gray-500">{formatESTRange(s)}</span>
+                      <span className="font-normal text-gray-400">{formatCompactRange(s)}</span>
                     </p>
                   ))}
                 </div>
