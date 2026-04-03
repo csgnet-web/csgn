@@ -13,6 +13,7 @@ const About = lazy(() => import('@/pages/About'))
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
 const Queue = lazy(() => import('@/pages/Queue'))
 const Admin = lazy(() => import('@/pages/Admin'))
+const Player = lazy(() => import('@/pages/Player'))
 
 function Loading() {
   return (
@@ -27,11 +28,12 @@ function Loading() {
 
 function AppContent() {
   const location = useLocation()
-  const hideFooter = location.pathname === '/watch'
+  const isPlayerPage = location.pathname === '/player'
+  const hideFooter = location.pathname === '/watch' || isPlayerPage
 
   return (
-    <div className="min-h-screen bg-[#050507] csgn-bg">
-      <Header />
+    <div className={`min-h-screen bg-[#050507]${isPlayerPage ? '' : ' csgn-bg'}`}>
+      {!isPlayerPage && <Header />}
 
       <Suspense fallback={<Loading />}>
         <AnimatePresence mode="wait">
@@ -45,6 +47,7 @@ function AppContent() {
             <Route path="/dashboard" element={<Navigate to="/account" replace />} />
             <Route path="/queue" element={<Queue />} />
             <Route path="/admin" element={<Admin />} />
+            <Route path="/player" element={<Player />} />
           </Routes>
         </AnimatePresence>
       </Suspense>

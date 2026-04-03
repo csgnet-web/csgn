@@ -354,15 +354,18 @@ export default function Watch() {
     return unsub
   }, [])
 
-  // Derive stream URL — manual override takes priority over current slot
-  const streamUrl = manualOverride?.url || currentSlot?.streamUrl || ''
+  // Derive stream URL — ONLY from admin manual override (config/liveStream).
+  // The slot's raw Twitch/YouTube URL is intentionally NOT used here; that feed
+  // is consumed by /player (OBS capture) and then re-broadcast to this page via
+  // the CSGN output stream the admin sets in the override.
+  const streamUrl = manualOverride?.url || ''
   const streamerName = manualOverride?.streamerName || currentSlot?.assignedName || ''
   const streamTitle = manualOverride?.title || currentSlot?.streamTitle || currentSlot?.description || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
 
-  // Determine chat source (only shown when a stream is active)
+  // Chat sidebar: only shown when the CSGN output stream is itself a Twitch channel
   const stream = streamUrl ? detectStream(streamUrl) : null
-  const isTwitch = !stream || stream.type === 'twitch'
+  const isTwitch = !!streamUrl && (!stream || stream.type === 'twitch')
   const chatChannel = stream?.type === 'twitch' ? stream.id : (streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '') || '')
   const chatSrc = `https://www.twitch.tv/embed/${encodeURIComponent(chatChannel)}/chat?parent=${hostname}&darkpopout`
 
