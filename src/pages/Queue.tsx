@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Navigate } from 'react-router-dom'
 import { Gavel, Wallet, Clock3, AlertTriangle, TrendingUp, Crown, Info } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
@@ -147,7 +148,7 @@ async function sendCSGNBid(
 }
 
 export default function Queue() {
-  const { user, profile } = useAuth()
+  const { user, profile, loading: authLoading } = useAuth()
   const { walletAddress, balance, connect, isConnecting, error: walletError } = usePhantomWallet()
   const [slots, setSlots] = useState<Slot[]>([])
   const [loading, setLoading] = useState(true)
@@ -265,6 +266,18 @@ export default function Queue() {
       setActionError(err?.message || 'Failed to submit request.')
     }
     setActionLoading(null)
+  }
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full" />
+      </div>
+    )
+  }
+
+  if (!profile || profile.role !== 'admin') {
+    return <Navigate to="/" replace />
   }
 
   return (
