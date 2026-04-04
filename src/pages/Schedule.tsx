@@ -6,7 +6,6 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
 import { fetchSlots, getMinimumBid, formatCSGN, LAUNCH_DATE_UTC, PHASE_2_END_UTC, type Slot, type SlotType } from '@/lib/slots'
-import { useAuth } from '@/contexts/AuthContext'
 
 function getSlotPhase(slot: Slot): 'phase1' | 'phase2' | 'later' {
   const start = slot.startTime
@@ -76,8 +75,6 @@ function sortSlotsForDisplay(slots: Slot[], selectedDay: number): Slot[] {
 }
 
 export default function Schedule() {
-  const { profile } = useAuth()
-  const isAdmin = profile?.role === 'admin'
   const [selectedDay, setSelectedDay] = useState(0)
   const [slots, setSlots] = useState<Slot[]>([])
   const [loading, setLoading] = useState(true)
@@ -181,12 +178,8 @@ export default function Schedule() {
                 const phase = getSlotPhase(slot)
                 const streamerName = typeLabel(slot.type, slot)
 
-                // Phase 1: grayed out for non-admin (pre-launch test streams)
-                const isPhase1Disabled = !isAdmin && phase === 'phase1'
-                // Show bid link only for auction slots that are open and not in a restricted phase
-                const showBidLink = slot.type === 'auction' && slot.status === 'open' && (isAdmin || phase === 'later')
-                // CEO label: show 'CEO Creator' for Phase 1/2 non-admin, otherwise 'CEO Schedule'
-                const ceoLabel = !isAdmin && (phase === 'phase1' || phase === 'phase2') ? 'CEO Creator' : 'CEO Schedule'
+                // Show bid link for open auction slots after the pre-launch phase
+                const showBidLink = slot.type === 'auction' && slot.status === 'open' && phase !== 'phase1'
 
                 return (
                   <motion.div
@@ -195,11 +188,9 @@ export default function Schedule() {
                     animate={{ opacity: 1 }}
                     transition={{ delay: i * 0.03 }}
                     className={`flex items-center gap-4 px-4 sm:px-6 py-4 transition-colors ${
-                      isPhase1Disabled
-                        ? 'opacity-40 cursor-default'
-                        : displayStatus === 'live'
-                          ? 'bg-primary-500/5 border-l-2 border-l-primary-500'
-                          : 'hover:bg-white/[0.02]'
+                      displayStatus === 'live'
+                        ? 'bg-primary-500/5 border-l-2 border-l-primary-500'
+                        : 'hover:bg-white/[0.02]'
                     }`}
                   >
                     <div className="w-20 sm:w-28 shrink-0">
@@ -214,14 +205,14 @@ export default function Schedule() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-white truncate">{streamerName}</span>
-                        {!isPhase1Disabled && displayStatus === 'live' && <LiveIndicator />}
+                        {displayStatus === 'live' && <LiveIndicator />}
                       </div>
                       {slot.description && <span className="text-xs text-gray-500 truncate block">{slot.description}</span>}
                     </div>
 
                     <div className="flex flex-col items-end gap-0.5 shrink-0">
-                      {!isPhase1Disabled && slot.status === 'pending_deposit' && <Badge variant="gold" className="!text-[9px] !px-1.5 !py-0.5">Awaiting Confirm</Badge>}
-                      {!isPhase1Disabled && slot.status === 'confirmed' && <Badge variant="green" className="!text-[9px] !px-1.5 !py-0.5">Confirmed</Badge>}
+                      {slot.status === 'pending_deposit' && <Badge variant="gold" className="!text-[9px] !px-1.5 !py-0.5">Awaiting Confirm</Badge>}
+                      {slot.status === 'confirmed' && <Badge variant="green" className="!text-[9px] !px-1.5 !py-0.5">Confirmed</Badge>}
                       {showBidLink && (
                         <Link
                           to="/queue"
@@ -231,7 +222,7 @@ export default function Schedule() {
                         </Link>
                       )}
                       <Badge variant={slot.type === 'ceo' ? 'gold' : 'blue'} className="!text-[9px] !px-1.5 !py-0.5">
-                        {slot.type === 'auction' ? 'Auction' : ceoLabel}
+                        {slot.type === 'auction' ? 'Auction' : 'CEO Schedule'}
                       </Badge>
                     </div>
                   </motion.div>
@@ -247,37 +238,20 @@ export default function Schedule() {
           viewport={{ once: true }}
           className="mt-8"
         >
-          {!isAdmin ? (
-            <Card hover={false} className="p-6 bg-primary-500/5 border-primary-500/20">
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-xl bg-primary-500/20 flex items-center justify-center shrink-0">
-                  <Info className="w-5 h-5 text-primary-400" />
-                </div>
-                <div>
-                  <h4 className="font-semibold text-white mb-1">Launch week — CEO Creator Schedule</h4>
-                  <p className="text-sm text-gray-400 leading-relaxed">
-                    CSGN is launching April 5. All slots through April 12 are CEO-curated to kick things off right.
-                    Auction bidding opens April 12 — apply now to be ready.
-                  </p>
-                </div>
+          <Card hover={false} className="p-6 bg-primary-500/5 border-primary-500/20">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-xl bg-primary-500/20 flex items-center justify-center shrink-0">
+                <Info className="w-5 h-5 text-primary-400" />
               </div>
-            </Card>
-          ) : (
-            <Card hover={false} className="p-6 bg-primary-500/5 border-primary-500/20">
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-xl bg-primary-500/20 flex items-center justify-center shrink-0">
-                  <Info className="w-5 h-5 text-primary-400" />
-                </div>
-                <div>
-                  <h4 className="font-semibold text-white mb-1">Want to be on the schedule?</h4>
-                  <p className="text-sm text-gray-400 leading-relaxed">
-                    Apply to become a CSGN streamer. Once approved, you can bid on auction slots (3 AM–7 PM ET) using CSGN tokens,
-                    or be selected for the CEO Schedule (7 PM–3 AM ET). Streamers earn 30% of pump.fun creator fees during their time slot.
-                  </p>
-                </div>
+              <div>
+                <h4 className="font-semibold text-white mb-1">Want to be on the schedule?</h4>
+                <p className="text-sm text-gray-400 leading-relaxed">
+                  Apply to become a CSGN streamer. Once approved, you can bid on auction slots (3 AM–7 PM ET) using CSGN tokens,
+                  or be selected for the CEO Schedule (7 PM–3 AM ET). Streamers earn 30% of pump.fun creator fees during their time slot.
+                </p>
               </div>
-            </Card>
-          )}
+            </div>
+          </Card>
         </motion.div>
       </div>
     </div>
