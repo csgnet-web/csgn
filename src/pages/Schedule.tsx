@@ -183,8 +183,6 @@ export default function Schedule() {
 
                 // Phase 1: grayed out for non-admin (pre-launch test streams)
                 const isPhase1Disabled = !isAdmin && phase === 'phase1'
-                // Phase 2: full display but no bidding for non-admin (CEO-curated launch week)
-                const isPhase2NoBid = !isAdmin && phase === 'phase2'
                 // Show bid link only for auction slots that are open and not in a restricted phase
                 const showBidLink = slot.type === 'auction' && slot.status === 'open' && (isAdmin || phase === 'later')
                 // CEO label: show 'CEO Creator' for Phase 1/2 non-admin, otherwise 'CEO Schedule'
