@@ -9,6 +9,18 @@ import { db } from '@/config/firebase'
 
 export const DEFAULT_STREAM_URL = 'https://twitch.tv/shrood'
 
+/**
+ * Phase boundary timestamps (UTC).
+ *
+ * Phase 1: pre-launch — now through April 5, 2026 11:59 AM ET
+ * Phase 2: launch week — April 5 noon ET through April 12 noon ET
+ * Phase 3+: normal bid logic (not yet built)
+ *
+ * Both April dates fall in EDT (UTC-4), so noon ET = 16:00 UTC.
+ */
+export const LAUNCH_DATE_UTC = '2026-04-05T16:00:00.000Z'   // April 5, 2026 noon ET
+export const PHASE_2_END_UTC = '2026-04-12T16:00:00.000Z'   // April 12, 2026 noon ET
+
 /** CSGN token mint address (pump.fun) */
 export const CSGN_MINT = 'GFV7fphvprMr1PYpYGPJort2QP7JJLEp3J1Buu7Zpump'
 
@@ -236,9 +248,12 @@ function buildExpectedSlotsForDate(targetDate: Date): ExpectedSlotDef[] {
     const startUTC = etToUTC(slotDate.year, slotDate.month, slotDate.day, template.hourET)
     const endUTC = new Date(startUTC.getTime() + template.duration * 60 * 60 * 1000)
 
+    // Phase 1 and Phase 2 (before April 12 noon ET) are CEO-assigned only
+    const effectiveType: SlotType = startUTC.toISOString() < PHASE_2_END_UTC ? 'ceo' : template.type
+
     return {
       id: `slot-${String(slotDate.year).padStart(4, '0')}-${String(slotDate.month).padStart(2, '0')}-${String(slotDate.day).padStart(2, '0')}-${String(template.hourET).padStart(2, '0')}`,
-      type: template.type,
+      type: effectiveType,
       label: `${formatTimeLabel(template.hourET)} – ${formatTimeLabel(template.hourET + template.duration)}`,
       startTime: startUTC.toISOString(),
       endTime: endUTC.toISOString(),
@@ -417,6 +432,25 @@ export async function wipeAndRegenerateSlots(startDate: Date): Promise<{ generat
   }
 
   return { generated }
+}
+
+/**
+ * One-time migration: set type to 'ceo' on all existing Firestore slots
+ * whose startTime falls within Phase 1 or Phase 2 (before April 12 noon ET).
+ * Safe to re-run — skips slots already typed 'ceo'.
+ */
+export async function migratePhaseSlotsToCEO(): Promise<{ updated: number }> {
+  const from = new Date('2026-04-01T00:00:00.000Z')
+  const to = new Date(PHASE_2_END_UTC)
+  const slots = await fetchSlots(from, to)
+  let updated = 0
+  for (const slot of slots) {
+    if (slot.type !== 'ceo') {
+      await updateDoc(doc(db, SLOTS_COLLECTION, slot.id), { type: 'ceo' })
+      updated++
+    }
+  }
+  return { updated }
 }
 
 /** Fetch all slots for a date range. */

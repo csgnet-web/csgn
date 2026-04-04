@@ -5,7 +5,14 @@ import { Gavel, Crown, Radio, Info } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
-import { fetchSlots, getMinimumBid, formatCSGN, type Slot, type SlotType } from '@/lib/slots'
+import { fetchSlots, getMinimumBid, formatCSGN, LAUNCH_DATE_UTC, PHASE_2_END_UTC, type Slot, type SlotType } from '@/lib/slots'
+
+function getSlotPhase(slot: Slot): 'phase1' | 'phase2' | 'later' {
+  const start = slot.startTime
+  if (start < LAUNCH_DATE_UTC) return 'phase1'
+  if (start < PHASE_2_END_UTC) return 'phase2'
+  return 'later'
+}
 
 function getSlotDisplayStatus(slot: Slot): 'past' | 'live' | 'upcoming' {
   const now = Date.now()
@@ -168,7 +175,11 @@ export default function Schedule() {
             ) : (
               slots.map((slot, i) => {
                 const displayStatus = getSlotDisplayStatus(slot)
+                const phase = getSlotPhase(slot)
                 const streamerName = typeLabel(slot.type, slot)
+
+                // Show bid link for open auction slots after the pre-launch phase
+                const showBidLink = slot.type === 'auction' && slot.status === 'open' && phase !== 'phase1'
 
                 return (
                   <motion.div
@@ -202,7 +213,7 @@ export default function Schedule() {
                     <div className="flex flex-col items-end gap-0.5 shrink-0">
                       {slot.status === 'pending_deposit' && <Badge variant="gold" className="!text-[9px] !px-1.5 !py-0.5">Awaiting Confirm</Badge>}
                       {slot.status === 'confirmed' && <Badge variant="green" className="!text-[9px] !px-1.5 !py-0.5">Confirmed</Badge>}
-                      {slot.type === 'auction' && slot.status === 'open' && (
+                      {showBidLink && (
                         <Link
                           to="/queue"
                           className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-semibold rounded-full border bg-cyan-500/20 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/30 transition-colors whitespace-nowrap"

@@ -58,6 +58,21 @@ export function Header() {
             <nav className="hidden lg:flex items-center gap-0.5">
               {navLinks.map((link) => {
                 const isActive = location.pathname === link.href
+                const isQueueRestricted = link.href === '/queue' && profile?.role !== 'admin'
+
+                if (isQueueRestricted) {
+                  return (
+                    <span
+                      key={link.href}
+                      title="Coming soon"
+                      className="relative px-4 py-2 text-sm font-medium rounded-lg flex items-center gap-2 text-gray-600 cursor-not-allowed select-none"
+                    >
+                      {link.label}
+                      <span className="text-[9px] font-semibold bg-white/[0.06] px-1.5 py-0.5 rounded text-gray-600 tracking-wide">SOON</span>
+                    </span>
+                  )
+                }
+
                 return (
                   <Link
                     key={link.href}
@@ -114,14 +129,16 @@ export function Header() {
                           <LayoutDashboard className="w-4 h-4" />
                           Account
                         </Link>
-                        <Link
-                          to="/queue"
-                          onClick={() => setProfileOpen(false)}
-                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
-                        >
-                          <User className="w-4 h-4" />
-                          Queue
-                        </Link>
+                        {profile?.role === 'admin' && (
+                          <Link
+                            to="/queue"
+                            onClick={() => setProfileOpen(false)}
+                            className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
+                          >
+                            <User className="w-4 h-4" />
+                            Queue
+                          </Link>
+                        )}
                         {profile?.role === 'admin' && (
                           <Link
                             to="/admin"
@@ -181,21 +198,37 @@ export function Header() {
               className="absolute right-0 top-0 bottom-0 w-80 max-w-[85vw] bg-[#09091a] border-l border-white/[0.06] p-6 pt-20"
             >
               <div className="flex flex-col gap-1">
-                {navLinks.map((link) => (
-                  <Link
-                    key={link.href}
-                    to={link.href}
-                    onClick={() => setMobileOpen(false)}
-                    className={`flex items-center gap-3 px-4 py-3 text-base font-medium rounded-xl transition-all ${
-                      location.pathname === link.href
-                        ? 'text-white bg-white/[0.08]'
-                        : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
-                    }`}
-                  >
-                    {link.live && <LiveIndicator />}
-                    {link.label}
-                  </Link>
-                ))}
+                {navLinks.map((link) => {
+                  const isQueueRestricted = link.href === '/queue' && profile?.role !== 'admin'
+
+                  if (isQueueRestricted) {
+                    return (
+                      <span
+                        key={link.href}
+                        className="flex items-center gap-3 px-4 py-3 text-base font-medium rounded-xl text-gray-600 cursor-not-allowed select-none"
+                      >
+                        {link.label}
+                        <span className="text-[10px] font-semibold bg-white/[0.06] px-2 py-0.5 rounded text-gray-600 tracking-wide ml-auto">SOON</span>
+                      </span>
+                    )
+                  }
+
+                  return (
+                    <Link
+                      key={link.href}
+                      to={link.href}
+                      onClick={() => setMobileOpen(false)}
+                      className={`flex items-center gap-3 px-4 py-3 text-base font-medium rounded-xl transition-all ${
+                        location.pathname === link.href
+                          ? 'text-white bg-white/[0.08]'
+                          : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
+                      }`}
+                    >
+                      {link.live && <LiveIndicator />}
+                      {link.label}
+                    </Link>
+                  )
+                })}
               </div>
               {!user && (
                 <div className="mt-8 flex flex-col gap-3">
