@@ -7,8 +7,27 @@ import { Badge } from '@/components/ui/Badge'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
 import { fetchSlots, getMinimumBid, formatCSGN, LAUNCH_DATE_UTC, PHASE_2_END_UTC, type Slot, type SlotType } from '@/lib/slots'
 
+function toMillis(value: unknown): number {
+  if (typeof value === 'string' || value instanceof Date || typeof value === 'number') {
+    const ms = new Date(value).getTime()
+    return Number.isFinite(ms) ? ms : 0
+  }
+
+  if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate: unknown }).toDate === 'function') {
+    const dt = (value as { toDate: () => Date }).toDate()
+    const ms = dt.getTime()
+    return Number.isFinite(ms) ? ms : 0
+  }
+
+  return 0
+}
+
+function toDate(value: unknown): Date {
+  return new Date(toMillis(value))
+}
+
 function getSlotPhase(slot: Slot): 'phase1' | 'phase2' | 'later' {
-  const start = slot.startTime
+  const start = toDate(slot.startTime).toISOString()
   if (start < LAUNCH_DATE_UTC) return 'phase1'
   if (start < PHASE_2_END_UTC) return 'phase2'
   return 'later'
@@ -16,8 +35,8 @@ function getSlotPhase(slot: Slot): 'phase1' | 'phase2' | 'later' {
 
 function getSlotDisplayStatus(slot: Slot): 'past' | 'live' | 'upcoming' {
   const now = Date.now()
-  const start = new Date(slot.startTime).getTime()
-  const end = new Date(slot.endTime).getTime()
+  const start = toMillis(slot.startTime)
+  const end = toMillis(slot.endTime)
   if (now >= start && now < end) return 'live'
   if (now >= end) return 'past'
   return 'upcoming'
@@ -60,18 +79,18 @@ function sortSlotsForDisplay(slots: Slot[], selectedDay: number): Slot[] {
   const isToday = selectedDay === 0
 
   const live = slots.find((slot) => {
-    const start = new Date(slot.startTime).getTime()
-    const end = new Date(slot.endTime).getTime()
+    const start = toMillis(slot.startTime)
+    const end = toMillis(slot.endTime)
     return nowMs >= start && nowMs < end
   })
 
   const upcoming = slots
-    .filter((slot) => new Date(slot.startTime).getTime() > nowMs)
-    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+    .filter((slot) => toMillis(slot.startTime) > nowMs)
+    .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
 
   if (isToday) return live ? [live, ...upcoming] : upcoming
 
-  return [...slots].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+  return [...slots].sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
 }
 
 export default function Schedule() {
@@ -103,10 +122,10 @@ export default function Schedule() {
 
       try {
         const data = await fetchSlots(from, to)
-        const activeOnly = data
-          .filter((slot) => new Date(slot.endTime).getTime() >= Date.now())
-          .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-        setAllActiveSlots(activeOnly)
+        const normalized = data
+          .filter((slot) => toMillis(slot.endTime) > 0 && toMillis(slot.startTime) > 0)
+          .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
+        setAllActiveSlots(normalized)
       } catch (err) {
         console.warn('Failed to fetch slots from Firestore:', err)
         setAllActiveSlots([])
@@ -119,19 +138,19 @@ export default function Schedule() {
   const slots = useMemo(() => {
     const targetMidday = etMiddayFromOffset(selectedDay)
     const targetKey = etDayKey(targetMidday)
-    const daySlots = allActiveSlots.filter((slot) => etDayKey(new Date(slot.startTime)) === targetKey)
+    const daySlots = allActiveSlots.filter((slot) => etDayKey(toDate(slot.startTime)) === targetKey)
     return sortSlotsForDisplay(daySlots, selectedDay)
   }, [allActiveSlots, selectedDay])
 
   useEffect(() => {
     if (loading || selectedDay !== 0) return
     const todayKey = etDayKey(etMiddayFromOffset(0))
-    const hasTodaySlots = allActiveSlots.some((slot) => etDayKey(new Date(slot.startTime)) === todayKey)
+    const hasTodaySlots = allActiveSlots.some((slot) => etDayKey(toDate(slot.startTime)) === todayKey)
     if (hasTodaySlots) return
 
     const firstDayWithSlots = days.findIndex((_, idx) => {
       const dayKey = etDayKey(etMiddayFromOffset(idx))
-      return allActiveSlots.some((slot) => etDayKey(new Date(slot.startTime)) === dayKey)
+      return allActiveSlots.some((slot) => etDayKey(toDate(slot.startTime)) === dayKey)
     })
     if (firstDayWithSlots > 0) setSelectedDay(firstDayWithSlots)
   }, [allActiveSlots, days, loading, selectedDay])
