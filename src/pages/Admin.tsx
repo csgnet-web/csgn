@@ -17,9 +17,10 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import {
-  generateNextThreeDays,
+  appendNextThreeDays,
   wipeAndRegenerateSlots,
   syncSevenDaysFrom,
+  reseedNextSevenDaysAsCEO,
   SLOTS_PER_DAY,
   fetchSlots,
   assignCEOSlot,
@@ -259,11 +260,11 @@ export default function Admin() {
     setGenerating(true)
     setActionError(null)
     try {
-      const result = await generateNextThreeDays()
+      const result = await appendNextThreeDays()
       setActionError(null)
       await loadSlots()
       if (result.generated === 0) {
-        setActionError('All slots for the next 3 days already exist.')
+        setActionError('No additional future slots were appended.')
       }
     } catch (err: any) {
       setActionError(err?.message || 'Failed to generate slots.')
@@ -279,7 +280,8 @@ export default function Admin() {
     try {
       const [y, m, d] = syncStartDate.split('-').map((v) => parseInt(v, 10))
       const start = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
-      const result = await syncSevenDaysFrom(start)
+      await syncSevenDaysFrom(start)
+      const result = await reseedNextSevenDaysAsCEO(start)
       await loadSlots()
 
       if (result.conflicts.length > 0) {
@@ -892,7 +894,7 @@ export default function Admin() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold text-white">Scheduling Module</h3>
-                <p className="text-sm text-gray-400">Canonical rules are fixed: 12 slots/day, Auction 3 AM–7 PM ET, CEO 7 PM–3 AM ET. Sync any 7-day window safely (no duplicate overlaps).</p>
+                <p className="text-sm text-gray-400">Reseed tools maintain 12 ET slots/day. Use the 7-day action to force CEO Creator assignments (no auctions) for the selected week.</p>
               </div>
               <div className="flex gap-2 flex-wrap">
                 <Button variant="ghost" size="sm" leftIcon={<RefreshCw className="w-4 h-4" />} onClick={loadSlots}>
@@ -912,7 +914,7 @@ export default function Admin() {
                     isLoading={syncingWeek}
                     onClick={handleSyncSevenDays}
                   >
-                    Sync 7 Days
+                    Reseed 7 Days (CEO)
                   </Button>
                 </div>
                 <Button
@@ -922,7 +924,7 @@ export default function Admin() {
                   isLoading={generating}
                   onClick={handleGenerateThreeDays}
                 >
-                  Legacy: Next 3 Days
+                  Append Next 3 Days
                 </Button>
                 {!confirmWipe ? (
                   <Button
