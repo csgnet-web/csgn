@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
-import { onSnapshot, doc } from 'firebase/firestore'
+import { onSnapshot, doc, collection, query, orderBy } from 'firebase/firestore'
 import { db } from '@/config/firebase'
-import { subscribeToCurrentSlot, subscribeToSlots, formatESTRange, type Slot } from '@/lib/slots'
+import { formatESTRange, type Slot } from '@/lib/slots'
 import { startFeeTracker } from '@/lib/dexscreener'
 import { detectStream as _detectStream, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
 
@@ -18,6 +18,27 @@ const bannerItems = [
 // parseTwitchChannel, parseYouTubeId, detectStream, buildYouTubeSrc, buildTwitchSrc
 
 function detectStream(url: string) { return _detectStream(url) }
+
+function toMillis(value: unknown): number {
+  if (typeof value === 'string' || value instanceof Date || typeof value === 'number') {
+    const ms = new Date(value).getTime()
+    return Number.isFinite(ms) ? ms : 0
+  }
+  if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate: unknown }).toDate === 'function') {
+    const ms = (value as { toDate: () => Date }).toDate().getTime()
+    return Number.isFinite(ms) ? ms : 0
+  }
+  return 0
+}
+
+function etDayKeyFromMillis(ms: number): string {
+  return new Date(ms).toLocaleDateString('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+}
 
 
 /* ── CSGN Wipe Overlay ── */
@@ -49,8 +70,8 @@ function CSGNWipeOverlay({ visible }: { visible: boolean }) {
 
 /* ── Compact time range: "3-5A ET", "1-3P ET", "11P-1A ET" ── */
 function formatCompactRange(slot: Pick<Slot, 'startTime' | 'endTime'>): string {
-  const parse = (iso: string) => {
-    const formatted = new Date(iso).toLocaleTimeString('en-US', {
+  const parse = (value: unknown) => {
+    const formatted = new Date(toMillis(value)).toLocaleTimeString('en-US', {
       timeZone: 'America/New_York',
       hour: 'numeric',
       hour12: true,
@@ -282,6 +303,13 @@ export default function Watch() {
   const [showWipe, setShowWipe] = useState(false)
   const prevSlotIdRef = useRef<string | null>(null)
   const wipeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [allSlots, setAllSlots] = useState<Slot[]>([])
+  const [nowMs, setNowMs] = useState(() => Date.now())
+
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 30_000)
+    return () => clearInterval(t)
+  }, [])
 
   // Subscribe to admin manual override config
   useEffect(() => {
@@ -300,26 +328,36 @@ export default function Watch() {
     return unsub
   }, [])
 
-  // Subscribe to the current live slot
+  // Direct subscription to slots table for identical behavior (logged in/out/admin).
   useEffect(() => {
-    const unsub = subscribeToCurrentSlot((slot) => {
-      const newId = slot?.id ?? null
+    const slotsQuery = query(collection(db, 'slots'), orderBy('startTime', 'asc'))
+    const unsub = onSnapshot(slotsQuery, (snap) => {
+      const data = snap.docs
+        .map((d) => d.data() as Slot)
+        .filter((slot) => toMillis(slot.startTime) > 0 && toMillis(slot.endTime) > 0)
+        .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
+      setAllSlots(data)
+    }, () => setAllSlots([]))
+    return unsub
+  }, [])
 
-      if (prevSlotIdRef.current !== null && newId !== prevSlotIdRef.current) {
-        // Slot has changed — trigger wipe animation
-        setShowWipe(true)
-        if (wipeTimerRef.current) clearTimeout(wipeTimerRef.current)
-        wipeTimerRef.current = setTimeout(() => setShowWipe(false), 1400)
-      }
+  // Compute current slot from shared slots list.
+  useEffect(() => {
+    const slot = allSlots.find((s) => nowMs >= toMillis(s.startTime) && nowMs < toMillis(s.endTime)) ?? null
+    const newId = slot?.id ?? null
 
-      prevSlotIdRef.current = newId
-      setCurrentSlot(slot)
-    })
+    if (prevSlotIdRef.current !== null && newId !== prevSlotIdRef.current) {
+      setShowWipe(true)
+      if (wipeTimerRef.current) clearTimeout(wipeTimerRef.current)
+      wipeTimerRef.current = setTimeout(() => setShowWipe(false), 1400)
+    }
+
+    prevSlotIdRef.current = newId
+    setCurrentSlot(slot)
     return () => {
-      unsub()
       if (wipeTimerRef.current) clearTimeout(wipeTimerRef.current)
     }
-  }, [])
+  }, [allSlots, nowMs])
 
   // Start live fee tracker when a slot is active
   useEffect(() => {
@@ -339,26 +377,21 @@ export default function Watch() {
     return stop
   }, [currentSlot?.id])
 
-  // Subscribe to today's slots for the schedule list
-  // Use a wide UTC window and filter client-side by ET date, so the correct
-  // slots are shown regardless of the browser's local timezone.
+  // Build today's slot list directly from subscribed slots.
   useEffect(() => {
-    const from = new Date(Date.now() - 4 * 60 * 60 * 1000)   // 4h ago (catch current slot)
-    const to   = new Date(Date.now() + 28 * 60 * 60 * 1000)  // 28h ahead (full ET day + buffer)
-
-    const unsub = subscribeToSlots(from, to, (slots) => {
-      // Keep ET-ordered slots so the Today panel can always render current + next 2
-      // (spilling into the next ET day when needed).
-      setTodaySlots([...slots].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()))
-    })
-    return unsub
-  }, [])
+    const todayKey = etDayKeyFromMillis(nowMs)
+    setTodaySlots(
+      allSlots
+        .filter((slot) => etDayKeyFromMillis(toMillis(slot.startTime)) === todayKey)
+        .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime)),
+    )
+  }, [allSlots, nowMs])
 
   // Derive stream URL — ONLY from admin manual override (config/liveStream).
   // The slot's raw Twitch/YouTube URL is intentionally NOT used here; that feed
   // is consumed by /player (OBS capture) and then re-broadcast to this page via
   // the CSGN output stream the admin sets in the override.
-  const streamUrl = manualOverride?.url || ''
+  const streamUrl = manualOverride?.url || currentSlot?.streamUrl || ''
   const streamerName = manualOverride?.streamerName || currentSlot?.assignedName || ''
   const streamTitle = manualOverride?.title || currentSlot?.streamTitle || currentSlot?.description || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
@@ -370,14 +403,13 @@ export default function Watch() {
   const chatSrc = `https://www.twitch.tv/embed/${encodeURIComponent(chatChannel)}/chat?parent=${hostname}&darkpopout`
 
   // Next upcoming slots
-  const now = Date.now()
-  const upcomingSlots = todaySlots.filter((s) => new Date(s.startTime).getTime() > now)
+  const upcomingSlots = todaySlots.filter((s) => toMillis(s.startTime) > nowMs)
 
   // For the schedule grid: current slot (if any) + next 2, otherwise next 3
   const currentTodaySlot = todaySlots.find((s) => {
-    const start = new Date(s.startTime).getTime()
-    const end = new Date(s.endTime).getTime()
-    return now >= start && now < end
+    const start = toMillis(s.startTime)
+    const end = toMillis(s.endTime)
+    return nowMs >= start && nowMs < end
   })
   const scheduleGridSlots = currentTodaySlot
     ? [currentTodaySlot, ...upcomingSlots.slice(0, 2)]
@@ -395,7 +427,7 @@ export default function Watch() {
             <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
             <span className="text-white font-black tracking-[0.25em] text-sm uppercase">LIVE</span>
           </div>
-          <div className="watch-roll-banner flex-1 min-w-0" aria-label="Live game updates">
+          <div className="watch-roll-banner flex-1 min-w-0 lg:flex-none lg:w-[460px] lg:ml-auto" aria-label="Live game updates">
             <div className="watch-roll-banner__inner">
               {bannerItems.map((item, index) => (
                 <span
@@ -412,7 +444,7 @@ export default function Watch() {
 
         {/* Video player */}
         <div className="shrink-0 px-4 sm:px-5 pt-4 sm:pt-5 pb-2">
-          <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)]">
+          <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)] max-w-[1280px] mx-auto">
             <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(255,0,90,0.28),transparent_42%),radial-gradient(circle_at_85%_10%,rgba(80,0,255,0.26),transparent_35%)]" />
             <div className="w-full relative" style={{ aspectRatio: '16/9' }}>
               <CSGNPlayer streamUrl={streamUrl} hostname={hostname} />
@@ -486,9 +518,9 @@ export default function Watch() {
             <>
               <div className="grid grid-cols-3 gap-3">
                 {scheduleGridSlots.map((slot) => {
-                  const slotStart = new Date(slot.startTime).getTime()
-                  const slotEnd = new Date(slot.endTime).getTime()
-                  const isCurrent = now >= slotStart && now < slotEnd
+                  const slotStart = toMillis(slot.startTime)
+                  const slotEnd = toMillis(slot.endTime)
+                  const isCurrent = nowMs >= slotStart && nowMs < slotEnd
                   return (
                     <TodaySlotCard key={slot.id} slot={slot} isCurrent={isCurrent} />
                   )
