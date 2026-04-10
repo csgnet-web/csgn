@@ -2,13 +2,34 @@ import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Gavel, Crown, Radio, Info } from 'lucide-react'
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { db } from '@/config/firebase'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
-import { fetchSlots, getMinimumBid, formatCSGN, LAUNCH_DATE_UTC, PHASE_2_END_UTC, type Slot, type SlotType } from '@/lib/slots'
+import { getMinimumBid, formatCSGN, LAUNCH_DATE_UTC, PHASE_2_END_UTC, type Slot, type SlotType } from '@/lib/slots'
+
+function toMillis(value: unknown): number {
+  if (typeof value === 'string' || value instanceof Date || typeof value === 'number') {
+    const ms = new Date(value).getTime()
+    return Number.isFinite(ms) ? ms : 0
+  }
+
+  if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate: unknown }).toDate === 'function') {
+    const dt = (value as { toDate: () => Date }).toDate()
+    const ms = dt.getTime()
+    return Number.isFinite(ms) ? ms : 0
+  }
+
+  return 0
+}
+
+function toDate(value: unknown): Date {
+  return new Date(toMillis(value))
+}
 
 function getSlotPhase(slot: Slot): 'phase1' | 'phase2' | 'later' {
-  const start = slot.startTime
+  const start = toDate(slot.startTime).toISOString()
   if (start < LAUNCH_DATE_UTC) return 'phase1'
   if (start < PHASE_2_END_UTC) return 'phase2'
   return 'later'
@@ -16,15 +37,15 @@ function getSlotPhase(slot: Slot): 'phase1' | 'phase2' | 'later' {
 
 function getSlotDisplayStatus(slot: Slot): 'past' | 'live' | 'upcoming' {
   const now = Date.now()
-  const start = new Date(slot.startTime).getTime()
-  const end = new Date(slot.endTime).getTime()
+  const start = toMillis(slot.startTime)
+  const end = toMillis(slot.endTime)
   if (now >= start && now < end) return 'live'
   if (now >= end) return 'past'
   return 'upcoming'
 }
 
-function formatTimeET(iso: string): string {
-  return new Date(iso).toLocaleTimeString('en-US', {
+function formatTimeET(value: unknown): string {
+  return toDate(value).toLocaleTimeString('en-US', {
     timeZone: 'America/New_York',
     hour: 'numeric',
     minute: '2-digit',
@@ -55,28 +76,9 @@ function etMiddayFromOffset(offset: number): Date {
   return base
 }
 
-function sortSlotsForDisplay(slots: Slot[], selectedDay: number): Slot[] {
-  const nowMs = Date.now()
-  const isToday = selectedDay === 0
-
-  const live = slots.find((slot) => {
-    const start = new Date(slot.startTime).getTime()
-    const end = new Date(slot.endTime).getTime()
-    return nowMs >= start && nowMs < end
-  })
-
-  const upcoming = slots
-    .filter((slot) => new Date(slot.startTime).getTime() > nowMs)
-    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-
-  if (isToday) return live ? [live, ...upcoming] : upcoming
-
-  return [...slots].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-}
-
 export default function Schedule() {
   const [selectedDay, setSelectedDay] = useState(0)
-  const [slots, setSlots] = useState<Slot[]>([])
+  const [allSlots, setAllSlots] = useState<Slot[]>([])
   const [loading, setLoading] = useState(true)
   const days = useMemo(() => {
     const labels = ['Today', 'Tomorrow']
@@ -95,26 +97,53 @@ export default function Schedule() {
   }, [])
 
   useEffect(() => {
-    const loadSlots = async () => {
-      setLoading(true)
-      const targetMidday = etMiddayFromOffset(selectedDay)
+    setLoading(true)
+    const slotsQuery = query(collection(db, 'slots'), orderBy('startTime', 'asc'))
+    const unsub = onSnapshot(
+      slotsQuery,
+      (snap) => {
+        const from = etMiddayFromOffset(-1).getTime()
+        const to = etMiddayFromOffset(8).getTime()
+        const normalized = snap.docs
+          .map((d) => d.data() as Slot)
+          .filter((slot) => toMillis(slot.startTime) > 0 && toMillis(slot.endTime) > 0)
+          .filter((slot) => {
+            const start = toMillis(slot.startTime)
+            return start >= from && start <= to
+          })
+          .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
+        setAllSlots(normalized)
+        setLoading(false)
+      },
+      (err) => {
+        console.warn('Failed to subscribe to slots from Firestore:', err)
+        setAllSlots([])
+        setLoading(false)
+      },
+    )
+    return () => unsub()
+  }, [])
 
-      const from = new Date(targetMidday.getTime() - 14 * 60 * 60 * 1000)
-      const to = new Date(targetMidday.getTime() + 38 * 60 * 60 * 1000)
+  const slots = useMemo(() => {
+    const targetMidday = etMiddayFromOffset(selectedDay)
+    const targetKey = etDayKey(targetMidday)
+    return allSlots
+      .filter((slot) => etDayKey(toDate(slot.startTime)) === targetKey)
+      .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
+  }, [allSlots, selectedDay])
 
-      try {
-        const data = await fetchSlots(from, to)
-        const targetKey = etDayKey(targetMidday)
-        const daySlots = data.filter((slot) => etDayKey(new Date(slot.startTime)) === targetKey)
-        setSlots(sortSlotsForDisplay(daySlots, selectedDay))
-      } catch (err) {
-        console.warn('Failed to fetch slots from Firestore:', err)
-        setSlots([])
-      }
-      setLoading(false)
-    }
-    loadSlots()
-  }, [selectedDay])
+  useEffect(() => {
+    if (loading || selectedDay !== 0) return
+    const todayKey = etDayKey(etMiddayFromOffset(0))
+    const hasTodaySlots = allSlots.some((slot) => etDayKey(toDate(slot.startTime)) === todayKey)
+    if (hasTodaySlots) return
+
+    const firstDayWithSlots = days.findIndex((_, idx) => {
+      const dayKey = etDayKey(etMiddayFromOffset(idx))
+      return allSlots.some((slot) => etDayKey(toDate(slot.startTime)) === dayKey)
+    })
+    if (firstDayWithSlots > 0) setSelectedDay(firstDayWithSlots)
+  }, [allSlots, days, loading, selectedDay])
 
   const typeIcon = (type: SlotType) => {
     if (type === 'auction') return <Gavel className="w-4 h-4" />
@@ -131,7 +160,7 @@ export default function Schedule() {
     return slot.assignedName || 'CEO Schedule'
   }
 
-  const emptyLabel = useMemo(() => (selectedDay === 0 ? 'No remaining slots for today.' : 'No slots scheduled for this day yet.'), [selectedDay])
+  const emptyLabel = useMemo(() => (selectedDay === 0 ? 'No slots found for today.' : 'No slots scheduled for this day yet.'), [selectedDay])
 
   return (
     <div className="min-h-screen pt-20 lg:pt-24 pb-24">

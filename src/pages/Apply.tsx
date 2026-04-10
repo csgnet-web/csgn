@@ -99,21 +99,6 @@ export default function Apply() {
           description="Join the network. Get your own time slot. Earn 30% of creator fees while you broadcast to the CSGN community."
         />
 
-        {/* Benefits */}
-        <div className="grid sm:grid-cols-3 gap-4 mb-12">
-          {[
-            { title: '30% Creator Fee Share', desc: 'Earn 30% of creator fees during your slot', icon: '💰' },
-            { title: 'Built-in Audience', desc: 'Tap into CSGN\'s growing viewer base from day one', icon: '👥' },
-            { title: 'Network Support', desc: 'Production tools, promotion, and a professional platform', icon: '🚀' },
-          ].map((benefit) => (
-            <Card key={benefit.title} className="p-5 text-center" hover={false}>
-              <span className="text-2xl mb-3 block">{benefit.icon}</span>
-              <h3 className="font-semibold text-white text-sm mb-1">{benefit.title}</h3>
-              <p className="text-xs text-gray-500">{benefit.desc}</p>
-            </Card>
-          ))}
-        </div>
-
         {/* Application Form */}
         <Card hover={false} className="overflow-hidden">
           <div className="p-6 border-b border-white/[0.06]">
@@ -138,9 +123,9 @@ export default function Apply() {
                   <input
                     type="text"
                     value={form.displayName}
-                    onChange={(e) => updateField('displayName', e.target.value)}
+                    readOnly
                     required
-                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/20 transition-all"
+                    className="w-full px-4 py-2.5 bg-white/10 border border-white/10 rounded-xl text-sm text-gray-400 cursor-not-allowed"
                     placeholder="Your streamer name"
                   />
                 </div>
@@ -149,9 +134,9 @@ export default function Apply() {
                   <input
                     type="email"
                     value={form.email}
-                    onChange={(e) => updateField('email', e.target.value)}
+                    readOnly
                     required
-                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/20 transition-all"
+                    className="w-full px-4 py-2.5 bg-white/10 border border-white/10 rounded-xl text-sm text-gray-400 cursor-not-allowed"
                     placeholder="you@example.com"
                   />
                 </div>
@@ -164,33 +149,42 @@ export default function Apply() {
               <div className="grid sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1.5">Twitter / X</label>
-                  <input
-                    type="text"
-                    value={form.twitterHandle}
-                    onChange={(e) => updateField('twitterHandle', e.target.value)}
-                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/20 transition-all"
-                    placeholder="@handle"
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={form.twitterHandle}
+                      onChange={(e) => updateField('twitterHandle', e.target.value)}
+                      className="flex-1 min-w-0 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/20 transition-all"
+                      placeholder="@handle"
+                    />
+                    <a href="https://x.com/i/oauth2/authorize" target="_blank" rel="noreferrer" className="inline-flex items-center justify-center px-3 py-2.5 rounded-xl text-xs font-semibold bg-black border border-white/20 text-white hover:bg-zinc-900 transition-colors">Connect</a>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1.5">Twitch</label>
-                  <input
-                    type="text"
-                    value={form.twitchChannel}
-                    onChange={(e) => updateField('twitchChannel', e.target.value)}
-                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/20 transition-all"
-                    placeholder="channel name"
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={form.twitchChannel}
+                      onChange={(e) => updateField('twitchChannel', e.target.value)}
+                      className="flex-1 min-w-0 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/20 transition-all"
+                      placeholder="channel name"
+                    />
+                    <a href="https://www.twitch.tv/login" target="_blank" rel="noreferrer" className="inline-flex items-center justify-center px-3 py-2.5 rounded-xl text-xs font-semibold bg-[#9146FF] text-white hover:bg-[#7d35f7] transition-colors">Connect</a>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1.5">YouTube</label>
-                  <input
-                    type="text"
-                    value={form.youtubeChannel}
-                    onChange={(e) => updateField('youtubeChannel', e.target.value)}
-                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/20 transition-all"
-                    placeholder="channel URL"
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={form.youtubeChannel}
+                      onChange={(e) => updateField('youtubeChannel', e.target.value)}
+                      className="flex-1 min-w-0 px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/20 transition-all"
+                      placeholder="channel URL"
+                    />
+                    <a href="https://accounts.google.com/signin/v2/identifier?service=youtube" target="_blank" rel="noreferrer" className="inline-flex items-center justify-center px-3 py-2.5 rounded-xl text-xs font-semibold bg-[#FF0000] text-white hover:bg-[#e00000] transition-colors">Connect</a>
+                  </div>
                 </div>
               </div>
             </div>

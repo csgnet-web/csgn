@@ -1,6 +1,6 @@
 import {
   collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc,
-  query, where, orderBy, onSnapshot, serverTimestamp,
+  query, where, orderBy, onSnapshot, serverTimestamp, limit,
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db } from '@/config/firebase'
@@ -238,7 +238,7 @@ interface ExpectedSlotDef {
   endTime: string
 }
 
-function buildExpectedSlotsForDate(targetDate: Date): ExpectedSlotDef[] {
+function buildExpectedSlotsForDate(targetDate: Date, forcedType?: SlotType): ExpectedSlotDef[] {
   const { year, month, day } = utcToETComponents(targetDate)
   const etMiddayUTC = etToUTC(year, month, day, 12)
 
@@ -249,7 +249,7 @@ function buildExpectedSlotsForDate(targetDate: Date): ExpectedSlotDef[] {
     const endUTC = new Date(startUTC.getTime() + template.duration * 60 * 60 * 1000)
 
     // Phase 1 and Phase 2 (before April 12 noon ET) are CEO-assigned only
-    const effectiveType: SlotType = startUTC.toISOString() < PHASE_2_END_UTC ? 'ceo' : template.type
+    const effectiveType: SlotType = forcedType ?? (startUTC.toISOString() < PHASE_2_END_UTC ? 'ceo' : template.type)
 
     return {
       id: `slot-${String(slotDate.year).padStart(4, '0')}-${String(slotDate.month).padStart(2, '0')}-${String(slotDate.day).padStart(2, '0')}-${String(template.hourET).padStart(2, '0')}`,
@@ -378,6 +378,81 @@ export async function syncSevenDaysFrom(startDate: Date): Promise<{ days: string
   return { days, created, updated, removed, conflicts }
 }
 
+export async function reseedNextSevenDaysAsCEO(startDate: Date): Promise<{ days: string[]; created: number; updated: number; removed: number; conflicts: string[] }> {
+  const days: string[] = []
+  let created = 0
+  let updated = 0
+  let removed = 0
+  const conflicts: string[] = []
+
+  for (let i = 0; i < 7; i++) {
+    const target = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000)
+    const expected = buildExpectedSlotsForDate(target, 'ceo')
+    const expectedById = new Map(expected.map((s) => [s.id, s]))
+
+    const minStart = Math.min(...expected.map((s) => new Date(s.startTime).getTime()))
+    const maxEnd = Math.max(...expected.map((s) => new Date(s.endTime).getTime()))
+    const existing = await fetchSlots(new Date(minStart - 60 * 60 * 1000), new Date(maxEnd + 60 * 60 * 1000))
+    const existingById = new Map(existing.map((slot) => [slot.id, slot]))
+
+    for (const exp of expected) {
+      const current = existingById.get(exp.id)
+      if (!current) {
+        const slot: Slot = {
+          id: exp.id,
+          type: 'ceo',
+          label: exp.label,
+          startTime: exp.startTime,
+          endTime: exp.endTime,
+          status: 'open',
+          streamUrl: DEFAULT_STREAM_URL,
+          streamTitle: '',
+          assignedUid: null,
+          assignedName: null,
+          description: '',
+          bids: [],
+          lotteryEntrants: [],
+          requests: [],
+          createdAt: serverTimestamp(),
+        }
+        await setDoc(doc(db, SLOTS_COLLECTION, exp.id), slot)
+        created += 1
+        continue
+      }
+
+      const patch: Partial<Slot> = {}
+      if (current.type !== 'ceo') patch.type = 'ceo'
+      if (current.label !== exp.label) patch.label = exp.label
+      if (current.startTime !== exp.startTime) patch.startTime = exp.startTime
+      if (current.endTime !== exp.endTime) patch.endTime = exp.endTime
+
+      if (Object.keys(patch).length > 0) {
+        await updateDoc(doc(db, SLOTS_COLLECTION, exp.id), patch)
+        updated += 1
+      }
+    }
+
+    for (const slot of existing) {
+      if (expectedById.has(slot.id)) continue
+      const overlapsWindow = expected.some((exp) => overlaps(slot.startTime, slot.endTime, exp.startTime, exp.endTime))
+      if (!overlapsWindow) continue
+
+      const hasActivity = Boolean(slot.assignedUid) || slot.bids.length > 0 || (slot.requests?.length ?? 0) > 0 || slot.status === 'live'
+      if (hasActivity) {
+        conflicts.push(`Kept non-template active slot ${slot.id}`)
+        continue
+      }
+      await deleteDoc(doc(db, SLOTS_COLLECTION, slot.id))
+      removed += 1
+    }
+
+    const { year, month, day } = utcToETComponents(target)
+    days.push(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+  }
+
+  return { days, created, updated, removed, conflicts }
+}
+
 /** Generate slot documents for a given calendar day in Eastern Time. */
 export async function generateSlotsForDate(targetDate: Date): Promise<Slot[]> {
   const result = await syncSlotsForDate(targetDate)
@@ -410,6 +485,26 @@ export async function generateNextThreeDays(): Promise<{ generated: number; date
     dates.push(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
   }
 
+  return { generated, dates }
+}
+
+export async function appendNextThreeDays(): Promise<{ generated: number; dates: string[] }> {
+  const latestSlotQ = query(collection(db, SLOTS_COLLECTION), orderBy('startTime', 'desc'), limit(1))
+  const latestSnap = await getDocs(latestSlotQ)
+
+  const startFrom = latestSnap.empty ? new Date() : new Date(latestSnap.docs[0].data().startTime)
+  const startMidday = new Date(startFrom)
+  startMidday.setUTCHours(12, 0, 0, 0)
+
+  const dates: string[] = []
+  let generated = 0
+  for (let i = 1; i <= 3; i++) {
+    const targetDate = new Date(startMidday.getTime() + i * 24 * 60 * 60 * 1000)
+    const result = await syncSlotsForDate(targetDate)
+    generated += result.created
+    const { year, month, day } = utcToETComponents(targetDate)
+    dates.push(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+  }
   return { generated, dates }
 }
 
