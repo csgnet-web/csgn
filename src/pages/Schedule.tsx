@@ -76,7 +76,7 @@ function sortSlotsForDisplay(slots: Slot[], selectedDay: number): Slot[] {
 
 export default function Schedule() {
   const [selectedDay, setSelectedDay] = useState(0)
-  const [slots, setSlots] = useState<Slot[]>([])
+  const [allActiveSlots, setAllActiveSlots] = useState<Slot[]>([])
   const [loading, setLoading] = useState(true)
   const days = useMemo(() => {
     const labels = ['Today', 'Tomorrow']
@@ -97,24 +97,44 @@ export default function Schedule() {
   useEffect(() => {
     const loadSlots = async () => {
       setLoading(true)
-      const targetMidday = etMiddayFromOffset(selectedDay)
-
-      const from = new Date(targetMidday.getTime() - 14 * 60 * 60 * 1000)
-      const to = new Date(targetMidday.getTime() + 38 * 60 * 60 * 1000)
+      const now = new Date()
+      const from = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+      const to = new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000)
 
       try {
         const data = await fetchSlots(from, to)
-        const targetKey = etDayKey(targetMidday)
-        const daySlots = data.filter((slot) => etDayKey(new Date(slot.startTime)) === targetKey)
-        setSlots(sortSlotsForDisplay(daySlots, selectedDay))
+        const activeOnly = data
+          .filter((slot) => new Date(slot.endTime).getTime() >= Date.now())
+          .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+        setAllActiveSlots(activeOnly)
       } catch (err) {
         console.warn('Failed to fetch slots from Firestore:', err)
-        setSlots([])
+        setAllActiveSlots([])
       }
       setLoading(false)
     }
     loadSlots()
-  }, [selectedDay])
+  }, [])
+
+  const slots = useMemo(() => {
+    const targetMidday = etMiddayFromOffset(selectedDay)
+    const targetKey = etDayKey(targetMidday)
+    const daySlots = allActiveSlots.filter((slot) => etDayKey(new Date(slot.startTime)) === targetKey)
+    return sortSlotsForDisplay(daySlots, selectedDay)
+  }, [allActiveSlots, selectedDay])
+
+  useEffect(() => {
+    if (loading || selectedDay !== 0) return
+    const todayKey = etDayKey(etMiddayFromOffset(0))
+    const hasTodaySlots = allActiveSlots.some((slot) => etDayKey(new Date(slot.startTime)) === todayKey)
+    if (hasTodaySlots) return
+
+    const firstDayWithSlots = days.findIndex((_, idx) => {
+      const dayKey = etDayKey(etMiddayFromOffset(idx))
+      return allActiveSlots.some((slot) => etDayKey(new Date(slot.startTime)) === dayKey)
+    })
+    if (firstDayWithSlots > 0) setSelectedDay(firstDayWithSlots)
+  }, [allActiveSlots, days, loading, selectedDay])
 
   const typeIcon = (type: SlotType) => {
     if (type === 'auction') return <Gavel className="w-4 h-4" />
