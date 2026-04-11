@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { collection, onSnapshot, orderBy, query, getDocs } from 'firebase/firestore'
 import { Radio } from 'lucide-react'
 import { db } from '@/config/firebase'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
 import { type Slot } from '@/lib/slots'
+import { useAuth } from '@/contexts/AuthContext'
 
 function toMillis(value: unknown): number {
   if (typeof value === 'string' || value instanceof Date || typeof value === 'number') {
@@ -61,6 +62,7 @@ function getDisplayStatus(slot: Slot): 'past' | 'live' | 'upcoming' {
 }
 
 export default function Schedule() {
+  const { user, loading: authLoading } = useAuth()
   const [selectedDay, setSelectedDay] = useState(0)
   const [allSlots, setAllSlots] = useState<Slot[]>([])
   const [loading, setLoading] = useState(true)
@@ -86,21 +88,37 @@ export default function Schedule() {
   }, [])
 
   useEffect(() => {
+    if (authLoading) return
+
     const slotsQuery = query(collection(db, 'slots'), orderBy('startTime', 'asc'))
-    const unsub = onSnapshot(slotsQuery, (snap) => {
-      const data = snap.docs
-        .map((doc) => doc.data() as Slot)
-        .filter((slot) => toMillis(slot.startTime) > 0 && toMillis(slot.endTime) > 0)
-        .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
-      setAllSlots(data)
-      setLoading(false)
-    }, () => {
-      setAllSlots([])
-      setLoading(false)
-    })
+    const normalize = (docs: Array<{ data: () => unknown }>) => docs
+      .map((doc) => doc.data() as Slot)
+      .filter((slot) => toMillis(slot.startTime) > 0 && toMillis(slot.endTime) > 0)
+      .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
+
+    setLoading(true)
+    const unsub = onSnapshot(
+      slotsQuery,
+      (snap) => {
+        setAllSlots(normalize(snap.docs))
+        setLoading(false)
+      },
+      async (err) => {
+        console.warn('Realtime slots listener failed, retrying with one-time fetch:', err)
+        try {
+          const snap = await getDocs(slotsQuery)
+          setAllSlots(normalize(snap.docs))
+        } catch (fallbackErr) {
+          console.warn('One-time slots fetch also failed:', fallbackErr)
+          setAllSlots([])
+        } finally {
+          setLoading(false)
+        }
+      },
+    )
 
     return () => unsub()
-  }, [])
+  }, [authLoading, user?.uid])
 
   const selectedDayKey = dayOptions[selectedDay]?.key
   const slots = useMemo(

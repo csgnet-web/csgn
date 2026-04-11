@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
-import { onSnapshot, collection, query, orderBy } from 'firebase/firestore'
+import { onSnapshot, collection, query, orderBy, getDocs } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { formatESTRange, type Slot } from '@/lib/slots'
+import { useAuth } from '@/contexts/AuthContext'
 import { detectStream as _detectStream, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
 
 const bannerItems = [
@@ -250,6 +251,7 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
 }
 
 export default function Watch() {
+  const { user, loading: authLoading } = useAuth()
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
   const [isChatOpen, setIsChatOpen] = useState(false)
@@ -265,17 +267,32 @@ export default function Watch() {
   }, [])
 
   useEffect(() => {
+    if (authLoading) return
+
     const slotsQuery = query(collection(db, 'slots'), orderBy('startTime', 'asc'))
-    const unsub = onSnapshot(slotsQuery, (snap) => {
-      const data = snap.docs
-        .map((d) => d.data() as Slot)
-        .filter((slot) => toMillis(slot.startTime) > 0 && toMillis(slot.endTime) > 0)
-        .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
-      setAllSlots(data)
-    }, () => setAllSlots([]))
+    const normalize = (docs: Array<{ data: () => unknown }>) => docs
+      .map((d) => d.data() as Slot)
+      .filter((slot) => toMillis(slot.startTime) > 0 && toMillis(slot.endTime) > 0)
+      .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
+
+    const unsub = onSnapshot(
+      slotsQuery,
+      (snap) => {
+        setAllSlots(normalize(snap.docs))
+      },
+      async (err) => {
+        console.warn('Realtime slots listener failed, retrying with one-time fetch:', err)
+        try {
+          const snap = await getDocs(slotsQuery)
+          setAllSlots(normalize(snap.docs))
+        } catch (fallbackErr) {
+          console.warn('One-time slots fetch also failed:', fallbackErr)
+        }
+      },
+    )
 
     return () => unsub()
-  }, [])
+  }, [authLoading, user?.uid])
 
   const currentSlot = useMemo(
     () => allSlots.find((slot) => nowMs >= toMillis(slot.startTime) && nowMs < toMillis(slot.endTime)) ?? null,
