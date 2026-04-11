@@ -1,21 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
-import { onSnapshot, doc, collection, query, orderBy } from 'firebase/firestore'
+import { onSnapshot, collection, query, orderBy } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { formatESTRange, type Slot } from '@/lib/slots'
-import { startFeeTracker } from '@/lib/dexscreener'
 import { detectStream as _detectStream, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
 
 const bannerItems = [
-  'Starting 5 \u2022 $14.70',
+  'Starting 5 • $14.70',
   'Squares Entries: 25',
   'Squares Closing in 04:03:20:55',
   'Starting 5 Closing in 01:02:23',
 ] as const
-
-/* ── Helpers to parse stream URLs (imported from @/lib/player) ── */
-// parseTwitchChannel, parseYouTubeId, detectStream, buildYouTubeSrc, buildTwitchSrc
 
 function detectStream(url: string) { return _detectStream(url) }
 
@@ -40,35 +36,6 @@ function etDayKeyFromMillis(ms: number): string {
   })
 }
 
-
-/* ── CSGN Wipe Overlay ── */
-function CSGNWipeOverlay({ visible }: { visible: boolean }) {
-  return (
-    <div
-      className={`absolute inset-0 z-20 pointer-events-none transition-all duration-700 ease-in-out ${
-        visible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-full'
-      }`}
-      style={{
-        background: 'linear-gradient(135deg, #ff2346 0%, #0a0a14 60%)',
-      }}
-    >
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          {/* CSGN Logo SVG */}
-          <svg viewBox="0 0 120 40" className="h-12 w-auto fill-white opacity-90" xmlns="http://www.w3.org/2000/svg">
-            <text x="0" y="32" fontFamily="system-ui, sans-serif" fontWeight="900" fontSize="38" letterSpacing="2">CSGN</text>
-          </svg>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-            <span className="text-white/80 text-sm font-bold tracking-[0.2em] uppercase">Now Live</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* ── Compact time range: "3-5A ET", "1-3P ET", "11P-1A ET" ── */
 function formatCompactRange(slot: Pick<Slot, 'startTime' | 'endTime'>): string {
   const parse = (value: unknown) => {
     const formatted = new Date(toMillis(value)).toLocaleTimeString('en-US', {
@@ -84,9 +51,31 @@ function formatCompactRange(slot: Pick<Slot, 'startTime' | 'endTime'>): string {
   return s.p === e.p ? `${s.hour}-${e.hour}${e.p} ET` : `${s.hour}${s.p}-${e.hour}${e.p} ET`
 }
 
-/* ── Schedule card for today's lineup ── */
+function CSGNWipeOverlay({ visible }: { visible: boolean }) {
+  return (
+    <div
+      className={`absolute inset-0 z-20 pointer-events-none transition-all duration-700 ease-in-out ${
+        visible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-full'
+      }`}
+      style={{ background: 'linear-gradient(135deg, #ff2346 0%, #0a0a14 60%)' }}
+    >
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <svg viewBox="0 0 120 40" className="h-12 w-auto fill-white opacity-90" xmlns="http://www.w3.org/2000/svg">
+            <text x="0" y="32" fontFamily="system-ui, sans-serif" fontWeight="900" fontSize="38" letterSpacing="2">CSGN</text>
+          </svg>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+            <span className="text-white/80 text-sm font-bold tracking-[0.2em] uppercase">Now Live</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) {
-  const streamer = slot.assignedName || (slot.type === 'auction' ? 'Open Bid' : 'CEO Schedule')
+  const streamer = slot.assignedName || 'Unassigned'
   return (
     <div
       className={`relative rounded-xl overflow-hidden flex flex-col min-h-[89px] sm:min-h-[178px] transition-all duration-300 ${
@@ -108,7 +97,7 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
           </span>
         ) : (
           <span className="px-2 py-0.5 bg-black/40 border border-white/20 rounded-full text-[10px] text-white/70 uppercase tracking-wider">
-            UP NEXT
+            UPCOMING
           </span>
         )}
       </div>
@@ -128,14 +117,13 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
 
       <div className="px-2 sm:px-3 pb-1.5 sm:pb-3 pt-1 sm:pt-2.5 bg-gradient-to-t from-black/80 to-transparent space-y-0.5 sm:space-y-1">
         <p className="text-white font-black font-display text-[10px] sm:text-sm leading-tight break-words">{streamer}</p>
-        <p className="text-white/60 text-[9px] sm:text-[11px] leading-snug break-words">{slot.type === 'auction' ? 'Auction Slot' : 'CEO Schedule'}</p>
+        <p className="text-white/60 text-[9px] sm:text-[11px] leading-snug break-words">{slot.streamTitle || slot.description || 'Untitled stream'}</p>
         <p className="text-white/60 text-[8px] sm:text-[10px] font-mono leading-none whitespace-nowrap">{formatCompactRange(slot)}</p>
       </div>
     </div>
   )
 }
 
-/* ── YouTube sub-component: autoplays then unmutes via IFrame API ── */
 function YouTubePlayer({ videoId }: { videoId: string }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
@@ -144,34 +132,27 @@ function YouTubePlayer({ videoId }: { videoId: string }) {
     if (!el) return
 
     const sendCmd = (func: string, args: unknown[] | string = '') =>
-      el.contentWindow?.postMessage(
-        JSON.stringify({ event: 'command', func, args }), '*'
-      )
+      el.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), '*')
 
     const unmute = () => {
       sendCmd('unMute')
       sendCmd('setVolume', [100])
     }
 
-    // When the iframe HTML loads, subscribe to YouTube player events.
-    // YouTube will then reply with "onReady" once its JS player is initialised.
     const subscribe = () =>
-      el.contentWindow?.postMessage(
-        JSON.stringify({ event: 'listening', id: 1 }), '*'
-      )
+      el.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 1 }), '*')
 
     const onMessage = (e: MessageEvent) => {
       if (e.source !== el.contentWindow) return
       try {
         const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data
-        // onReady: player is initialised — unmute immediately
         if (data.event === 'onReady') unmute()
-        // onStateChange 1 = PLAYING — belt-and-suspenders unmute
         if (data.event === 'onStateChange' && data.info === 1) unmute()
-      } catch { /* non-JSON messages from other sources */ }
+      } catch {
+        // ignore non-player messages
+      }
     }
 
-    // Fallback: retry unmute 1 s and 3 s after load in case onReady is missed
     let t1: ReturnType<typeof setTimeout>
     let t2: ReturnType<typeof setTimeout>
     const onLoad = () => {
@@ -202,15 +183,10 @@ function YouTubePlayer({ videoId }: { videoId: string }) {
   )
 }
 
-/* ── Twitch sub-component: uses Twitch Embed JS to guarantee unmuted audio ── */
 function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string }) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-
-    // Load Twitch Embed script once, reuse on subsequent renders
     const loadTwitchScript = (): Promise<void> =>
       new Promise((resolve) => {
         if ((window as unknown as Record<string, unknown>).Twitch) { resolve(); return }
@@ -225,14 +201,11 @@ function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string
         document.head.appendChild(script)
       })
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let embed: any = null
-
     loadTwitchScript().then(() => {
       if (!containerRef.current) return
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const TwitchAPI = (window as any).Twitch
-      embed = new TwitchAPI.Embed(containerRef.current, {
+      const embed = new TwitchAPI.Embed(containerRef.current, {
         width: '100%',
         height: '100%',
         channel,
@@ -241,8 +214,8 @@ function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string
         muted: false,
         layout: 'video',
       })
-      embed!.addEventListener(TwitchAPI.Embed.VIDEO_READY, () => {
-        const player = embed!.getPlayer()
+      embed.addEventListener(TwitchAPI.Embed.VIDEO_READY, () => {
+        const player = embed.getPlayer()
         player.setMuted(false)
         player.setVolume(1)
         player.play()
@@ -250,7 +223,6 @@ function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string
     })
 
     return () => {
-      // Clear container so a fresh embed mounts on next render
       if (containerRef.current) containerRef.current.innerHTML = ''
     }
   }, [channel, hostname])
@@ -258,7 +230,6 @@ function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string
   return <div ref={containerRef} className="w-full h-full" />
 }
 
-/* ── CSGN Player: renders Twitch or YouTube, or NO STREAM ACTIVE ── */
 function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: string }) {
   if (!streamUrl) {
     return (
@@ -272,12 +243,8 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
   }
 
   const stream = detectStream(streamUrl)
+  if (stream?.type === 'youtube') return <YouTubePlayer videoId={stream.id} />
 
-  if (stream?.type === 'youtube') {
-    return <YouTubePlayer videoId={stream.id} />
-  }
-
-  // Twitch: use parsed channel or treat raw value as channel name
   const channel = stream?.id ?? streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '')
   return <TwitchPlayer channel={channel} hostname={hostname} />
 }
@@ -286,49 +253,17 @@ export default function Watch() {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
   const [isChatOpen, setIsChatOpen] = useState(false)
-
-  // Current live slot from Firestore (auto-detected by time)
-  const [currentSlot, setCurrentSlot] = useState<Slot | null>(null)
-  // Today's upcoming slots for the schedule sidebar
-  const [todaySlots, setTodaySlots] = useState<Slot[]>([])
-
-  // Manual override from admin config/liveStream
-  const [manualOverride, setManualOverride] = useState<{ url: string; streamerName: string; title: string } | null>(null)
-
-  // Live fee tracking
-  const [liveFeeSOL, setLiveFeeSOL] = useState<number>(0)
-  const [liveVolumeSOL, setLiveVolumeSOL] = useState<number>(0)
-
-  // Wipe animation state
+  const [allSlots, setAllSlots] = useState<Slot[]>([])
+  const [nowMs, setNowMs] = useState(() => Date.now())
   const [showWipe, setShowWipe] = useState(false)
   const prevSlotIdRef = useRef<string | null>(null)
   const wipeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [allSlots, setAllSlots] = useState<Slot[]>([])
-  const [nowMs, setNowMs] = useState(() => Date.now())
 
   useEffect(() => {
-    const t = setInterval(() => setNowMs(Date.now()), 30_000)
-    return () => clearInterval(t)
+    const timer = setInterval(() => setNowMs(Date.now()), 30_000)
+    return () => clearInterval(timer)
   }, [])
 
-  // Subscribe to admin manual override config
-  useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'config', 'liveStream'), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data()
-        if (data.url) {
-          setManualOverride({ url: data.url, streamerName: data.streamerName || '', title: data.title || '' })
-        } else {
-          setManualOverride(null)
-        }
-      } else {
-        setManualOverride(null)
-      }
-    }, () => setManualOverride(null))
-    return unsub
-  }, [])
-
-  // Direct subscription to slots table for identical behavior (logged in/out/admin).
   useEffect(() => {
     const slotsQuery = query(collection(db, 'slots'), orderBy('startTime', 'asc'))
     const unsub = onSnapshot(slotsQuery, (snap) => {
@@ -338,90 +273,63 @@ export default function Watch() {
         .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
       setAllSlots(data)
     }, () => setAllSlots([]))
-    return unsub
+
+    return () => unsub()
   }, [])
 
-  // Compute current slot from shared slots list.
-  useEffect(() => {
-    const slot = allSlots.find((s) => nowMs >= toMillis(s.startTime) && nowMs < toMillis(s.endTime)) ?? null
-    const newId = slot?.id ?? null
+  const currentSlot = useMemo(
+    () => allSlots.find((slot) => nowMs >= toMillis(slot.startTime) && nowMs < toMillis(slot.endTime)) ?? null,
+    [allSlots, nowMs],
+  )
 
+  useEffect(() => {
+    const newId = currentSlot?.id ?? null
     if (prevSlotIdRef.current !== null && newId !== prevSlotIdRef.current) {
       setShowWipe(true)
       if (wipeTimerRef.current) clearTimeout(wipeTimerRef.current)
       wipeTimerRef.current = setTimeout(() => setShowWipe(false), 1400)
     }
-
     prevSlotIdRef.current = newId
-    setCurrentSlot(slot)
     return () => {
       if (wipeTimerRef.current) clearTimeout(wipeTimerRef.current)
     }
-  }, [allSlots, nowMs])
-
-  // Start live fee tracker when a slot is active
-  useEffect(() => {
-    if (!currentSlot) {
-      setLiveFeeSOL(0)
-      setLiveVolumeSOL(0)
-      return
-    }
-    const stop = startFeeTracker({
-      slotId: currentSlot.id,
-      slotEndTime: currentSlot.endTime,
-      onUpdate: (feeSOL, volumeSOL) => {
-        setLiveFeeSOL(feeSOL)
-        setLiveVolumeSOL(volumeSOL)
-      },
-    })
-    return stop
   }, [currentSlot?.id])
 
-  // Build today's slot list directly from subscribed slots.
-  useEffect(() => {
-    const todayKey = etDayKeyFromMillis(nowMs)
-    setTodaySlots(
-      allSlots
-        .filter((slot) => etDayKeyFromMillis(toMillis(slot.startTime)) === todayKey)
-        .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime)),
-    )
-  }, [allSlots, nowMs])
+  const todayKey = etDayKeyFromMillis(nowMs)
+  const todaySlots = useMemo(
+    () => allSlots.filter((slot) => etDayKeyFromMillis(toMillis(slot.startTime)) === todayKey),
+    [allSlots, todayKey],
+  )
 
-  // Derive stream URL — ONLY from admin manual override (config/liveStream).
-  // The slot's raw Twitch/YouTube URL is intentionally NOT used here; that feed
-  // is consumed by /player (OBS capture) and then re-broadcast to this page via
-  // the CSGN output stream the admin sets in the override.
-  const streamUrl = manualOverride?.url || currentSlot?.streamUrl || ''
-  const streamerName = manualOverride?.streamerName || currentSlot?.assignedName || ''
-  const streamTitle = manualOverride?.title || currentSlot?.streamTitle || currentSlot?.description || ''
-  const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
+  const currentTodaySlot = useMemo(
+    () => todaySlots.find((slot) => nowMs >= toMillis(slot.startTime) && nowMs < toMillis(slot.endTime)),
+    [todaySlots, nowMs],
+  )
 
-  // Chat sidebar: only shown when the CSGN output stream is itself a Twitch channel
-  const stream = streamUrl ? detectStream(streamUrl) : null
-  const isTwitch = !!streamUrl && (!stream || stream.type === 'twitch')
-  const chatChannel = stream?.type === 'twitch' ? stream.id : (streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '') || '')
-  const chatSrc = `https://www.twitch.tv/embed/${encodeURIComponent(chatChannel)}/chat?parent=${hostname}&darkpopout`
+  const upcomingSlots = useMemo(
+    () => todaySlots.filter((slot) => toMillis(slot.startTime) > nowMs).slice(0, 3),
+    [todaySlots, nowMs],
+  )
 
-  // Next upcoming slots
-  const upcomingSlots = todaySlots.filter((s) => toMillis(s.startTime) > nowMs)
-
-  // For the schedule grid: current slot (if any) + next 2, otherwise next 3
-  const currentTodaySlot = todaySlots.find((s) => {
-    const start = toMillis(s.startTime)
-    const end = toMillis(s.endTime)
-    return nowMs >= start && nowMs < end
-  })
   const scheduleGridSlots = currentTodaySlot
     ? [currentTodaySlot, ...upcomingSlots.slice(0, 2)]
-    : upcomingSlots.slice(0, 3)
+    : upcomingSlots
+
+  const streamUrl = currentSlot?.streamUrl || ''
+  const streamerName = currentSlot?.assignedName || 'No Stream'
+  const streamTitle = currentSlot?.streamTitle || currentSlot?.description || 'Untitled stream'
+  const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
+
+  const stream = streamUrl ? detectStream(streamUrl) : null
+  const isTwitch = !!streamUrl && (!stream || stream.type === 'twitch')
+  const chatChannel = stream?.type === 'twitch'
+    ? stream.id
+    : (streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '') || '')
+  const chatSrc = `https://www.twitch.tv/embed/${encodeURIComponent(chatChannel)}/chat?parent=${hostname}&darkpopout`
 
   return (
     <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
-
-      {/* ── Main content ── */}
       <div className="flex-1 flex flex-col overflow-y-auto min-w-0">
-
-        {/* Status bar */}
         <div className="shrink-0 flex items-center gap-3 bg-red-600 px-4 py-2">
           <div className="flex items-center gap-2.5">
             <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
@@ -430,11 +338,7 @@ export default function Watch() {
           <div className="watch-roll-banner flex-1 min-w-0 lg:flex-none lg:w-[460px] lg:ml-auto" aria-label="Live game updates">
             <div className="watch-roll-banner__inner">
               {bannerItems.map((item, index) => (
-                <span
-                  key={item}
-                  className="watch-roll-banner__face"
-                  style={{ transform: `rotateX(${index * 90}deg) translateZ(12px)` }}
-                >
+                <span key={item} className="watch-roll-banner__face" style={{ transform: `rotateX(${index * 90}deg) translateZ(12px)` }}>
                   {item}
                 </span>
               ))}
@@ -442,7 +346,6 @@ export default function Watch() {
           </div>
         </div>
 
-        {/* Video player */}
         <div className="shrink-0 px-4 sm:px-5 pt-4 sm:pt-5 pb-2">
           <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)] max-w-[1280px] mx-auto">
             <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(255,0,90,0.28),transparent_42%),radial-gradient(circle_at_85%_10%,rgba(80,0,255,0.26),transparent_35%)]" />
@@ -450,44 +353,18 @@ export default function Watch() {
               <CSGNPlayer streamUrl={streamUrl} hostname={hostname} />
               <CSGNWipeOverlay visible={showWipe} />
             </div>
-
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/55 to-transparent" />
           </div>
         </div>
 
-        {/* Streamer info row */}
         <div className="shrink-0 flex items-start justify-between px-5 py-4 border-b border-white/[0.06]">
           <div>
-            <h1 className="text-3xl sm:text-4xl font-black font-display text-white tracking-tight leading-none">
-              {streamerName || <span className="text-gray-600">No Stream</span>}
-            </h1>
-            {streamTitle && (
-              <p className="text-sm text-primary-300 font-medium mt-0.5 italic">"{streamTitle}"</p>
-            )}
+            <h1 className="text-3xl sm:text-4xl font-black font-display text-white tracking-tight leading-none">{streamerName}</h1>
+            <p className="text-sm text-primary-300 font-medium mt-0.5 italic">"{streamTitle}"</p>
             <p className="text-sm text-gray-400 mt-1 font-mono">{slotLabel}</p>
-          </div>
-          <div className="text-right">
-            {currentSlot ? (
-              <>
-                <p className="text-2xl sm:text-3xl font-black font-mono text-yellow-400">
-                  {liveFeeSOL > 0 ? `${liveFeeSOL.toFixed(4)} SOL` : '—'}
-                </p>
-                <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">
-                  {liveVolumeSOL > 0
-                    ? `${liveVolumeSOL.toFixed(2)} SOL vol · 0.3%`
-                    : 'Live Earnings'}
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-2xl sm:text-3xl font-black font-mono text-gray-600">—</p>
-                <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">Earnings</p>
-              </>
-            )}
           </div>
         </div>
 
-        {/* TODAY'S SCHEDULE */}
         <div className="shrink-0 px-5 py-5 border-b border-white/[0.06]">
           <button
             type="button"
@@ -495,17 +372,14 @@ export default function Watch() {
             onClick={() => setIsScheduleOpen((prev) => !prev)}
             aria-expanded={isScheduleOpen}
           >
-            <h2 className="text-xs font-black tracking-[0.25em] uppercase text-gray-400">
-              Today's Schedule
-            </h2>
+            <h2 className="text-xs font-black tracking-[0.25em] uppercase text-gray-400">Today's Schedule</h2>
             <div className="flex items-center gap-4">
               {upcomingSlots.length > 0 && (
                 <div className="text-right space-y-0.5">
                   <p className="text-[11px] text-gray-500 uppercase tracking-wider leading-none mb-1">Up Next</p>
-                  {upcomingSlots.slice(0, 3).map((s) => (
-                    <p key={s.id} className="text-[10px] font-display font-bold text-white leading-snug whitespace-nowrap">
-                      {s.assignedName || (s.type === 'auction' ? 'Open Bid' : 'CEO')}{' '}
-                      <span className="font-normal text-gray-400">{formatCompactRange(s)}</span>
+                  {upcomingSlots.map((slot) => (
+                    <p key={slot.id} className="text-[10px] font-display font-bold text-white leading-snug whitespace-nowrap">
+                      {slot.assignedName || 'Unassigned'} <span className="font-normal text-gray-400">{formatCompactRange(slot)}</span>
                     </p>
                   ))}
                 </div>
@@ -517,16 +391,10 @@ export default function Watch() {
           {isScheduleOpen && (
             <>
               <div className="grid grid-cols-3 gap-3">
-                {scheduleGridSlots.map((slot) => {
-                  const slotStart = toMillis(slot.startTime)
-                  const slotEnd = toMillis(slot.endTime)
-                  const isCurrent = nowMs >= slotStart && nowMs < slotEnd
-                  return (
-                    <TodaySlotCard key={slot.id} slot={slot} isCurrent={isCurrent} />
-                  )
-                })}
+                {scheduleGridSlots.map((slot) => (
+                  <TodaySlotCard key={slot.id} slot={slot} isCurrent={slot.id === currentTodaySlot?.id} />
+                ))}
               </div>
-
               <div className="mt-4 text-center">
                 <Link
                   to="/schedule"
@@ -539,7 +407,6 @@ export default function Watch() {
           )}
         </div>
 
-        {/* Game buttons */}
         <div className="shrink-0 grid grid-cols-2 gap-3 px-5 py-5">
           <button className="relative overflow-hidden flex flex-col items-center justify-center gap-1.5 py-2.5 sm:py-5 px-3 bg-red-600 hover:bg-red-500 active:scale-[0.98] rounded-xl font-black font-display text-white text-sm sm:text-base uppercase tracking-wider transition-all shadow-lg shadow-red-900/40 cursor-pointer">
             <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
@@ -553,7 +420,6 @@ export default function Watch() {
           </button>
         </div>
 
-        {/* Mobile chat */}
         {isTwitch && (
           <div className="lg:hidden shrink-0 px-5 pb-5">
             <div className="rounded-xl overflow-hidden border border-white/10">
@@ -566,20 +432,12 @@ export default function Watch() {
                 <span className="text-xs font-bold tracking-[0.2em] uppercase text-gray-400">Live Chat</span>
                 <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isChatOpen ? 'rotate-180' : ''}`} />
               </button>
-              {isChatOpen && (
-                <iframe
-                  src={chatSrc}
-                  className="w-full"
-                  style={{ height: 360, background: '#0a0a14' }}
-                  title="CSGN Chat"
-                />
-              )}
+              {isChatOpen && <iframe src={chatSrc} className="w-full" style={{ height: 360, background: '#0a0a14' }} title="CSGN Chat" />}
             </div>
           </div>
         )}
       </div>
 
-      {/* ── Right: Chat sidebar (desktop only) ── */}
       {isTwitch && (
         <aside className="hidden lg:flex w-[340px] shrink-0 flex-col border-l border-white/[0.06] bg-[#07070f]">
           <button
@@ -594,14 +452,7 @@ export default function Watch() {
             </div>
             <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isChatOpen ? 'rotate-180' : ''}`} />
           </button>
-          {isChatOpen && (
-            <iframe
-              src={chatSrc}
-              className="flex-1 w-full"
-              style={{ background: '#07070f' }}
-              title="CSGN Chat"
-            />
-          )}
+          {isChatOpen && <iframe src={chatSrc} className="flex-1 w-full" style={{ background: '#07070f' }} title="CSGN Chat" />}
         </aside>
       )}
     </div>
