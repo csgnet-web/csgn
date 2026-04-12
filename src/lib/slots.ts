@@ -48,8 +48,28 @@ export type FeePaymentStatus = 'pending' | 'paid' | 'declined'
 export interface CreatorFees {
   tradingVolumeSOL: number     // admin inputs trading volume in SOL during slot
   tradingVolumeUSD?: number
-  feeOwedSOL: number           // 0.003 * tradingVolumeSOL (30% of 1% pump.fun creator fee)
+  feeOwedSOL: number           // tradingVolumeSOL * (tierCreatorFeeRate * 0.30)
   feeOwedUSD?: number
+  marketCapSOL?: number
+  creatorFeeRate?: number
+  streamerShareRate?: number
+  marketCapTierLabel?: string
+  marketCapTierRange?: string
+  tierFeeBreakdown?: Array<{
+    tierLabel: string
+    marketCapRange: string
+    creatorFeeRate: number
+    streamerShareRate: number
+    volumeSOL: number
+    creatorFeeSOL: number
+    streamerFeeSOL: number
+  }>
+  marketCapCheckpoints?: Array<{
+    capturedAt: string
+    marketCapSOL: number
+    tierLabel: string
+    creatorFeeRate: number
+  }>
   activeChannels?: Array<{
     name: string
     streamUrl: string

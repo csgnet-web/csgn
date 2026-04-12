@@ -31,6 +31,7 @@ export default function Dashboard() {
   const [slotHistory, setSlotHistory] = useState<Slot[]>([])
   const [liveEstimateSOL, setLiveEstimateSOL] = useState(0)
   const [liveEstimateUSD, setLiveEstimateUSD] = useState(0)
+  const [liveVolumeSOL, setLiveVolumeSOL] = useState(0)
   const [slotInfo, setSlotInfo] = useState<Slot | null>(null)
 
   const bids = useMemo(() => user ? queueStore.getBids().filter((bid) => bid.uid === user.uid) : [], [user])
@@ -66,14 +67,16 @@ export default function Dashboard() {
   useEffect(() => {
     if (!liveAssignedSlot) {
       setLiveEstimateSOL(0)
+      setLiveVolumeSOL(0)
       return
     }
     const stop = startFeeTracker({
       slotId: liveAssignedSlot.id,
       slotStartTime: liveAssignedSlot.startTime,
       slotEndTime: liveAssignedSlot.endTime,
-      onUpdate: (feeSOL, _volumeSOL, feeUSD) => {
+      onUpdate: (feeSOL, volumeSOL, feeUSD) => {
         setLiveEstimateSOL(feeSOL)
+        setLiveVolumeSOL(volumeSOL)
         setLiveEstimateUSD(feeUSD)
       },
     })
@@ -277,6 +280,7 @@ export default function Dashboard() {
               <div className="mt-2 space-y-1 text-sm text-gray-300">
                 <p className="flex items-center gap-2"><User className="w-4 h-4 text-red-400" /> {profile?.displayName || 'Viewer'}</p>
                 <p className="flex items-center gap-2"><Mail className="w-4 h-4 text-red-400" /> {profile?.email}</p>
+                <p className="flex items-center gap-2"><Crown className="w-4 h-4 text-cyan-400" /> XP {(profile?.xp ?? 0).toLocaleString()}</p>
               </div>
             </div>
             <Badge variant="blue">{profile?.role || 'viewer'}</Badge>
@@ -385,6 +389,12 @@ export default function Dashboard() {
               Live slot estimate ({new Date(liveAssignedSlot.startTime).toLocaleTimeString()}–{new Date(liveAssignedSlot.endTime).toLocaleTimeString()}): ${liveEstimateUSD.toFixed(2)} ({liveEstimateSOL.toFixed(6)} SOL)
             </p>
           )}
+          {liveAssignedSlot && liveVolumeSOL > 0 && (
+            <p className="text-xs text-gray-500 mt-1">
+              Calc: {liveVolumeSOL.toFixed(4)} SOL × tier creator fee × 30% = {liveEstimateSOL.toFixed(6)} SOL
+              {liveAssignedSlot.creatorFees?.marketCapTierLabel ? ` (${liveAssignedSlot.creatorFees.marketCapTierLabel})` : ''}
+            </p>
+          )}
           <p className="text-xs text-gray-500 mt-1">Estimate only, not guaranteed. Final payout depends on post-slot volume and fee tier assignment.</p>
           <p className="text-xs text-gray-500 mt-1">Payouts are sent in equivalent CSGN, subject to approval, and should not be expected as guaranteed transfers.</p>
         </Card>
@@ -408,6 +418,9 @@ export default function Dashboard() {
                       <div className="text-right">
                         <p className="font-mono text-cyan-300">{(slot.creatorFees?.feeOwedSOL || 0).toFixed(6)} SOL</p>
                         <p className="font-mono text-emerald-300">${(slot.creatorFees?.feeOwedUSD || 0).toFixed(2)}</p>
+                        {slot.creatorFees?.marketCapTierLabel && (
+                          <p className="text-[11px] text-gray-500">{slot.creatorFees.marketCapTierLabel}</p>
+                        )}
                         <button onClick={() => setSlotInfo(slot)} className="text-xs text-primary-400 hover:text-primary-300 inline-flex items-center gap-1">
                           <Info className="w-3 h-3" /> Fee calc
                         </button>
@@ -516,8 +529,25 @@ export default function Dashboard() {
             <p className="text-xs text-gray-400 mt-2">Slot: {slotInfo.label}</p>
             <p className="text-xs text-gray-400">Volume (SOL): {(slotInfo.creatorFees?.tradingVolumeSOL || 0).toFixed(6)}</p>
             <p className="text-xs text-gray-400">Volume (USD): ${(slotInfo.creatorFees?.tradingVolumeUSD || 0).toFixed(2)}</p>
-            <p className="text-xs text-gray-400">Estimated creator fee (SOL): {(slotInfo.creatorFees?.feeOwedSOL || 0).toFixed(6)}</p>
+            <p className="text-xs text-gray-400">Latest market cap (SOL): {(slotInfo.creatorFees?.marketCapSOL || 0).toFixed(2)}</p>
+            <p className="text-xs text-gray-400">Active tier: {slotInfo.creatorFees?.marketCapTierLabel || 'n/a'}</p>
+            <p className="text-xs text-gray-400">Estimated streamer payout (SOL): {(slotInfo.creatorFees?.feeOwedSOL || 0).toFixed(6)}</p>
             <p className="text-xs text-gray-400">Estimated creator fee (USD): ${(slotInfo.creatorFees?.feeOwedUSD || 0).toFixed(2)}</p>
+            {slotInfo.creatorFees?.tierFeeBreakdown && slotInfo.creatorFees.tierFeeBreakdown.length > 0 && (
+              <div className="mt-2 border-t border-white/10 pt-2 space-y-1">
+                <p className="text-xs text-gray-400">Tier breakdown</p>
+                {slotInfo.creatorFees.tierFeeBreakdown.map((tier, idx) => (
+                  <p key={`${slotInfo.id}-tier-${idx}`} className="text-[11px] text-gray-500">
+                    {tier.marketCapRange}: volume {tier.volumeSOL.toFixed(4)} SOL, creator {(tier.creatorFeeRate * 100).toFixed(3)}%, streamer {tier.streamerFeeSOL.toFixed(6)} SOL
+                  </p>
+                ))}
+              </div>
+            )}
+            {slotInfo.creatorFees?.marketCapCheckpoints && slotInfo.creatorFees.marketCapCheckpoints.length > 0 && (
+              <p className="text-[11px] text-gray-500 mt-2">
+                Market cap checks captured: {slotInfo.creatorFees.marketCapCheckpoints.length} (target cadence: every 15s during live slot).
+              </p>
+            )}
             <p className="text-xs text-gray-500 mt-2">
               Estimate derived from DexScreener pool-volume deltas and fee tiers. Final transfer is reviewed and paid in equivalent CSGN.
             </p>

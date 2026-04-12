@@ -16,6 +16,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { PUMP_FUN_FEE_TIERS, estimateCreatorFeeSOL, formatTierRange, resolvePumpFeeTier } from '@/lib/dexscreener'
 import {
   appendNextThreeDays,
   wipeAndRegenerateSlots,
@@ -116,6 +117,7 @@ export default function Admin() {
   const [feeSlotsLoading, setFeeSlotsLoading] = useState(false)
   const [feeModal, setFeeModal] = useState<Slot | null>(null)
   const [feeVolume, setFeeVolume] = useState('')
+  const [feeMarketCap, setFeeMarketCap] = useState('')
   const [feeWallet, setFeeWallet] = useState('')
   const [feeDeclineReason, setFeeDeclineReason] = useState('')
   const [feeActionLoading, setFeeActionLoading] = useState<string | null>(null)
@@ -417,13 +419,34 @@ export default function Admin() {
       const volumeSOL = parseFloat(feeVolume)
       if (isNaN(volumeSOL) || volumeSOL < 0) throw new Error('Invalid volume amount')
 
-      // pump.fun creator fee: 1% of trading volume
-      // Streamer share: 30% of creator fee => volume * 0.01 * 0.30 = volume * 0.003
-      const feeOwedSOL = volumeSOL * 0.003
+      const marketCapSOL = Math.max(0, parseFloat(feeMarketCap || '0'))
+      const tier = resolvePumpFeeTier(marketCapSOL)
+      const feeOwedSOL = estimateCreatorFeeSOL(volumeSOL, marketCapSOL)
+      const creatorFeeSOL = volumeSOL * tier.creatorFeeRate
 
       const fees: CreatorFees = {
         tradingVolumeSOL: volumeSOL,
         feeOwedSOL,
+        marketCapSOL,
+        creatorFeeRate: tier.creatorFeeRate,
+        streamerShareRate: tier.creatorFeeRate * 0.3,
+        marketCapTierRange: formatTierRange(tier),
+        marketCapTierLabel: `${formatTierRange(tier)} (${(tier.creatorFeeRate * 100).toFixed(3)}%)`,
+        tierFeeBreakdown: [{
+          tierLabel: `${formatTierRange(tier)} (${(tier.creatorFeeRate * 100).toFixed(3)}%)`,
+          marketCapRange: formatTierRange(tier),
+          creatorFeeRate: tier.creatorFeeRate,
+          streamerShareRate: tier.creatorFeeRate * 0.3,
+          volumeSOL,
+          creatorFeeSOL,
+          streamerFeeSOL: feeOwedSOL,
+        }],
+        marketCapCheckpoints: [{
+          capturedAt: new Date().toISOString(),
+          marketCapSOL,
+          tierLabel: `${formatTierRange(tier)} (${(tier.creatorFeeRate * 100).toFixed(3)}%)`,
+          creatorFeeRate: tier.creatorFeeRate,
+        }],
         paymentStatus: 'pending',
         streamerWalletAddress: feeWallet || slot.creatorFees?.streamerWalletAddress || '',
         activeChannels: slot.creatorFees?.activeChannels || [{
@@ -1330,8 +1353,8 @@ export default function Admin() {
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold text-white">Creator Fee Payouts</h3>
-              <p className="text-sm text-gray-400 mt-1">
-                Streamers earn 30% of pump.fun creator fees (1% per trade) generated during their slot.
+                <p className="text-sm text-gray-400 mt-1">
+                Streamers earn 30% of pump.fun creator fees generated during their slot.
                 Fee records are auto-created when slots complete, including active channel duration.
               </p>
             </div>
@@ -1340,10 +1363,10 @@ export default function Admin() {
               <div className="flex items-start gap-3">
                 <DollarSign className="w-5 h-5 text-cyan-400 mt-0.5 shrink-0" />
                 <div>
-                  <p className="text-sm text-white font-medium">Fee Formula</p>
+                  <p className="text-sm text-white font-medium">Fee Formula + Market Cap Tiering</p>
                   <p className="text-xs text-gray-400 mt-1">
-                    pump.fun charges a 1% creator fee per trade (buy/sell).
-                    Streamers receive 30% of that → <span className="font-mono text-cyan-400">Volume × 0.01 × 0.30 = Volume × 0.003 SOL</span>
+                    pump.fun creator fee changes by SOL market cap tier. Streamer payout is always 30% of creator fee:
+                    <span className="font-mono text-cyan-400"> Volume × tier creator fee × 0.30</span> (max streamer take is 0.27% of volume at 0.9% creator fee).
                   </p>
                 </div>
               </div>
@@ -1402,8 +1425,12 @@ export default function Admin() {
                                   <span className="text-white font-mono">{fees.tradingVolumeSOL.toFixed(4)} SOL</span>
                                 </div>
                                 <div className="flex items-center justify-between text-xs">
-                                  <span className="text-gray-500">Creator Fee (1%)</span>
-                                  <span className="text-white font-mono">{(fees.tradingVolumeSOL * 0.01).toFixed(6)} SOL</span>
+                                  <span className="text-gray-500">Market Cap Tier</span>
+                                  <span className="text-white font-mono">{fees.marketCapTierLabel ?? 'n/a'}</span>
+                                </div>
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-gray-500">Creator Fee (tier)</span>
+                                  <span className="text-white font-mono">{(fees.tradingVolumeSOL * (fees.creatorFeeRate ?? 0.003)).toFixed(6)} SOL</span>
                                 </div>
                                 <div className="flex items-center justify-between text-sm font-semibold border-t border-white/[0.06] pt-1 mt-1">
                                   <span className="text-gray-300">Owed to Streamer (30%)</span>
@@ -1420,6 +1447,17 @@ export default function Admin() {
                                 )}
                                 {fees.paidAt && (
                                   <p className="text-xs text-emerald-400 mt-1">Paid: {new Date(fees.paidAt).toLocaleString()}</p>
+                                )}
+
+                                {fees.tierFeeBreakdown && fees.tierFeeBreakdown.length > 0 && (
+                                  <div className="mt-2 pt-2 border-t border-white/[0.06] space-y-1">
+                                    <p className="text-xs text-gray-500">Tier Breakdown</p>
+                                    {fees.tierFeeBreakdown.map((tier, idx) => (
+                                      <div key={`${slot.id}-${idx}`} className="text-xs text-gray-400">
+                                        {tier.marketCapRange} · Vol {tier.volumeSOL.toFixed(4)} SOL · Creator {(tier.creatorFeeRate * 100).toFixed(3)}% · Streamer {tier.streamerFeeSOL.toFixed(6)} SOL
+                                      </div>
+                                    ))}
+                                  </div>
                                 )}
 
                                 {fees.activeChannels && fees.activeChannels.length > 0 && (
@@ -1447,6 +1485,7 @@ export default function Admin() {
                               onClick={() => {
                                 setFeeModal(slot)
                                 setFeeVolume(slot.creatorFees?.tradingVolumeSOL?.toString() ?? '')
+                                setFeeMarketCap(slot.creatorFees?.marketCapSOL?.toString() ?? '')
                                 setFeeWallet(slot.creatorFees?.streamerWalletAddress ?? streamerUser?.walletAddress ?? '')
                               }}
                             >
@@ -1524,16 +1563,41 @@ export default function Admin() {
                         placeholder="e.g. 1000.5"
                       />
                     </div>
+                    <div>
+                      <label className="block text-sm text-gray-300 mb-1">Token Market Cap (SOL) for this slot period</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={feeMarketCap}
+                        onChange={(e) => setFeeMarketCap(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono focus:outline-none focus:border-primary-500/50"
+                        placeholder="e.g. 380"
+                      />
+                    </div>
                     {feeVolume && !isNaN(parseFloat(feeVolume)) && (
                       <div className="p-3 bg-white/[0.03] rounded-lg border border-white/[0.06] text-sm space-y-1">
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">Creator fee (1%)</span>
-                          <span className="text-white font-mono">{(parseFloat(feeVolume) * 0.01).toFixed(6)} SOL</span>
-                        </div>
-                        <div className="flex justify-between font-semibold">
-                          <span className="text-gray-300">Owed to streamer (30%)</span>
-                          <span className="text-yellow-400 font-mono">{(parseFloat(feeVolume) * 0.003).toFixed(6)} SOL</span>
-                        </div>
+                        {(() => {
+                          const volume = parseFloat(feeVolume)
+                          const mcap = Math.max(0, parseFloat(feeMarketCap || '0'))
+                          const tier = resolvePumpFeeTier(mcap)
+                          return (
+                            <>
+                              <div className="flex justify-between">
+                                <span className="text-gray-500">Market cap tier</span>
+                                <span className="text-white font-mono">{formatTierRange(tier)} ({(tier.creatorFeeRate * 100).toFixed(3)}%)</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-500">Creator fee (tier)</span>
+                                <span className="text-white font-mono">{(volume * tier.creatorFeeRate).toFixed(6)} SOL</span>
+                              </div>
+                              <div className="flex justify-between font-semibold">
+                                <span className="text-gray-300">Owed to streamer (30%)</span>
+                                <span className="text-yellow-400 font-mono">{estimateCreatorFeeSOL(volume, mcap).toFixed(6)} SOL</span>
+                              </div>
+                            </>
+                          )
+                        })()}
                       </div>
                     )}
                     <div>
@@ -1556,6 +1620,16 @@ export default function Admin() {
                     >
                       Save Fee Record
                     </Button>
+                    <div className="pt-2 border-t border-white/[0.06]">
+                      <p className="text-xs text-gray-500 mb-1">Pump.fun SOL market-cap creator fee tiers:</p>
+                      <div className="max-h-28 overflow-auto space-y-1 pr-1">
+                        {PUMP_FUN_FEE_TIERS.map((tier) => (
+                          <p key={`${tier.minMarketCapSOL}-${tier.maxMarketCapSOL ?? 'max'}`} className="text-[11px] text-gray-400 font-mono">
+                            {formatTierRange(tier)} → {(tier.creatorFeeRate * 100).toFixed(3)}%
+                          </p>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </motion.div>
               </div>

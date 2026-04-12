@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { Clock3, Crown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { Card } from '@/components/ui/Card'
@@ -41,7 +42,7 @@ function etMiddayFromOffset(offset: number): Date {
 }
 
 export default function Queue() {
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const [slots, setSlots] = useState<Slot[]>([])
   const [loading, setLoading] = useState(true)
   const [weekOffset, setWeekOffset] = useState(0)
@@ -140,6 +141,11 @@ export default function Queue() {
           <p className="text-xs text-amber-300 mt-2">
             {user ? 'Bidding: Coming Soon.' : 'Sign in for account features. Bidding: Coming Soon.'}
           </p>
+          {profile?.role === 'streamer' ? (
+            <p className="text-xs text-cyan-300 mt-1">Streamer account detected: you can apply/request slots here as this feature rolls out.</p>
+          ) : (
+            <p className="text-xs text-gray-400 mt-1">Want to stream? <Link to="/apply" className="text-primary-400 hover:text-primary-300">Apply for streamer access</Link>.</p>
+          )}
         </Card>
 
         {loading ? (

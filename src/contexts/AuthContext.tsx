@@ -35,6 +35,7 @@ export interface UserProfile {
   walletAddress?: string
   socialLinks?: { twitter?: string; twitch?: string; youtube?: string }
   notifications?: UserNotification[]
+  xp?: number
 }
 
 interface AuthContextType {
