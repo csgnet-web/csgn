@@ -46,9 +46,10 @@ export type SlotStatus =
 export type FeePaymentStatus = 'pending' | 'paid' | 'declined'
 
 export interface CreatorFees {
-  tradingVolumeSOL: number     // admin inputs trading volume in SOL during slot
+  tradingVolumeSOL: number
   tradingVolumeUSD?: number
-  feeOwedSOL: number           // tradingVolumeSOL * (tierCreatorFeeRate * 0.30)
+  feeOwedSOL: number
+  feeMultiplier?: number       // effective streamer payout multiplier (capped at 0.0009)
   feeOwedUSD?: number
   marketCapSOL?: number
   creatorFeeRate?: number
@@ -70,6 +71,8 @@ export interface CreatorFees {
     tierLabel: string
     creatorFeeRate: number
   }>
+  tierVolumeByMinMarketCap?: Record<string, number>
+  trackerLastH24Usd?: number
   activeChannels?: Array<{
     name: string
     streamUrl: string
