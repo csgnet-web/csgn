@@ -11,7 +11,7 @@ import { useAuth } from '@/contexts/AuthContext'
 const navLinks = [
   { href: '/watch', label: 'Watch Live', live: true },
   { href: '/schedule', label: 'Schedule' },
-  { href: '/queue', label: 'Queue' },
+  { href: '/queue', label: 'Queue', authOnly: true },
   { href: '/apply', label: 'Apply' },
   { href: '/about', label: 'About' },
 ]
@@ -58,13 +58,22 @@ export function Header() {
             <nav className="hidden lg:flex items-center gap-0.5">
               {navLinks.map((link) => {
                 const isActive = location.pathname === link.href
+                const isLocked = !!link.authOnly && !user
 
                 return (
                   <Link
                     key={link.href}
-                    to={link.href}
+                    to={isLocked ? '#' : link.href}
+                    onClick={(e) => {
+                      if (isLocked) {
+                        e.preventDefault()
+                        openAuth('login')
+                      }
+                    }}
                     className={`relative px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 ${
-                      isActive
+                      isLocked
+                        ? 'text-gray-600 bg-white/[0.02] cursor-not-allowed'
+                        : isActive
                         ? 'text-white bg-white/[0.07]'
                         : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
                     }`}
@@ -95,6 +104,9 @@ export function Header() {
                     </div>
                     <span className="text-sm font-medium text-white hidden sm:block max-w-[120px] truncate">
                       {profile?.displayName || 'User'}
+                    </span>
+                    <span className="hidden sm:inline text-[10px] font-mono text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 rounded px-1.5 py-0.5">
+                      XP {(profile?.xp ?? 0).toLocaleString()}
                     </span>
                     <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
                   </button>
@@ -185,13 +197,23 @@ export function Header() {
             >
               <div className="flex flex-col gap-1">
                 {navLinks.map((link) => {
+                  const isLocked = !!link.authOnly && !user
                   return (
                     <Link
                       key={link.href}
-                      to={link.href}
-                      onClick={() => setMobileOpen(false)}
+                      to={isLocked ? '#' : link.href}
+                      onClick={(e) => {
+                        if (isLocked) {
+                          e.preventDefault()
+                          openAuth('login')
+                          return
+                        }
+                        setMobileOpen(false)
+                      }}
                       className={`flex items-center gap-3 px-4 py-3 text-base font-medium rounded-xl transition-all ${
-                        location.pathname === link.href
+                        isLocked
+                          ? 'text-gray-600 bg-white/[0.02] cursor-not-allowed'
+                          : location.pathname === link.href
                           ? 'text-white bg-white/[0.08]'
                           : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
                       }`}

@@ -5,6 +5,7 @@ import { db } from '@/config/firebase'
 import { useAuth } from '@/contexts/AuthContext'
 import { subscribeToCurrentSlot, formatESTRange, type Slot } from '@/lib/slots'
 import { detectStream, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
+const DEFAULT_TWITCH_STREAM = 'https://www.twitch.tv/csgnet'
 
 /* ── YouTube sub-component ── */
 function YouTubePlayer({ videoId }: { videoId: string }) {
@@ -111,10 +112,22 @@ function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string
         player.setMuted(false)
         player.setVolume(1)
         player.play()
+        const keepAlive = setInterval(() => {
+          try {
+            player.setMuted(false)
+            player.setVolume(1)
+            player.play()
+          } catch {
+            // no-op
+          }
+        }, 8000)
+        ;(embed as { __keepAlive?: ReturnType<typeof setInterval> }).__keepAlive = keepAlive
       })
     })
 
     return () => {
+      const keepAlive = (embed as { __keepAlive?: ReturnType<typeof setInterval> } | null)?.__keepAlive
+      if (keepAlive) clearInterval(keepAlive)
       if (containerRef.current) containerRef.current.innerHTML = ''
     }
   }, [channel, hostname])
@@ -181,12 +194,12 @@ export default function Player() {
   }
 
   // Show the slot's raw Twitch/YouTube stream — this is what OBS captures
-  const streamUrl = playerOverride ?? currentSlot?.streamUrl ?? ''
+  const streamUrl = playerOverride ?? currentSlot?.streamUrl ?? DEFAULT_TWITCH_STREAM
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : null
 
   return (
     <div className="w-screen h-screen bg-black overflow-hidden relative">
-      <StreamEmbed streamUrl={streamUrl} hostname={hostname} />
+      <StreamEmbed key={streamUrl} streamUrl={streamUrl} hostname={hostname} />
 
       {/* Minimal HUD — bottom-left, non-intrusive for OBS crop */}
       <div className="absolute bottom-3 left-3 z-10 pointer-events-none select-none">
@@ -198,8 +211,8 @@ export default function Player() {
           {slotLabel && (
             <span className="text-[9px] font-mono text-white/30 leading-none">{slotLabel}</span>
           )}
-          {!currentSlot && !streamUrl && (
-            <span className="text-[9px] font-mono text-white/25 leading-none">No slot active</span>
+          {!currentSlot && (
+            <span className="text-[9px] font-mono text-white/25 leading-none">No slot active — defaulting to /csgnet</span>
           )}
         </div>
       </div>

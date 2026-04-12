@@ -280,6 +280,7 @@ export default function Dashboard() {
               <div className="mt-2 space-y-1 text-sm text-gray-300">
                 <p className="flex items-center gap-2"><User className="w-4 h-4 text-red-400" /> {profile?.displayName || 'Viewer'}</p>
                 <p className="flex items-center gap-2"><Mail className="w-4 h-4 text-red-400" /> {profile?.email}</p>
+                <p className="flex items-center gap-2"><Crown className="w-4 h-4 text-cyan-400" /> XP {(profile?.xp ?? 0).toLocaleString()}</p>
               </div>
             </div>
             <Badge variant="blue">{profile?.role || 'viewer'}</Badge>
