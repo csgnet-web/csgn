@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Send, User, CheckCircle, AlertCircle, Mic, Gamepad2, Tv, FileText } from 'lucide-react'
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
+import { Send, User, CheckCircle, AlertCircle, Mic, Gamepad2, Tv, FileText, Wallet } from 'lucide-react'
+import { collection, addDoc, doc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { useAuth } from '@/contexts/AuthContext'
+import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -19,7 +20,8 @@ const contentTypes = [
 ]
 
 export default function Apply() {
-  const { user, profile } = useAuth()
+  const { user, profile, refreshProfile } = useAuth()
+  const { walletAddress, connect, isConnecting } = usePhantomWallet()
 
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -27,9 +29,6 @@ export default function Apply() {
   const [form, setForm] = useState({
     displayName: profile?.displayName || '',
     email: user?.email || '',
-    twitterConnected: false,
-    twitchConnected: false,
-    youtubeConnected: false,
     contentType: '',
     experience: '',
     whyCSGN: '',
@@ -56,6 +55,8 @@ export default function Apply() {
     try {
       await addDoc(collection(db, 'applications'), {
         ...form,
+        socialLinks: profile?.socialLinks || {},
+        walletAddress: profile?.walletAddress || walletAddress || '',
         uid: user.uid,
         status: 'pending',
         createdAt: serverTimestamp(),
@@ -65,6 +66,19 @@ export default function Apply() {
       setError('Failed to submit application. Please try again.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleConnectWallet = async () => {
+    if (!user) return
+    const connected = await connect()
+    const toSave = connected || walletAddress
+    if (!toSave) return
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { walletAddress: toSave })
+      await refreshProfile()
+    } catch {
+      setError('Failed to save Phantom wallet. Please try again.')
     }
   }
 
@@ -146,18 +160,31 @@ export default function Apply() {
             {/* Social Links */}
             <div className="space-y-4">
               <h4 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Social & Content Links</h4>
-              <div className="grid sm:grid-cols-3 gap-4">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1.5">Twitter / X</label>
-                  <a href="https://x.com/i/oauth2/authorize" target="_blank" rel="noreferrer" className="inline-flex items-center justify-center w-full px-3 py-2.5 rounded-xl text-xs font-semibold bg-black border border-white/20 text-white hover:bg-zinc-900 transition-colors">Connect X</a>
+                  <div className="w-full px-3 py-2.5 rounded-xl text-xs font-semibold bg-black border border-white/20 text-white text-center truncate">
+                    {profile?.socialLinks?.twitter ? `Connected: @${profile.socialLinks.twitter}` : 'Connect from Account Hub'}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1.5">Twitch</label>
-                  <a href="https://www.twitch.tv/login" target="_blank" rel="noreferrer" className="inline-flex items-center justify-center w-full px-3 py-2.5 rounded-xl text-xs font-semibold bg-[#9146FF] text-white hover:bg-[#7d35f7] transition-colors">Connect Twitch</a>
+                  <div className="w-full px-3 py-2.5 rounded-xl text-xs font-semibold bg-[#9146FF] text-white text-center truncate">
+                    {profile?.socialLinks?.twitch ? `Connected: ${profile.socialLinks.twitch}` : 'Connect from Account Hub'}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1.5">YouTube</label>
-                  <a href="https://accounts.google.com/signin/v2/identifier?service=youtube" target="_blank" rel="noreferrer" className="inline-flex items-center justify-center w-full px-3 py-2.5 rounded-xl text-xs font-semibold bg-[#FF0000] text-white hover:bg-[#e00000] transition-colors">Connect YouTube</a>
+                  <div className="w-full px-3 py-2.5 rounded-xl text-xs font-semibold bg-[#FF0000] text-white text-center truncate">
+                    {profile?.socialLinks?.youtube ? `Connected: ${profile.socialLinks.youtube}` : 'Connect from Account Hub'}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1.5">Phantom Wallet</label>
+                  <button type="button" onClick={handleConnectWallet} className="inline-flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-xl text-xs font-semibold bg-violet-600 text-white hover:bg-violet-500 transition-colors" disabled={isConnecting}>
+                    <Wallet className="w-3.5 h-3.5" />
+                    {profile?.walletAddress ? `${profile.walletAddress.slice(0, 4)}...${profile.walletAddress.slice(-4)}` : (isConnecting ? 'Connecting...' : 'Connect Phantom')}
+                  </button>
                 </div>
               </div>
             </div>

@@ -310,9 +310,6 @@ export default function Watch() {
   const [manualOverride, setManualOverride] = useState<{ url: string; streamerName: string; title: string } | null>(null)
 
   // Live fee tracking
-  const [liveVolumeSOL, setLiveVolumeSOL] = useState<number>(0)
-  const [liveFeeSOL, setLiveFeeSOL] = useState<number>(0)
-  const [liveFeeUSD, setLiveFeeUSD] = useState<number>(0)
 
   // Wipe animation state
   const [showWipe, setShowWipe] = useState(false)
@@ -376,21 +373,10 @@ export default function Watch() {
 
   // Start live fee tracker when a slot is active
   useEffect(() => {
-    if (!currentSlot) {
-      setLiveVolumeSOL(0)
-      setLiveFeeSOL(0)
-      setLiveFeeUSD(0)
-      return
-    }
+    if (!currentSlot) return
     const stop = startFeeTracker({
       slotId: currentSlot.id,
-      slotStartTime: currentSlot.startTime,
       slotEndTime: currentSlot.endTime,
-      onUpdate: (feeSOL, volumeSOL, feeUSD) => {
-        setLiveFeeSOL(feeSOL)
-        setLiveVolumeSOL(volumeSOL)
-        setLiveFeeUSD(feeUSD)
-      },
     })
     return stop
   }, [currentSlot?.id])
@@ -430,7 +416,9 @@ export default function Watch() {
   const scheduleGridSlots = currentTodaySlot
     ? [currentTodaySlot, ...upcomingSlots.slice(0, 2)]
     : upcomingSlots.slice(0, 3)
-  const liveShareRate = currentSlot?.creatorFees?.streamerShareRate ?? (liveVolumeSOL > 0 ? liveFeeSOL / liveVolumeSOL : 0)
+  const liveFeeSOL = currentSlot?.creatorFees?.feeOwedSOL ?? 0
+  const liveVolumeSOL = currentSlot?.creatorFees?.tradingVolumeSOL ?? 0
+  const liveShareRate = currentSlot?.creatorFees?.feeMultiplier ?? 0
 
   return (
     <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
@@ -487,16 +475,13 @@ export default function Watch() {
             {currentSlot ? (
               <>
                 <p className="text-2xl sm:text-3xl font-black font-mono text-yellow-400">
-                  {liveFeeUSD > 0 ? `$${liveFeeUSD.toFixed(2)}` : '—'}
+                  {liveFeeSOL > 0 ? `${liveFeeSOL.toFixed(6)} SOL` : '—'}
                 </p>
                 <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">
                   {liveVolumeSOL > 0
-                    ? `${liveFeeSOL.toFixed(6)} SOL · ${liveVolumeSOL.toFixed(2)} SOL vol · ${(liveShareRate * 100).toFixed(3)}%`
+                    ? `${liveVolumeSOL.toFixed(4)} SOL vol · ${(liveShareRate * 100).toFixed(3)}% multiplier`
                     : 'Live Earnings'}
                 </p>
-                {currentSlot.creatorFees?.marketCapTierLabel && (
-                  <p className="text-[11px] text-gray-600 mt-0.5">{currentSlot.creatorFees.marketCapTierLabel}</p>
-                )}
               </>
             ) : (
               <>
