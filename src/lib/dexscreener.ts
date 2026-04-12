@@ -208,11 +208,31 @@ export function startFeeTracker(options: FeeTrackerOptions): () => void {
   let intervalId: ReturnType<typeof setInterval> | null = null
   let stopped = false
   let previousEstimatedVolumeSOL = 0
+  let volumeFloorSOL = 0
+  let feeFloorSOL = 0
+  let hydratedFromExisting = false
   const tierVolumeMap = new Map<string, number>()
   let marketCapCheckpoints: NonNullable<CreatorFees['marketCapCheckpoints']> = []
 
+  const hydrateExistingFloors = async () => {
+    if (hydratedFromExisting) return
+    hydratedFromExisting = true
+    try {
+      const slotRef = doc(db, 'slots', slotId)
+      const snap = await getDoc(slotRef)
+      if (!snap.exists()) return
+      const existing = snap.data()?.creatorFees as CreatorFees | undefined
+      volumeFloorSOL = Math.max(0, existing?.tradingVolumeSOL ?? 0)
+      feeFloorSOL = Math.max(0, existing?.feeOwedSOL ?? 0)
+      previousEstimatedVolumeSOL = Math.max(previousEstimatedVolumeSOL, volumeFloorSOL)
+    } catch {
+      // ignore hydration issues
+    }
+  }
+
   const poll = async () => {
     if (stopped) return
+    await hydrateExistingFloors()
 
     if (Date.now() > new Date(slotEndTime).getTime()) {
       if (persistToFirestore) await lockFeeSnapshot(slotId)
@@ -246,16 +266,20 @@ export function startFeeTracker(options: FeeTrackerOptions): () => void {
       },
     ]
 
-    const feeSOL = Array.from(tierVolumeMap.entries()).reduce((sum, [key, volumeSOL]) => {
+    const computedFeeSOL = Array.from(tierVolumeMap.entries()).reduce((sum, [key, volumeSOL]) => {
       const [minStr] = key.split(':')
       const mapTier = PUMP_FUN_FEE_TIERS.find((t) => t.minMarketCapSOL === Number(minStr)) ?? PUMP_FUN_FEE_TIERS[0]
       return sum + (volumeSOL * mapTier.creatorFeeRate * STREAMER_SHARE_OF_CREATOR_FEE)
     }, 0)
-    const feeUSD = feeSOL * solPriceUsd
+    const effectiveVolumeSOL = Math.max(deltaVolumeSOL, volumeFloorSOL)
+    const effectiveFeeSOL = Math.max(computedFeeSOL, feeFloorSOL)
+    volumeFloorSOL = effectiveVolumeSOL
+    feeFloorSOL = effectiveFeeSOL
+    const feeUSD = effectiveFeeSOL * solPriceUsd
 
-    onUpdate(feeSOL, deltaVolumeSOL, feeUSD, estimatedSlotVolumeUsd)
+    onUpdate(effectiveFeeSOL, effectiveVolumeSOL, feeUSD, estimatedSlotVolumeUsd)
     if (persistToFirestore) {
-      await saveFeeToFirestore(slotId, deltaVolumeSOL, feeSOL, estimatedSlotVolumeUsd, feeUSD, marketCapSOL, marketCapCheckpoints, tierVolumeMap)
+      await saveFeeToFirestore(slotId, effectiveVolumeSOL, effectiveFeeSOL, estimatedSlotVolumeUsd, feeUSD, marketCapSOL, marketCapCheckpoints, tierVolumeMap)
     }
   }
 

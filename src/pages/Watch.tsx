@@ -500,11 +500,11 @@ export default function Watch() {
             {currentSlot ? (
               <>
                 <p className={`text-2xl sm:text-3xl font-black font-mono text-yellow-400 transition-all duration-500 ${feePulse ? 'scale-105 drop-shadow-[0_0_8px_rgba(250,204,21,0.6)]' : 'scale-100'}`}>
-                  {liveFeeUSD > 0 ? `$${liveFeeUSD.toFixed(2)}` : '—'}
+                  {liveFeeSOL > 0 ? `${liveFeeSOL.toFixed(8)} SOL` : '—'}
                 </p>
                 <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">
                   {liveVolumeSOL > 0
-                    ? `${liveFeeSOL.toFixed(6)} SOL · ${liveVolumeSOL.toFixed(2)} SOL vol · ${(liveShareRate * 100).toFixed(3)}%`
+                    ? `$${liveFeeUSD.toFixed(2)} · ${liveVolumeSOL.toFixed(4)} SOL vol · ${(liveShareRate * 100).toFixed(3)}%`
                     : 'Live Earnings'}
                 </p>
                 {currentSlot.creatorFees?.marketCapTierLabel && (
