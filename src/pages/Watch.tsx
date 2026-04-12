@@ -296,8 +296,8 @@ export default function Watch() {
   const [manualOverride, setManualOverride] = useState<{ url: string; streamerName: string; title: string } | null>(null)
 
   // Live fee tracking
-  const [liveFeeSOL, setLiveFeeSOL] = useState<number>(0)
   const [liveVolumeSOL, setLiveVolumeSOL] = useState<number>(0)
+  const [liveFeeUSD, setLiveFeeUSD] = useState<number>(0)
 
   // Wipe animation state
   const [showWipe, setShowWipe] = useState(false)
@@ -362,16 +362,17 @@ export default function Watch() {
   // Start live fee tracker when a slot is active
   useEffect(() => {
     if (!currentSlot) {
-      setLiveFeeSOL(0)
       setLiveVolumeSOL(0)
+      setLiveFeeUSD(0)
       return
     }
     const stop = startFeeTracker({
       slotId: currentSlot.id,
+      slotStartTime: currentSlot.startTime,
       slotEndTime: currentSlot.endTime,
-      onUpdate: (feeSOL, volumeSOL) => {
-        setLiveFeeSOL(feeSOL)
+      onUpdate: (_feeSOL, volumeSOL, feeUSD) => {
         setLiveVolumeSOL(volumeSOL)
+        setLiveFeeUSD(feeUSD)
       },
     })
     return stop
@@ -470,11 +471,11 @@ export default function Watch() {
             {currentSlot ? (
               <>
                 <p className="text-2xl sm:text-3xl font-black font-mono text-yellow-400">
-                  {liveFeeSOL > 0 ? `${liveFeeSOL.toFixed(4)} SOL` : '—'}
+                  {liveFeeUSD > 0 ? `$${liveFeeUSD.toFixed(2)}` : '—'}
                 </p>
                 <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">
                   {liveVolumeSOL > 0
-                    ? `${liveVolumeSOL.toFixed(2)} SOL vol · 0.3%`
+                    ? `${liveVolumeSOL.toFixed(2)} SOL vol · 30% share`
                     : 'Live Earnings'}
                 </p>
               </>
@@ -546,10 +547,10 @@ export default function Watch() {
             <Gamepad2 className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
             <span className="text-center leading-tight">Play Starting 5<br /><span className="font-normal text-xs text-white/80">for free!</span></span>
           </button>
-          <button className="relative overflow-hidden flex flex-col items-center justify-center gap-1.5 py-2.5 sm:py-5 px-3 bg-red-600 hover:bg-red-500 active:scale-[0.98] rounded-xl font-black font-display text-white text-sm sm:text-base uppercase tracking-wider transition-all shadow-lg shadow-red-900/40 cursor-pointer">
+          <button disabled className="relative overflow-hidden flex flex-col items-center justify-center gap-1.5 py-2.5 sm:py-5 px-3 bg-gray-700/60 rounded-xl font-black font-display text-white/70 text-sm sm:text-base uppercase tracking-wider transition-all shadow-lg cursor-not-allowed">
             <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
             <Grid3X3 className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
-            <span className="text-center leading-tight">Play Squares</span>
+            <span className="text-center leading-tight">Squares<br /><span className="font-normal text-xs text-white/70">Coming Soon</span></span>
           </button>
         </div>
 

@@ -47,7 +47,9 @@ export type FeePaymentStatus = 'pending' | 'paid' | 'declined'
 
 export interface CreatorFees {
   tradingVolumeSOL: number     // admin inputs trading volume in SOL during slot
+  tradingVolumeUSD?: number
   feeOwedSOL: number           // 0.003 * tradingVolumeSOL (30% of 1% pump.fun creator fee)
+  feeOwedUSD?: number
   activeChannels?: Array<{
     name: string
     streamUrl: string
@@ -57,6 +59,7 @@ export interface CreatorFees {
   streamerWalletAddress: string
   paidAt?: string
   declineReason?: string
+  snapshotLockedAt?: unknown
   updatedAt: string
 }
 
@@ -379,13 +382,17 @@ export async function syncSevenDaysFrom(startDate: Date): Promise<{ days: string
 }
 
 export async function reseedNextSevenDaysAsCEO(startDate: Date): Promise<{ days: string[]; created: number; updated: number; removed: number; conflicts: string[] }> {
+  return reseedNextDaysAsCEO(startDate, 7)
+}
+
+export async function reseedNextDaysAsCEO(startDate: Date, dayCount: number): Promise<{ days: string[]; created: number; updated: number; removed: number; conflicts: string[] }> {
   const days: string[] = []
   let created = 0
   let updated = 0
   let removed = 0
   const conflicts: string[] = []
 
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < dayCount; i++) {
     const target = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000)
     const expected = buildExpectedSlotsForDate(target, 'ceo')
     const expectedById = new Map(expected.map((s) => [s.id, s]))
@@ -451,6 +458,11 @@ export async function reseedNextSevenDaysAsCEO(startDate: Date): Promise<{ days:
   }
 
   return { days, created, updated, removed, conflicts }
+}
+
+/** Force canonical CEO-only slots for the next 365 ET days starting from `startDate`. */
+export async function reseedNextYearAsCEO(startDate: Date): Promise<{ days: string[]; created: number; updated: number; removed: number; conflicts: string[] }> {
+  return reseedNextDaysAsCEO(startDate, 365)
 }
 
 /** Generate slot documents for a given calendar day in Eastern Time. */

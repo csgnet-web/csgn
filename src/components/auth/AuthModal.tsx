@@ -19,6 +19,7 @@ export function AuthModal({ isOpen, onClose, initialMode }: AuthModalProps) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [verificationSent, setVerificationSent] = useState(false)
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
   const { signIn, signUp, resendVerification } = useAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -36,6 +37,11 @@ export function AuthModal({ isOpen, onClose, initialMode }: AuthModalProps) {
       } else {
         if (!displayName.trim()) {
           setError('Display name is required')
+          setLoading(false)
+          return
+        }
+        if (!acceptedTerms) {
+          setError('Please accept the Terms & Conditions to continue')
           setLoading(false)
           return
         }
@@ -136,20 +142,38 @@ export function AuthModal({ isOpen, onClose, initialMode }: AuthModalProps) {
                   )}
 
                   {mode === 'signup' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Display Name</label>
-                      <div className="relative">
-                        <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1.5">Display Name</label>
+                        <div className="relative">
+                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                          <input
+                            type="text"
+                            value={displayName}
+                            onChange={(e) => setDisplayName(e.target.value)}
+                            className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                            placeholder="Your streamer name"
+                            disabled={loading}
+                          />
+                        </div>
+                      </div>
+                      <label className="flex items-start gap-2 text-xs text-gray-400">
                         <input
-                          type="text"
-                          value={displayName}
-                          onChange={(e) => setDisplayName(e.target.value)}
-                          className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
-                          placeholder="Your streamer name"
+                          type="checkbox"
+                          checked={acceptedTerms}
+                          onChange={(e) => setAcceptedTerms(e.target.checked)}
+                          className="mt-0.5"
                           disabled={loading}
                         />
-                      </div>
-                    </div>
+                        <span>
+                          I agree to the{' '}
+                          <a href="/terms" target="_blank" rel="noreferrer" className="text-primary-400 hover:text-primary-300">
+                            Terms & Conditions
+                          </a>
+                          .
+                        </span>
+                      </label>
+                    </>
                   )}
 
                   <div>

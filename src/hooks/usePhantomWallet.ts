@@ -35,12 +35,12 @@ export function usePhantomWallet() {
     }
   }, [])
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (): Promise<string | null> => {
     setError(null)
     const provider = window.solana
     if (!provider?.isPhantom) {
       setError('Phantom wallet not detected. Install Phantom to continue.')
-      return
+      return null
     }
 
     setIsConnecting(true)
@@ -50,8 +50,10 @@ export function usePhantomWallet() {
       setWalletAddress(address)
       localStorage.setItem(STORAGE_KEY, address)
       await fetchBalance(address)
+      return address
     } catch {
       setError('Unable to connect Phantom wallet right now.')
+      return null
     } finally {
       setIsConnecting(false)
     }

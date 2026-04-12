@@ -14,6 +14,7 @@ const Dashboard = lazy(() => import('@/pages/Dashboard'))
 const Queue = lazy(() => import('@/pages/Queue'))
 const Admin = lazy(() => import('@/pages/Admin'))
 const Player = lazy(() => import('@/pages/Player'))
+const Terms = lazy(() => import('@/pages/Terms'))
 
 function Loading() {
   return (
@@ -48,6 +49,7 @@ function AppContent() {
             <Route path="/queue" element={<Queue />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/player" element={<Player />} />
+            <Route path="/terms" element={<Terms />} />
           </Routes>
         </AnimatePresence>
       </Suspense>
