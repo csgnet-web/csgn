@@ -4,13 +4,12 @@ import {
   User, Mail, Wallet, LogIn, UserPlus, Trophy,
   CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Crown, X as XIcon, Info,
 } from 'lucide-react'
-import { doc, updateDoc } from 'firebase/firestore'
+import { collection, doc, onSnapshot, query, updateDoc, where } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { useAuth, type UserNotification } from '@/contexts/AuthContext'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { queueStore } from '@/lib/queue'
-import { fetchSlots, type Slot } from '@/lib/slots'
-import { startFeeTracker } from '@/lib/dexscreener'
+import { type Slot } from '@/lib/slots'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -23,15 +22,16 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({ name: '', email: '', password: '' })
   const [xHandle, setXHandle] = useState(profile?.socialLinks?.twitter || '')
+  const [twitchHandle, setTwitchHandle] = useState(profile?.socialLinks?.twitch || '')
+  const [youtubeChannel, setYouTubeChannel] = useState(profile?.socialLinks?.youtube || '')
   const [verificationSent, setVerificationSent] = useState(false)
   const [resending, setResending] = useState(false)
   const [savingWallet, setSavingWallet] = useState(false)
   const [savingHandle, setSavingHandle] = useState(false)
+  const [savingTwitch, setSavingTwitch] = useState(false)
+  const [savingYouTube, setSavingYouTube] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [slotHistory, setSlotHistory] = useState<Slot[]>([])
-  const [liveEstimateSOL, setLiveEstimateSOL] = useState(0)
-  const [liveEstimateUSD, setLiveEstimateUSD] = useState(0)
-  const [liveVolumeSOL, setLiveVolumeSOL] = useState(0)
   const [slotInfo, setSlotInfo] = useState<Slot | null>(null)
 
   const bids = useMemo(() => user ? queueStore.getBids().filter((bid) => bid.uid === user.uid) : [], [user])
@@ -52,36 +52,27 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!user) return
-    ;(async () => {
-      const from = new Date('2020-01-01T00:00:00.000Z')
-      const to = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
-      try {
-        const slots = await fetchSlots(from, to)
-        setSlotHistory(slots.filter((s) => s.assignedUid === user.uid))
-      } catch {
-        setSlotHistory([])
-      }
-    })()
+    const q = query(collection(db, 'slots'), where('assignedUid', '==', user.uid))
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const slots = snap.docs.map((d) => d.data() as Slot)
+        setSlotHistory(slots)
+      },
+      () => setSlotHistory([]),
+    )
+    return () => unsub()
   }, [user?.uid])
 
+  const liveEstimateSOL = liveAssignedSlot?.creatorFees?.feeOwedSOL ?? 0
+  const liveEstimateUSD = liveAssignedSlot?.creatorFees?.feeOwedUSD ?? 0
+  const liveVolumeSOL = liveAssignedSlot?.creatorFees?.tradingVolumeSOL ?? 0
+
   useEffect(() => {
-    if (!liveAssignedSlot) {
-      setLiveEstimateSOL(0)
-      setLiveVolumeSOL(0)
-      return
-    }
-    const stop = startFeeTracker({
-      slotId: liveAssignedSlot.id,
-      slotStartTime: liveAssignedSlot.startTime,
-      slotEndTime: liveAssignedSlot.endTime,
-      onUpdate: (feeSOL, volumeSOL, feeUSD) => {
-        setLiveEstimateSOL(feeSOL)
-        setLiveVolumeSOL(volumeSOL)
-        setLiveEstimateUSD(feeUSD)
-      },
-    })
-    return stop
-  }, [liveAssignedSlot?.id])
+    setXHandle(profile?.socialLinks?.twitter || '')
+    setTwitchHandle(profile?.socialLinks?.twitch || '')
+    setYouTubeChannel(profile?.socialLinks?.youtube || '')
+  }, [profile?.socialLinks?.twitter, profile?.socialLinks?.twitch, profile?.socialLinks?.youtube])
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -145,6 +136,21 @@ export default function Dashboard() {
       console.warn('Failed to save X handle:', err)
     }
     setSavingHandle(false)
+  }
+
+  const handleSaveSocial = async (platform: 'twitch' | 'youtube', value: string) => {
+    if (!user) return
+    const setSaving = platform === 'twitch' ? setSavingTwitch : setSavingYouTube
+    setSaving(true)
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        [`socialLinks.${platform}`]: value.trim().replace(/^@/, ''),
+      })
+      await refreshProfile()
+    } catch (err) {
+      console.warn(`Failed to save ${platform}:`, err)
+    }
+    setSaving(false)
   }
 
   const handleDismissNotification = async (notifId: string) => {
@@ -262,7 +268,7 @@ export default function Dashboard() {
                 isLoading={resending}
                 onClick={async () => {
                   setResending(true)
-                  try { await resendVerification() } catch {}
+                  try { await resendVerification() } catch (err) { console.warn('Failed to resend verification email:', err) }
                   setResending(false)
                 }}
               >
@@ -324,55 +330,29 @@ export default function Dashboard() {
             )}
 
             {/* X / Twitter connection */}
-            <div className="space-y-2">
-              {profile?.socialLinks?.twitter ? (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="flex items-center gap-2 px-3 py-1.5 bg-black border border-white/20 rounded-lg text-sm text-white">
-                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                    </svg>
-                    @{profile.socialLinks.twitter}
-                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <input
-                      value={xHandle}
-                      onChange={(e) => setXHandle(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSaveHandle()}
-                      placeholder="Update handle"
-                      className="px-2 py-1 bg-white/5 border border-white/10 rounded-lg text-xs text-white w-32"
-                    />
-                    <Button variant="secondary" size="sm" isLoading={savingHandle} onClick={handleSaveHandle}>
-                      Update
-                    </Button>
-                  </div>
+            <div className="space-y-3">
+              <div className="grid sm:grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <p className="text-xs text-gray-500">X</p>
+                  <input value={xHandle} onChange={(e) => setXHandle(e.target.value)} placeholder="@handle" className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white w-full" />
+                  <Button variant="secondary" size="sm" isLoading={savingHandle} onClick={handleSaveHandle} className="w-full">Connect X</Button>
                 </div>
-              ) : (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    disabled
-                    title="X OAuth coming soon — enter your handle manually below"
-                    className="flex items-center gap-2 px-4 py-2 bg-black border border-white/10 rounded-lg text-sm font-semibold text-gray-500 cursor-not-allowed opacity-50"
-                  >
-                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                    </svg>
-                    Connect X Account
-                    <span className="text-[10px] font-normal bg-white/10 px-1.5 py-0.5 rounded">Coming Soon</span>
-                  </button>
-                  <span className="text-xs text-gray-500">enter handle manually:</span>
-                  <input
-                    value={xHandle}
-                    onChange={(e) => setXHandle(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSaveHandle()}
-                    placeholder="@handle"
-                    className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white w-36"
-                  />
-                  <Button variant="secondary" size="sm" isLoading={savingHandle} onClick={handleSaveHandle}>
-                    Save
-                  </Button>
+                <div className="space-y-1.5">
+                  <p className="text-xs text-gray-500">Twitch</p>
+                  <input value={twitchHandle} onChange={(e) => setTwitchHandle(e.target.value)} placeholder="channel_name" className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white w-full" />
+                  <Button variant="secondary" size="sm" isLoading={savingTwitch} onClick={() => handleSaveSocial('twitch', twitchHandle)} className="w-full">Connect Twitch</Button>
                 </div>
-              )}
+                <div className="space-y-1.5">
+                  <p className="text-xs text-gray-500">YouTube</p>
+                  <input value={youtubeChannel} onChange={(e) => setYouTubeChannel(e.target.value)} placeholder="channel or @handle" className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white w-full" />
+                  <Button variant="secondary" size="sm" isLoading={savingYouTube} onClick={() => handleSaveSocial('youtube', youtubeChannel)} className="w-full">Connect YouTube</Button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                {profile?.socialLinks?.twitter && <Badge variant="blue">X @{profile.socialLinks.twitter}</Badge>}
+                {profile?.socialLinks?.twitch && <Badge variant="purple">Twitch {profile.socialLinks.twitch}</Badge>}
+                {profile?.socialLinks?.youtube && <Badge variant="red">YouTube {profile.socialLinks.youtube}</Badge>}
+              </div>
             </div>
           </div>
 

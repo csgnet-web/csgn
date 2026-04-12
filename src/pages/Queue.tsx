@@ -4,7 +4,7 @@ import { Clock3, Crown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { fetchSlots, type Slot } from '@/lib/slots'
+import { fetchSlots, requestSlot, type Slot } from '@/lib/slots'
 
 const WEEK_SPAN = 7
 
@@ -47,6 +47,11 @@ export default function Queue() {
   const [loading, setLoading] = useState(true)
   const [weekOffset, setWeekOffset] = useState(0)
   const [selectedDay, setSelectedDay] = useState(0)
+  const [requestMessageBySlot, setRequestMessageBySlot] = useState<Record<string, string>>({})
+  const [requestingSlotId, setRequestingSlotId] = useState<string | null>(null)
+  const [requestError, setRequestError] = useState('')
+  const [requestSuccess, setRequestSuccess] = useState('')
+  const canRequestSlot = profile?.role === 'streamer' || profile?.role === 'admin'
 
   const loadSlots = useCallback(async () => {
     const now = new Date()
@@ -92,6 +97,33 @@ export default function Queue() {
   const selectedDaySlots = slots
     .filter((s) => etDayKey(new Date(s.startTime)) === selectedDayKey)
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+
+  const handleSlotRequest = async (slot: Slot) => {
+    if (!user || !profile || !canRequestSlot) return
+    const message = requestMessageBySlot[slot.id]?.trim()
+    if (!message) {
+      setRequestError('Please fill in "Why do you want this slot?" before submitting.')
+      return
+    }
+    setRequestError('')
+    setRequestSuccess('')
+    setRequestingSlotId(slot.id)
+    try {
+      await requestSlot(slot.id, {
+        uid: user.uid,
+        displayName: profile.displayName,
+        message,
+        createdAt: new Date().toISOString(),
+      })
+      setRequestSuccess(`Slot request sent for ${slot.label}.`)
+      setRequestMessageBySlot((prev) => ({ ...prev, [slot.id]: '' }))
+      await loadSlots()
+    } catch (err) {
+      setRequestError(err instanceof Error ? err.message : 'Failed to submit slot request.')
+    } finally {
+      setRequestingSlotId(null)
+    }
+  }
 
   return (
     <div className="min-h-screen pt-20 lg:pt-24 pb-24">
@@ -141,11 +173,13 @@ export default function Queue() {
           <p className="text-xs text-amber-300 mt-2">
             {user ? 'Bidding: Coming Soon.' : 'Sign in for account features. Bidding: Coming Soon.'}
           </p>
-          {profile?.role === 'streamer' ? (
-            <p className="text-xs text-cyan-300 mt-1">Streamer account detected: you can apply/request slots here as this feature rolls out.</p>
+          {canRequestSlot ? (
+            <p className="text-xs text-cyan-300 mt-1">Streamer/Admin account detected: CEO slot applications are enabled below.</p>
           ) : (
             <p className="text-xs text-gray-400 mt-1">Want to stream? <Link to="/apply" className="text-primary-400 hover:text-primary-300">Apply for streamer access</Link>.</p>
           )}
+          {requestError && <p className="text-xs text-red-300 mt-2">{requestError}</p>}
+          {requestSuccess && <p className="text-xs text-emerald-300 mt-2">{requestSuccess}</p>}
         </Card>
 
         {loading ? (
@@ -178,6 +212,25 @@ export default function Queue() {
                         <Badge variant="purple">Bidding: Coming Soon</Badge>
                       </div>
                     </div>
+                    {canRequestSlot && slot.type === 'ceo' && slot.status === 'open' && (
+                      <div className="mt-3 border-t border-white/10 pt-3 space-y-2">
+                        <label className="block text-xs text-gray-400">Why do you want this slot?</label>
+                        <textarea
+                          rows={2}
+                          value={requestMessageBySlot[slot.id] || ''}
+                          onChange={(e) => setRequestMessageBySlot((prev) => ({ ...prev, [slot.id]: e.target.value }))}
+                          className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none"
+                          placeholder="Share your stream idea and why you're a fit for this slot."
+                        />
+                        <button
+                          onClick={() => handleSlotRequest(slot)}
+                          disabled={requestingSlotId === slot.id}
+                          className="px-3 py-2 rounded-lg bg-primary-500/80 hover:bg-primary-500 text-white text-xs font-semibold disabled:opacity-60"
+                        >
+                          {requestingSlotId === slot.id ? 'Submitting...' : 'Apply for This Slot'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

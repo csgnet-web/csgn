@@ -1,7 +1,7 @@
 /**
  * Live fee tracking via DexScreener token-pairs endpoint.
  *
- * Polls every 15s, captures h24 USD-volume delta during an active slot,
+ * Polls every 60s, captures h24 USD-volume delta during an active slot,
  * converts to SOL, and applies creator fee rate based on market-cap tiers.
  */
 
@@ -11,7 +11,7 @@ import { CSGN_MINT, type CreatorFees } from '@/lib/slots'
 
 const DS_API = 'https://api.dexscreener.com/token-pairs/v1'
 const DS_CHAIN = 'solana'
-const POLL_INTERVAL_MS = 15_000
+const POLL_INTERVAL_MS = 60_000
 const MIN_API_CALL_INTERVAL_MS = 1_500 // <= 40 calls/minute per client
 const CACHE_TTL_MS = 2_000
 const STREAMER_SHARE_OF_CREATOR_FEE = 0.3
