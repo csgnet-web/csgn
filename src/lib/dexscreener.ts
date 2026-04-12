@@ -12,6 +12,8 @@ import { CSGN_MINT, type CreatorFees } from '@/lib/slots'
 const DS_API = 'https://api.dexscreener.com/token-pairs/v1'
 const DS_CHAIN = 'solana'
 const POLL_INTERVAL_MS = 30_000
+const MIN_API_CALL_INTERVAL_MS = 1_500 // <= 40 calls/minute per client
+const CACHE_TTL_MS = 2_000
 
 interface DexPair {
   priceNative?: string
@@ -46,9 +48,21 @@ function getCreatorFeeRate(marketCapSOL: number): number {
   return bps / 100
 }
 
+export function estimateCreatorFeeSOL(tradingVolumeSOL: number, marketCapSOL: number): number {
+  return tradingVolumeSOL * getCreatorFeeRate(marketCapSOL)
+}
+
+let lastFetchAt = 0
+let cachedData: { volumeH24Usd: number; solPriceUsd: number; marketCapSOL: number } | null = null
+
 /** Fetch best pair and return h24 volume + SOL conversion inputs. */
 async function fetchCsgnData(): Promise<{ volumeH24Usd: number; solPriceUsd: number; marketCapSOL: number } | null> {
   try {
+    const now = Date.now()
+    if (cachedData && now - lastFetchAt < CACHE_TTL_MS) return cachedData
+    if (now - lastFetchAt < MIN_API_CALL_INTERVAL_MS) return cachedData
+    lastFetchAt = now
+
     const res = await fetch(`${DS_API}/${DS_CHAIN}/${CSGN_MINT}`, { cache: 'no-store' })
     if (!res.ok) return null
     const pairs: DexResponse = await res.json()
@@ -69,11 +83,12 @@ async function fetchCsgnData(): Promise<{ volumeH24Usd: number; solPriceUsd: num
     const marketCapUsd = best.marketCap ?? best.fdv ?? 0
     const marketCapSOL = marketCapUsd > 0 && solPriceUsd > 0 ? marketCapUsd / solPriceUsd : 0
 
-    return {
+    cachedData = {
       volumeH24Usd: best.volume?.h24 ?? 0,
       solPriceUsd,
       marketCapSOL,
     }
+    return cachedData
   } catch {
     return null
   }
@@ -135,8 +150,7 @@ export function startFeeTracker(options: FeeTrackerOptions): () => void {
     const deltaVolumeUsd = Math.max(0, volumeH24Usd - baselineH24Usd)
     const deltaVolumeSOL = solPriceUsd > 0 ? deltaVolumeUsd / solPriceUsd : 0
 
-    const feeRate = getCreatorFeeRate(marketCapSOL)
-    const feeSOL = deltaVolumeSOL * feeRate
+    const feeSOL = estimateCreatorFeeSOL(deltaVolumeSOL, marketCapSOL)
 
     onUpdate(feeSOL, deltaVolumeSOL)
     await saveFeeToFirestore(slotId, deltaVolumeSOL, feeSOL)
