@@ -427,6 +427,7 @@ export default function Admin() {
       const fees: CreatorFees = {
         tradingVolumeSOL: volumeSOL,
         feeOwedSOL,
+        totalFeeSOL: creatorFeeSOL,
         marketCapSOL,
         creatorFeeRate: tier.creatorFeeRate,
         streamerShareRate: tier.creatorFeeRate * 0.3,
@@ -1462,7 +1463,7 @@ export default function Admin() {
                                 </div>
                                 <div className="flex items-center justify-between text-xs">
                                   <span className="text-gray-500">Creator Fee (tier)</span>
-                                  <span className="text-white font-mono">{(fees.tradingVolumeSOL * (fees.creatorFeeRate ?? 0.003)).toFixed(6)} SOL</span>
+                                  <span className="text-white font-mono">{(fees.totalFeeSOL ?? (fees.tradingVolumeSOL * (fees.creatorFeeRate ?? 0.003))).toFixed(6)} SOL</span>
                                 </div>
                                 <div className="flex items-center justify-between text-sm font-semibold border-t border-white/[0.06] pt-1 mt-1">
                                   <span className="text-gray-300">Owed to Streamer (30%)</span>

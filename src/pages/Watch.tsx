@@ -507,6 +507,9 @@ export default function Watch() {
                     ? `$${liveFeeUSD.toFixed(2)} · ${liveVolumeSOL.toFixed(4)} SOL vol · ${(liveShareRate * 100).toFixed(3)}%`
                     : 'Live Earnings'}
                 </p>
+                {liveFeeSOL > 0 && (
+                  <p className="text-[10px] text-gray-600">Total creator fee: {(liveFeeSOL / 0.3).toFixed(8)} SOL</p>
+                )}
                 {currentSlot.creatorFees?.marketCapTierLabel && (
                   <p className="text-[11px] text-gray-600 mt-0.5">{currentSlot.creatorFees.marketCapTierLabel}</p>
                 )}

@@ -50,6 +50,8 @@ export interface CreatorFees {
   tradingVolumeUSD?: number
   feeOwedSOL: number           // tradingVolumeSOL * (tierCreatorFeeRate * 0.30)
   feeOwedUSD?: number
+  totalFeeSOL?: number
+  totalFeeUSD?: number
   marketCapSOL?: number
   creatorFeeRate?: number
   streamerShareRate?: number

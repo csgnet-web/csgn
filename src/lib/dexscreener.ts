@@ -11,7 +11,7 @@ import { CSGN_MINT, type CreatorFees } from '@/lib/slots'
 
 const DS_API = 'https://api.dexscreener.com/token-pairs/v1'
 const DS_CHAIN = 'solana'
-const POLL_INTERVAL_MS = 15_000
+const POLL_INTERVAL_MS = 30_000
 const MIN_API_CALL_INTERVAL_MS = 1_500 // <= 40 calls/minute per client
 const CACHE_TTL_MS = 2_000
 const STREAMER_SHARE_OF_CREATOR_FEE = 0.3
@@ -154,12 +154,16 @@ async function saveFeeToFirestore(
         }
       })
       .sort((a, b) => b.volumeSOL - a.volumeSOL)
+    const totalFeeSOL = tierFeeBreakdown.reduce((sum, row) => sum + row.creatorFeeSOL, 0)
+    const totalFeeUSD = totalFeeSOL * (tradingVolumeSOL > 0 && tradingVolumeUSD > 0 ? (tradingVolumeUSD / tradingVolumeSOL) : 0)
 
     const fees: CreatorFees = {
       tradingVolumeSOL,
       tradingVolumeUSD,
       feeOwedSOL,
       feeOwedUSD,
+      totalFeeSOL,
+      totalFeeUSD,
       marketCapSOL,
       creatorFeeRate: activeTier.creatorFeeRate,
       streamerShareRate: activeTier.creatorFeeRate * STREAMER_SHARE_OF_CREATOR_FEE,
@@ -208,31 +212,11 @@ export function startFeeTracker(options: FeeTrackerOptions): () => void {
   let intervalId: ReturnType<typeof setInterval> | null = null
   let stopped = false
   let previousEstimatedVolumeSOL = 0
-  let volumeFloorSOL = 0
-  let feeFloorSOL = 0
-  let hydratedFromExisting = false
   const tierVolumeMap = new Map<string, number>()
   let marketCapCheckpoints: NonNullable<CreatorFees['marketCapCheckpoints']> = []
 
-  const hydrateExistingFloors = async () => {
-    if (hydratedFromExisting) return
-    hydratedFromExisting = true
-    try {
-      const slotRef = doc(db, 'slots', slotId)
-      const snap = await getDoc(slotRef)
-      if (!snap.exists()) return
-      const existing = snap.data()?.creatorFees as CreatorFees | undefined
-      volumeFloorSOL = Math.max(0, existing?.tradingVolumeSOL ?? 0)
-      feeFloorSOL = Math.max(0, existing?.feeOwedSOL ?? 0)
-      previousEstimatedVolumeSOL = Math.max(previousEstimatedVolumeSOL, volumeFloorSOL)
-    } catch {
-      // ignore hydration issues
-    }
-  }
-
   const poll = async () => {
     if (stopped) return
-    await hydrateExistingFloors()
 
     if (Date.now() > new Date(slotEndTime).getTime()) {
       if (persistToFirestore) await lockFeeSnapshot(slotId)
@@ -271,15 +255,11 @@ export function startFeeTracker(options: FeeTrackerOptions): () => void {
       const mapTier = PUMP_FUN_FEE_TIERS.find((t) => t.minMarketCapSOL === Number(minStr)) ?? PUMP_FUN_FEE_TIERS[0]
       return sum + (volumeSOL * mapTier.creatorFeeRate * STREAMER_SHARE_OF_CREATOR_FEE)
     }, 0)
-    const effectiveVolumeSOL = Math.max(deltaVolumeSOL, volumeFloorSOL)
-    const effectiveFeeSOL = Math.max(computedFeeSOL, feeFloorSOL)
-    volumeFloorSOL = effectiveVolumeSOL
-    feeFloorSOL = effectiveFeeSOL
-    const feeUSD = effectiveFeeSOL * solPriceUsd
+    const feeUSD = computedFeeSOL * solPriceUsd
 
-    onUpdate(effectiveFeeSOL, effectiveVolumeSOL, feeUSD, estimatedSlotVolumeUsd)
+    onUpdate(computedFeeSOL, deltaVolumeSOL, feeUSD, estimatedSlotVolumeUsd)
     if (persistToFirestore) {
-      await saveFeeToFirestore(slotId, effectiveVolumeSOL, effectiveFeeSOL, estimatedSlotVolumeUsd, feeUSD, marketCapSOL, marketCapCheckpoints, tierVolumeMap)
+      await saveFeeToFirestore(slotId, deltaVolumeSOL, computedFeeSOL, estimatedSlotVolumeUsd, feeUSD, marketCapSOL, marketCapCheckpoints, tierVolumeMap)
     }
   }
 
