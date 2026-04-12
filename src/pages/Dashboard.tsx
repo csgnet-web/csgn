@@ -408,6 +408,9 @@ export default function Dashboard() {
                       <div className="text-right">
                         <p className="font-mono text-cyan-300">{(slot.creatorFees?.feeOwedSOL || 0).toFixed(6)} SOL</p>
                         <p className="font-mono text-emerald-300">${(slot.creatorFees?.feeOwedUSD || 0).toFixed(2)}</p>
+                        {slot.creatorFees?.marketCapTierLabel && (
+                          <p className="text-[11px] text-gray-500">{slot.creatorFees.marketCapTierLabel}</p>
+                        )}
                         <button onClick={() => setSlotInfo(slot)} className="text-xs text-primary-400 hover:text-primary-300 inline-flex items-center gap-1">
                           <Info className="w-3 h-3" /> Fee calc
                         </button>
@@ -516,8 +519,20 @@ export default function Dashboard() {
             <p className="text-xs text-gray-400 mt-2">Slot: {slotInfo.label}</p>
             <p className="text-xs text-gray-400">Volume (SOL): {(slotInfo.creatorFees?.tradingVolumeSOL || 0).toFixed(6)}</p>
             <p className="text-xs text-gray-400">Volume (USD): ${(slotInfo.creatorFees?.tradingVolumeUSD || 0).toFixed(2)}</p>
-            <p className="text-xs text-gray-400">Estimated creator fee (SOL): {(slotInfo.creatorFees?.feeOwedSOL || 0).toFixed(6)}</p>
+            <p className="text-xs text-gray-400">Latest market cap (SOL): {(slotInfo.creatorFees?.marketCapSOL || 0).toFixed(2)}</p>
+            <p className="text-xs text-gray-400">Active tier: {slotInfo.creatorFees?.marketCapTierLabel || 'n/a'}</p>
+            <p className="text-xs text-gray-400">Estimated streamer payout (SOL): {(slotInfo.creatorFees?.feeOwedSOL || 0).toFixed(6)}</p>
             <p className="text-xs text-gray-400">Estimated creator fee (USD): ${(slotInfo.creatorFees?.feeOwedUSD || 0).toFixed(2)}</p>
+            {slotInfo.creatorFees?.tierFeeBreakdown && slotInfo.creatorFees.tierFeeBreakdown.length > 0 && (
+              <div className="mt-2 border-t border-white/10 pt-2 space-y-1">
+                <p className="text-xs text-gray-400">Tier breakdown</p>
+                {slotInfo.creatorFees.tierFeeBreakdown.map((tier, idx) => (
+                  <p key={`${slotInfo.id}-tier-${idx}`} className="text-[11px] text-gray-500">
+                    {tier.marketCapRange}: volume {tier.volumeSOL.toFixed(4)} SOL, creator {(tier.creatorFeeRate * 100).toFixed(3)}%, streamer {tier.streamerFeeSOL.toFixed(6)} SOL
+                  </p>
+                ))}
+              </div>
+            )}
             <p className="text-xs text-gray-500 mt-2">
               Estimate derived from DexScreener pool-volume deltas and fee tiers. Final transfer is reviewed and paid in equivalent CSGN.
             </p>
