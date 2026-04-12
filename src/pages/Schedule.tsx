@@ -82,7 +82,6 @@ export default function Schedule() {
   const [weekOffset, setWeekOffset] = useState(0)
   const [allSlots, setAllSlots] = useState<Slot[]>([])
   const [loading, setLoading] = useState(true)
-  const [liveSlotFeeSOL, setLiveSlotFeeSOL] = useState<Record<string, number>>({})
   const days = useMemo(() => {
     const labels: string[] = []
     for (let i = 0; i < WEEK_SPAN; i++) {
@@ -153,11 +152,7 @@ export default function Schedule() {
     if (!activeLiveSlot) return
     const stop = startFeeTracker({
       slotId: activeLiveSlot.id,
-      slotStartTime: activeLiveSlot.startTime,
       slotEndTime: activeLiveSlot.endTime,
-      onUpdate: (feeSOL) => {
-        setLiveSlotFeeSOL((prev) => ({ ...prev, [activeLiveSlot.id]: feeSOL }))
-      },
     })
     return stop
   }, [activeLiveSlot?.id])
@@ -245,7 +240,7 @@ export default function Schedule() {
                 const phase = getSlotPhase(slot)
                 const streamerName = typeLabel(slot)
                 const isEmptyOpenSlot = slot.status === 'open' && !slot.assignedName && !slot.streamUrl
-                const streamerFeeSOL = liveSlotFeeSOL[slot.id] ?? slot.creatorFees?.feeOwedSOL ?? 0
+                const streamerFeeSOL = slot.creatorFees?.feeOwedSOL ?? 0
                 const feeLabel = streamerFeeSOL > 0 ? `${streamerFeeSOL.toFixed(6)} SOL` : '—'
 
                 const showBidLink = slot.status === 'open' && phase !== 'phase1'

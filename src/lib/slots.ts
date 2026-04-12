@@ -70,6 +70,8 @@ export interface CreatorFees {
     tierLabel: string
     creatorFeeRate: number
   }>
+  tierVolumeByMinMarketCap?: Record<string, number>
+  trackerLastH24Usd?: number
   activeChannels?: Array<{
     name: string
     streamUrl: string
