@@ -368,6 +368,7 @@ export default function Watch() {
     }
     const stop = startFeeTracker({
       slotId: currentSlot.id,
+      slotStartTime: currentSlot.startTime,
       slotEndTime: currentSlot.endTime,
       onUpdate: (_feeSOL, volumeSOL, feeUSD) => {
         setLiveVolumeSOL(volumeSOL)

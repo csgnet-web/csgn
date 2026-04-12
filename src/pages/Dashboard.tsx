@@ -70,6 +70,7 @@ export default function Dashboard() {
     }
     const stop = startFeeTracker({
       slotId: liveAssignedSlot.id,
+      slotStartTime: liveAssignedSlot.startTime,
       slotEndTime: liveAssignedSlot.endTime,
       onUpdate: (feeSOL, _volumeSOL, feeUSD) => {
         setLiveEstimateSOL(feeSOL)
