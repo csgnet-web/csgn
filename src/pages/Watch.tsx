@@ -313,6 +313,8 @@ export default function Watch() {
   const [liveVolumeSOL, setLiveVolumeSOL] = useState<number>(0)
   const [liveFeeSOL, setLiveFeeSOL] = useState<number>(0)
   const [liveFeeUSD, setLiveFeeUSD] = useState<number>(0)
+  const [feePulse, setFeePulse] = useState(false)
+  const prevLiveFeeUsdRef = useRef(0)
 
   // Wipe animation state
   const [showWipe, setShowWipe] = useState(false)
@@ -386,6 +388,7 @@ export default function Watch() {
       slotId: currentSlot.id,
       slotStartTime: currentSlot.startTime,
       slotEndTime: currentSlot.endTime,
+      persistToFirestore: true,
       onUpdate: (feeSOL, volumeSOL, feeUSD) => {
         setLiveFeeSOL(feeSOL)
         setLiveVolumeSOL(volumeSOL)
@@ -431,6 +434,16 @@ export default function Watch() {
     ? [currentTodaySlot, ...upcomingSlots.slice(0, 2)]
     : upcomingSlots.slice(0, 3)
   const liveShareRate = currentSlot?.creatorFees?.streamerShareRate ?? (liveVolumeSOL > 0 ? liveFeeSOL / liveVolumeSOL : 0)
+
+  useEffect(() => {
+    if (liveFeeUSD > prevLiveFeeUsdRef.current) {
+      setFeePulse(true)
+      const t = setTimeout(() => setFeePulse(false), 520)
+      prevLiveFeeUsdRef.current = liveFeeUSD
+      return () => clearTimeout(t)
+    }
+    prevLiveFeeUsdRef.current = liveFeeUSD
+  }, [liveFeeUSD])
 
   return (
     <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
@@ -486,7 +499,7 @@ export default function Watch() {
           <div className="text-right">
             {currentSlot ? (
               <>
-                <p className="text-2xl sm:text-3xl font-black font-mono text-yellow-400">
+                <p className={`text-2xl sm:text-3xl font-black font-mono text-yellow-400 transition-all duration-500 ${feePulse ? 'scale-105 drop-shadow-[0_0_8px_rgba(250,204,21,0.6)]' : 'scale-100'}`}>
                   {liveFeeUSD > 0 ? `$${liveFeeUSD.toFixed(2)}` : '—'}
                 </p>
                 <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">
