@@ -21,6 +21,7 @@ import {
   wipeAndRegenerateSlots,
   syncSevenDaysFrom,
   reseedNextSevenDaysAsCEO,
+  reseedNextYearAsCEO,
   SLOTS_PER_DAY,
   fetchSlots,
   assignCEOSlot,
@@ -107,6 +108,7 @@ export default function Admin() {
   const [wipingSlots, setWipingSlots] = useState(false)
   const [confirmWipe, setConfirmWipe] = useState(false)
   const [syncingWeek, setSyncingWeek] = useState(false)
+  const [syncingYear, setSyncingYear] = useState(false)
   const [syncStartDate, setSyncStartDate] = useState(() => new Date().toISOString().slice(0, 10))
 
   // Fees tab state
@@ -309,6 +311,23 @@ export default function Admin() {
       setActionError(err?.message || 'Failed to wipe and regenerate slots.')
     }
     setWipingSlots(false)
+  }
+
+  const handleReseedYearAsCEO = async () => {
+    setSyncingYear(true)
+    setActionError(null)
+    try {
+      const [y, m, d] = syncStartDate.split('-').map((v) => parseInt(v, 10))
+      const start = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
+      const result = await reseedNextYearAsCEO(start)
+      await loadSlots()
+      if (result.conflicts.length > 0) {
+        setActionError(`365-day reseed completed with ${result.conflicts.length} conflict(s): ${result.conflicts[0]}`)
+      }
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to reseed 365 days.')
+    }
+    setSyncingYear(false)
   }
 
   const handleResolveAuction = async (slotId: string) => {
@@ -925,6 +944,15 @@ export default function Admin() {
                   onClick={handleGenerateThreeDays}
                 >
                   Append Next 3 Days
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  leftIcon={<Plus className="w-4 h-4" />}
+                  isLoading={syncingYear}
+                  onClick={handleReseedYearAsCEO}
+                >
+                  Reseed 365 Days (CEO)
                 </Button>
                 {!confirmWipe ? (
                   <Button

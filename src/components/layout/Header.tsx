@@ -58,20 +58,6 @@ export function Header() {
             <nav className="hidden lg:flex items-center gap-0.5">
               {navLinks.map((link) => {
                 const isActive = location.pathname === link.href
-                const isQueueRestricted = link.href === '/queue' && profile?.role !== 'admin'
-
-                if (isQueueRestricted) {
-                  return (
-                    <span
-                      key={link.href}
-                      title="Coming soon"
-                      className="relative px-4 py-2 text-sm font-medium rounded-lg flex items-center gap-2 text-gray-600 cursor-not-allowed select-none"
-                    >
-                      {link.label}
-                      <span className="text-[9px] font-semibold bg-white/[0.06] px-1.5 py-0.5 rounded text-gray-600 tracking-wide">SOON</span>
-                    </span>
-                  )
-                }
 
                 return (
                   <Link
@@ -199,20 +185,6 @@ export function Header() {
             >
               <div className="flex flex-col gap-1">
                 {navLinks.map((link) => {
-                  const isQueueRestricted = link.href === '/queue' && profile?.role !== 'admin'
-
-                  if (isQueueRestricted) {
-                    return (
-                      <span
-                        key={link.href}
-                        className="flex items-center gap-3 px-4 py-3 text-base font-medium rounded-xl text-gray-600 cursor-not-allowed select-none"
-                      >
-                        {link.label}
-                        <span className="text-[10px] font-semibold bg-white/[0.06] px-2 py-0.5 rounded text-gray-600 tracking-wide ml-auto">SOON</span>
-                      </span>
-                    )
-                  }
-
                   return (
                     <Link
                       key={link.href}

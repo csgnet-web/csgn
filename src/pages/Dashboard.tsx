@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   User, Mail, Wallet, LogIn, UserPlus, Trophy,
@@ -9,6 +9,7 @@ import { db } from '@/config/firebase'
 import { useAuth, type UserNotification } from '@/contexts/AuthContext'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { queueStore } from '@/lib/queue'
+import { fetchSlots, type Slot } from '@/lib/slots'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -25,12 +26,34 @@ export default function Dashboard() {
   const [resending, setResending] = useState(false)
   const [savingWallet, setSavingWallet] = useState(false)
   const [savingHandle, setSavingHandle] = useState(false)
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
+  const [slotHistory, setSlotHistory] = useState<Slot[]>([])
 
   const bids = useMemo(() => user ? queueStore.getBids().filter((bid) => bid.uid === user.uid) : [], [user])
   const assigned = useMemo(() => user ? queueStore.getAssignedSlots().filter((slot) => slot.uid === user.uid) : [], [user])
 
   const notifications: UserNotification[] = profile?.notifications || []
   const unreadCount = notifications.filter((n) => !n.read).length
+  const payoutEstimateSOL = useMemo(
+    () => slotHistory
+      .filter((s) => s.assignedUid === user?.uid)
+      .reduce((sum, s) => sum + (s.creatorFees?.feeOwedSOL || 0), 0),
+    [slotHistory, user?.uid],
+  )
+
+  useEffect(() => {
+    if (!user) return
+    ;(async () => {
+      const from = new Date(Date.now() - 370 * 24 * 60 * 60 * 1000)
+      const to = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
+      try {
+        const slots = await fetchSlots(from, to)
+        setSlotHistory(slots.filter((s) => s.assignedUid === user.uid))
+      } catch {
+        setSlotHistory([])
+      }
+    })()
+  }, [user?.uid])
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -40,6 +63,11 @@ export default function Dashboard() {
       if (mode === 'login') {
         await signIn(form.email, form.password)
       } else {
+        if (!acceptedTerms) {
+          setAuthError('Please accept the Terms & Conditions to continue.')
+          setLoading(false)
+          return
+        }
         await signUp(form.email, form.password, form.name || 'CSGN Viewer')
         setVerificationSent(true)
       }
@@ -153,6 +181,14 @@ export default function Dashboard() {
                   )}
                   <input type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
                   <input type="password" placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
+                  {mode === 'signup' && (
+                    <label className="flex items-start gap-2 text-xs text-gray-400">
+                      <input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} className="mt-0.5" />
+                      <span>
+                        I agree to the <Link to="/terms" className="text-primary-400 hover:text-primary-300">Terms & Conditions</Link>.
+                      </span>
+                    </label>
+                  )}
                   {authError && <p className="text-xs text-red-300">{authError}</p>}
                   <Button variant="primary" size="md" className="w-full" isLoading={loading}>
                     {mode === 'login' ? 'Sign In' : 'Create Account'}
@@ -302,6 +338,14 @@ export default function Dashboard() {
           </div>
 
           {error && <p className="text-xs text-red-300 mt-2">{error}</p>}
+        </Card>
+
+        <Card hover={false} className="p-5">
+          <h3 className="text-white font-semibold flex items-center gap-2">
+            <Wallet className="w-4 h-4 text-cyan-400" /> Estimated Payout (SOL)
+          </h3>
+          <p className="text-2xl font-mono text-cyan-300 mt-2">{payoutEstimateSOL.toFixed(6)} SOL</p>
+          <p className="text-xs text-gray-500 mt-1">Estimate only, not guaranteed. Final payout depends on post-slot volume and fee tier assignment.</p>
         </Card>
 
         {/* Notifications */}

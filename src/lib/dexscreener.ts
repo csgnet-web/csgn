@@ -1,75 +1,91 @@
 /**
- * Live fee tracking via DexScreener.
+ * Live fee tracking via DexScreener token-pairs endpoint.
  *
- * Polls the DexScreener API every 30 seconds for the CSGN/SOL trading pair.
- * Computes block-specific volume by taking the delta from the h24 baseline
- * recorded at slot start. Converts USD volume to SOL and applies the 0.3%
- * pump.fun creator fee rate. Auto-saves to Firestore `slots/{id}.creatorFees`
- * so the admin sees a live owed amount without any manual input.
+ * Polls every 30s, captures h24 USD-volume delta during an active slot,
+ * converts to SOL, and applies creator fee rate based on market-cap tiers.
  */
 
 import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { CSGN_MINT, type CreatorFees } from '@/lib/slots'
 
-const DS_API = 'https://api.dexscreener.com/latest/dex/tokens'
+const DS_API = 'https://api.dexscreener.com/token-pairs/v1'
+const DS_CHAIN = 'solana'
 const POLL_INTERVAL_MS = 30_000
 
 interface DexPair {
-  baseToken: { address: string; symbol: string }
-  quoteToken: { address: string; symbol: string }
-  priceNative: string   // base token price in quote token (SOL for CSGN/SOL)
-  priceUsd: string      // base token price in USD
-  volume: { h24: number }
-  liquidity?: { usd: number }
+  priceNative?: string
+  priceUsd?: string
+  volume?: { h24?: number }
+  marketCap?: number
+  fdv?: number
+  quoteToken?: { symbol?: string }
 }
 
-interface DexResponse {
-  pairs: DexPair[] | null
+type DexResponse = DexPair[]
+
+const CREATOR_FEE_TIERS = [
+  { min: 0, max: 420, creatorBps: 0.3 },
+  { min: 420, max: 1470, creatorBps: 0.95 },
+  { min: 1470, max: 2460, creatorBps: 0.9 },
+  { min: 2460, max: 3440, creatorBps: 0.85 },
+  { min: 3440, max: 4420, creatorBps: 0.8 },
+  { min: 4420, max: 9820, creatorBps: 0.75 },
+  { min: 9820, max: 14740, creatorBps: 0.7 },
+  { min: 14740, max: 19650, creatorBps: 0.65 },
+  { min: 19650, max: 24560, creatorBps: 0.6 },
+  { min: 24560, max: 29470, creatorBps: 0.55 },
+  { min: 29470, max: 34380, creatorBps: 0.5 },
+  { min: 34380, max: 39300, creatorBps: 0.45 },
+  { min: 39300, max: 44210, creatorBps: 0.4 },
+] as const
+
+function getCreatorFeeRate(marketCapSOL: number): number {
+  const tier = CREATOR_FEE_TIERS.find((t) => marketCapSOL >= t.min && marketCapSOL < t.max)
+  const bps = tier?.creatorBps ?? CREATOR_FEE_TIERS[CREATOR_FEE_TIERS.length - 1].creatorBps
+  return bps / 100
 }
 
-/** Fetch the best CSGN pair from DexScreener and return h24 volume in USD + SOL price. */
-async function fetchCsgnData(): Promise<{ volumeH24Usd: number; solPriceUsd: number } | null> {
+/** Fetch best pair and return h24 volume + SOL conversion inputs. */
+async function fetchCsgnData(): Promise<{ volumeH24Usd: number; solPriceUsd: number; marketCapSOL: number } | null> {
   try {
-    const res = await fetch(`${DS_API}/${CSGN_MINT}`, { cache: 'no-store' })
+    const res = await fetch(`${DS_API}/${DS_CHAIN}/${CSGN_MINT}`, { cache: 'no-store' })
     if (!res.ok) return null
-    const data: DexResponse = await res.json()
+    const pairs: DexResponse = await res.json()
 
-    const pairs = data.pairs ?? []
-    if (pairs.length === 0) return null
+    if (!Array.isArray(pairs) || pairs.length === 0) return null
 
-    // Pick the pair with the highest 24h volume (most liquid / most relevant)
     const best = [...pairs].sort((a, b) => (b.volume?.h24 ?? 0) - (a.volume?.h24 ?? 0))[0]
+    const priceUsd = parseFloat(best.priceUsd ?? '0')
+    const priceNative = parseFloat(best.priceNative ?? '0')
+    if (priceUsd <= 0) return null
 
-    const csgnPriceUsd = parseFloat(best.priceUsd ?? '0')
-    const csgnPriceInSol = parseFloat(best.priceNative ?? '0')
+    // For SOL quote pairs, `priceNative` is token price in SOL.
+    // So SOL/USD = token/USD ÷ token/SOL.
+    const solPriceUsd = best.quoteToken?.symbol?.toUpperCase() === 'SOL' && priceNative > 0
+      ? priceUsd / priceNative
+      : 150
 
-    // Derive SOL price: solPriceUsd = csgnPriceUsd / csgnPriceInSol
-    const solPriceUsd = csgnPriceInSol > 0 ? csgnPriceUsd / csgnPriceInSol : 0
+    const marketCapUsd = best.marketCap ?? best.fdv ?? 0
+    const marketCapSOL = marketCapUsd > 0 && solPriceUsd > 0 ? marketCapUsd / solPriceUsd : 0
 
     return {
       volumeH24Usd: best.volume?.h24 ?? 0,
       solPriceUsd,
+      marketCapSOL,
     }
   } catch {
     return null
   }
 }
 
-/** Auto-save live fee data to Firestore for the given slot. */
-async function saveFeeToFirestore(
-  slotId: string,
-  tradingVolumeSOL: number,
-  feeOwedSOL: number,
-): Promise<void> {
+async function saveFeeToFirestore(slotId: string, tradingVolumeSOL: number, feeOwedSOL: number): Promise<void> {
   try {
     const slotRef = doc(db, 'slots', slotId)
     const snap = await getDoc(slotRef)
     if (!snap.exists()) return
 
     const existing = snap.data()?.creatorFees as CreatorFees | undefined
-
-    // Don't overwrite if already marked as paid or declined
     if (existing?.paymentStatus === 'paid' || existing?.paymentStatus === 'declined') return
 
     const fees: CreatorFees = {
@@ -84,38 +100,26 @@ async function saveFeeToFirestore(
 
     await updateDoc(slotRef, { creatorFees: fees })
   } catch {
-    // Non-critical: silently ignore Firestore errors during live tracking
+    // ignore background failures
   }
 }
 
 export interface FeeTrackerOptions {
-  /** Firestore slot document ID */
   slotId: string
-  /** ISO string of when the slot ends — polling stops after this */
   slotEndTime: string
-  /** Called every 30s with the latest computed fee in SOL */
   onUpdate: (feeSOL: number, volumeSOL: number) => void
 }
 
-/**
- * Start polling DexScreener every 30s for live CSGN trading volume.
- * Records a baseline h24 volume on first poll so delta reflects only
- * the current block's trades. Converts USD → SOL and computes fee.
- *
- * Returns a cleanup function that stops polling.
- */
 export function startFeeTracker(options: FeeTrackerOptions): () => void {
   const { slotId, slotEndTime, onUpdate } = options
 
   let baselineH24Usd: number | null = null
-  let baselineSolPrice: number | null = null
   let intervalId: ReturnType<typeof setInterval> | null = null
   let stopped = false
 
   const poll = async () => {
     if (stopped) return
 
-    // Stop after slot ends
     if (Date.now() > new Date(slotEndTime).getTime()) {
       stop()
       return
@@ -124,27 +128,17 @@ export function startFeeTracker(options: FeeTrackerOptions): () => void {
     const data = await fetchCsgnData()
     if (!data) return
 
-    const { volumeH24Usd, solPriceUsd } = data
+    const { volumeH24Usd, solPriceUsd, marketCapSOL } = data
 
-    // Record baseline on first successful fetch
-    if (baselineH24Usd === null) {
-      baselineH24Usd = volumeH24Usd
-      baselineSolPrice = solPriceUsd
-    }
+    if (baselineH24Usd === null) baselineH24Usd = volumeH24Usd
 
-    const effectiveSolPrice = solPriceUsd > 0 ? solPriceUsd : (baselineSolPrice ?? 150)
-    if (effectiveSolPrice === 0) return
-
-    // Delta volume = new h24 minus baseline (block-specific volume)
     const deltaVolumeUsd = Math.max(0, volumeH24Usd - baselineH24Usd)
-    const deltaVolumeSOL = deltaVolumeUsd / effectiveSolPrice
+    const deltaVolumeSOL = solPriceUsd > 0 ? deltaVolumeUsd / solPriceUsd : 0
 
-    // pump.fun creator fee: 0.3% of trading volume
-    const feeSOL = deltaVolumeSOL * 0.003
+    const feeRate = getCreatorFeeRate(marketCapSOL)
+    const feeSOL = deltaVolumeSOL * feeRate
 
     onUpdate(feeSOL, deltaVolumeSOL)
-
-    // Persist to Firestore so admin sees live data
     await saveFeeToFirestore(slotId, deltaVolumeSOL, feeSOL)
   }
 
@@ -156,7 +150,6 @@ export function startFeeTracker(options: FeeTrackerOptions): () => void {
     }
   }
 
-  // First poll immediately, then every 30s
   poll()
   intervalId = setInterval(poll, POLL_INTERVAL_MS)
 

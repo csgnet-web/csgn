@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Gavel, Crown, Radio, Info } from 'lucide-react'
+import { Crown, Radio, Info, ChevronLeft, ChevronRight } from 'lucide-react'
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
-import { getMinimumBid, formatCSGN, LAUNCH_DATE_UTC, PHASE_2_END_UTC, type Slot, type SlotType } from '@/lib/slots'
+import { LAUNCH_DATE_UTC, PHASE_2_END_UTC, type Slot } from '@/lib/slots'
+const WEEK_SPAN = 7
 
 function toMillis(value: unknown): number {
   if (typeof value === 'string' || value instanceof Date || typeof value === 'number') {
@@ -78,12 +78,22 @@ function etMiddayFromOffset(offset: number): Date {
 
 export default function Schedule() {
   const [selectedDay, setSelectedDay] = useState(0)
+  const [weekOffset, setWeekOffset] = useState(0)
   const [allSlots, setAllSlots] = useState<Slot[]>([])
   const [loading, setLoading] = useState(true)
   const days = useMemo(() => {
-    const labels = ['Today', 'Tomorrow']
-    for (let i = 2; i <= 6; i++) {
-      const d = etMiddayFromOffset(i)
+    const labels: string[] = []
+    for (let i = 0; i < WEEK_SPAN; i++) {
+      const absoluteOffset = weekOffset * WEEK_SPAN + i
+      const d = etMiddayFromOffset(absoluteOffset)
+      if (absoluteOffset === 0) {
+        labels.push('Today')
+        continue
+      }
+      if (absoluteOffset === 1) {
+        labels.push('Tomorrow')
+        continue
+      }
       labels.push(
         d.toLocaleDateString('en-US', {
           timeZone: 'America/New_York',
@@ -94,7 +104,7 @@ export default function Schedule() {
       )
     }
     return labels
-  }, [])
+  }, [weekOffset])
 
   useEffect(() => {
     setLoading(true)
@@ -125,12 +135,12 @@ export default function Schedule() {
   }, [])
 
   const slots = useMemo(() => {
-    const targetMidday = etMiddayFromOffset(selectedDay)
+    const targetMidday = etMiddayFromOffset(weekOffset * WEEK_SPAN + selectedDay)
     const targetKey = etDayKey(targetMidday)
     return allSlots
       .filter((slot) => etDayKey(toDate(slot.startTime)) === targetKey)
       .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
-  }, [allSlots, selectedDay])
+  }, [allSlots, selectedDay, weekOffset])
 
   useEffect(() => {
     if (loading || selectedDay !== 0) return
@@ -145,20 +155,11 @@ export default function Schedule() {
     if (firstDayWithSlots > 0) setSelectedDay(firstDayWithSlots)
   }, [allSlots, days, loading, selectedDay])
 
-  const typeIcon = (type: SlotType) => {
-    if (type === 'auction') return <Gavel className="w-4 h-4" />
-    return <Crown className="w-4 h-4" />
-  }
+  const typeIcon = () => <Crown className="w-4 h-4" />
 
-  const typeColor = (type: SlotType) => {
-    if (type === 'auction') return 'text-cyan-400'
-    return 'text-gold'
-  }
+  const typeColor = () => 'text-gold'
 
-  const typeLabel = (type: SlotType, slot: Slot) => {
-    if (type === 'auction') return slot.assignedName || 'Open for Bidding'
-    return slot.assignedName || 'CEO Schedule'
-  }
+  const typeLabel = (slot: Slot) => slot.assignedName || 'CEO Creator'
 
   const emptyLabel = useMemo(() => (selectedDay === 0 ? 'No slots found for today.' : 'No slots scheduled for this day yet.'), [selectedDay])
 
@@ -166,6 +167,16 @@ export default function Schedule() {
     <div className="min-h-screen pt-20 lg:pt-24 pb-24">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2">
+          <button
+            onClick={() => {
+              setWeekOffset((prev) => prev - 1)
+              setSelectedDay(0)
+            }}
+            className="px-3 py-2 text-gray-300 hover:text-white border border-white/10 rounded-xl"
+            aria-label="Previous week"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
           {days.map((day, i) => (
             <button
               key={day}
@@ -179,6 +190,16 @@ export default function Schedule() {
               {day}
             </button>
           ))}
+          <button
+            onClick={() => {
+              setWeekOffset((prev) => prev + 1)
+              setSelectedDay(0)
+            }}
+            className="px-3 py-2 text-gray-300 hover:text-white border border-white/10 rounded-xl"
+            aria-label="Next week"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
 
         <Card hover={false} className="overflow-hidden">
@@ -205,10 +226,9 @@ export default function Schedule() {
               slots.map((slot, i) => {
                 const displayStatus = getSlotDisplayStatus(slot)
                 const phase = getSlotPhase(slot)
-                const streamerName = typeLabel(slot.type, slot)
+                const streamerName = typeLabel(slot)
 
-                // Show bid link for open auction slots after the pre-launch phase
-                const showBidLink = slot.type === 'auction' && slot.status === 'open' && phase !== 'phase1'
+                const showBidLink = slot.status === 'open' && phase !== 'phase1'
 
                 return (
                   <motion.div
@@ -227,8 +247,8 @@ export default function Schedule() {
                       <span className="text-xs text-gray-600 block">to {formatTimeET(slot.endTime)}</span>
                     </div>
 
-                    <div className={`w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 ${typeColor(slot.type)}`}>
-                      {typeIcon(slot.type)}
+                    <div className={`w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 ${typeColor()}`}>
+                      {typeIcon()}
                     </div>
 
                     <div className="flex-1 min-w-0">
@@ -243,15 +263,10 @@ export default function Schedule() {
                       {slot.status === 'pending_deposit' && <Badge variant="gold" className="!text-[9px] !px-1.5 !py-0.5">Awaiting Confirm</Badge>}
                       {slot.status === 'confirmed' && <Badge variant="green" className="!text-[9px] !px-1.5 !py-0.5">Confirmed</Badge>}
                       {showBidLink && (
-                        <Link
-                          to="/queue"
-                          className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-semibold rounded-full border bg-cyan-500/20 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/30 transition-colors whitespace-nowrap"
-                        >
-                          {formatCSGN(getMinimumBid(slot.bids.length))}
-                        </Link>
+                        <Badge variant="purple" className="!text-[9px] !px-1.5 !py-0.5">Bidding: Coming Soon</Badge>
                       )}
-                      <Badge variant={slot.type === 'ceo' ? 'gold' : 'blue'} className="!text-[9px] !px-1.5 !py-0.5">
-                        {slot.type === 'auction' ? 'Auction' : 'CEO Schedule'}
+                      <Badge variant="gold" className="!text-[9px] !px-1.5 !py-0.5">
+                        CEO Creator
                       </Badge>
                     </div>
                   </motion.div>
@@ -275,8 +290,8 @@ export default function Schedule() {
               <div>
                 <h4 className="font-semibold text-white mb-1">Want to be on the schedule?</h4>
                 <p className="text-sm text-gray-400 leading-relaxed">
-                  Apply to become a CSGN streamer. Once approved, you can bid on auction slots (3 AM–7 PM ET) using CSGN tokens,
-                  or be selected for the CEO Schedule (7 PM–3 AM ET). Streamers earn 30% of pump.fun creator fees during their time slot.
+                  Apply to become a CSGN streamer. All calendar slots are currently CEO Creator type, and bidding UI is marked as coming soon.
+                  Streamers earn a performance-based share based on the active fee schedule.
                 </p>
               </div>
             </div>
