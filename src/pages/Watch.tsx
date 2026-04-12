@@ -297,6 +297,7 @@ export default function Watch() {
 
   // Live fee tracking
   const [liveVolumeSOL, setLiveVolumeSOL] = useState<number>(0)
+  const [liveFeeSOL, setLiveFeeSOL] = useState<number>(0)
   const [liveFeeUSD, setLiveFeeUSD] = useState<number>(0)
 
   // Wipe animation state
@@ -363,6 +364,7 @@ export default function Watch() {
   useEffect(() => {
     if (!currentSlot) {
       setLiveVolumeSOL(0)
+      setLiveFeeSOL(0)
       setLiveFeeUSD(0)
       return
     }
@@ -370,7 +372,8 @@ export default function Watch() {
       slotId: currentSlot.id,
       slotStartTime: currentSlot.startTime,
       slotEndTime: currentSlot.endTime,
-      onUpdate: (_feeSOL, volumeSOL, feeUSD) => {
+      onUpdate: (feeSOL, volumeSOL, feeUSD) => {
+        setLiveFeeSOL(feeSOL)
         setLiveVolumeSOL(volumeSOL)
         setLiveFeeUSD(feeUSD)
       },
@@ -415,6 +418,7 @@ export default function Watch() {
   const scheduleGridSlots = currentTodaySlot
     ? [currentTodaySlot, ...upcomingSlots.slice(0, 2)]
     : upcomingSlots.slice(0, 3)
+  const liveShareRate = currentSlot?.creatorFees?.streamerShareRate ?? (liveVolumeSOL > 0 ? liveFeeSOL / liveVolumeSOL : 0)
 
   return (
     <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
@@ -475,9 +479,12 @@ export default function Watch() {
                 </p>
                 <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">
                   {liveVolumeSOL > 0
-                    ? `${liveVolumeSOL.toFixed(2)} SOL vol · 30% share`
+                    ? `${liveFeeSOL.toFixed(6)} SOL · ${liveVolumeSOL.toFixed(2)} SOL vol · ${(liveShareRate * 100).toFixed(3)}%`
                     : 'Live Earnings'}
                 </p>
+                {currentSlot.creatorFees?.marketCapTierLabel && (
+                  <p className="text-[11px] text-gray-600 mt-0.5">{currentSlot.creatorFees.marketCapTierLabel}</p>
+                )}
               </>
             ) : (
               <>

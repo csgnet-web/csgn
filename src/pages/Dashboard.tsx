@@ -31,6 +31,7 @@ export default function Dashboard() {
   const [slotHistory, setSlotHistory] = useState<Slot[]>([])
   const [liveEstimateSOL, setLiveEstimateSOL] = useState(0)
   const [liveEstimateUSD, setLiveEstimateUSD] = useState(0)
+  const [liveVolumeSOL, setLiveVolumeSOL] = useState(0)
   const [slotInfo, setSlotInfo] = useState<Slot | null>(null)
 
   const bids = useMemo(() => user ? queueStore.getBids().filter((bid) => bid.uid === user.uid) : [], [user])
@@ -66,14 +67,16 @@ export default function Dashboard() {
   useEffect(() => {
     if (!liveAssignedSlot) {
       setLiveEstimateSOL(0)
+      setLiveVolumeSOL(0)
       return
     }
     const stop = startFeeTracker({
       slotId: liveAssignedSlot.id,
       slotStartTime: liveAssignedSlot.startTime,
       slotEndTime: liveAssignedSlot.endTime,
-      onUpdate: (feeSOL, _volumeSOL, feeUSD) => {
+      onUpdate: (feeSOL, volumeSOL, feeUSD) => {
         setLiveEstimateSOL(feeSOL)
+        setLiveVolumeSOL(volumeSOL)
         setLiveEstimateUSD(feeUSD)
       },
     })
@@ -385,6 +388,12 @@ export default function Dashboard() {
               Live slot estimate ({new Date(liveAssignedSlot.startTime).toLocaleTimeString()}–{new Date(liveAssignedSlot.endTime).toLocaleTimeString()}): ${liveEstimateUSD.toFixed(2)} ({liveEstimateSOL.toFixed(6)} SOL)
             </p>
           )}
+          {liveAssignedSlot && liveVolumeSOL > 0 && (
+            <p className="text-xs text-gray-500 mt-1">
+              Calc: {liveVolumeSOL.toFixed(4)} SOL × tier creator fee × 30% = {liveEstimateSOL.toFixed(6)} SOL
+              {liveAssignedSlot.creatorFees?.marketCapTierLabel ? ` (${liveAssignedSlot.creatorFees.marketCapTierLabel})` : ''}
+            </p>
+          )}
           <p className="text-xs text-gray-500 mt-1">Estimate only, not guaranteed. Final payout depends on post-slot volume and fee tier assignment.</p>
           <p className="text-xs text-gray-500 mt-1">Payouts are sent in equivalent CSGN, subject to approval, and should not be expected as guaranteed transfers.</p>
         </Card>
@@ -532,6 +541,11 @@ export default function Dashboard() {
                   </p>
                 ))}
               </div>
+            )}
+            {slotInfo.creatorFees?.marketCapCheckpoints && slotInfo.creatorFees.marketCapCheckpoints.length > 0 && (
+              <p className="text-[11px] text-gray-500 mt-2">
+                Market cap checks captured: {slotInfo.creatorFees.marketCapCheckpoints.length} (target cadence: every 15s during live slot).
+              </p>
             )}
             <p className="text-xs text-gray-500 mt-2">
               Estimate derived from DexScreener pool-volume deltas and fee tiers. Final transfer is reviewed and paid in equivalent CSGN.
