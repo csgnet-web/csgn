@@ -20,6 +20,7 @@ interface DexPair {
   priceNative?: string
   priceUsd?: string
   volume?: { h1?: number; h24?: number }
+  liquidity?: { usd?: number }
   marketCap?: number
   fdv?: number
   quoteToken?: { symbol?: string }
@@ -79,10 +80,10 @@ export function estimateCreatorFeeSOL(tradingVolumeSOL: number, marketCapSOL: nu
 }
 
 let lastFetchAt = 0
-let cachedData: { volumeH1Usd: number; volumeH24Usd: number; solPriceUsd: number; marketCapSOL: number } | null = null
+let cachedData: { volumeH24Usd: number; solPriceUsd: number; marketCapSOL: number } | null = null
 
 /** Fetch best pair and return h24 volume + SOL conversion inputs. */
-async function fetchCsgnData(): Promise<{ volumeH1Usd: number; volumeH24Usd: number; solPriceUsd: number; marketCapSOL: number } | null> {
+async function fetchCsgnData(): Promise<{ volumeH24Usd: number; solPriceUsd: number; marketCapSOL: number } | null> {
   try {
     const now = Date.now()
     if (cachedData && now - lastFetchAt < CACHE_TTL_MS) return cachedData
@@ -95,18 +96,18 @@ async function fetchCsgnData(): Promise<{ volumeH1Usd: number; volumeH24Usd: num
 
     if (!Array.isArray(pairs) || pairs.length === 0) return null
 
-    const best = [...pairs].sort((a, b) => (b.volume?.h24 ?? 0) - (a.volume?.h24 ?? 0))[0]
-    const priceUsd = parseFloat(best.priceUsd ?? '0')
-    const priceNative = parseFloat(best.priceNative ?? '0')
+    const primary = [...pairs].sort((a, b) => (b.liquidity?.usd ?? b.volume?.h24 ?? 0) - (a.liquidity?.usd ?? a.volume?.h24 ?? 0))[0]
+    const priceUsd = parseFloat(primary.priceUsd ?? '0')
+    const priceNative = parseFloat(primary.priceNative ?? '0')
     if (priceUsd <= 0) return null
 
-    const solPriceUsd = best.quoteToken?.symbol?.toUpperCase() === 'SOL' && priceNative > 0 ? priceUsd / priceNative : 150
-    const marketCapUsd = best.marketCap ?? best.fdv ?? 0
+    const solPriceUsd = primary.quoteToken?.symbol?.toUpperCase() === 'SOL' && priceNative > 0 ? priceUsd / priceNative : 150
+    const marketCapUsd = primary.marketCap ?? primary.fdv ?? 0
     const marketCapSOL = marketCapUsd > 0 && solPriceUsd > 0 ? marketCapUsd / solPriceUsd : 0
+    const volumeH24Usd = pairs.reduce((sum, pair) => sum + (pair.volume?.h24 ?? 0), 0)
 
     cachedData = {
-      volumeH1Usd: best.volume?.h1 ?? 0,
-      volumeH24Usd: best.volume?.h24 ?? 0,
+      volumeH24Usd,
       solPriceUsd,
       marketCapSOL,
     }
