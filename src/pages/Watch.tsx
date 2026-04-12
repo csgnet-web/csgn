@@ -6,6 +6,8 @@ import { db } from '@/config/firebase'
 import { formatESTRange, type Slot } from '@/lib/slots'
 import { startFeeTracker } from '@/lib/dexscreener'
 import { detectStream as _detectStream, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
+const DEFAULT_TWITCH_STREAM = 'https://www.twitch.tv/csgnet'
+const FIXED_CHAT_CHANNEL = 'csgnet'
 
 const bannerItems = [
   'Starting 5 \u2022 $14.70',
@@ -89,7 +91,7 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
   const streamer = slot.assignedName || (slot.type === 'auction' ? 'Open Bid' : 'CEO Schedule')
   return (
     <div
-      className={`relative rounded-xl overflow-hidden flex flex-col min-h-[89px] sm:min-h-[178px] transition-all duration-300 ${
+      className={`relative rounded-xl overflow-hidden flex flex-col min-h-[89px] sm:min-h-[178px] lg:min-h-[44px] transition-all duration-300 ${
         isCurrent
           ? 'ring-2 ring-red-500 shadow-[0_0_24px_rgba(255,35,70,0.5)]'
           : 'ring-1 ring-white/10 hover:ring-white/20'
@@ -113,7 +115,7 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
         )}
       </div>
 
-      <div className="flex flex-1 items-end justify-center pt-2 sm:pt-6 pb-0.5 sm:pb-1 px-2 sm:px-3 min-h-[48px] sm:min-h-[100px]">
+      <div className="flex flex-1 items-end justify-center pt-2 sm:pt-6 lg:pt-1 pb-0.5 sm:pb-1 lg:pb-0 px-2 sm:px-3 min-h-[48px] sm:min-h-[100px] lg:min-h-[24px]">
         <svg viewBox="0 0 120 160" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
           <defs>
             <linearGradient id={`ag${slot.id}`} x1="60" y1="0" x2="60" y2="160" gradientUnits="userSpaceOnUse">
@@ -126,10 +128,10 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
         </svg>
       </div>
 
-      <div className="px-2 sm:px-3 pb-1.5 sm:pb-3 pt-1 sm:pt-2.5 bg-gradient-to-t from-black/80 to-transparent space-y-0.5 sm:space-y-1">
-        <p className="text-white font-black font-display text-[10px] sm:text-sm leading-tight break-words">{streamer}</p>
-        <p className="text-white/60 text-[9px] sm:text-[11px] leading-snug break-words">{slot.type === 'auction' ? 'Auction Slot' : 'CEO Schedule'}</p>
-        <p className="text-white/60 text-[8px] sm:text-[10px] font-mono leading-none whitespace-nowrap">{formatCompactRange(slot)}</p>
+      <div className="px-2 sm:px-3 lg:px-1 pb-1.5 sm:pb-3 lg:pb-1 pt-1 sm:pt-2.5 lg:pt-0.5 bg-gradient-to-t from-black/80 to-transparent space-y-0.5 sm:space-y-1 lg:space-y-0">
+        <p className="text-white font-black font-display text-[10px] sm:text-sm lg:text-[8px] leading-tight break-words">{streamer}</p>
+        <p className="text-white/60 text-[9px] sm:text-[11px] lg:text-[7px] leading-snug break-words">{slot.type === 'auction' ? 'Auction Slot' : 'CEO Schedule'}</p>
+        <p className="text-white/60 text-[8px] sm:text-[10px] lg:text-[7px] font-mono leading-none whitespace-nowrap">{formatCompactRange(slot)}</p>
       </div>
     </div>
   )
@@ -246,10 +248,22 @@ function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string
         player.setMuted(false)
         player.setVolume(1)
         player.play()
+        const keepAlive = setInterval(() => {
+          try {
+            player.setMuted(false)
+            player.setVolume(1)
+            player.play()
+          } catch {
+            // ignore
+          }
+        }, 8000)
+        ;(embed as { __keepAlive?: ReturnType<typeof setInterval> }).__keepAlive = keepAlive
       })
     })
 
     return () => {
+      const keepAlive = (embed as { __keepAlive?: ReturnType<typeof setInterval> } | null)?.__keepAlive
+      if (keepAlive) clearInterval(keepAlive)
       // Clear container so a fresh embed mounts on next render
       if (containerRef.current) containerRef.current.innerHTML = ''
     }
@@ -297,6 +311,7 @@ export default function Watch() {
 
   // Live fee tracking
   const [liveVolumeSOL, setLiveVolumeSOL] = useState<number>(0)
+  const [liveFeeSOL, setLiveFeeSOL] = useState<number>(0)
   const [liveFeeUSD, setLiveFeeUSD] = useState<number>(0)
 
   // Wipe animation state
@@ -363,6 +378,7 @@ export default function Watch() {
   useEffect(() => {
     if (!currentSlot) {
       setLiveVolumeSOL(0)
+      setLiveFeeSOL(0)
       setLiveFeeUSD(0)
       return
     }
@@ -370,7 +386,8 @@ export default function Watch() {
       slotId: currentSlot.id,
       slotStartTime: currentSlot.startTime,
       slotEndTime: currentSlot.endTime,
-      onUpdate: (_feeSOL, volumeSOL, feeUSD) => {
+      onUpdate: (feeSOL, volumeSOL, feeUSD) => {
+        setLiveFeeSOL(feeSOL)
         setLiveVolumeSOL(volumeSOL)
         setLiveFeeUSD(feeUSD)
       },
@@ -392,16 +409,14 @@ export default function Watch() {
   // The slot's raw Twitch/YouTube URL is intentionally NOT used here; that feed
   // is consumed by /player (OBS capture) and then re-broadcast to this page via
   // the CSGN output stream the admin sets in the override.
-  const streamUrl = manualOverride?.url || currentSlot?.streamUrl || ''
+  const streamUrl = manualOverride?.url || currentSlot?.streamUrl || DEFAULT_TWITCH_STREAM
   const streamerName = manualOverride?.streamerName || currentSlot?.assignedName || ''
   const streamTitle = manualOverride?.title || currentSlot?.streamTitle || currentSlot?.description || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
 
   // Chat sidebar: only shown when the CSGN output stream is itself a Twitch channel
-  const stream = streamUrl ? detectStream(streamUrl) : null
-  const isTwitch = !!streamUrl && (!stream || stream.type === 'twitch')
-  const chatChannel = stream?.type === 'twitch' ? stream.id : (streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '') || '')
-  const chatSrc = `https://www.twitch.tv/embed/${encodeURIComponent(chatChannel)}/chat?parent=${hostname}&darkpopout`
+  const isTwitch = true
+  const chatSrc = `https://www.twitch.tv/embed/${FIXED_CHAT_CHANNEL}/chat?parent=${hostname}&darkpopout`
 
   // Next upcoming slots
   const upcomingSlots = todaySlots.filter((s) => toMillis(s.startTime) > nowMs)
@@ -415,6 +430,7 @@ export default function Watch() {
   const scheduleGridSlots = currentTodaySlot
     ? [currentTodaySlot, ...upcomingSlots.slice(0, 2)]
     : upcomingSlots.slice(0, 3)
+  const liveShareRate = currentSlot?.creatorFees?.streamerShareRate ?? (liveVolumeSOL > 0 ? liveFeeSOL / liveVolumeSOL : 0)
 
   return (
     <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
@@ -448,7 +464,7 @@ export default function Watch() {
           <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)] max-w-[1280px] mx-auto">
             <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(255,0,90,0.28),transparent_42%),radial-gradient(circle_at_85%_10%,rgba(80,0,255,0.26),transparent_35%)]" />
             <div className="w-full relative" style={{ aspectRatio: '16/9' }}>
-              <CSGNPlayer streamUrl={streamUrl} hostname={hostname} />
+              <CSGNPlayer key={streamUrl} streamUrl={streamUrl} hostname={hostname} />
               <CSGNWipeOverlay visible={showWipe} />
             </div>
 
@@ -475,9 +491,12 @@ export default function Watch() {
                 </p>
                 <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">
                   {liveVolumeSOL > 0
-                    ? `${liveVolumeSOL.toFixed(2)} SOL vol · 30% share`
+                    ? `${liveFeeSOL.toFixed(6)} SOL · ${liveVolumeSOL.toFixed(2)} SOL vol · ${(liveShareRate * 100).toFixed(3)}%`
                     : 'Live Earnings'}
                 </p>
+                {currentSlot.creatorFees?.marketCapTierLabel && (
+                  <p className="text-[11px] text-gray-600 mt-0.5">{currentSlot.creatorFees.marketCapTierLabel}</p>
+                )}
               </>
             ) : (
               <>

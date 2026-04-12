@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
 import { LAUNCH_DATE_UTC, PHASE_2_END_UTC, type Slot } from '@/lib/slots'
+import { startFeeTracker } from '@/lib/dexscreener'
 const WEEK_SPAN = 7
 
 function toMillis(value: unknown): number {
@@ -81,6 +82,7 @@ export default function Schedule() {
   const [weekOffset, setWeekOffset] = useState(0)
   const [allSlots, setAllSlots] = useState<Slot[]>([])
   const [loading, setLoading] = useState(true)
+  const [liveSlotFeeSOL, setLiveSlotFeeSOL] = useState<Record<string, number>>({})
   const days = useMemo(() => {
     const labels: string[] = []
     for (let i = 0; i < WEEK_SPAN; i++) {
@@ -142,6 +144,24 @@ export default function Schedule() {
       .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
   }, [allSlots, selectedDay, weekOffset])
 
+  const activeLiveSlot = useMemo(
+    () => allSlots.find((slot) => getSlotDisplayStatus(slot) === 'live') ?? null,
+    [allSlots],
+  )
+
+  useEffect(() => {
+    if (!activeLiveSlot) return
+    const stop = startFeeTracker({
+      slotId: activeLiveSlot.id,
+      slotStartTime: activeLiveSlot.startTime,
+      slotEndTime: activeLiveSlot.endTime,
+      onUpdate: (feeSOL) => {
+        setLiveSlotFeeSOL((prev) => ({ ...prev, [activeLiveSlot.id]: feeSOL }))
+      },
+    })
+    return stop
+  }, [activeLiveSlot?.id])
+
   useEffect(() => {
     if (loading || selectedDay !== 0) return
     const todayKey = etDayKey(etMiddayFromOffset(0))
@@ -156,10 +176,7 @@ export default function Schedule() {
   }, [allSlots, days, loading, selectedDay])
 
   const typeIcon = () => <Crown className="w-4 h-4" />
-
-  const typeColor = () => 'text-gold'
-
-  const typeLabel = (slot: Slot) => slot.assignedName || 'CEO Creator'
+  const typeLabel = (slot: Slot) => (slot.status === 'open' && !slot.assignedName ? 'Empty Slot' : (slot.assignedName || 'CEO Creator'))
 
   const emptyLabel = useMemo(() => (selectedDay === 0 ? 'No slots found for today.' : 'No slots scheduled for this day yet.'), [selectedDay])
 
@@ -227,6 +244,9 @@ export default function Schedule() {
                 const displayStatus = getSlotDisplayStatus(slot)
                 const phase = getSlotPhase(slot)
                 const streamerName = typeLabel(slot)
+                const isEmptyOpenSlot = slot.status === 'open' && !slot.assignedName && !slot.streamUrl
+                const streamerFeeSOL = liveSlotFeeSOL[slot.id] ?? slot.creatorFees?.feeOwedSOL ?? 0
+                const feeLabel = streamerFeeSOL > 0 ? `${streamerFeeSOL.toFixed(6)} SOL` : '—'
 
                 const showBidLink = slot.status === 'open' && phase !== 'phase1'
 
@@ -247,16 +267,17 @@ export default function Schedule() {
                       <span className="text-xs text-gray-600 block">to {formatTimeET(slot.endTime)}</span>
                     </div>
 
-                    <div className={`w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 ${typeColor()}`}>
+                    <div className={`w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 ${isEmptyOpenSlot ? 'text-gray-500' : 'text-gold'}`}>
                       {typeIcon()}
                     </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-white truncate">{streamerName}</span>
+                        <span className={`text-sm font-medium truncate ${isEmptyOpenSlot ? 'text-gray-400' : 'text-white'}`}>{streamerName}</span>
                         {displayStatus === 'live' && <LiveIndicator />}
                       </div>
                       {slot.description && <span className="text-xs text-gray-500 truncate block">{slot.description}</span>}
+                      <span className="text-[11px] text-cyan-300 block mt-0.5">Streamer fee: {feeLabel}</span>
                     </div>
 
                     <div className="flex flex-col items-end gap-0.5 shrink-0">
@@ -265,8 +286,8 @@ export default function Schedule() {
                       {showBidLink && (
                         <Badge variant="purple" className="!text-[9px] !px-1.5 !py-0.5">Bidding: Coming Soon</Badge>
                       )}
-                      <Badge variant="gold" className="!text-[9px] !px-1.5 !py-0.5">
-                        CEO Creator
+                      <Badge variant={isEmptyOpenSlot ? 'default' : 'gold'} className="!text-[9px] !px-1.5 !py-0.5">
+                        {isEmptyOpenSlot ? 'Empty Slot' : 'CEO Creator'}
                       </Badge>
                     </div>
                   </motion.div>
