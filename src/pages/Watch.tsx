@@ -376,6 +376,7 @@ export default function Watch() {
     if (!currentSlot) return
     const stop = startFeeTracker({
       slotId: currentSlot.id,
+      slotStartTime: currentSlot.startTime,
       slotEndTime: currentSlot.endTime,
     })
     return stop

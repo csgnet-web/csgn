@@ -152,6 +152,7 @@ export default function Schedule() {
     if (!activeLiveSlot) return
     const stop = startFeeTracker({
       slotId: activeLiveSlot.id,
+      slotStartTime: activeLiveSlot.startTime,
       slotEndTime: activeLiveSlot.endTime,
     })
     return stop

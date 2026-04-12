@@ -163,20 +163,25 @@ async function lockFeeSnapshot(slotId: string): Promise<void> {
 
 export interface FeeTrackerOptions {
   slotId: string
+  slotStartTime: string
   slotEndTime: string
   onUpdate?: (feeSOL: number, volumeSOL: number, feeUSD: number, volumeUSD: number) => void
 }
 
 export function startFeeTracker(options: FeeTrackerOptions): () => void {
-  const { slotId, slotEndTime, onUpdate } = options
+  const { slotId, slotStartTime, slotEndTime, onUpdate } = options
 
   let intervalId: ReturnType<typeof setInterval> | null = null
   let stopped = false
+  let lastPollAtMs = Date.now()
+  const slotStartMs = new Date(slotStartTime).getTime()
+  const slotEndMs = new Date(slotEndTime).getTime()
 
   const poll = async () => {
     if (stopped) return
 
-    if (Date.now() > new Date(slotEndTime).getTime()) {
+    const nowMs = Date.now()
+    if (lastPollAtMs >= slotEndMs) {
       await lockFeeSnapshot(slotId)
       stop()
       return
@@ -194,7 +199,13 @@ export function startFeeTracker(options: FeeTrackerOptions): () => void {
 
     const previousH24 = existing?.trackerLastH24Usd
     const incrementalVolumeUsd = typeof previousH24 === 'number' ? Math.max(0, volumeH24Usd - previousH24) : 0
-    const incrementalVolumeSOL = solPriceUsd > 0 ? incrementalVolumeUsd / solPriceUsd : 0
+    const incrementalVolumeSOLRaw = solPriceUsd > 0 ? incrementalVolumeUsd / solPriceUsd : 0
+    const windowMs = Math.max(1, nowMs - lastPollAtMs)
+    const overlapStart = Math.max(lastPollAtMs, slotStartMs)
+    const overlapEnd = Math.min(nowMs, slotEndMs)
+    const overlapMs = Math.max(0, overlapEnd - overlapStart)
+    const slotAttributionRatio = Math.max(0, Math.min(1, overlapMs / windowMs))
+    const incrementalVolumeSOL = incrementalVolumeSOLRaw * slotAttributionRatio
     const totalVolumeSOL = (existing?.tradingVolumeSOL ?? 0) + incrementalVolumeSOL
 
     const tier = resolvePumpFeeTier(marketCapSOL)
@@ -203,6 +214,12 @@ export function startFeeTracker(options: FeeTrackerOptions): () => void {
 
     onUpdate?.(feeSOL, totalVolumeSOL, 0, 0)
     await saveFeeToFirestore(slotId, totalVolumeSOL, feeSOL, feeMultiplier, volumeH24Usd)
+    lastPollAtMs = nowMs
+
+    if (nowMs >= slotEndMs) {
+      await lockFeeSnapshot(slotId)
+      stop()
+    }
   }
 
   const stop = () => {
