@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
 import { LAUNCH_DATE_UTC, PHASE_2_END_UTC, type Slot } from '@/lib/slots'
+import { startFeeTracker } from '@/lib/dexscreener'
 const WEEK_SPAN = 7
 
 function toMillis(value: unknown): number {
@@ -81,6 +82,7 @@ export default function Schedule() {
   const [weekOffset, setWeekOffset] = useState(0)
   const [allSlots, setAllSlots] = useState<Slot[]>([])
   const [loading, setLoading] = useState(true)
+  const [liveSlotFeeSOL, setLiveSlotFeeSOL] = useState<Record<string, number>>({})
   const days = useMemo(() => {
     const labels: string[] = []
     for (let i = 0; i < WEEK_SPAN; i++) {
@@ -141,6 +143,24 @@ export default function Schedule() {
       .filter((slot) => etDayKey(toDate(slot.startTime)) === targetKey)
       .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
   }, [allSlots, selectedDay, weekOffset])
+
+  const activeLiveSlot = useMemo(
+    () => allSlots.find((slot) => getSlotDisplayStatus(slot) === 'live') ?? null,
+    [allSlots],
+  )
+
+  useEffect(() => {
+    if (!activeLiveSlot) return
+    const stop = startFeeTracker({
+      slotId: activeLiveSlot.id,
+      slotStartTime: activeLiveSlot.startTime,
+      slotEndTime: activeLiveSlot.endTime,
+      onUpdate: (feeSOL) => {
+        setLiveSlotFeeSOL((prev) => ({ ...prev, [activeLiveSlot.id]: feeSOL }))
+      },
+    })
+    return stop
+  }, [activeLiveSlot?.id])
 
   useEffect(() => {
     if (loading || selectedDay !== 0) return
@@ -225,7 +245,8 @@ export default function Schedule() {
                 const phase = getSlotPhase(slot)
                 const streamerName = typeLabel(slot)
                 const isEmptyOpenSlot = slot.status === 'open' && !slot.assignedName && !slot.streamUrl
-                const feeLabel = slot.creatorFees?.feeOwedSOL ? `${slot.creatorFees.feeOwedSOL.toFixed(6)} SOL` : '—'
+                const streamerFeeSOL = liveSlotFeeSOL[slot.id] ?? slot.creatorFees?.feeOwedSOL ?? 0
+                const feeLabel = streamerFeeSOL > 0 ? `${streamerFeeSOL.toFixed(6)} SOL` : '—'
 
                 const showBidLink = slot.status === 'open' && phase !== 'phase1'
 
