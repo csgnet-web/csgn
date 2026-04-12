@@ -47,7 +47,9 @@ export type FeePaymentStatus = 'pending' | 'paid' | 'declined'
 
 export interface CreatorFees {
   tradingVolumeSOL: number     // admin inputs trading volume in SOL during slot
+  tradingVolumeUSD?: number
   feeOwedSOL: number           // 0.003 * tradingVolumeSOL (30% of 1% pump.fun creator fee)
+  feeOwedUSD?: number
   activeChannels?: Array<{
     name: string
     streamUrl: string
@@ -57,6 +59,7 @@ export interface CreatorFees {
   streamerWalletAddress: string
   paidAt?: string
   declineReason?: string
+  snapshotLockedAt?: unknown
   updatedAt: string
 }
 

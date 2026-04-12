@@ -30,6 +30,7 @@ export default function Dashboard() {
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [slotHistory, setSlotHistory] = useState<Slot[]>([])
   const [liveEstimateSOL, setLiveEstimateSOL] = useState(0)
+  const [liveEstimateUSD, setLiveEstimateUSD] = useState(0)
   const [slotInfo, setSlotInfo] = useState<Slot | null>(null)
 
   const bids = useMemo(() => user ? queueStore.getBids().filter((bid) => bid.uid === user.uid) : [], [user])
@@ -70,7 +71,10 @@ export default function Dashboard() {
     const stop = startFeeTracker({
       slotId: liveAssignedSlot.id,
       slotEndTime: liveAssignedSlot.endTime,
-      onUpdate: (feeSOL) => setLiveEstimateSOL(feeSOL),
+      onUpdate: (feeSOL, _volumeSOL, feeUSD) => {
+        setLiveEstimateSOL(feeSOL)
+        setLiveEstimateUSD(feeUSD)
+      },
     })
     return stop
   }, [liveAssignedSlot?.id])
@@ -111,8 +115,18 @@ export default function Dashboard() {
   }
 
   const handleConnectAndSave = async () => {
-    await connect()
-    // wallet address will be set after connect — save happens via useEffect below
+    const connected = await connect()
+    if (!user) return
+    const toSave = connected || walletAddress
+    if (!toSave) return
+    setSavingWallet(true)
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { walletAddress: toSave })
+      await refreshProfile()
+    } catch (err) {
+      console.warn('Failed to save wallet address:', err)
+    }
+    setSavingWallet(false)
   }
 
   const handleSaveHandle = async () => {
@@ -367,7 +381,7 @@ export default function Dashboard() {
           <p className="text-2xl font-mono text-cyan-300 mt-2">{payoutEstimateSOL.toFixed(6)} SOL</p>
           {liveAssignedSlot && (
             <p className="text-sm text-emerald-300 mt-1">
-              Live slot estimate ({new Date(liveAssignedSlot.startTime).toLocaleTimeString()}–{new Date(liveAssignedSlot.endTime).toLocaleTimeString()}): {liveEstimateSOL.toFixed(6)} SOL
+              Live slot estimate ({new Date(liveAssignedSlot.startTime).toLocaleTimeString()}–{new Date(liveAssignedSlot.endTime).toLocaleTimeString()}): ${liveEstimateUSD.toFixed(2)} ({liveEstimateSOL.toFixed(6)} SOL)
             </p>
           )}
           <p className="text-xs text-gray-500 mt-1">Estimate only, not guaranteed. Final payout depends on post-slot volume and fee tier assignment.</p>
@@ -392,6 +406,7 @@ export default function Dashboard() {
                       </div>
                       <div className="text-right">
                         <p className="font-mono text-cyan-300">{(slot.creatorFees?.feeOwedSOL || 0).toFixed(6)} SOL</p>
+                        <p className="font-mono text-emerald-300">${(slot.creatorFees?.feeOwedUSD || 0).toFixed(2)}</p>
                         <button onClick={() => setSlotInfo(slot)} className="text-xs text-primary-400 hover:text-primary-300 inline-flex items-center gap-1">
                           <Info className="w-3 h-3" /> Fee calc
                         </button>
@@ -499,7 +514,9 @@ export default function Dashboard() {
             <h4 className="text-white font-semibold">Fee Calculation</h4>
             <p className="text-xs text-gray-400 mt-2">Slot: {slotInfo.label}</p>
             <p className="text-xs text-gray-400">Volume (SOL): {(slotInfo.creatorFees?.tradingVolumeSOL || 0).toFixed(6)}</p>
+            <p className="text-xs text-gray-400">Volume (USD): ${(slotInfo.creatorFees?.tradingVolumeUSD || 0).toFixed(2)}</p>
             <p className="text-xs text-gray-400">Estimated creator fee (SOL): {(slotInfo.creatorFees?.feeOwedSOL || 0).toFixed(6)}</p>
+            <p className="text-xs text-gray-400">Estimated creator fee (USD): ${(slotInfo.creatorFees?.feeOwedUSD || 0).toFixed(2)}</p>
             <p className="text-xs text-gray-500 mt-2">
               Estimate derived from DexScreener pool-volume deltas and fee tiers. Final transfer is reviewed and paid in equivalent CSGN.
             </p>

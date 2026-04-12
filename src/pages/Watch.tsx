@@ -296,8 +296,8 @@ export default function Watch() {
   const [manualOverride, setManualOverride] = useState<{ url: string; streamerName: string; title: string } | null>(null)
 
   // Live fee tracking
-  const [liveFeeSOL, setLiveFeeSOL] = useState<number>(0)
   const [liveVolumeSOL, setLiveVolumeSOL] = useState<number>(0)
+  const [liveFeeUSD, setLiveFeeUSD] = useState<number>(0)
 
   // Wipe animation state
   const [showWipe, setShowWipe] = useState(false)
@@ -362,16 +362,16 @@ export default function Watch() {
   // Start live fee tracker when a slot is active
   useEffect(() => {
     if (!currentSlot) {
-      setLiveFeeSOL(0)
       setLiveVolumeSOL(0)
+      setLiveFeeUSD(0)
       return
     }
     const stop = startFeeTracker({
       slotId: currentSlot.id,
       slotEndTime: currentSlot.endTime,
-      onUpdate: (feeSOL, volumeSOL) => {
-        setLiveFeeSOL(feeSOL)
+      onUpdate: (_feeSOL, volumeSOL, feeUSD) => {
         setLiveVolumeSOL(volumeSOL)
+        setLiveFeeUSD(feeUSD)
       },
     })
     return stop
@@ -470,11 +470,11 @@ export default function Watch() {
             {currentSlot ? (
               <>
                 <p className="text-2xl sm:text-3xl font-black font-mono text-yellow-400">
-                  {liveFeeSOL > 0 ? `${liveFeeSOL.toFixed(4)} SOL` : '—'}
+                  {liveFeeUSD > 0 ? `$${liveFeeUSD.toFixed(2)}` : '—'}
                 </p>
                 <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">
                   {liveVolumeSOL > 0
-                    ? `${liveVolumeSOL.toFixed(2)} SOL vol · 0.3%`
+                    ? `${liveVolumeSOL.toFixed(2)} SOL vol · 30% share`
                     : 'Live Earnings'}
                 </p>
               </>

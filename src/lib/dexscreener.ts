@@ -5,7 +5,7 @@
  * converts to SOL, and applies creator fee rate based on market-cap tiers.
  */
 
-import { doc, getDoc, updateDoc } from 'firebase/firestore'
+import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { CSGN_MINT, type CreatorFees } from '@/lib/slots'
 
@@ -26,30 +26,10 @@ interface DexPair {
 
 type DexResponse = DexPair[]
 
-const CREATOR_FEE_TIERS = [
-  { min: 0, max: 420, creatorBps: 0.3 },
-  { min: 420, max: 1470, creatorBps: 0.95 },
-  { min: 1470, max: 2460, creatorBps: 0.9 },
-  { min: 2460, max: 3440, creatorBps: 0.85 },
-  { min: 3440, max: 4420, creatorBps: 0.8 },
-  { min: 4420, max: 9820, creatorBps: 0.75 },
-  { min: 9820, max: 14740, creatorBps: 0.7 },
-  { min: 14740, max: 19650, creatorBps: 0.65 },
-  { min: 19650, max: 24560, creatorBps: 0.6 },
-  { min: 24560, max: 29470, creatorBps: 0.55 },
-  { min: 29470, max: 34380, creatorBps: 0.5 },
-  { min: 34380, max: 39300, creatorBps: 0.45 },
-  { min: 39300, max: 44210, creatorBps: 0.4 },
-] as const
-
-function getCreatorFeeRate(marketCapSOL: number): number {
-  const tier = CREATOR_FEE_TIERS.find((t) => marketCapSOL >= t.min && marketCapSOL < t.max)
-  const bps = tier?.creatorBps ?? CREATOR_FEE_TIERS[CREATOR_FEE_TIERS.length - 1].creatorBps
-  return bps / 100
-}
-
-export function estimateCreatorFeeSOL(tradingVolumeSOL: number, marketCapSOL: number): number {
-  return tradingVolumeSOL * getCreatorFeeRate(marketCapSOL)
+// Manual payout mode: streamer-facing live earnings are 30% of slot volume.
+const STREAMER_SHARE = 0.3
+export function estimateCreatorFeeSOL(tradingVolumeSOL: number, _marketCapSOL: number): number {
+  return tradingVolumeSOL * STREAMER_SHARE
 }
 
 let lastFetchAt = 0
@@ -94,7 +74,7 @@ async function fetchCsgnData(): Promise<{ volumeH24Usd: number; solPriceUsd: num
   }
 }
 
-async function saveFeeToFirestore(slotId: string, tradingVolumeSOL: number, feeOwedSOL: number): Promise<void> {
+async function saveFeeToFirestore(slotId: string, tradingVolumeSOL: number, feeOwedSOL: number, tradingVolumeUSD: number, feeOwedUSD: number): Promise<void> {
   try {
     const slotRef = doc(db, 'slots', slotId)
     const snap = await getDoc(slotRef)
@@ -105,7 +85,9 @@ async function saveFeeToFirestore(slotId: string, tradingVolumeSOL: number, feeO
 
     const fees: CreatorFees = {
       tradingVolumeSOL,
+      tradingVolumeUSD,
       feeOwedSOL,
+      feeOwedUSD,
       paymentStatus: existing?.paymentStatus ?? 'pending',
       streamerWalletAddress: existing?.streamerWalletAddress ?? '',
       updatedAt: new Date().toISOString(),
@@ -119,10 +101,23 @@ async function saveFeeToFirestore(slotId: string, tradingVolumeSOL: number, feeO
   }
 }
 
+async function lockFeeSnapshot(slotId: string): Promise<void> {
+  try {
+    const slotRef = doc(db, 'slots', slotId)
+    const snap = await getDoc(slotRef)
+    if (!snap.exists()) return
+    const existing = snap.data()?.creatorFees as CreatorFees | undefined
+    if (!existing || existing.snapshotLockedAt) return
+    await updateDoc(slotRef, { 'creatorFees.snapshotLockedAt': serverTimestamp(), 'creatorFees.updatedAt': new Date().toISOString() })
+  } catch {
+    // keep existing retry behavior (none)
+  }
+}
+
 export interface FeeTrackerOptions {
   slotId: string
   slotEndTime: string
-  onUpdate: (feeSOL: number, volumeSOL: number) => void
+  onUpdate: (feeSOL: number, volumeSOL: number, feeUSD: number, volumeUSD: number) => void
 }
 
 export function startFeeTracker(options: FeeTrackerOptions): () => void {
@@ -136,6 +131,7 @@ export function startFeeTracker(options: FeeTrackerOptions): () => void {
     if (stopped) return
 
     if (Date.now() > new Date(slotEndTime).getTime()) {
+      await lockFeeSnapshot(slotId)
       stop()
       return
     }
@@ -151,9 +147,10 @@ export function startFeeTracker(options: FeeTrackerOptions): () => void {
     const deltaVolumeSOL = solPriceUsd > 0 ? deltaVolumeUsd / solPriceUsd : 0
 
     const feeSOL = estimateCreatorFeeSOL(deltaVolumeSOL, marketCapSOL)
+    const feeUSD = deltaVolumeUsd * STREAMER_SHARE
 
-    onUpdate(feeSOL, deltaVolumeSOL)
-    await saveFeeToFirestore(slotId, deltaVolumeSOL, feeSOL)
+    onUpdate(feeSOL, deltaVolumeSOL, feeUSD, deltaVolumeUsd)
+    await saveFeeToFirestore(slotId, deltaVolumeSOL, feeSOL, deltaVolumeUsd, feeUSD)
   }
 
   const stop = () => {
