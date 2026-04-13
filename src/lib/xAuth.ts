@@ -1,57 +1,24 @@
-const X_AUTHORIZE_URL = 'https://x.com/i/oauth2/authorize'
-const X_ME_URL = 'https://api.x.com/2/users/me?user.fields=username,verified'
-
-const STATE_KEY = 'x_oauth_state'
-const VERIFIER_KEY = 'x_oauth_verifier'
+const SECRET_KEY_PREFIX = 'x_oauth_temp_secret_'
 const RETURN_TO_KEY = 'x_oauth_return_to'
-
-const FALLBACK_CLIENT_ID = 'eDA3SWFHSlVXT3NaY1FaWFBjSlA6MTpjaQ'
-
-function getClientId() {
-  return (import.meta.env.VITE_X_CLIENT_ID as string | undefined) || FALLBACK_CLIENT_ID
-}
-
-function b64Url(bytes: Uint8Array) {
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
-function randomString(len = 32) {
-  const bytes = crypto.getRandomValues(new Uint8Array(len))
-  return b64Url(bytes)
-}
-
-async function toCodeChallenge(verifier: string) {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))
-  return b64Url(new Uint8Array(digest))
-}
 
 export function getXRedirectUri() {
   return `${window.location.origin}/auth/x/callback`
 }
 
 export async function startXOAuth(returnTo: string) {
-  const clientId = getClientId()
-  if (!clientId) throw new Error('Missing VITE_X_CLIENT_ID')
-
-  const state = randomString(16)
-  const verifier = randomString(64)
-  const challenge = await toCodeChallenge(verifier)
-
-  localStorage.setItem(STATE_KEY, state)
-  localStorage.setItem(VERIFIER_KEY, verifier)
   localStorage.setItem(RETURN_TO_KEY, returnTo)
 
-  const params = new URLSearchParams({
-    response_type: 'code',
-    client_id: clientId,
-    redirect_uri: getXRedirectUri(),
-    scope: 'users.read tweet.read follows.read like.read offline.access',
-    state,
-    code_challenge: challenge,
-    code_challenge_method: 'S256',
-  })
+  const params = new URLSearchParams({ callback: getXRedirectUri() })
+  const res = await fetch(`/.netlify/functions/x-oauth-start?${params.toString()}`)
+  if (!res.ok) throw new Error(await res.text())
 
-  window.location.href = `${X_AUTHORIZE_URL}?${params.toString()}`
+  const json = await res.json() as { oauthToken?: string; oauthTokenSecret?: string; authorizeUrl?: string }
+  if (!json.oauthToken || !json.oauthTokenSecret || !json.authorizeUrl) {
+    throw new Error('Invalid X OAuth start response')
+  }
+
+  localStorage.setItem(`${SECRET_KEY_PREFIX}${json.oauthToken}`, json.oauthTokenSecret)
+  window.location.href = json.authorizeUrl
 }
 
 export function getXReturnTo() {
@@ -60,46 +27,31 @@ export function getXReturnTo() {
 
 export async function resolveXUserFromSearch(search: string) {
   const params = new URLSearchParams(search)
-  const code = params.get('code')
-  const state = params.get('state')
-  const error = params.get('error')
-  const errorDescription = params.get('error_description')
+  const oauthToken = params.get('oauth_token')
+  const oauthVerifier = params.get('oauth_verifier')
+  const denied = params.get('denied')
 
-  if (error) throw new Error(`X auth failed: ${errorDescription || error}`)
-  if (!code || !state) throw new Error('Missing X OAuth response fields')
+  if (denied) throw new Error('X authorization was denied by the user.')
+  if (!oauthToken || !oauthVerifier) throw new Error('Missing X OAuth callback fields')
 
-  const expectedState = localStorage.getItem(STATE_KEY)
-  const verifier = localStorage.getItem(VERIFIER_KEY)
-  if (!expectedState || expectedState !== state) throw new Error('Invalid X OAuth state')
-  if (!verifier) throw new Error('Missing X OAuth code verifier')
+  const secretKey = `${SECRET_KEY_PREFIX}${oauthToken}`
+  const oauthTokenSecret = localStorage.getItem(secretKey)
+  if (!oauthTokenSecret) throw new Error('Missing temporary X OAuth token secret')
 
-  const tokenRes = await fetch('/.netlify/functions/x-token-exchange', {
+  const res = await fetch('/.netlify/functions/x-oauth-finish', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      code,
-      codeVerifier: verifier,
-      redirectUri: getXRedirectUri(),
-    }),
+    body: JSON.stringify({ oauthToken, oauthVerifier, oauthTokenSecret }),
   })
-
-  if (!tokenRes.ok) {
-    const text = await tokenRes.text()
-    throw new Error(`Unable to exchange X OAuth code for token: ${text}`)
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Unable to finish X OAuth: ${text}`)
   }
-  const tokenJson = await tokenRes.json() as { access_token?: string }
-  if (!tokenJson.access_token) throw new Error('No X access token returned')
 
-  const meRes = await fetch(X_ME_URL, {
-    headers: { Authorization: `Bearer ${tokenJson.access_token}` },
-  })
-  if (!meRes.ok) throw new Error('Unable to load X profile')
-  const meJson = await meRes.json() as { data?: { username?: string } }
-  const username = meJson.data?.username
-  if (!username) throw new Error('No X username returned')
+  const data = await res.json() as { username?: string }
+  if (!data.username) throw new Error('No X username returned')
 
-  localStorage.removeItem(STATE_KEY)
-  localStorage.removeItem(VERIFIER_KEY)
+  localStorage.removeItem(secretKey)
 
-  return username
+  return data.username
 }
