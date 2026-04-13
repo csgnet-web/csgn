@@ -21,7 +21,7 @@ export default function XCallback() {
         const username = await resolveXUserFromSearch(window.location.search)
         await updateDoc(doc(db, 'users', user.uid), {
           'socialLinks.twitter': username,
-          xUsername: username,
+          twitterUsername: username,
         })
         await refreshProfile()
         localStorage.setItem('oauth_notice', 'X connected successfully.')
