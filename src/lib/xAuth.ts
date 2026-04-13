@@ -1,4 +1,4 @@
-const X_AUTHORIZE_URL = 'https://twitter.com/i/oauth2/authorize'
+const X_AUTHORIZE_URL = 'https://x.com/i/oauth2/authorize'
 const X_TOKEN_URL = 'https://api.x.com/2/oauth2/token'
 const X_ME_URL = 'https://api.x.com/2/users/me?user.fields=username'
 
@@ -6,10 +6,15 @@ const STATE_KEY = 'x_oauth_state'
 const VERIFIER_KEY = 'x_oauth_verifier'
 const RETURN_TO_KEY = 'x_oauth_return_to'
 
-const FALLBACK_CLIENT_ID = 'n1exwoae1t2yebr09kxnbnvwhovk3l'
+const FALLBACK_CLIENT_ID = 'eDA3SWFHSlVXT3NaY1FaWFBjSlA6MTpjaQ'
+const FALLBACK_CLIENT_SECRET = 'DVbNuXtklbTMKud7DOjd7z9T1FLgLsUMB_ZKU_06EDph2THmI4'
 
 function getClientId() {
   return (import.meta.env.VITE_X_CLIENT_ID as string | undefined) || FALLBACK_CLIENT_ID
+}
+
+function getClientSecret() {
+  return (import.meta.env.VITE_X_CLIENT_SECRET as string | undefined) || FALLBACK_CLIENT_SECRET
 }
 
 function b64Url(bytes: Uint8Array) {
@@ -46,7 +51,7 @@ export async function startXOAuth(returnTo: string) {
     response_type: 'code',
     client_id: clientId,
     redirect_uri: getXRedirectUri(),
-    scope: 'users.read tweet.read',
+    scope: 'users.read',
     state,
     code_challenge: challenge,
     code_challenge_method: 'S256',
@@ -67,8 +72,9 @@ export async function resolveXUserFromSearch(search: string) {
   const code = params.get('code')
   const state = params.get('state')
   const error = params.get('error')
+  const errorDescription = params.get('error_description')
 
-  if (error) throw new Error(`X auth failed: ${error}`)
+  if (error) throw new Error(`X auth failed: ${errorDescription || error}`)
   if (!code || !state) throw new Error('Missing X OAuth response fields')
 
   const expectedState = localStorage.getItem(STATE_KEY)
@@ -76,9 +82,14 @@ export async function resolveXUserFromSearch(search: string) {
   if (!expectedState || expectedState !== state) throw new Error('Invalid X OAuth state')
   if (!verifier) throw new Error('Missing X OAuth code verifier')
 
+  const basic = btoa(`${clientId}:${getClientSecret()}`)
+
   const tokenRes = await fetch(X_TOKEN_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Basic ${basic}`,
+    },
     body: new URLSearchParams({
       code,
       grant_type: 'authorization_code',
