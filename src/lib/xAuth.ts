@@ -6,8 +6,10 @@ const STATE_KEY = 'x_oauth_state'
 const VERIFIER_KEY = 'x_oauth_verifier'
 const RETURN_TO_KEY = 'x_oauth_return_to'
 
+const FALLBACK_CLIENT_ID = 'n1exwoae1t2yebr09kxnbnvwhovk3l'
+
 function getClientId() {
-  return import.meta.env.VITE_X_CLIENT_ID as string | undefined
+  return (import.meta.env.VITE_X_CLIENT_ID as string | undefined) || FALLBACK_CLIENT_ID
 }
 
 function b64Url(bytes: Uint8Array) {
@@ -25,7 +27,7 @@ async function toCodeChallenge(verifier: string) {
 }
 
 export function getXRedirectUri() {
-  return `${window.location.origin}/auth/x/callback`
+  return `${window.location.origin}/account`
 }
 
 export async function startXOAuth(returnTo: string) {

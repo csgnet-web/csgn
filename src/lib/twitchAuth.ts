@@ -4,8 +4,10 @@ const TWITCH_USERS_URL = 'https://api.twitch.tv/helix/users'
 const STATE_KEY = 'twitch_oauth_state'
 const RETURN_TO_KEY = 'twitch_oauth_return_to'
 
+const FALLBACK_CLIENT_ID = 'n1exwoae1t2yebr09kxnbnvwhovk3l'
+
 function getClientId() {
-  return import.meta.env.VITE_TWITCH_CLIENT_ID as string | undefined
+  return (import.meta.env.VITE_TWITCH_CLIENT_ID as string | undefined) || FALLBACK_CLIENT_ID
 }
 
 export function getTwitchRedirectUri() {

@@ -120,12 +120,25 @@ function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string
           } catch {
             // no-op
           }
-        }, 8000)
+        }, 3000)
         ;(embed as { __keepAlive?: ReturnType<typeof setInterval> }).__keepAlive = keepAlive
       })
     })
 
+    const onVisibility = () => {
+      try {
+        const player = embed?.getPlayer?.()
+        player?.setMuted(false)
+        player?.setVolume(1)
+        player?.play()
+      } catch {
+        // ignore
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
     return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
       const keepAlive = (embed as { __keepAlive?: ReturnType<typeof setInterval> } | null)?.__keepAlive
       if (keepAlive) clearInterval(keepAlive)
       if (containerRef.current) containerRef.current.innerHTML = ''
@@ -154,7 +167,8 @@ function StreamEmbed({ streamUrl, hostname }: { streamUrl: string; hostname: str
     return <YouTubePlayer videoId={stream.id} />
   }
 
-  const channel = stream?.id ?? streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '')
+  const fallbackChannel = detectStream(DEFAULT_TWITCH_STREAM)?.id || 'csgnet'
+  const channel = stream?.id || fallbackChannel
   return <TwitchPlayer channel={channel} hostname={hostname} />
 }
 
@@ -199,7 +213,7 @@ export default function Player() {
 
   return (
     <div className="w-screen h-screen bg-black overflow-hidden relative">
-      <StreamEmbed key={streamUrl} streamUrl={streamUrl} hostname={hostname} />
+      <StreamEmbed streamUrl={streamUrl} hostname={hostname} />
 
       {/* Minimal HUD — bottom-left, non-intrusive for OBS crop */}
       <div className="absolute bottom-3 left-3 z-10 pointer-events-none select-none">

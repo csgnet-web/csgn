@@ -256,15 +256,27 @@ function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string
           } catch {
             // ignore
           }
-        }, 8000)
+        }, 3000)
         ;(embed as { __keepAlive?: ReturnType<typeof setInterval> }).__keepAlive = keepAlive
       })
     })
 
+    const onVisibility = () => {
+      try {
+        const player = embed?.getPlayer?.()
+        player?.setMuted(false)
+        player?.setVolume(1)
+        player?.play()
+      } catch {
+        // ignore
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
     return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
       const keepAlive = (embed as { __keepAlive?: ReturnType<typeof setInterval> } | null)?.__keepAlive
       if (keepAlive) clearInterval(keepAlive)
-      // Clear container so a fresh embed mounts on next render
       if (containerRef.current) containerRef.current.innerHTML = ''
     }
   }, [channel, hostname])
@@ -292,7 +304,8 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
   }
 
   // Twitch: use parsed channel or treat raw value as channel name
-  const channel = stream?.id ?? streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '')
+  const fallbackChannel = detectStream(DEFAULT_TWITCH_STREAM)?.id || FIXED_CHAT_CHANNEL
+  const channel = stream?.id || fallbackChannel
   return <TwitchPlayer channel={channel} hostname={hostname} />
 }
 
@@ -464,7 +477,7 @@ export default function Watch() {
           <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)] max-w-[1280px] mx-auto">
             <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(255,0,90,0.28),transparent_42%),radial-gradient(circle_at_85%_10%,rgba(80,0,255,0.26),transparent_35%)]" />
             <div className="w-full relative" style={{ aspectRatio: '16/9' }}>
-              <CSGNPlayer key={streamUrl} streamUrl={streamUrl} hostname={hostname} />
+              <CSGNPlayer streamUrl={streamUrl} hostname={hostname} />
               <CSGNWipeOverlay visible={showWipe} />
             </div>
 
