@@ -27,7 +27,7 @@ async function toCodeChallenge(verifier: string) {
 }
 
 export function getXRedirectUri() {
-  return `${window.location.origin}/account`
+  return `${window.location.origin}/auth/x/callback`
 }
 
 export async function startXOAuth(returnTo: string) {

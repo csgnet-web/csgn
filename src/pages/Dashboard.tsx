@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
   User, Mail, Wallet, LogIn, UserPlus, Trophy,
   CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Crown, X as XIcon, Info,
@@ -16,12 +16,10 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { ConnectionGrid } from '@/components/account/ConnectionGrid'
 import { startTwitchOAuth } from '@/lib/twitchAuth'
-import { getXReturnTo, resolveXUserFromSearch, startXOAuth } from '@/lib/xAuth'
+import { startXOAuth } from '@/lib/xAuth'
 
 export default function Dashboard() {
   const { user, profile, signIn, signUp, resendVerification, refreshProfile } = useAuth()
-  const navigate = useNavigate()
-  const location = useLocation()
   const { walletAddress, connect, disconnect, isConnecting, error } = usePhantomWallet()
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [authError, setAuthError] = useState('')
@@ -86,22 +84,6 @@ export default function Dashboard() {
     return stop
   }, [liveAssignedSlot?.id])
 
-  useEffect(() => {
-    if (!user) return
-    const params = new URLSearchParams(location.search)
-    if (!params.get('code') || !params.get('state')) return
-
-    ;(async () => {
-      try {
-        const username = await resolveXUserFromSearch(location.search)
-        await updateDoc(doc(db, 'users', user.uid), { 'socialLinks.twitter': username })
-        await refreshProfile()
-        navigate(getXReturnTo(), { replace: true })
-      } catch (err) {
-        console.warn('Failed to complete X OAuth callback:', err)
-      }
-    })()
-  }, [location.search, navigate, refreshProfile, user])
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
