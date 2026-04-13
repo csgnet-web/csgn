@@ -20,6 +20,7 @@ export default function XCallback() {
           'socialLinks.twitter': username,
         })
         await refreshProfile()
+        localStorage.setItem('oauth_notice', 'X connected successfully.')
         navigate(getXReturnTo(), { replace: true })
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unable to connect X account.'

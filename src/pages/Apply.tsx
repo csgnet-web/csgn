@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Send, User, CheckCircle, AlertCircle, Mic, Gamepad2, Tv, FileText } from 'lucide-react'
@@ -29,6 +29,7 @@ export default function Apply() {
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [oauthNotice, setOauthNotice] = useState('')
   const [form, setForm] = useState({
     displayName: profile?.displayName || '',
     email: user?.email || '',
@@ -44,6 +45,13 @@ export default function Apply() {
 
 
   if (!user) return <Navigate to="/account" replace />
+
+  useEffect(() => {
+    const msg = localStorage.getItem('oauth_notice')
+    if (!msg) return
+    setOauthNotice(msg)
+    localStorage.removeItem('oauth_notice')
+  }, [])
 
   const updateField = (field: string, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -141,6 +149,12 @@ export default function Apply() {
           </div>
 
           <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            {oauthNotice && (
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-sm text-emerald-300">
+                {oauthNotice}
+              </div>
+            )}
+
             {error && (
               <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-400">
                 <AlertCircle className="w-4 h-4 shrink-0" />

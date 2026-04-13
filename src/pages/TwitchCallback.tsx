@@ -20,6 +20,7 @@ export default function TwitchCallback() {
           'socialLinks.twitch': username,
         })
         await refreshProfile()
+        localStorage.setItem('oauth_notice', 'Twitch connected successfully.')
         navigate(getTwitchReturnTo(), { replace: true })
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unable to connect Twitch account.'

@@ -23,6 +23,7 @@ export default function Dashboard() {
   const { walletAddress, connect, disconnect, isConnecting, error } = usePhantomWallet()
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [authError, setAuthError] = useState('')
+  const [oauthNotice, setOauthNotice] = useState('')
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({ name: '', email: '', password: '' })
   const [verificationSent, setVerificationSent] = useState(false)
@@ -50,6 +51,13 @@ export default function Dashboard() {
     () => slotHistory.find((s) => Date.now() >= new Date(s.startTime).getTime() && Date.now() < new Date(s.endTime).getTime()) ?? null,
     [slotHistory],
   )
+
+  useEffect(() => {
+    const msg = localStorage.getItem('oauth_notice')
+    if (!msg) return
+    setOauthNotice(msg)
+    localStorage.removeItem('oauth_notice')
+  }, [])
 
   useEffect(() => {
     if (!user) return
@@ -292,6 +300,12 @@ export default function Dashboard() {
             </div>
             <Badge variant="blue">{profile?.role || 'viewer'}</Badge>
           </div>
+
+          {oauthNotice && (
+            <div className="mt-4 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-sm text-emerald-300">
+              {oauthNotice}
+            </div>
+          )}
 
           <div className="mt-4 space-y-3">
             <ConnectionGrid
