@@ -23,6 +23,7 @@ exports.handler = async (event) => {
       body: new URLSearchParams({
         code,
         grant_type: 'authorization_code',
+        client_id: clientId,
         redirect_uri: redirectUri,
         code_verifier: codeVerifier,
       }),

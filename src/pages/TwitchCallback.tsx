@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
@@ -9,9 +9,11 @@ export default function TwitchCallback() {
   const { user, refreshProfile } = useAuth()
   const navigate = useNavigate()
   const [error, setError] = useState('')
+  const processedRef = useRef(false)
 
   useEffect(() => {
-    if (!user) return
+    if (!user || processedRef.current) return
+    processedRef.current = true
 
     ;(async () => {
       try {
