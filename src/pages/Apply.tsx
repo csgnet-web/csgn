@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/Badge'
 import { SectionHeading } from '@/components/ui/SectionHeading'
 import { ConnectionGrid } from '@/components/account/ConnectionGrid'
 import { startTwitchOAuth } from '@/lib/twitchAuth'
+import { startXOAuth } from '@/lib/xAuth'
 
 const contentTypes = [
   { value: 'crypto-news', label: 'Crypto News & Drama', icon: Mic },
@@ -48,11 +49,6 @@ export default function Apply() {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
-  const saveSocial = async (platform: 'twitter' | 'twitch', value: string) => {
-    if (!user) return
-    await updateDoc(doc(db, 'users', user.uid), { [`socialLinks.${platform}`]: value.replace(/^@/, '') })
-    await refreshProfile()
-  }
 
   const clearSocial = async (platform: 'twitter' | 'twitch') => {
     if (!user) return
@@ -60,10 +56,8 @@ export default function Apply() {
     await refreshProfile()
   }
 
-  const promptX = async () => {
-    const handle = window.prompt('Enter your X username', profile?.socialLinks?.twitter || '')
-    if (!handle) return
-    await saveSocial('twitter', handle)
+  const connectX = async () => {
+    await startXOAuth('/apply')
   }
 
   const connectTwitch = () => {
@@ -193,7 +187,7 @@ export default function Apply() {
                     label: 'X',
                     connected: Boolean(profile?.socialLinks?.twitter),
                     username: profile?.socialLinks?.twitter ? `@${profile.socialLinks.twitter}` : undefined,
-                    onConnect: () => void promptX(),
+                    onConnect: () => void connectX(),
                     onDisconnect: () => void clearSocial('twitter'),
                     icon: (
                       <svg viewBox="0 0 24 24" className="w-7 h-7 fill-current" xmlns="http://www.w3.org/2000/svg">

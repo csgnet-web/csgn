@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { ConnectionGrid } from '@/components/account/ConnectionGrid'
 import { startTwitchOAuth } from '@/lib/twitchAuth'
+import { startXOAuth } from '@/lib/xAuth'
 
 export default function Dashboard() {
   const { user, profile, signIn, signUp, resendVerification, refreshProfile } = useAuth()
@@ -123,11 +124,6 @@ export default function Dashboard() {
   }
 
 
-  const setSocialHandle = async (platform: 'twitter' | 'twitch', handle: string) => {
-    if (!user) return
-    await updateDoc(doc(db, 'users', user.uid), { [`socialLinks.${platform}`]: handle.replace(/^@/, '') })
-    await refreshProfile()
-  }
 
   const clearSocialHandle = async (platform: 'twitter' | 'twitch') => {
     if (!user) return
@@ -135,13 +131,11 @@ export default function Dashboard() {
     await refreshProfile()
   }
 
-  const promptAndSaveX = async () => {
-    const value = window.prompt('Enter your X username', profile?.socialLinks?.twitter || '')
-    if (!value) return
+  const connectX = async () => {
     try {
-      await setSocialHandle('twitter', value)
+      await startXOAuth('/account')
     } catch (err) {
-      console.warn('Failed to save twitter handle:', err)
+      console.warn('Failed to start X OAuth:', err)
     }
   }
 
@@ -306,7 +300,7 @@ export default function Dashboard() {
                   label: 'X',
                   connected: Boolean(profile?.socialLinks?.twitter),
                   username: profile?.socialLinks?.twitter ? `@${profile.socialLinks.twitter}` : undefined,
-                  onConnect: () => void promptAndSaveX(),
+                  onConnect: () => void connectX(),
                   onDisconnect: () => void clearSocialHandle('twitter'),
                   icon: (
                     <svg viewBox="0 0 24 24" className="w-7 h-7 fill-current" xmlns="http://www.w3.org/2000/svg">
