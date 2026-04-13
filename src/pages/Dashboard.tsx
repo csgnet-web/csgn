@@ -14,19 +14,18 @@ import { startFeeTracker } from '@/lib/dexscreener'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { ConnectionGrid } from '@/components/account/ConnectionGrid'
 
 export default function Dashboard() {
   const { user, profile, signIn, signUp, resendVerification, refreshProfile } = useAuth()
-  const { walletAddress, balance, connect, disconnect, isConnecting, error } = usePhantomWallet()
+  const { walletAddress, connect, disconnect, isConnecting, error } = usePhantomWallet()
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [authError, setAuthError] = useState('')
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({ name: '', email: '', password: '' })
-  const [xHandle, setXHandle] = useState(profile?.socialLinks?.twitter || '')
   const [verificationSent, setVerificationSent] = useState(false)
   const [resending, setResending] = useState(false)
   const [savingWallet, setSavingWallet] = useState(false)
-  const [savingHandle, setSavingHandle] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [slotHistory, setSlotHistory] = useState<Slot[]>([])
   const [liveEstimateSOL, setLiveEstimateSOL] = useState(0)
@@ -106,17 +105,6 @@ export default function Dashboard() {
     }
   }
 
-  const handleSaveWallet = async () => {
-    if (!user || !walletAddress) return
-    setSavingWallet(true)
-    try {
-      await updateDoc(doc(db, 'users', user.uid), { walletAddress })
-      await refreshProfile()
-    } catch (err) {
-      console.warn('Failed to save wallet address:', err)
-    }
-    setSavingWallet(false)
-  }
 
   const handleConnectAndSave = async () => {
     const connected = await connect()
@@ -133,18 +121,39 @@ export default function Dashboard() {
     setSavingWallet(false)
   }
 
-  const handleSaveHandle = async () => {
+
+  const setSocialHandle = async (platform: 'twitter' | 'twitch', handle: string) => {
     if (!user) return
-    setSavingHandle(true)
+    await updateDoc(doc(db, 'users', user.uid), { [`socialLinks.${platform}`]: handle.replace(/^@/, '') })
+    await refreshProfile()
+  }
+
+  const clearSocialHandle = async (platform: 'twitter' | 'twitch') => {
+    if (!user) return
+    await updateDoc(doc(db, 'users', user.uid), { [`socialLinks.${platform}`]: '' })
+    await refreshProfile()
+  }
+
+  const promptAndSave = async (platform: 'twitter' | 'twitch') => {
+    const current = platform === 'twitter' ? profile?.socialLinks?.twitter : profile?.socialLinks?.twitch
+    const value = window.prompt(`Enter your ${platform === 'twitter' ? 'X' : 'Twitch'} username`, current || '')
+    if (!value) return
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
-        'socialLinks.twitter': xHandle.replace(/^@/, ''),
-      })
+      await setSocialHandle(platform, value)
+    } catch (err) {
+      console.warn(`Failed to save ${platform} handle:`, err)
+    }
+  }
+
+  const clearPhantom = async () => {
+    if (!user) return
+    try {
+      await disconnect()
+      await updateDoc(doc(db, 'users', user.uid), { walletAddress: '' })
       await refreshProfile()
     } catch (err) {
-      console.warn('Failed to save X handle:', err)
+      console.warn('Failed to disconnect wallet:', err)
     }
-    setSavingHandle(false)
   }
 
   const handleDismissNotification = async (notifId: string) => {
@@ -241,7 +250,6 @@ export default function Dashboard() {
   }
 
   const savedWallet = profile?.walletAddress
-  const walletMismatch = savedWallet && walletAddress && savedWallet !== walletAddress
 
   return (
     <div className="min-h-screen pt-24 lg:pt-32 pb-24">
@@ -286,94 +294,55 @@ export default function Dashboard() {
             <Badge variant="blue">{profile?.role || 'viewer'}</Badge>
           </div>
 
-          {/* Wallet connection */}
           <div className="mt-4 space-y-3">
-            {walletAddress ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="purple">
-                  <Wallet className="w-3 h-3" /> {walletAddress.slice(0, 6)}...{walletAddress.slice(-6)}{' '}
-                  {balance !== null ? `(${balance.toFixed(3)} SOL)` : ''}
-                </Badge>
-                <Button variant="ghost" size="sm" onClick={disconnect}>Disconnect</Button>
-                {(!savedWallet || walletMismatch) && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    isLoading={savingWallet}
-                    onClick={handleSaveWallet}
-                  >
-                    {walletMismatch ? 'Update Wallet' : 'Save Wallet'}
-                  </Button>
-                )}
-                {savedWallet && !walletMismatch && (
-                  <span className="text-xs text-emerald-400 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" /> Wallet saved
-                  </span>
-                )}
-              </div>
-            ) : (
-              <Button variant="primary" size="sm" onClick={handleConnectAndSave} isLoading={isConnecting}>
-                Connect Phantom Wallet
-              </Button>
-            )}
-
+            <ConnectionGrid
+              items={[
+                {
+                  id: 'x',
+                  label: 'X',
+                  connected: Boolean(profile?.socialLinks?.twitter),
+                  username: profile?.socialLinks?.twitter ? `@${profile.socialLinks.twitter}` : undefined,
+                  onConnect: () => void promptAndSave('twitter'),
+                  onDisconnect: () => void clearSocialHandle('twitter'),
+                  icon: (
+                    <svg viewBox="0 0 24 24" className="w-7 h-7 fill-current" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                    </svg>
+                  ),
+                },
+                {
+                  id: 'twitch',
+                  label: 'Twitch',
+                  connected: Boolean(profile?.socialLinks?.twitch),
+                  username: profile?.socialLinks?.twitch ? `@${profile.socialLinks.twitch}` : undefined,
+                  onConnect: () => void promptAndSave('twitch'),
+                  onDisconnect: () => void clearSocialHandle('twitch'),
+                  icon: <span className="text-lg font-black tracking-tight">Tw</span>,
+                },
+                {
+                  id: 'phantom',
+                  label: 'Phantom',
+                  connected: Boolean(profile?.walletAddress),
+                  username: profile?.walletAddress ? `${profile.walletAddress.slice(0, 6)}...${profile.walletAddress.slice(-4)}` : undefined,
+                  onConnect: () => void handleConnectAndSave(),
+                  onDisconnect: () => void clearPhantom(),
+                  loading: isConnecting || savingWallet,
+                  icon: <span className="text-lg font-bold">◎</span>,
+                },
+                {
+                  id: 'csgn',
+                  label: 'CSGN',
+                  connected: true,
+                  username: profile?.displayName || profile?.email,
+                  icon: <span className="text-lg font-bold">C</span>,
+                },
+              ]}
+            />
             {savedWallet && (
               <p className="text-xs text-gray-500 font-mono flex items-center gap-1">
                 <Wallet className="w-3 h-3" /> Saved: {savedWallet.slice(0, 8)}...{savedWallet.slice(-6)}
               </p>
             )}
-
-            {/* X / Twitter connection */}
-            <div className="space-y-2">
-              {profile?.socialLinks?.twitter ? (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="flex items-center gap-2 px-3 py-1.5 bg-black border border-white/20 rounded-lg text-sm text-white">
-                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                    </svg>
-                    @{profile.socialLinks.twitter}
-                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <input
-                      value={xHandle}
-                      onChange={(e) => setXHandle(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSaveHandle()}
-                      placeholder="Update handle"
-                      className="px-2 py-1 bg-white/5 border border-white/10 rounded-lg text-xs text-white w-32"
-                    />
-                    <Button variant="secondary" size="sm" isLoading={savingHandle} onClick={handleSaveHandle}>
-                      Update
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    disabled
-                    title="X OAuth coming soon — enter your handle manually below"
-                    className="flex items-center gap-2 px-4 py-2 bg-black border border-white/10 rounded-lg text-sm font-semibold text-gray-500 cursor-not-allowed opacity-50"
-                  >
-                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                    </svg>
-                    Connect X Account
-                    <span className="text-[10px] font-normal bg-white/10 px-1.5 py-0.5 rounded">Coming Soon</span>
-                  </button>
-                  <span className="text-xs text-gray-500">enter handle manually:</span>
-                  <input
-                    value={xHandle}
-                    onChange={(e) => setXHandle(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSaveHandle()}
-                    placeholder="@handle"
-                    className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white w-36"
-                  />
-                  <Button variant="secondary" size="sm" isLoading={savingHandle} onClick={handleSaveHandle}>
-                    Save
-                  </Button>
-                </div>
-              )}
-            </div>
           </div>
 
           {error && <p className="text-xs text-red-300 mt-2">{error}</p>}

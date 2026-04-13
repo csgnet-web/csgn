@@ -33,7 +33,7 @@ export interface UserProfile {
   createdAt: unknown
   bio?: string
   walletAddress?: string
-  socialLinks?: { twitter?: string; twitch?: string; youtube?: string }
+  socialLinks?: { twitter?: string; twitch?: string }
   notifications?: UserNotification[]
   xp?: number
 }
