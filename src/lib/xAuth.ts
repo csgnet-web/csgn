@@ -1,20 +1,14 @@
 const X_AUTHORIZE_URL = 'https://x.com/i/oauth2/authorize'
-const X_TOKEN_URL = 'https://api.x.com/2/oauth2/token'
-const X_ME_URL = 'https://api.x.com/2/users/me?user.fields=username'
+const X_ME_URL = 'https://api.x.com/2/users/me?user.fields=username,verified'
 
 const STATE_KEY = 'x_oauth_state'
 const VERIFIER_KEY = 'x_oauth_verifier'
 const RETURN_TO_KEY = 'x_oauth_return_to'
 
 const FALLBACK_CLIENT_ID = 'eDA3SWFHSlVXT3NaY1FaWFBjSlA6MTpjaQ'
-const FALLBACK_CLIENT_SECRET = 'DVbNuXtklbTMKud7DOjd7z9T1FLgLsUMB_ZKU_06EDph2THmI4'
 
 function getClientId() {
   return (import.meta.env.VITE_X_CLIENT_ID as string | undefined) || FALLBACK_CLIENT_ID
-}
-
-function getClientSecret() {
-  return (import.meta.env.VITE_X_CLIENT_SECRET as string | undefined) || FALLBACK_CLIENT_SECRET
 }
 
 function b64Url(bytes: Uint8Array) {
@@ -51,7 +45,7 @@ export async function startXOAuth(returnTo: string) {
     response_type: 'code',
     client_id: clientId,
     redirect_uri: getXRedirectUri(),
-    scope: 'users.read',
+    scope: 'users.read tweet.read follows.read like.read offline.access',
     state,
     code_challenge: challenge,
     code_challenge_method: 'S256',
@@ -65,9 +59,6 @@ export function getXReturnTo() {
 }
 
 export async function resolveXUserFromSearch(search: string) {
-  const clientId = getClientId()
-  if (!clientId) throw new Error('Missing VITE_X_CLIENT_ID')
-
   const params = new URLSearchParams(search)
   const code = params.get('code')
   const state = params.get('state')
@@ -82,23 +73,20 @@ export async function resolveXUserFromSearch(search: string) {
   if (!expectedState || expectedState !== state) throw new Error('Invalid X OAuth state')
   if (!verifier) throw new Error('Missing X OAuth code verifier')
 
-  const basic = btoa(`${clientId}:${getClientSecret()}`)
-
-  const tokenRes = await fetch(X_TOKEN_URL, {
+  const tokenRes = await fetch('/.netlify/functions/x-token-exchange', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: `Basic ${basic}`,
-    },
-    body: new URLSearchParams({
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
       code,
-      grant_type: 'authorization_code',
-      client_id: clientId,
-      redirect_uri: getXRedirectUri(),
-      code_verifier: verifier,
+      codeVerifier: verifier,
+      redirectUri: getXRedirectUri(),
     }),
   })
-  if (!tokenRes.ok) throw new Error('Unable to exchange X OAuth code for token')
+
+  if (!tokenRes.ok) {
+    const text = await tokenRes.text()
+    throw new Error(`Unable to exchange X OAuth code for token: ${text}`)
+  }
   const tokenJson = await tokenRes.json() as { access_token?: string }
   if (!tokenJson.access_token) throw new Error('No X access token returned')
 
