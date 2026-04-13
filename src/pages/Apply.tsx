@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { SectionHeading } from '@/components/ui/SectionHeading'
 import { ConnectionGrid } from '@/components/account/ConnectionGrid'
+import { startTwitchOAuth } from '@/lib/twitchAuth'
 
 const contentTypes = [
   { value: 'crypto-news', label: 'Crypto News & Drama', icon: Mic },
@@ -59,11 +60,14 @@ export default function Apply() {
     await refreshProfile()
   }
 
-  const promptSocial = async (platform: 'twitter' | 'twitch') => {
-    const current = platform === 'twitter' ? profile?.socialLinks?.twitter : profile?.socialLinks?.twitch
-    const handle = window.prompt(`Enter your ${platform === 'twitter' ? 'X' : 'Twitch'} username`, current || '')
+  const promptX = async () => {
+    const handle = window.prompt('Enter your X username', profile?.socialLinks?.twitter || '')
     if (!handle) return
-    await saveSocial(platform, handle)
+    await saveSocial('twitter', handle)
+  }
+
+  const connectTwitch = () => {
+    startTwitchOAuth('/apply')
   }
 
   const connectPhantom = async () => {
@@ -189,7 +193,7 @@ export default function Apply() {
                     label: 'X',
                     connected: Boolean(profile?.socialLinks?.twitter),
                     username: profile?.socialLinks?.twitter ? `@${profile.socialLinks.twitter}` : undefined,
-                    onConnect: () => void promptSocial('twitter'),
+                    onConnect: () => void promptX(),
                     onDisconnect: () => void clearSocial('twitter'),
                     icon: (
                       <svg viewBox="0 0 24 24" className="w-7 h-7 fill-current" xmlns="http://www.w3.org/2000/svg">
@@ -202,7 +206,7 @@ export default function Apply() {
                     label: 'Twitch',
                     connected: Boolean(profile?.socialLinks?.twitch),
                     username: profile?.socialLinks?.twitch ? `@${profile.socialLinks.twitch}` : undefined,
-                    onConnect: () => void promptSocial('twitch'),
+                    onConnect: () => connectTwitch(),
                     onDisconnect: () => void clearSocial('twitch'),
                     icon: <span className="text-lg font-black tracking-tight">Tw</span>,
                   },
@@ -215,13 +219,6 @@ export default function Apply() {
                     onDisconnect: () => void disconnectPhantom(),
                     loading: isConnecting,
                     icon: <span className="text-lg font-bold">◎</span>,
-                  },
-                  {
-                    id: 'csgn',
-                    label: 'CSGN',
-                    connected: true,
-                    username: profile?.displayName || profile?.email,
-                    icon: <span className="text-lg font-bold">C</span>,
                   },
                 ]}
               />

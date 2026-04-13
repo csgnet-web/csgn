@@ -14,7 +14,7 @@ interface ConnectionItem {
 
 export function ConnectionGrid({ items }: { items: ConnectionItem[] }) {
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className={`grid grid-cols-2 ${items.length >= 4 ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-3`}>
       {items.map((item) => (
         <div key={item.id} className="space-y-1.5">
           <button

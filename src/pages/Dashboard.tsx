@@ -15,6 +15,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { ConnectionGrid } from '@/components/account/ConnectionGrid'
+import { startTwitchOAuth } from '@/lib/twitchAuth'
 
 export default function Dashboard() {
   const { user, profile, signIn, signUp, resendVerification, refreshProfile } = useAuth()
@@ -134,15 +135,18 @@ export default function Dashboard() {
     await refreshProfile()
   }
 
-  const promptAndSave = async (platform: 'twitter' | 'twitch') => {
-    const current = platform === 'twitter' ? profile?.socialLinks?.twitter : profile?.socialLinks?.twitch
-    const value = window.prompt(`Enter your ${platform === 'twitter' ? 'X' : 'Twitch'} username`, current || '')
+  const promptAndSaveX = async () => {
+    const value = window.prompt('Enter your X username', profile?.socialLinks?.twitter || '')
     if (!value) return
     try {
-      await setSocialHandle(platform, value)
+      await setSocialHandle('twitter', value)
     } catch (err) {
-      console.warn(`Failed to save ${platform} handle:`, err)
+      console.warn('Failed to save twitter handle:', err)
     }
+  }
+
+  const connectTwitch = () => {
+    startTwitchOAuth('/account')
   }
 
   const clearPhantom = async () => {
@@ -302,7 +306,7 @@ export default function Dashboard() {
                   label: 'X',
                   connected: Boolean(profile?.socialLinks?.twitter),
                   username: profile?.socialLinks?.twitter ? `@${profile.socialLinks.twitter}` : undefined,
-                  onConnect: () => void promptAndSave('twitter'),
+                  onConnect: () => void promptAndSaveX(),
                   onDisconnect: () => void clearSocialHandle('twitter'),
                   icon: (
                     <svg viewBox="0 0 24 24" className="w-7 h-7 fill-current" xmlns="http://www.w3.org/2000/svg">
@@ -315,7 +319,7 @@ export default function Dashboard() {
                   label: 'Twitch',
                   connected: Boolean(profile?.socialLinks?.twitch),
                   username: profile?.socialLinks?.twitch ? `@${profile.socialLinks.twitch}` : undefined,
-                  onConnect: () => void promptAndSave('twitch'),
+                  onConnect: () => connectTwitch(),
                   onDisconnect: () => void clearSocialHandle('twitch'),
                   icon: <span className="text-lg font-black tracking-tight">Tw</span>,
                 },
@@ -328,13 +332,6 @@ export default function Dashboard() {
                   onDisconnect: () => void clearPhantom(),
                   loading: isConnecting || savingWallet,
                   icon: <span className="text-lg font-bold">◎</span>,
-                },
-                {
-                  id: 'csgn',
-                  label: 'CSGN',
-                  connected: true,
-                  username: profile?.displayName || profile?.email,
-                  icon: <span className="text-lg font-bold">C</span>,
                 },
               ]}
             />
