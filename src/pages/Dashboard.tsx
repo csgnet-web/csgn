@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { ConnectionGrid } from '@/components/account/ConnectionGrid'
 import { startTwitchOAuth } from '@/lib/twitchAuth'
-import { startXOAuth } from '@/lib/xAuth'
+import { connectXAccount } from '@/lib/xAuth'
 
 export default function Dashboard() {
   const { user, profile, signIn, signUp, resendVerification, refreshProfile } = useAuth()
@@ -141,10 +141,18 @@ export default function Dashboard() {
   }
 
   const connectX = async () => {
+    if (!user) return
     try {
-      await startXOAuth('/account')
+      const username = await connectXAccount()
+      await updateDoc(doc(db, 'users', user.uid), {
+        'socialLinks.twitter': username,
+        twitterUsername: username,
+      })
+      await refreshProfile()
+      setOauthNotice('X connected successfully.')
     } catch (err) {
-      console.warn('Failed to start X OAuth:', err)
+      console.warn('Failed to connect X:', err)
+      setOauthNotice(err instanceof Error ? err.message : 'Failed to connect X.')
     }
   }
 

@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/Badge'
 import { SectionHeading } from '@/components/ui/SectionHeading'
 import { ConnectionGrid } from '@/components/account/ConnectionGrid'
 import { startTwitchOAuth } from '@/lib/twitchAuth'
-import { startXOAuth } from '@/lib/xAuth'
+import { connectXAccount } from '@/lib/xAuth'
 
 const contentTypes = [
   { value: 'crypto-news', label: 'Crypto News & Drama', icon: Mic },
@@ -83,7 +83,18 @@ export default function Apply() {
   }
 
   const connectX = async () => {
-    await startXOAuth('/apply')
+    if (!user) return
+    try {
+      const username = await connectXAccount()
+      await updateDoc(doc(db, 'users', user.uid), {
+        'socialLinks.twitter': username,
+        twitterUsername: username,
+      })
+      await refreshProfile()
+      setOauthNotice('X connected successfully.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to connect X account.')
+    }
   }
 
   const connectTwitch = () => {

@@ -1,56 +1,89 @@
-function getConfig() {
-  const clientId = process.env.X_CLIENT_ID
-  const clientSecret = process.env.X_CLIENT_SECRET
-  if (!clientId || !clientSecret) {
-    throw new Error('Missing X_CLIENT_ID or X_CLIENT_SECRET in Netlify environment')
+const crypto = require('crypto')
+
+const X_API_BASE = 'https://api.x.com/1.1'
+const VERIFY_CREDENTIALS_URL = `${X_API_BASE}/account/verify_credentials.json?skip_status=true&include_entities=false`
+
+// User requested a no-Netlify-env setup, so credentials are wired directly here.
+const CONSUMER_KEY = 'eWlFHctYHGBJWrqvnw4tCG1dl'
+const CONSUMER_SECRET = 'hE9l2zl9FaLJ8jHHYcwFHKrWGeUimgYRAvfprUt5s3ww8fHKAW'
+const ACCESS_TOKEN = '1966661365222764545-5HAcAgTuKwWoCO3DXfRkEFUDYcXtqj'
+const ACCESS_TOKEN_SECRET = 'mmVp0vIXoLuPUfHjhqUPfD19p67qah4HnlqajMrQf9D9I'
+
+function percentEncode(value) {
+  return encodeURIComponent(value)
+    .replace(/!/g, '%21')
+    .replace(/\*/g, '%2A')
+    .replace(/'/g, '%27')
+    .replace(/\(/g, '%28')
+    .replace(/\)/g, '%29')
+}
+
+function createOAuthHeader(method, url) {
+  const oauth = {
+    oauth_consumer_key: CONSUMER_KEY,
+    oauth_nonce: crypto.randomBytes(16).toString('hex'),
+    oauth_signature_method: 'HMAC-SHA1',
+    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+    oauth_token: ACCESS_TOKEN,
+    oauth_version: '1.0',
   }
-  return { clientId, clientSecret }
+
+  const parameterString = Object.keys(oauth)
+    .sort()
+    .map((key) => `${percentEncode(key)}=${percentEncode(oauth[key])}`)
+    .join('&')
+
+  const signatureBaseString = [
+    method.toUpperCase(),
+    percentEncode(url),
+    percentEncode(parameterString),
+  ].join('&')
+
+  const signingKey = `${percentEncode(CONSUMER_SECRET)}&${percentEncode(ACCESS_TOKEN_SECRET)}`
+  const signature = crypto.createHmac('sha1', signingKey).update(signatureBaseString).digest('base64')
+
+  const authParams = { ...oauth, oauth_signature: signature }
+  const authHeader = `OAuth ${Object.keys(authParams)
+    .sort()
+    .map((key) => `${percentEncode(key)}="${percentEncode(authParams[key])}"`)
+    .join(', ')}`
+
+  return authHeader
 }
 
 exports.handler = async (event) => {
-  if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method not allowed' }
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, body: 'Method not allowed' }
+  }
 
   try {
-    const { code, codeVerifier, redirectUri } = JSON.parse(event.body || '{}')
-    if (!code || !codeVerifier || !redirectUri) {
-      return { statusCode: 400, body: JSON.stringify({ error: 'Missing code/codeVerifier/redirectUri' }) }
+    const authorization = createOAuthHeader('GET', VERIFY_CREDENTIALS_URL)
+    const profileRes = await fetch(VERIFY_CREDENTIALS_URL, {
+      method: 'GET',
+      headers: {
+        Authorization: authorization,
+      },
+    })
+
+    const body = await profileRes.text()
+    if (!profileRes.ok) {
+      return {
+        statusCode: profileRes.status,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: 'Unable to verify X credentials', details: body }),
+      }
     }
 
-    const { clientId, clientSecret } = getConfig()
-    const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+    const payload = JSON.parse(body)
+    const username = payload?.screen_name
 
-    const tokenRes = await fetch('https://api.x.com/2/oauth2/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Authorization: `Basic ${basic}`,
-      },
-      body: new URLSearchParams({
-        code,
-        grant_type: 'authorization_code',
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        code_verifier: codeVerifier,
-      }),
-    })
-
-    const tokenText = await tokenRes.text()
-    if (!tokenRes.ok) return { statusCode: tokenRes.status, body: tokenText }
-
-    const tokenJson = JSON.parse(tokenText)
-    const accessToken = tokenJson.access_token
-    if (!accessToken) return { statusCode: 500, body: JSON.stringify({ error: 'No access token returned by X' }) }
-
-    const profileRes = await fetch('https://api.x.com/2/users/me?user.fields=username', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
-
-    const profileText = await profileRes.text()
-    if (!profileRes.ok) return { statusCode: profileRes.status, body: profileText }
-
-    const profileJson = JSON.parse(profileText)
-    const username = profileJson?.data?.username
-    if (!username) return { statusCode: 500, body: JSON.stringify({ error: 'No username returned by X profile endpoint' }) }
+    if (!username) {
+      return {
+        statusCode: 500,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: 'No username returned from X verify_credentials' }),
+      }
+    }
 
     return {
       statusCode: 200,
