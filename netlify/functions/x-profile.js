@@ -1,54 +1,15 @@
-const crypto = require('crypto')
+const FALLBACK_CLIENT_ID = 'eDA3SWFHSlVXT3NaY1FaWFBjSlA6MTpjaQ'
+const FALLBACK_CLIENT_SECRET = 'DVbNuXtklbTMKud7DOjd7z9T1FLgLsUMB_ZKU_06EDph2THmI4'
 
-const X_API_BASE = 'https://api.x.com/1.1'
-const VERIFY_CREDENTIALS_URL = `${X_API_BASE}/account/verify_credentials.json?skip_status=true&include_entities=false`
+function getClientConfig(clientIdFromRequest) {
+  const clientId = process.env.X_CLIENT_ID || clientIdFromRequest || FALLBACK_CLIENT_ID
+  const clientSecret = process.env.X_CLIENT_SECRET || FALLBACK_CLIENT_SECRET
 
-// User requested a no-Netlify-env setup, so credentials are wired directly here.
-const CONSUMER_KEY = 'eWlFHctYHGBJWrqvnw4tCG1dl'
-const CONSUMER_SECRET = 'hE9l2zl9FaLJ8jHHYcwFHKrWGeUimgYRAvfprUt5s3ww8fHKAW'
-const ACCESS_TOKEN = '1966661365222764545-5HAcAgTuKwWoCO3DXfRkEFUDYcXtqj'
-const ACCESS_TOKEN_SECRET = 'mmVp0vIXoLuPUfHjhqUPfD19p67qah4HnlqajMrQf9D9I'
-
-function percentEncode(value) {
-  return encodeURIComponent(value)
-    .replace(/!/g, '%21')
-    .replace(/\*/g, '%2A')
-    .replace(/'/g, '%27')
-    .replace(/\(/g, '%28')
-    .replace(/\)/g, '%29')
-}
-
-function createOAuthHeader(method, url) {
-  const oauth = {
-    oauth_consumer_key: CONSUMER_KEY,
-    oauth_nonce: crypto.randomBytes(16).toString('hex'),
-    oauth_signature_method: 'HMAC-SHA1',
-    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
-    oauth_token: ACCESS_TOKEN,
-    oauth_version: '1.0',
+  if (!clientId || !clientSecret) {
+    throw new Error('Missing X client credentials for OAuth exchange')
   }
 
-  const parameterString = Object.keys(oauth)
-    .sort()
-    .map((key) => `${percentEncode(key)}=${percentEncode(oauth[key])}`)
-    .join('&')
-
-  const signatureBaseString = [
-    method.toUpperCase(),
-    percentEncode(url),
-    percentEncode(parameterString),
-  ].join('&')
-
-  const signingKey = `${percentEncode(CONSUMER_SECRET)}&${percentEncode(ACCESS_TOKEN_SECRET)}`
-  const signature = crypto.createHmac('sha1', signingKey).update(signatureBaseString).digest('base64')
-
-  const authParams = { ...oauth, oauth_signature: signature }
-  const authHeader = `OAuth ${Object.keys(authParams)
-    .sort()
-    .map((key) => `${percentEncode(key)}="${percentEncode(authParams[key])}"`)
-    .join(', ')}`
-
-  return authHeader
+  return { clientId, clientSecret }
 }
 
 exports.handler = async (event) => {
@@ -57,31 +18,75 @@ exports.handler = async (event) => {
   }
 
   try {
-    const authorization = createOAuthHeader('GET', VERIFY_CREDENTIALS_URL)
-    const profileRes = await fetch(VERIFY_CREDENTIALS_URL, {
-      method: 'GET',
-      headers: {
-        Authorization: authorization,
-      },
-    })
+    const { code, codeVerifier, redirectUri, clientId: clientIdFromRequest } = JSON.parse(event.body || '{}')
 
-    const body = await profileRes.text()
-    if (!profileRes.ok) {
+    if (!code || !codeVerifier || !redirectUri) {
       return {
-        statusCode: profileRes.status,
+        statusCode: 400,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ error: 'Unable to verify X credentials', details: body }),
+        body: JSON.stringify({ error: 'Missing code/codeVerifier/redirectUri' }),
       }
     }
 
-    const payload = JSON.parse(body)
-    const username = payload?.screen_name
+    const { clientId, clientSecret } = getClientConfig(clientIdFromRequest)
+    const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+
+    const tokenRes = await fetch('https://api.x.com/2/oauth2/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: `Basic ${basicAuth}`,
+      },
+      body: new URLSearchParams({
+        code,
+        grant_type: 'authorization_code',
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        code_verifier: codeVerifier,
+      }),
+    })
+
+    const tokenBody = await tokenRes.text()
+    if (!tokenRes.ok) {
+      return {
+        statusCode: tokenRes.status,
+        headers: { 'Content-Type': 'application/json' },
+        body: tokenBody,
+      }
+    }
+
+    const tokenJson = JSON.parse(tokenBody)
+    const accessToken = tokenJson?.access_token
+
+    if (!accessToken) {
+      return {
+        statusCode: 500,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: 'No access_token returned from X token endpoint' }),
+      }
+    }
+
+    const meRes = await fetch('https://api.x.com/2/users/me?user.fields=username', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+
+    const meBody = await meRes.text()
+    if (!meRes.ok) {
+      return {
+        statusCode: meRes.status,
+        headers: { 'Content-Type': 'application/json' },
+        body: meBody,
+      }
+    }
+
+    const meJson = JSON.parse(meBody)
+    const username = meJson?.data?.username
 
     if (!username) {
       return {
         statusCode: 500,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ error: 'No username returned from X verify_credentials' }),
+        body: JSON.stringify({ error: 'No username returned by X users/me endpoint' }),
       }
     }
 
