@@ -11,7 +11,18 @@ function getClientId() {
 }
 
 export function getTwitchRedirectUri() {
-  return `${window.location.origin}/auth/twitch/callback`
+  const callbackPath = '/auth/twitch/callback'
+  const host = window.location.hostname.toLowerCase()
+
+  if (host === 'csgn.fun' || host === 'www.csgn.fun') {
+    return `https://csgn.fun${callbackPath}`
+  }
+
+  if (host === 'flourishing-horse-40f91d.netlify.app') {
+    return `https://flourishing-horse-40f91d.netlify.app${callbackPath}`
+  }
+
+  return `${window.location.origin}${callbackPath}`
 }
 
 export function startTwitchOAuth(returnTo: string) {

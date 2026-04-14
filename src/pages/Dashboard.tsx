@@ -318,6 +318,8 @@ export default function Dashboard() {
                   username: profile?.socialLinks?.twitter ? `@${profile.socialLinks.twitter}` : undefined,
                   onConnect: () => void connectX(),
                   onDisconnect: () => void clearSocialHandle('twitter'),
+                  disabled: true,
+                  statusText: '',
                   icon: (
                     <svg viewBox="0 0 24 24" className="w-7 h-7 fill-current" xmlns="http://www.w3.org/2000/svg">
                       <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
@@ -331,7 +333,11 @@ export default function Dashboard() {
                   username: profile?.socialLinks?.twitch ? `@${profile.socialLinks.twitch}` : undefined,
                   onConnect: () => connectTwitch(),
                   onDisconnect: () => void clearSocialHandle('twitch'),
-                  icon: <span className="text-lg font-black tracking-tight">Tw</span>,
+                  icon: (
+                    <svg viewBox="0 0 24 24" className="w-7 h-7 fill-current" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                      <path d="M4.286 0 0 4.286v15.428H5.143V24l4.286-4.286h3.429L24 8.571V0H4.286zm18 7.714-5.143 5.143h-3.428L10.714 15.86v-3.003H7.286V1.714h15v6z" />
+                    </svg>
+                  ),
                 },
                 {
                   id: 'phantom',
