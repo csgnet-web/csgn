@@ -11,8 +11,8 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { SectionHeading } from '@/components/ui/SectionHeading'
 import { ConnectionGrid } from '@/components/account/ConnectionGrid'
+import { TwitchLogo } from '@/components/ui/TwitchLogo'
 import { startTwitchOAuth } from '@/lib/twitchAuth'
-import { startXOAuth } from '@/lib/xAuth'
 
 const contentTypes = [
   { value: 'crypto-news', label: 'Crypto News & Drama', icon: Mic },
@@ -23,7 +23,7 @@ const contentTypes = [
 ]
 
 export default function Apply() {
-  const { user, profile, refreshProfile } = useAuth()
+  const { user, profile, setProfileFields } = useAuth()
   const { connect, disconnect, isConnecting } = usePhantomWallet()
 
   const [submitted, setSubmitted] = useState(false)
@@ -79,17 +79,10 @@ export default function Apply() {
   const clearSocial = async (platform: 'twitter' | 'twitch') => {
     if (!user) return
     await updateDoc(doc(db, 'users', user.uid), { [`socialLinks.${platform}`]: '' })
-    await refreshProfile()
+    setProfileFields({
+      socialLinks: { ...profile?.socialLinks, [platform]: '' },
+    })
   }
-
-  const connectX = async () => {
-    try {
-      await startXOAuth('/apply')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to connect X account.')
-    }
-  }
-
   const connectTwitch = () => {
     startTwitchOAuth('/apply')
   }
@@ -99,14 +92,14 @@ export default function Apply() {
     const wallet = await connect()
     if (!wallet) return
     await updateDoc(doc(db, 'users', user.uid), { walletAddress: wallet })
-    await refreshProfile()
+    setProfileFields({ walletAddress: wallet })
   }
 
   const disconnectPhantom = async () => {
     if (!user) return
     await disconnect()
     await updateDoc(doc(db, 'users', user.uid), { walletAddress: '' })
-    await refreshProfile()
+    setProfileFields({ walletAddress: '' })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -242,8 +235,7 @@ export default function Apply() {
                     label: 'X',
                     connected: Boolean(profile?.socialLinks?.twitter),
                     username: profile?.socialLinks?.twitter ? `@${profile.socialLinks.twitter}` : undefined,
-                    onConnect: () => void connectX(),
-                    onDisconnect: () => void clearSocial('twitter'),
+                    disabled: true,
                     icon: (
                       <svg viewBox="0 0 24 24" className="w-7 h-7 fill-current" xmlns="http://www.w3.org/2000/svg">
                         <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
@@ -257,7 +249,7 @@ export default function Apply() {
                     username: profile?.socialLinks?.twitch ? `@${profile.socialLinks.twitch}` : undefined,
                     onConnect: () => connectTwitch(),
                     onDisconnect: () => void clearSocial('twitch'),
-                    icon: <span className="text-lg font-black tracking-tight">Tw</span>,
+                    icon: <TwitchLogo className="w-7 h-7" />,
                   },
                   {
                     id: 'phantom',

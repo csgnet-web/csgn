@@ -15,11 +15,11 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { ConnectionGrid } from '@/components/account/ConnectionGrid'
+import { TwitchLogo } from '@/components/ui/TwitchLogo'
 import { startTwitchOAuth } from '@/lib/twitchAuth'
-import { startXOAuth } from '@/lib/xAuth'
 
 export default function Dashboard() {
-  const { user, profile, signIn, signUp, resendVerification, refreshProfile } = useAuth()
+  const { user, profile, signIn, signUp, resendVerification, setProfileFields } = useAuth()
   const { walletAddress, connect, disconnect, isConnecting, error } = usePhantomWallet()
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [authError, setAuthError] = useState('')
@@ -125,7 +125,7 @@ export default function Dashboard() {
     setSavingWallet(true)
     try {
       await updateDoc(doc(db, 'users', user.uid), { walletAddress: toSave })
-      await refreshProfile()
+      setProfileFields({ walletAddress: toSave })
     } catch (err) {
       console.warn('Failed to save wallet address:', err)
     }
@@ -137,18 +137,10 @@ export default function Dashboard() {
   const clearSocialHandle = async (platform: 'twitter' | 'twitch') => {
     if (!user) return
     await updateDoc(doc(db, 'users', user.uid), { [`socialLinks.${platform}`]: '' })
-    await refreshProfile()
+    setProfileFields({
+      socialLinks: { ...profile?.socialLinks, [platform]: '' },
+    })
   }
-
-  const connectX = async () => {
-    try {
-      await startXOAuth('/account')
-    } catch (err) {
-      console.warn('Failed to start X OAuth:', err)
-      setOauthNotice(err instanceof Error ? err.message : 'Failed to connect X.')
-    }
-  }
-
   const connectTwitch = () => {
     startTwitchOAuth('/account')
   }
@@ -158,7 +150,7 @@ export default function Dashboard() {
     try {
       await disconnect()
       await updateDoc(doc(db, 'users', user.uid), { walletAddress: '' })
-      await refreshProfile()
+      setProfileFields({ walletAddress: '' })
     } catch (err) {
       console.warn('Failed to disconnect wallet:', err)
     }
@@ -169,7 +161,7 @@ export default function Dashboard() {
     const updatedNotifs = notifications.filter((n) => n.id !== notifId)
     try {
       await updateDoc(doc(db, 'users', user.uid), { notifications: updatedNotifs })
-      await refreshProfile()
+      setProfileFields({ notifications: updatedNotifs })
     } catch (err) {
       console.warn('Failed to dismiss notification:', err)
     }
@@ -180,7 +172,7 @@ export default function Dashboard() {
     const updatedNotifs = notifications.map((n) => ({ ...n, read: true }))
     try {
       await updateDoc(doc(db, 'users', user.uid), { notifications: updatedNotifs })
-      await refreshProfile()
+      setProfileFields({ notifications: updatedNotifs })
     } catch (err) {
       console.warn('Failed to mark notifications read:', err)
     }
@@ -316,8 +308,7 @@ export default function Dashboard() {
                   label: 'X',
                   connected: Boolean(profile?.socialLinks?.twitter),
                   username: profile?.socialLinks?.twitter ? `@${profile.socialLinks.twitter}` : undefined,
-                  onConnect: () => void connectX(),
-                  onDisconnect: () => void clearSocialHandle('twitter'),
+                  disabled: true,
                   icon: (
                     <svg viewBox="0 0 24 24" className="w-7 h-7 fill-current" xmlns="http://www.w3.org/2000/svg">
                       <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
@@ -331,7 +322,7 @@ export default function Dashboard() {
                   username: profile?.socialLinks?.twitch ? `@${profile.socialLinks.twitch}` : undefined,
                   onConnect: () => connectTwitch(),
                   onDisconnect: () => void clearSocialHandle('twitch'),
-                  icon: <span className="text-lg font-black tracking-tight">Tw</span>,
+                  icon: <TwitchLogo className="w-7 h-7" />,
                 },
                 {
                   id: 'phantom',

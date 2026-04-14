@@ -10,6 +10,7 @@ interface ConnectionItem {
   onConnect?: () => void
   onDisconnect?: () => void
   loading?: boolean
+  disabled?: boolean
 }
 
 export function ConnectionGrid({ items }: { items: ConnectionItem[] }) {
@@ -19,16 +20,18 @@ export function ConnectionGrid({ items }: { items: ConnectionItem[] }) {
         <div key={item.id} className="space-y-1.5">
           <button
             type="button"
-            onClick={() => !item.connected && item.onConnect?.()}
+            onClick={() => !item.disabled && !item.connected && item.onConnect?.()}
             className={`relative w-full h-20 rounded-xl border transition-colors flex items-center justify-center ${
-              item.connected
-                ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300'
-                : 'bg-white/5 border-white/10 text-white hover:bg-white/10'
+              item.disabled
+                ? 'bg-gray-500/10 border-gray-500/30 text-gray-500 cursor-not-allowed'
+                : item.connected
+                  ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300'
+                  : 'bg-white/5 border-white/10 text-white hover:bg-white/10'
             } ${item.loading ? 'opacity-60 cursor-wait' : ''}`}
-            disabled={item.loading}
-            title={item.connected ? `${item.label} connected` : `Connect ${item.label}`}
+            disabled={item.loading || item.disabled}
+            title={item.disabled ? `${item.label} unavailable` : item.connected ? `${item.label} connected` : `Connect ${item.label}`}
           >
-            {item.connected && item.onDisconnect && (
+            {item.connected && item.onDisconnect && !item.disabled && (
               <span
                 className="absolute top-1.5 right-1.5 text-white/70 hover:text-white"
                 onClick={(e) => {

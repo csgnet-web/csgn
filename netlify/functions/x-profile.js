@@ -1,11 +1,9 @@
-const FALLBACK_CLIENT_ID = 'eDA3SWFHSlVXT3NaY1FaWFBjSlA6MTpjaQ'
-const FALLBACK_CLIENT_SECRET = 'DVbNuXtklbTMKud7DOjd7z9T1FLgLsUMB_ZKU_06EDph2THmI4'
 const TOKEN_URL = 'https://api.x.com/2/oauth2/token'
 const ME_URL = 'https://api.x.com/2/users/me?user.fields=username'
 
 function getClientConfig(clientIdFromRequest) {
-  const clientId = process.env.X_CLIENT_ID || clientIdFromRequest || FALLBACK_CLIENT_ID
-  const clientSecret = process.env.X_CLIENT_SECRET || FALLBACK_CLIENT_SECRET
+  const clientId = process.env.X_CLIENT_ID || clientIdFromRequest
+  const clientSecret = process.env.X_CLIENT_SECRET
 
   if (!clientId || !clientSecret) {
     throw new Error('Missing X client credentials for OAuth exchange')

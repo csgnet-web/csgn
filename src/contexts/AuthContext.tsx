@@ -46,6 +46,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, displayName: string) => Promise<void>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
+  setProfileFields: (fields: Partial<UserProfile>) => void
   resendVerification: () => Promise<void>
 }
 
@@ -141,6 +142,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user) await fetchProfile(user.uid)
   }
 
+  const setProfileFields = (fields: Partial<UserProfile>) => {
+    setProfile((prev) => (prev ? { ...prev, ...fields } : prev))
+  }
+
   const resendVerification = async () => {
     if (user && !user.emailVerified) {
       await sendEmailVerification(user)
@@ -149,7 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, profile, loading, signIn, signUp, signOut, refreshProfile, resendVerification }}
+      value={{ user, profile, loading, signIn, signUp, signOut, refreshProfile, setProfileFields, resendVerification }}
     >
       {children}
     </AuthContext.Provider>

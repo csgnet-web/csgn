@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { getTwitchReturnTo, resolveTwitchUserFromHash } from '@/lib/twitchAuth'
 
 export default function TwitchCallback() {
-  const { user, refreshProfile } = useAuth()
+  const { user, profile, setProfileFields } = useAuth()
   const navigate = useNavigate()
   const [error, setError] = useState('')
   const [countdown, setCountdown] = useState(5)
@@ -23,7 +23,7 @@ export default function TwitchCallback() {
           'socialLinks.twitch': username,
           twitchUsername: username,
         })
-        await refreshProfile()
+        setProfileFields({ socialLinks: { ...profile?.socialLinks, twitch: username } })
         localStorage.setItem('oauth_notice', 'Twitch connected successfully.')
         navigate(getTwitchReturnTo(), { replace: true })
       } catch (err) {
@@ -31,7 +31,7 @@ export default function TwitchCallback() {
         setError(message)
       }
     })()
-  }, [navigate, refreshProfile, user])
+  }, [navigate, profile?.socialLinks, setProfileFields, user])
 
   useEffect(() => {
     if (!error) return

@@ -3,10 +3,10 @@ const STATE_KEY = 'x_oauth_state'
 const VERIFIER_KEY = 'x_oauth_verifier'
 const RETURN_TO_KEY = 'x_oauth_return_to'
 
-const FALLBACK_X_CLIENT_ID = 'eDA3SWFHSlVXT3NaY1FaWFBjSlA6MTpjaQ'
-
 function getClientId() {
-  return (import.meta.env.VITE_X_CLIENT_ID as string | undefined) || FALLBACK_X_CLIENT_ID
+  const clientId = import.meta.env.VITE_X_CLIENT_ID as string | undefined
+  if (!clientId) throw new Error('Missing VITE_X_CLIENT_ID')
+  return clientId
 }
 
 function base64Url(bytes: Uint8Array) {

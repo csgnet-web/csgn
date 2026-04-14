@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { getXReturnTo, resolveXUserFromSearch } from '@/lib/xAuth'
 
 export default function XCallback() {
-  const { user, refreshProfile } = useAuth()
+  const { user, profile, setProfileFields } = useAuth()
   const navigate = useNavigate()
   const [error, setError] = useState('')
   const [countdown, setCountdown] = useState(5)
@@ -23,7 +23,7 @@ export default function XCallback() {
           'socialLinks.twitter': username,
           twitterUsername: username,
         })
-        await refreshProfile()
+        setProfileFields({ socialLinks: { ...profile?.socialLinks, twitter: username } })
         localStorage.setItem('oauth_notice', 'X connected successfully.')
         navigate(getXReturnTo(), { replace: true })
       } catch (err) {
@@ -31,7 +31,7 @@ export default function XCallback() {
         setError(message)
       }
     })()
-  }, [navigate, refreshProfile, user])
+  }, [navigate, profile?.socialLinks, setProfileFields, user])
 
   useEffect(() => {
     if (!error) return
