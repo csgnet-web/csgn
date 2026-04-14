@@ -1,6 +1,4 @@
 const X_AUTHORIZE_URL = 'https://x.com/i/oauth2/authorize'
-const X_ME_URL = 'https://api.x.com/2/users/me?user.fields=username'
-
 const STATE_KEY = 'x_oauth_state'
 const VERIFIER_KEY = 'x_oauth_verifier'
 const RETURN_TO_KEY = 'x_oauth_return_to'
@@ -80,19 +78,11 @@ export async function resolveXUserFromSearch(search: string) {
   })
   if (!tokenRes.ok) throw new Error(`Unable to exchange X OAuth code for token: ${await tokenRes.text()}`)
 
-  const tokenJson = await tokenRes.json() as { access_token?: string }
-  if (!tokenJson.access_token) throw new Error('No X access token returned')
-
-  const meRes = await fetch(X_ME_URL, {
-    headers: { Authorization: `Bearer ${tokenJson.access_token}` },
-  })
-  if (!meRes.ok) throw new Error('Unable to load X profile')
-
-  const meJson = await meRes.json() as { data?: { username?: string } }
-  if (!meJson.data?.username) throw new Error('No X username returned')
+  const payload = await tokenRes.json() as { username?: string }
+  if (!payload.username) throw new Error('No X username returned')
 
   localStorage.removeItem(STATE_KEY)
   localStorage.removeItem(VERIFIER_KEY)
 
-  return meJson.data.username
+  return payload.username
 }

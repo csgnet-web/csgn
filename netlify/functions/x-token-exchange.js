@@ -26,10 +26,28 @@ exports.handler = async (event) => {
       }),
     })
 
-    const text = await tokenRes.text()
-    if (!tokenRes.ok) return { statusCode: tokenRes.status, body: text }
+    const tokenText = await tokenRes.text()
+    if (!tokenRes.ok) return { statusCode: tokenRes.status, body: tokenText }
 
-    return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: text }
+    const tokenJson = JSON.parse(tokenText)
+    const accessToken = tokenJson.access_token
+    if (!accessToken) return { statusCode: 500, body: JSON.stringify({ error: 'No access token returned by X' }) }
+
+    const meRes = await fetch('https://api.x.com/2/users/me?user.fields=username', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    const meText = await meRes.text()
+    if (!meRes.ok) return { statusCode: meRes.status, body: meText }
+
+    const meJson = JSON.parse(meText)
+    const username = meJson?.data?.username
+    if (!username) return { statusCode: 500, body: JSON.stringify({ error: 'No username returned by X profile endpoint' }) }
+
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username }),
+    }
   } catch (err) {
     return {
       statusCode: 500,

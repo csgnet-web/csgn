@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Send, User, CheckCircle, AlertCircle, Mic, Gamepad2, Tv, FileText } from 'lucide-react'
-import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore'
+import { collection, addDoc, serverTimestamp, doc, updateDoc, getDocs, query, where, limit } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { useAuth } from '@/contexts/AuthContext'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
@@ -30,6 +30,8 @@ export default function Apply() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [oauthNotice, setOauthNotice] = useState('')
+  const [hasExistingApplication, setHasExistingApplication] = useState(false)
+  const [checkingExisting, setCheckingExisting] = useState(true)
   const [form, setForm] = useState({
     displayName: profile?.displayName || '',
     email: user?.email || '',
@@ -44,14 +46,30 @@ export default function Apply() {
   })
 
 
-  if (!user) return <Navigate to="/account" replace />
-
   useEffect(() => {
     const msg = localStorage.getItem('oauth_notice')
     if (!msg) return
     setOauthNotice(msg)
     localStorage.removeItem('oauth_notice')
   }, [])
+
+  useEffect(() => {
+    if (!user) return
+    ;(async () => {
+      setCheckingExisting(true)
+      try {
+        const q = query(collection(db, 'applications'), where('uid', '==', user.uid), limit(1))
+        const snap = await getDocs(q)
+        setHasExistingApplication(!snap.empty)
+      } catch {
+        setHasExistingApplication(false)
+      } finally {
+        setCheckingExisting(false)
+      }
+    })()
+  }, [user?.uid, submitted])
+
+  if (!user) return <Navigate to="/account" replace />
 
   const updateField = (field: string, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -93,6 +111,19 @@ export default function Apply() {
       setError('Please sign in to submit your application.')
       return
     }
+    if (!profile?.walletAddress) {
+      setError('Connect your Phantom wallet before applying.')
+      return
+    }
+    if (!profile?.socialLinks?.twitch) {
+      setError('Connect your Twitch account before applying.')
+      return
+    }
+    if (hasExistingApplication) {
+      setError('You already submitted an application. Only one application is allowed per user.')
+      return
+    }
+
     setLoading(true)
     setError('')
     try {
@@ -152,6 +183,12 @@ export default function Apply() {
             {oauthNotice && (
               <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-sm text-emerald-300">
                 {oauthNotice}
+              </div>
+            )}
+
+            {(checkingExisting || hasExistingApplication) && (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-sm text-amber-300">
+                {checkingExisting ? 'Checking application status…' : 'You have already submitted an application. Additional submissions are disabled.'}
               </div>
             )}
 
@@ -330,6 +367,7 @@ export default function Apply() {
                 size="lg"
                 className="w-full sm:w-auto"
                 isLoading={loading}
+                disabled={loading || checkingExisting || hasExistingApplication || !profile?.walletAddress || !profile?.socialLinks?.twitch}
                 leftIcon={<Send className="w-4 h-4" />}
               >
                 Submit Application
