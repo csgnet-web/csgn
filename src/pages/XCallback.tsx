@@ -3,7 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { useAuth } from '@/contexts/AuthContext'
-import { getXReturnTo, resolveXUserFromHash } from '@/lib/xAuth'
+import { getXReturnTo, resolveXUserFromSearch } from '@/lib/xAuth'
 
 export default function XCallback() {
   const { user, refreshProfile } = useAuth()
@@ -18,7 +18,7 @@ export default function XCallback() {
 
     ;(async () => {
       try {
-        const username = await resolveXUserFromHash(window.location.hash)
+        const username = await resolveXUserFromSearch(window.location.search)
         await updateDoc(doc(db, 'users', user.uid), {
           'socialLinks.twitter': username,
           twitterUsername: username,
