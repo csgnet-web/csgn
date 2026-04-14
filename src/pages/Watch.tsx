@@ -5,7 +5,7 @@ import { onSnapshot, doc, collection, query, orderBy } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { formatESTRange, type Slot } from '@/lib/slots'
 import { startFeeTracker } from '@/lib/dexscreener'
-import { detectStream as _detectStream, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
+import { detectStream as _detectStream, buildTwitchSrc, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
 const DEFAULT_TWITCH_STREAM = 'https://www.twitch.tv/csgnet'
 const FIXED_CHAT_CHANNEL = 'csgnet'
 
@@ -204,72 +204,17 @@ function YouTubePlayer({ videoId }: { videoId: string }) {
   )
 }
 
-/* ── Twitch sub-component: uses Twitch Embed JS to guarantee unmuted audio ── */
+/* ── Twitch sub-component: straightforward iframe embed ── */
 function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-
-    // Load Twitch Embed script once, reuse on subsequent renders
-    const loadTwitchScript = (): Promise<void> =>
-      new Promise((resolve) => {
-        if ((window as unknown as Record<string, unknown>).Twitch) { resolve(); return }
-        const existing = document.querySelector('script[src="https://embed.twitch.tv/embed/v1.js"]')
-        if (existing) {
-          existing.addEventListener('load', () => resolve(), { once: true })
-          return
-        }
-        const script = document.createElement('script')
-        script.src = 'https://embed.twitch.tv/embed/v1.js'
-        script.onload = () => resolve()
-        document.head.appendChild(script)
-      })
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let embed: any = null
-
-    loadTwitchScript().then(() => {
-      if (!containerRef.current) return
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const TwitchAPI = (window as any).Twitch
-      embed = new TwitchAPI.Embed(containerRef.current, {
-        width: '100%',
-        height: '100%',
-        channel,
-        parent: [hostname],
-        autoplay: true,
-        muted: false,
-        layout: 'video',
-      })
-      embed!.addEventListener(TwitchAPI.Embed.VIDEO_READY, () => {
-        const player = embed!.getPlayer()
-        player.setMuted(false)
-        player.setVolume(1)
-        player.play()
-        const keepAlive = setInterval(() => {
-          try {
-            player.setMuted(false)
-            player.setVolume(1)
-            player.play()
-          } catch {
-            // ignore
-          }
-        }, 8000)
-        ;(embed as { __keepAlive?: ReturnType<typeof setInterval> }).__keepAlive = keepAlive
-      })
-    })
-
-    return () => {
-      const keepAlive = (embed as { __keepAlive?: ReturnType<typeof setInterval> } | null)?.__keepAlive
-      if (keepAlive) clearInterval(keepAlive)
-      // Clear container so a fresh embed mounts on next render
-      if (containerRef.current) containerRef.current.innerHTML = ''
-    }
-  }, [channel, hostname])
-
-  return <div ref={containerRef} className="w-full h-full" />
+  return (
+    <iframe
+      src={buildTwitchSrc(channel, hostname)}
+      className="w-full h-full"
+      allow={PLAYER_ALLOW}
+      allowFullScreen
+      title="Live Stream"
+    />
+  )
 }
 
 /* ── CSGN Player: renders Twitch or YouTube, or NO STREAM ACTIVE ── */
@@ -292,7 +237,8 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
   }
 
   // Twitch: use parsed channel or treat raw value as channel name
-  const channel = stream?.id ?? streamUrl.trim().replace(/^https?:\/\//i, '').replace(/^twitch\.tv\//i, '')
+  const fallbackChannel = detectStream(DEFAULT_TWITCH_STREAM)?.id || FIXED_CHAT_CHANNEL
+  const channel = stream?.id || fallbackChannel
   return <TwitchPlayer channel={channel} hostname={hostname} />
 }
 
@@ -464,7 +410,7 @@ export default function Watch() {
           <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)] max-w-[1280px] mx-auto">
             <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(255,0,90,0.28),transparent_42%),radial-gradient(circle_at_85%_10%,rgba(80,0,255,0.26),transparent_35%)]" />
             <div className="w-full relative" style={{ aspectRatio: '16/9' }}>
-              <CSGNPlayer key={streamUrl} streamUrl={streamUrl} hostname={hostname} />
+              <CSGNPlayer streamUrl={streamUrl} hostname={hostname} />
               <CSGNWipeOverlay visible={showWipe} />
             </div>
 

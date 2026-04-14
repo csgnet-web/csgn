@@ -1,14 +1,18 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Send, User, CheckCircle, AlertCircle, Mic, Gamepad2, Tv, FileText } from 'lucide-react'
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, addDoc, serverTimestamp, doc, updateDoc, getDocs, query, where, limit } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { useAuth } from '@/contexts/AuthContext'
+import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { SectionHeading } from '@/components/ui/SectionHeading'
+import { ConnectionGrid } from '@/components/account/ConnectionGrid'
+import { startTwitchOAuth } from '@/lib/twitchAuth'
+import { startXOAuth } from '@/lib/xAuth'
 
 const contentTypes = [
   { value: 'crypto-news', label: 'Crypto News & Drama', icon: Mic },
@@ -19,17 +23,20 @@ const contentTypes = [
 ]
 
 export default function Apply() {
-  const { user, profile } = useAuth()
+  const { user, profile, refreshProfile } = useAuth()
+  const { connect, disconnect, isConnecting } = usePhantomWallet()
 
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [oauthNotice, setOauthNotice] = useState('')
+  const [hasExistingApplication, setHasExistingApplication] = useState(false)
+  const [checkingExisting, setCheckingExisting] = useState(true)
   const [form, setForm] = useState({
     displayName: profile?.displayName || '',
     email: user?.email || '',
     twitterConnected: false,
     twitchConnected: false,
-    youtubeConnected: false,
     contentType: '',
     experience: '',
     whyCSGN: '',
@@ -39,10 +46,67 @@ export default function Apply() {
   })
 
 
+  useEffect(() => {
+    const msg = localStorage.getItem('oauth_notice')
+    if (!msg) return
+    setOauthNotice(msg)
+    localStorage.removeItem('oauth_notice')
+  }, [])
+
+  useEffect(() => {
+    if (!user) return
+    ;(async () => {
+      setCheckingExisting(true)
+      try {
+        const q = query(collection(db, 'applications'), where('uid', '==', user.uid), limit(1))
+        const snap = await getDocs(q)
+        setHasExistingApplication(!snap.empty)
+      } catch {
+        setHasExistingApplication(false)
+      } finally {
+        setCheckingExisting(false)
+      }
+    })()
+  }, [user?.uid, submitted])
+
   if (!user) return <Navigate to="/account" replace />
 
   const updateField = (field: string, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+
+  const clearSocial = async (platform: 'twitter' | 'twitch') => {
+    if (!user) return
+    await updateDoc(doc(db, 'users', user.uid), { [`socialLinks.${platform}`]: '' })
+    await refreshProfile()
+  }
+
+  const connectX = async () => {
+    try {
+      await startXOAuth('/apply')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to connect X account.')
+    }
+  }
+
+  const connectTwitch = () => {
+    startTwitchOAuth('/apply')
+  }
+
+  const connectPhantom = async () => {
+    if (!user) return
+    const wallet = await connect()
+    if (!wallet) return
+    await updateDoc(doc(db, 'users', user.uid), { walletAddress: wallet })
+    await refreshProfile()
+  }
+
+  const disconnectPhantom = async () => {
+    if (!user) return
+    await disconnect()
+    await updateDoc(doc(db, 'users', user.uid), { walletAddress: '' })
+    await refreshProfile()
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -51,6 +115,19 @@ export default function Apply() {
       setError('Please sign in to submit your application.')
       return
     }
+    if (!profile?.walletAddress) {
+      setError('Connect your Phantom wallet before applying.')
+      return
+    }
+    if (!profile?.socialLinks?.twitch) {
+      setError('Connect your Twitch account before applying.')
+      return
+    }
+    if (hasExistingApplication) {
+      setError('You already submitted an application. Only one application is allowed per user.')
+      return
+    }
+
     setLoading(true)
     setError('')
     try {
@@ -107,6 +184,18 @@ export default function Apply() {
           </div>
 
           <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            {oauthNotice && (
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-sm text-emerald-300">
+                {oauthNotice}
+              </div>
+            )}
+
+            {(checkingExisting || hasExistingApplication) && (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-sm text-amber-300">
+                {checkingExisting ? 'Checking application status…' : 'You have already submitted an application. Additional submissions are disabled.'}
+              </div>
+            )}
+
             {error && (
               <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-400">
                 <AlertCircle className="w-4 h-4 shrink-0" />
@@ -143,23 +232,45 @@ export default function Apply() {
               </div>
             </div>
 
-            {/* Social Links */}
+            {/* Platform Connections */}
             <div className="space-y-4">
-              <h4 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Social & Content Links</h4>
-              <div className="grid sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1.5">Twitter / X</label>
-                  <a href="https://x.com/i/oauth2/authorize" target="_blank" rel="noreferrer" className="inline-flex items-center justify-center w-full px-3 py-2.5 rounded-xl text-xs font-semibold bg-black border border-white/20 text-white hover:bg-zinc-900 transition-colors">Connect X</a>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1.5">Twitch</label>
-                  <a href="https://www.twitch.tv/login" target="_blank" rel="noreferrer" className="inline-flex items-center justify-center w-full px-3 py-2.5 rounded-xl text-xs font-semibold bg-[#9146FF] text-white hover:bg-[#7d35f7] transition-colors">Connect Twitch</a>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1.5">YouTube</label>
-                  <a href="https://accounts.google.com/signin/v2/identifier?service=youtube" target="_blank" rel="noreferrer" className="inline-flex items-center justify-center w-full px-3 py-2.5 rounded-xl text-xs font-semibold bg-[#FF0000] text-white hover:bg-[#e00000] transition-colors">Connect YouTube</a>
-                </div>
-              </div>
+              <h4 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Platform Connections</h4>
+              <ConnectionGrid
+                items={[
+                  {
+                    id: 'x',
+                    label: 'X',
+                    connected: Boolean(profile?.socialLinks?.twitter),
+                    username: profile?.socialLinks?.twitter ? `@${profile.socialLinks.twitter}` : undefined,
+                    onConnect: () => void connectX(),
+                    onDisconnect: () => void clearSocial('twitter'),
+                    icon: (
+                      <svg viewBox="0 0 24 24" className="w-7 h-7 fill-current" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                      </svg>
+                    ),
+                  },
+                  {
+                    id: 'twitch',
+                    label: 'Twitch',
+                    connected: Boolean(profile?.socialLinks?.twitch),
+                    username: profile?.socialLinks?.twitch ? `@${profile.socialLinks.twitch}` : undefined,
+                    onConnect: () => connectTwitch(),
+                    onDisconnect: () => void clearSocial('twitch'),
+                    icon: <span className="text-lg font-black tracking-tight">Tw</span>,
+                  },
+                  {
+                    id: 'phantom',
+                    label: 'Phantom',
+                    connected: Boolean(profile?.walletAddress),
+                    username: profile?.walletAddress ? `${profile.walletAddress.slice(0, 6)}...${profile.walletAddress.slice(-4)}` : undefined,
+                    onConnect: () => void connectPhantom(),
+                    onDisconnect: () => void disconnectPhantom(),
+                    loading: isConnecting,
+                    icon: <span className="text-lg font-bold">◎</span>,
+                  },
+                ]}
+              />
             </div>
 
             {/* Content Type */}
@@ -260,6 +371,7 @@ export default function Apply() {
                 size="lg"
                 className="w-full sm:w-auto"
                 isLoading={loading}
+                disabled={loading || checkingExisting || hasExistingApplication || !profile?.walletAddress || !profile?.socialLinks?.twitch}
                 leftIcon={<Send className="w-4 h-4" />}
               >
                 Submit Application

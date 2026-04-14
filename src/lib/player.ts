@@ -9,8 +9,31 @@ export interface DetectedStream { type: StreamType; id: string }
 // ── URL parsers ──────────────────────────────────────────────────────────────
 
 export function parseTwitchChannel(url: string): string | null {
-  const m = url.match(/(?:twitch\.tv\/)([a-zA-Z0-9_]+)/i)
-  return m ? m[1] : null
+  const raw = url.trim()
+  if (!raw) return null
+
+  const simple = raw.match(/^[a-zA-Z0-9_]{3,25}$/)?.[0]
+  if (simple) return simple
+
+  try {
+    const normalized = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`
+    const parsed = new URL(normalized)
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase()
+
+    if (host === 'player.twitch.tv') {
+      const q = parsed.searchParams.get('channel')
+      return q && /^[a-zA-Z0-9_]{3,25}$/.test(q) ? q : null
+    }
+
+    if (host.endsWith('twitch.tv')) {
+      const first = parsed.pathname.split('/').filter(Boolean)[0]
+      return first && /^[a-zA-Z0-9_]{3,25}$/.test(first) ? first : null
+    }
+  } catch {
+    return null
+  }
+
+  return null
 }
 
 export function parseYouTubeId(url: string): string | null {
