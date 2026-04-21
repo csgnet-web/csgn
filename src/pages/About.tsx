@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Zap, Users, Tv, Rocket, ArrowRight, Shield, Radio } from 'lucide-react'
+import { ArrowRight, Rocket, Tv, CheckCircle2, Handshake, UserPlus, FileText } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -15,69 +15,38 @@ const fadeUp = {
   }),
 }
 
-const roadmap = [
+const steps = [
   {
-    phase: 'Phase 1',
-    title: 'Network Launch',
-    time: 'Now – Q2 2026',
-    items: [
-      'Launch 24/7 RTMP broadcast to pump.fun & website',
-      'Onboard first 10-20 vetted streamers',
-      'Establish daily social media cadence',
-      'Prove the model and build initial audience',
-    ],
-    active: true,
+    icon: UserPlus,
+    title: 'Step 1: Create Your Account',
+    desc: 'Use email/password or Connect with Twitch to start your creator profile in minutes.',
   },
   {
-    phase: 'Phase 2',
-    title: 'Games & Retention',
-    time: 'Q3 2026',
-    items: [
-      'Launch Daily Grid (Pick 5 prediction game)',
-      'Launch Squares (weekly sports score game)',
-      'Integrate game results into live broadcast',
-      'Build games engine for rapid deployment',
-    ],
+    icon: FileText,
+    title: 'Step 2: Apply (Optional, Fast)',
+    desc: 'If you want an on-air slot, submit your streamer application and audience details.',
   },
   {
-    phase: 'Phase 3',
-    title: 'Scale & Monetize',
-    time: 'Q4 2026 – Q1 2027',
-    items: [
-      'Close first brand sponsorship deals',
-      'Launch gaming tournaments with prize pools',
-      'Expand to 50+ active streamers',
-      'Automated clip-to-social pipeline',
-    ],
-  },
-  {
-    phase: 'Phase 4',
-    title: 'Expansion & IP',
-    time: '2027+',
-    items: [
-      'CSGN-branded leagues and tournaments',
-      'First live meet-up and events',
-      'Talent management operations',
-      'Merchandise line launch',
-    ],
+    icon: Handshake,
+    title: 'Step 3: We Reach Out',
+    desc: 'Our team reviews fit, then contacts you directly with next steps and onboarding.',
   },
 ]
 
-const values = [
-  { icon: Radio, title: 'Always On', desc: '24/7 means 24/7. The network never goes dark.' },
-  { icon: Shield, title: 'Quality First', desc: 'Every streamer is vetted. Every slot is curated.' },
-  { icon: Users, title: 'Streamer Partners', desc: '30% creator-fee share. Streamers are partners, not products.' },
-  { icon: Zap, title: 'Crypto-Native', desc: 'Built on Solana. Powered by on-chain economics.' },
+const whatToPrepare = [
+  'Your Twitch channel and content focus',
+  'Your typical stream schedule and timezone',
+  'A short pitch for your show format and audience',
+  'Any social proof: clips, social links, or prior collaborations',
 ]
 
 export default function About() {
   return (
     <div className="min-h-screen pt-24 lg:pt-32 pb-24">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Hero */}
-        <div className="max-w-4xl mx-auto text-center mb-24">
+        <div className="max-w-5xl mx-auto text-center mb-16">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-            <Badge variant="blue" className="mb-6">About CSGN</Badge>
+            <Badge variant="blue" className="mb-6">How-To Guide</Badge>
           </motion.div>
           <motion.h1
             initial={{ opacity: 0, y: 30 }}
@@ -85,177 +54,26 @@ export default function About() {
             transition={{ delay: 0.1 }}
             className="text-4xl sm:text-5xl lg:text-6xl font-black font-display tracking-tight text-white mb-6"
           >
-            The ESPN and TMZ of{' '}
-            <span className="text-gradient">Crypto</span>
+            How to Join <span className="text-gradient">CSGN</span>
           </motion.h1>
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            className="text-xl text-gray-400 leading-relaxed max-w-3xl mx-auto"
+            className="text-xl text-gray-300 leading-relaxed max-w-4xl mx-auto"
           >
-            CSGN is the first 24/7 crypto-native streaming network built on Solana's pump.fun protocol.
-            We're building the definitive broadcast home for cryptocurrency culture, sports gaming, and the
-            next generation of broadcasting talent.
+            Built like a modern media agency and executed like a performance studio, CSGN helps creators convert attention into opportunity. Apply to stream or simply create an account—either way, our team will review and reach out.
           </motion.p>
         </div>
 
-        {/* The Problem */}
-        <section className="mb-24">
-          <SectionHeading
-            badge="The Problem"
-            title="Traditional Media"
-            highlight="Is Broken"
-            description="ESPN's average viewer is over 50. Young talent has no pipeline. Crypto culture has no network home. The gap is massive."
-          />
-
-          <div className="grid md:grid-cols-3 gap-6">
-            {[
-              {
-                stat: '40%+',
-                label: 'Decline in cable viewership (18-34) in the past decade',
-              },
-              {
-                stat: '50+',
-                label: 'Average age of ESPN viewers',
-              },
-              {
-                stat: '$1.5B+',
-                label: 'Crypto media market with zero dedicated networks',
-              },
-            ].map((item, i) => (
-              <motion.div key={item.stat} custom={i} initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp}>
-                <Card className="p-6 text-center" hover={false}>
-                  <div className="text-4xl font-black font-display text-gradient mb-2">{item.stat}</div>
-                  <p className="text-sm text-gray-400">{item.label}</p>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        </section>
-
-        {/* The Solution */}
-        <section className="mb-24" id="vision">
-          <SectionHeading
-            badge="Our Solution"
-            title="CSGN Fills"
-            highlight="The Gap"
-            description="One channel. Always live. Token-powered economics. A fundamentally new model that no legacy broadcaster can replicate."
-          />
-
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {values.map((value, i) => (
-              <motion.div key={value.title} custom={i} initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp}>
-                <Card className="p-5 text-center h-full" hover={false}>
-                  <div className="w-12 h-12 rounded-xl bg-primary-500/10 border border-primary-500/20 flex items-center justify-center mx-auto mb-3">
-                    <value.icon className="w-6 h-6 text-primary-400" />
-                  </div>
-                  <h3 className="font-semibold text-white text-sm mb-1">{value.title}</h3>
-                  <p className="text-xs text-gray-500">{value.desc}</p>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        </section>
-
-        {/* Team */}
-        <section className="mb-24" id="team">
-          <SectionHeading
-            badge="Team"
-            title="Lean. Focused."
-            highlight="Relentless."
-            description="CSGN is founder-led with a lean team structure designed for rapid iteration and creative control."
-          />
-
-          <div className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
-            <Card className="p-6" hover={false}>
-              <div className="flex items-start gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-accent-600 flex items-center justify-center text-xl font-bold text-white shrink-0">
-                  C
-                </div>
-                <div>
-                  <h3 className="font-bold font-display text-white">CEO</h3>
-                  <p className="text-sm text-primary-400 mb-2">Creative Director & On-Air Talent</p>
-                  <p className="text-xs text-gray-400 leading-relaxed">
-                    Business strategist, on-screen personality, and the creative vision behind CSGN.
-                    Sets the tone, controls prime time, and drives the network's culture.
-                  </p>
-                </div>
-              </div>
-            </Card>
-
-            <Card className="p-6" hover={false}>
-              <div className="flex items-start gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-primary-600 flex items-center justify-center text-xl font-bold text-white shrink-0">
-                  T
-                </div>
-                <div>
-                  <h3 className="font-bold font-display text-white">CTO</h3>
-                  <p className="text-sm text-cyan-400 mb-2">Technical Architecture & Platform Lead</p>
-                  <p className="text-xs text-gray-400 leading-relaxed">
-                    Leads broadcast infrastructure, platform development, and product engineering.
-                    Top-1000 CS:GO credentials bring competitive gaming credibility.
-                  </p>
-                </div>
-              </div>
-            </Card>
-          </div>
-        </section>
-
-        {/* Roadmap */}
-        <section className="mb-24">
-          <SectionHeading
-            badge="Roadmap"
-            title="From Launch to"
-            highlight="Powerhouse"
-            description="A clear, phased approach to building the world's first crypto sports broadcasting network."
-          />
-
-          <div className="space-y-6">
-            {roadmap.map((phase, i) => (
-              <motion.div
-                key={phase.phase}
-                custom={i}
-                initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true }}
-                variants={fadeUp}
-              >
-                <Card
-                  className={`p-6 ${phase.active ? 'border-primary-500/30 bg-primary-500/[0.03]' : ''}`}
-                  hover={false}
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-start gap-4">
-                    <div className="sm:w-48 shrink-0">
-                      <Badge variant={phase.active ? 'blue' : 'default'} pulse={phase.active}>
-                        {phase.phase}
-                      </Badge>
-                      <h3 className="text-lg font-bold font-display text-white mt-2">{phase.title}</h3>
-                      <p className="text-sm text-gray-500">{phase.time}</p>
-                    </div>
-                    <ul className="flex-1 space-y-2">
-                      {phase.items.map((item) => (
-                        <li key={item} className="flex items-start gap-2 text-sm text-gray-400">
-                          <ArrowRight className="w-3.5 h-3.5 text-primary-400 mt-0.5 shrink-0" />
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        </section>
-
-        <section className="mb-24">
+        <section className="mb-16">
           <Card className="p-6 sm:p-8 border-primary-500/20 bg-primary-500/[0.04]" hover={false}>
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
-                <Badge variant="blue" className="mb-3">For Streamers</Badge>
-                <h2 className="text-2xl font-display font-bold text-white mb-2">Apply in 2 minutes</h2>
+                <Badge variant="blue" className="mb-3">Creator One-Pager</Badge>
+                <h2 className="text-2xl font-display font-bold text-white mb-2">Start here in under 2 minutes</h2>
                 <p className="text-sm text-gray-300 max-w-2xl">
-                  Share this one-pager with creators to show the exact, fastest way to apply at CSGN.fun/apply.
+                  Share the one-pager with creators, managers, and partners for the fastest onboarding path.
                 </p>
               </div>
               <Link to="/about/streamer-quick-apply" className="shrink-0">
@@ -267,14 +85,54 @@ export default function About() {
           </Card>
         </section>
 
-        {/* CTA */}
+        <section className="mb-16">
+          <SectionHeading
+            badge="Process"
+            title="Three Steps"
+            highlight="To Get Started"
+            description="Whether you're applying to stream or creating an account first, the path is simple and creator-friendly."
+          />
+          <div className="grid md:grid-cols-3 gap-6">
+            {steps.map((step, i) => (
+              <motion.div key={step.title} custom={i} initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp}>
+                <Card className="p-6 h-full" hover={false}>
+                  <div className="w-11 h-11 rounded-xl bg-primary-500/10 border border-primary-500/20 flex items-center justify-center mb-4">
+                    <step.icon className="w-5 h-5 text-primary-400" />
+                  </div>
+                  <h3 className="font-semibold text-white mb-2">{step.title}</h3>
+                  <p className="text-sm text-gray-400">{step.desc}</p>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        </section>
+
+        <section className="mb-24">
+          <SectionHeading
+            badge="Preparation"
+            title="What Helps Us"
+            highlight="Move Fast"
+            description="The best applications are clear, specific, and production-ready."
+          />
+          <Card className="p-6" hover={false}>
+            <div className="grid md:grid-cols-2 gap-3">
+              {whatToPrepare.map((item) => (
+                <p key={item} className="flex items-start gap-2 text-sm text-gray-300">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
+                  {item}
+                </p>
+              ))}
+            </div>
+          </Card>
+        </section>
+
         <section id="contact" className="text-center">
           <Card className="p-10 lg:p-14" hover={false} glow>
             <h2 className="text-3xl sm:text-4xl font-bold font-display text-white mb-4">
-              Join the Network
+              Apply or Create an Account—We&apos;ll Reach Out
             </h2>
-            <p className="text-lg text-gray-400 mb-8 max-w-xl mx-auto">
-              Whether you want to watch, stream, or invest—CSGN is building the future of sports broadcasting.
+            <p className="text-lg text-gray-400 mb-8 max-w-2xl mx-auto">
+              Want a slot? Apply now. Just exploring? Create your account and we&apos;ll contact you with the right next move.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link to="/apply">

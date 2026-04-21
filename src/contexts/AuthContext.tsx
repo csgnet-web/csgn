@@ -48,7 +48,7 @@ interface AuthContextType {
   loading: boolean
   signIn: (identifier: string, password: string) => Promise<void>
   signUp: (email: string, password: string, displayName: string) => Promise<void>
-  signUpWithTwitch: (params: { twitchUsername: string; email: string; password: string; displayName: string }) => Promise<void>
+  signUpWithTwitch: (params: { twitchUsername: string; email: string; displayName: string; password?: string }) => Promise<void>
   getProfileByTwitchUsername: (twitchUsername: string) => Promise<UserProfile | null>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
@@ -169,9 +169,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return snap.docs[0]?.data() as UserProfile | null
   }
 
-  const signUpWithTwitch = async ({ twitchUsername, email, password, displayName }: { twitchUsername: string; email: string; password: string; displayName: string }) => {
+  const signUpWithTwitch = async ({ twitchUsername, email, displayName, password }: { twitchUsername: string; email: string; displayName: string; password?: string }) => {
     const normalizedUsername = twitchUsername.trim().toLowerCase()
-    const { user } = await createUserWithEmailAndPassword(auth, email, password)
+    const authPassword = password || `${crypto.randomUUID()}-TwitchAuth9!`
+    const { user } = await createUserWithEmailAndPassword(auth, email, authPassword)
     await updateProfile(user, { displayName })
     await sendEmailVerification(user)
 
