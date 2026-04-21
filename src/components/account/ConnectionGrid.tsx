@@ -27,7 +27,9 @@ export function ConnectionGrid({ items }: { items: ConnectionItem[] }) {
                 ? 'bg-white/5 border-white/10 text-gray-500 opacity-60 cursor-not-allowed'
                 : item.connected
                   ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300'
-                  : 'bg-white/5 border-white/10 text-white hover:bg-white/10'
+                  : item.id === 'twitch'
+                    ? 'bg-[#9146FF] border-[#9146FF] text-white hover:bg-[#7d33ea] hover:border-[#7d33ea] shadow-lg shadow-[#9146FF]/30'
+                    : 'bg-white/5 border-white/10 text-white hover:bg-white/10'
             } ${item.loading ? 'opacity-60 cursor-wait' : ''}`}
             disabled={item.loading || item.disabled}
             title={item.disabled ? `${item.label} integration coming soon` : item.connected ? `${item.label} connected` : `Connect ${item.label}`}
