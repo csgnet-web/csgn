@@ -35,6 +35,11 @@ export default function Dashboard() {
   const [liveEstimateUSD, setLiveEstimateUSD] = useState(0)
   const [liveVolumeSOL, setLiveVolumeSOL] = useState(0)
   const [slotInfo, setSlotInfo] = useState<Slot | null>(null)
+  const twitchIcon = (
+    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M4.286 0 0 4.286v15.428H5.143V24l4.286-4.286h3.429L24 8.571V0H4.286zm18 7.714-5.143 5.143h-3.428L10.714 15.86v-3.003H7.286V1.714h15v6z" />
+    </svg>
+  )
 
   const bids = useMemo(() => user ? queueStore.getBids().filter((bid) => bid.uid === user.uid) : [], [user])
   const assigned = useMemo(() => user ? queueStore.getAssignedSlots().filter((slot) => slot.uid === user.uid) : [], [user])
@@ -234,7 +239,7 @@ export default function Dashboard() {
                   {mode === 'signup' && (
                     <input type="text" placeholder="Display name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
                   )}
-                  <input type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
+                  <input type={mode === 'login' ? 'text' : 'email'} placeholder={mode === 'login' ? 'Email or username' : 'Email'} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
                   <input type="password" placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
                   {mode === 'signup' && (
                     <label className="flex items-start gap-2 text-xs text-gray-400">
@@ -247,6 +252,15 @@ export default function Dashboard() {
                   {authError && <p className="text-xs text-red-300">{authError}</p>}
                   <Button variant="primary" size="md" className="w-full" isLoading={loading}>
                     {mode === 'login' ? 'Sign In' : 'Create Account'}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="md"
+                    className="w-full bg-[#9146FF] hover:bg-[#7d33ea] text-white shadow-lg shadow-[#9146FF]/30"
+                    leftIcon={twitchIcon}
+                    onClick={() => startTwitchOAuth('/auth/twitch/complete')}
+                  >
+                    CONNECT WITH TWITCH
                   </Button>
                 </form>
               </>

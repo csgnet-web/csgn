@@ -11,12 +11,14 @@ const Watch = lazy(() => import('@/pages/Watch'))
 const Schedule = lazy(() => import('@/pages/Schedule'))
 const Apply = lazy(() => import('@/pages/Apply'))
 const About = lazy(() => import('@/pages/About'))
+const StreamerQuickApply = lazy(() => import('@/pages/StreamerQuickApply'))
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
 const Queue = lazy(() => import('@/pages/Queue'))
 const Admin = lazy(() => import('@/pages/Admin'))
 const Player = lazy(() => import('@/pages/Player'))
 const Terms = lazy(() => import('@/pages/Terms'))
 const TwitchCallback = lazy(() => import('@/pages/TwitchCallback'))
+const TwitchAuthComplete = lazy(() => import('@/pages/TwitchAuthComplete'))
 const XCallback = lazy(() => import('@/pages/XCallback'))
 
 function Loading() {
@@ -48,6 +50,7 @@ function AppContent() {
             <Route path="/schedule" element={<Schedule />} />
             <Route path="/apply" element={<Apply />} />
             <Route path="/about" element={<About />} />
+            <Route path="/about/streamer-quick-apply" element={<StreamerQuickApply />} />
             <Route path="/account" element={<Dashboard />} />
             <Route path="/dashboard" element={<Navigate to="/account" replace />} />
             <Route path="/queue" element={user ? <Queue /> : <Navigate to="/watch" replace />} />
@@ -55,6 +58,7 @@ function AppContent() {
             <Route path="/player" element={<Player />} />
             <Route path="/terms" element={<Terms />} />
             <Route path="/auth/twitch/callback" element={<TwitchCallback />} />
+            <Route path="/auth/twitch/complete" element={<TwitchAuthComplete />} />
             <Route path="/auth/x/callback" element={<XCallback />} />
           </Routes>
         </AnimatePresence>

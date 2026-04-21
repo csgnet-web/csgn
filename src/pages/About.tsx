@@ -248,6 +248,25 @@ export default function About() {
           </div>
         </section>
 
+        <section className="mb-24">
+          <Card className="p-6 sm:p-8 border-primary-500/20 bg-primary-500/[0.04]" hover={false}>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <Badge variant="blue" className="mb-3">For Streamers</Badge>
+                <h2 className="text-2xl font-display font-bold text-white mb-2">Apply in 2 minutes</h2>
+                <p className="text-sm text-gray-300 max-w-2xl">
+                  Share this one-pager with creators to show the exact, fastest way to apply at CSGN.fun/apply.
+                </p>
+              </div>
+              <Link to="/about/streamer-quick-apply" className="shrink-0">
+                <Button variant="primary" size="md" rightIcon={<ArrowRight className="w-4 h-4" />}>
+                  Open One-Pager
+                </Button>
+              </Link>
+            </div>
+          </Card>
+        </section>
+
         {/* CTA */}
         <section id="contact" className="text-center">
           <Card className="p-10 lg:p-14" hover={false} glow>

@@ -8,7 +8,7 @@ import {
   updateProfile,
   type User,
 } from 'firebase/auth'
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore'
 import { auth, db } from '@/config/firebase'
 
 export interface UserNotification {
@@ -27,7 +27,11 @@ export interface UserNotification {
 export interface UserProfile {
   uid: string
   email: string
+  authEmail?: string
   displayName: string
+  username?: string
+  usernameLower?: string
+  authProvider?: 'email' | 'twitch'
   photoURL: string | null
   role: 'viewer' | 'streamer' | 'admin'
   createdAt: unknown
@@ -42,8 +46,10 @@ interface AuthContextType {
   user: User | null
   profile: UserProfile | null
   loading: boolean
-  signIn: (email: string, password: string) => Promise<void>
+  signIn: (identifier: string, password: string) => Promise<void>
   signUp: (email: string, password: string, displayName: string) => Promise<void>
+  signUpWithTwitch: (params: { twitchUsername: string; email: string; password: string; displayName: string }) => Promise<void>
+  getProfileByTwitchUsername: (twitchUsername: string) => Promise<UserProfile | null>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
   resendVerification: () => Promise<void>
@@ -65,15 +71,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return docSnap.exists() ? (docSnap.data() as UserProfile) : null
   }
 
-  const createProfile = async (user: User, displayName: string) => {
+  const createProfile = async (
+    user: User,
+    displayName: string,
+    overrides?: Partial<UserProfile>,
+  ) => {
     const profileData: UserProfile = {
       uid: user.uid,
       email: user.email || '',
+      authEmail: user.email || '',
       displayName,
       photoURL: user.photoURL,
       role: 'viewer',
       createdAt: serverTimestamp(),
       notifications: [],
+      authProvider: 'email',
+      ...overrides,
     }
     await setDoc(doc(db, 'users', user.uid), profileData)
     setProfile(profileData)
@@ -96,7 +109,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe
   }, [])
 
-  const signIn = async (email: string, password: string) => {
+  const resolveSignInEmail = async (identifier: string) => {
+    if (identifier.includes('@')) return identifier
+
+    const username = identifier.trim().toLowerCase()
+    const usersQ = query(collection(db, 'users'), where('usernameLower', '==', username), limit(1))
+    const snap = await getDocs(usersQ)
+    const profile = snap.docs[0]?.data() as UserProfile | undefined
+    const authEmail = profile?.authEmail || profile?.email
+    if (!authEmail) {
+      const err = new Error('Invalid username or password') as Error & { code?: string }
+      err.code = 'auth/user-not-found'
+      throw err
+    }
+    return authEmail
+  }
+
+  const signIn = async (identifier: string, password: string) => {
+    const email = await resolveSignInEmail(identifier)
     const { user } = await signInWithEmailAndPassword(auth, email, password)
     try {
       await fetchProfile(user.uid)
@@ -132,6 +162,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const getProfileByTwitchUsername = async (twitchUsername: string) => {
+    const normalizedUsername = twitchUsername.trim().toLowerCase()
+    const usersQ = query(collection(db, 'users'), where('usernameLower', '==', normalizedUsername), limit(1))
+    const snap = await getDocs(usersQ)
+    return snap.docs[0]?.data() as UserProfile | null
+  }
+
+  const signUpWithTwitch = async ({ twitchUsername, email, password, displayName }: { twitchUsername: string; email: string; password: string; displayName: string }) => {
+    const normalizedUsername = twitchUsername.trim().toLowerCase()
+    const { user } = await createUserWithEmailAndPassword(auth, email, password)
+    await updateProfile(user, { displayName })
+    await sendEmailVerification(user)
+
+    try {
+      await createProfile(user, displayName, {
+        email,
+        authEmail: email,
+        username: twitchUsername,
+        usernameLower: normalizedUsername,
+        authProvider: 'twitch',
+        socialLinks: { twitch: normalizedUsername },
+      })
+    } catch (err) {
+      console.warn('Failed to create Firestore profile (user still created in Auth):', err)
+      setProfile({
+        uid: user.uid,
+        email,
+        authEmail: email,
+        displayName,
+        username: twitchUsername,
+        usernameLower: normalizedUsername,
+        authProvider: 'twitch',
+        photoURL: user.photoURL,
+        role: 'viewer',
+        createdAt: null,
+        socialLinks: { twitch: normalizedUsername },
+      })
+    }
+  }
+
   const signOut = async () => {
     await firebaseSignOut(auth)
     setProfile(null)
@@ -149,7 +219,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, profile, loading, signIn, signUp, signOut, refreshProfile, resendVerification }}
+      value={{ user, profile, loading, signIn, signUp, signUpWithTwitch, getProfileByTwitchUsername, signOut, refreshProfile, resendVerification }}
     >
       {children}
     </AuthContext.Provider>

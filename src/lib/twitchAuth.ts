@@ -3,6 +3,7 @@ const TWITCH_USERS_URL = 'https://api.twitch.tv/helix/users'
 
 const STATE_KEY = 'twitch_oauth_state'
 const RETURN_TO_KEY = 'twitch_oauth_return_to'
+const AUTH_FLOW_KEY = 'twitch_auth_flow'
 
 const FALLBACK_CLIENT_ID = 'n1exwoae1t2yebr09kxnbnvwhovk3l'
 
@@ -47,6 +48,36 @@ export function startTwitchOAuth(returnTo: string) {
 
 export function getTwitchReturnTo() {
   return localStorage.getItem(RETURN_TO_KEY) || '/account'
+}
+
+export interface TwitchAuthFlowState {
+  twitchUsername: string
+  existingUid?: string
+  existingAuthEmail?: string
+}
+
+export function setTwitchAuthFlowState(data: TwitchAuthFlowState) {
+  localStorage.setItem(AUTH_FLOW_KEY, JSON.stringify(data))
+}
+
+export function getTwitchAuthFlowState(): TwitchAuthFlowState | null {
+  try {
+    const raw = localStorage.getItem(AUTH_FLOW_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<TwitchAuthFlowState>
+    if (!parsed.twitchUsername) return null
+    return {
+      twitchUsername: parsed.twitchUsername,
+      existingUid: parsed.existingUid,
+      existingAuthEmail: parsed.existingAuthEmail,
+    }
+  } catch {
+    return null
+  }
+}
+
+export function clearTwitchAuthFlowState() {
+  localStorage.removeItem(AUTH_FLOW_KEY)
 }
 
 export async function resolveTwitchUserFromHash(hash: string) {

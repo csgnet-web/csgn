@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/contexts/AuthContext'
+import { startTwitchOAuth } from '@/lib/twitchAuth'
 
 interface AuthModalProps {
   isOpen: boolean
@@ -21,6 +22,11 @@ export function AuthModal({ isOpen, onClose, initialMode }: AuthModalProps) {
   const [verificationSent, setVerificationSent] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const { signIn, signUp, resendVerification } = useAuth()
+  const TwitchIcon = (
+    <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M4.286 0 0 4.286v15.428H5.143V24l4.286-4.286h3.429L24 8.571V0H4.286zm18 7.714-5.143 5.143h-3.428L10.714 15.86v-3.003H7.286V1.714h15v6z" />
+    </svg>
+  )
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -51,7 +57,7 @@ export function AuthModal({ isOpen, onClose, initialMode }: AuthModalProps) {
     } catch (err: unknown) {
       const code = err instanceof Error && 'code' in err ? String((err as { code?: string }).code || '') : ''
       if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
-        setError('Invalid email or password')
+        setError('Invalid email/username or password')
       } else if (code === 'auth/email-already-in-use') {
         setError('An account with this email already exists')
       } else if (code === 'auth/weak-password') {
@@ -130,7 +136,7 @@ export function AuthModal({ isOpen, onClose, initialMode }: AuthModalProps) {
                   </button>
                   <img src="https://pbs.twimg.com/profile_images/1966988305255276544/3Qz3tNAa_200x200.jpg" alt="CSGN" className="w-12 h-12 rounded-xl object-cover mb-4 shadow-lg" />
                   <h2 className="text-2xl font-bold font-display text-white">{mode === 'login' ? 'Welcome back' : 'Join CSGN'}</h2>
-                  <p className="text-sm text-gray-400 mt-1">{mode === 'login' ? 'Sign in with email/password' : 'Create an account with email/password'}</p>
+                  <p className="text-sm text-gray-400 mt-1">{mode === 'login' ? 'Sign in with email or username + password' : 'Create an account with email/password or Twitch'}</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="px-8 pb-8 space-y-4">
@@ -177,15 +183,15 @@ export function AuthModal({ isOpen, onClose, initialMode }: AuthModalProps) {
                   )}
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1.5">Email</label>
+                    <label className="block text-sm font-medium text-gray-300 mb-1.5">{mode === 'login' ? 'Email or Username' : 'Email'}</label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                       <input
-                        type="email"
+                        type={mode === 'login' ? 'text' : 'email'}
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
-                        placeholder="you@example.com"
+                        placeholder={mode === 'login' ? 'you@example.com or twitch username' : 'you@example.com'}
                         required
                         disabled={loading}
                       />
@@ -218,6 +224,17 @@ export function AuthModal({ isOpen, onClose, initialMode }: AuthModalProps) {
 
                   <Button variant="primary" size="lg" className="w-full" type="submit" isLoading={loading}>
                     {mode === 'login' ? 'Sign In' : 'Create Account'}
+                  </Button>
+
+                  <Button
+                    size="lg"
+                    className="w-full bg-[#9146FF] hover:bg-[#7d33ea] text-white shadow-lg shadow-[#9146FF]/30"
+                    type="button"
+                    onClick={() => startTwitchOAuth('/auth/twitch/complete')}
+                    disabled={loading}
+                    leftIcon={TwitchIcon}
+                  >
+                    CONNECT WITH TWITCH
                   </Button>
 
                   <div className="text-center text-sm text-gray-400">

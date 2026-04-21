@@ -608,9 +608,9 @@ export function subscribeToSlots(from: Date, to: Date, callback: (slots: Slot[])
 /** Get the currently active slot based on current time. */
 export function subscribeToCurrentSlot(callback: (slot: Slot | null) => void): Unsubscribe {
   const now = new Date()
-  // Use ±24h window so any timezone offset in stored startTime is always matched
-  const from = new Date(now.getTime() - 24 * 60 * 60 * 1000) // 24h ago
-  const to = new Date(now.getTime() + 24 * 60 * 60 * 1000)   // 24h ahead
+  // Wide window so long-running /player sessions continue auto-switching slot content.
+  const from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) // 7 days ago
+  const to = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000) // next year
 
   const q = query(
     collection(db, SLOTS_COLLECTION),
@@ -619,16 +619,37 @@ export function subscribeToCurrentSlot(callback: (slot: Slot | null) => void): U
     orderBy('startTime', 'asc'),
   )
 
-  return onSnapshot(q, (snap) => {
-    const slots = snap.docs.map((d) => d.data() as Slot)
+  let slots: Slot[] = []
+  let lastSlotId: string | null = null
+
+  const emitCurrentSlot = () => {
     const currentTime = Date.now()
     const current = slots.find((s) => {
       const start = new Date(s.startTime).getTime()
       const end = new Date(s.endTime).getTime()
       return currentTime >= start && currentTime < end
-    })
-    callback(current ?? null)
+    }) ?? null
+
+    const nextId = current?.id ?? null
+    if (nextId !== lastSlotId) {
+      lastSlotId = nextId
+      callback(current)
+    }
+  }
+
+  const unsub = onSnapshot(q, (snap) => {
+    slots = snap.docs.map((d) => d.data() as Slot)
+    emitCurrentSlot()
   })
+
+  const tick = setInterval(() => {
+    emitCurrentSlot()
+  }, 15_000)
+
+  return () => {
+    clearInterval(tick)
+    unsub()
+  }
 }
 
 /** Place a bid on an auction slot using CSGN tokens. */
