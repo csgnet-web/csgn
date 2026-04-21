@@ -48,7 +48,8 @@ interface AuthContextType {
   loading: boolean
   signIn: (identifier: string, password: string) => Promise<void>
   signUp: (email: string, password: string, displayName: string) => Promise<void>
-  signUpWithTwitch: (twitchUsername: string, password: string, displayName: string) => Promise<void>
+  signUpWithTwitch: (params: { twitchUsername: string; email: string; password: string; displayName: string }) => Promise<void>
+  getProfileByTwitchUsername: (twitchUsername: string) => Promise<UserProfile | null>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
   resendVerification: () => Promise<void>
@@ -161,16 +162,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const signUpWithTwitch = async (twitchUsername: string, password: string, displayName: string) => {
+  const getProfileByTwitchUsername = async (twitchUsername: string) => {
     const normalizedUsername = twitchUsername.trim().toLowerCase()
-    const syntheticEmail = `twitch_${normalizedUsername}_${crypto.randomUUID().slice(0, 8)}@users.csgn.fun`
-    const { user } = await createUserWithEmailAndPassword(auth, syntheticEmail, password)
+    const usersQ = query(collection(db, 'users'), where('usernameLower', '==', normalizedUsername), limit(1))
+    const snap = await getDocs(usersQ)
+    return snap.docs[0]?.data() as UserProfile | null
+  }
+
+  const signUpWithTwitch = async ({ twitchUsername, email, password, displayName }: { twitchUsername: string; email: string; password: string; displayName: string }) => {
+    const normalizedUsername = twitchUsername.trim().toLowerCase()
+    const { user } = await createUserWithEmailAndPassword(auth, email, password)
     await updateProfile(user, { displayName })
+    await sendEmailVerification(user)
 
     try {
       await createProfile(user, displayName, {
-        email: '',
-        authEmail: syntheticEmail,
+        email,
+        authEmail: email,
         username: twitchUsername,
         usernameLower: normalizedUsername,
         authProvider: 'twitch',
@@ -180,8 +188,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.warn('Failed to create Firestore profile (user still created in Auth):', err)
       setProfile({
         uid: user.uid,
-        email: '',
-        authEmail: syntheticEmail,
+        email,
+        authEmail: email,
         displayName,
         username: twitchUsername,
         usernameLower: normalizedUsername,
@@ -211,7 +219,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, profile, loading, signIn, signUp, signUpWithTwitch, signOut, refreshProfile, resendVerification }}
+      value={{ user, profile, loading, signIn, signUp, signUpWithTwitch, getProfileByTwitchUsername, signOut, refreshProfile, resendVerification }}
     >
       {children}
     </AuthContext.Provider>

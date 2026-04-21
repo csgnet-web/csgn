@@ -3,7 +3,7 @@ const TWITCH_USERS_URL = 'https://api.twitch.tv/helix/users'
 
 const STATE_KEY = 'twitch_oauth_state'
 const RETURN_TO_KEY = 'twitch_oauth_return_to'
-const SIGNUP_PENDING_KEY = 'twitch_signup_pending'
+const AUTH_FLOW_KEY = 'twitch_auth_flow'
 
 const FALLBACK_CLIENT_ID = 'n1exwoae1t2yebr09kxnbnvwhovk3l'
 
@@ -50,29 +50,34 @@ export function getTwitchReturnTo() {
   return localStorage.getItem(RETURN_TO_KEY) || '/account'
 }
 
-export interface TwitchSignupPending {
-  displayName: string
-  password: string
+export interface TwitchAuthFlowState {
+  twitchUsername: string
+  existingUid?: string
+  existingAuthEmail?: string
 }
 
-export function setTwitchSignupPending(data: TwitchSignupPending) {
-  localStorage.setItem(SIGNUP_PENDING_KEY, JSON.stringify(data))
+export function setTwitchAuthFlowState(data: TwitchAuthFlowState) {
+  localStorage.setItem(AUTH_FLOW_KEY, JSON.stringify(data))
 }
 
-export function getTwitchSignupPending(): TwitchSignupPending | null {
+export function getTwitchAuthFlowState(): TwitchAuthFlowState | null {
   try {
-    const raw = localStorage.getItem(SIGNUP_PENDING_KEY)
+    const raw = localStorage.getItem(AUTH_FLOW_KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<TwitchSignupPending>
-    if (!parsed.displayName || !parsed.password) return null
-    return { displayName: parsed.displayName, password: parsed.password }
+    const parsed = JSON.parse(raw) as Partial<TwitchAuthFlowState>
+    if (!parsed.twitchUsername) return null
+    return {
+      twitchUsername: parsed.twitchUsername,
+      existingUid: parsed.existingUid,
+      existingAuthEmail: parsed.existingAuthEmail,
+    }
   } catch {
     return null
   }
 }
 
-export function clearTwitchSignupPending() {
-  localStorage.removeItem(SIGNUP_PENDING_KEY)
+export function clearTwitchAuthFlowState() {
+  localStorage.removeItem(AUTH_FLOW_KEY)
 }
 
 export async function resolveTwitchUserFromHash(hash: string) {

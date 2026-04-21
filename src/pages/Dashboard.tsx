@@ -15,7 +15,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { ConnectionGrid } from '@/components/account/ConnectionGrid'
-import { startTwitchOAuth, setTwitchSignupPending } from '@/lib/twitchAuth'
+import { startTwitchOAuth } from '@/lib/twitchAuth'
 import { startXOAuth } from '@/lib/xAuth'
 
 export default function Dashboard() {
@@ -35,6 +35,11 @@ export default function Dashboard() {
   const [liveEstimateUSD, setLiveEstimateUSD] = useState(0)
   const [liveVolumeSOL, setLiveVolumeSOL] = useState(0)
   const [slotInfo, setSlotInfo] = useState<Slot | null>(null)
+  const twitchIcon = (
+    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M4.286 0 0 4.286v15.428H5.143V24l4.286-4.286h3.429L24 8.571V0H4.286zm18 7.714-5.143 5.143h-3.428L10.714 15.86v-3.003H7.286V1.714h15v6z" />
+    </svg>
+  )
 
   const bids = useMemo(() => user ? queueStore.getBids().filter((bid) => bid.uid === user.uid) : [], [user])
   const assigned = useMemo(() => user ? queueStore.getAssignedSlots().filter((slot) => slot.uid === user.uid) : [], [user])
@@ -248,32 +253,15 @@ export default function Dashboard() {
                   <Button variant="primary" size="md" className="w-full" isLoading={loading}>
                     {mode === 'login' ? 'Sign In' : 'Create Account'}
                   </Button>
-                  {mode === 'signup' && (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="md"
-                      className="w-full"
-                      onClick={() => {
-                        if (!form.name.trim()) {
-                          setAuthError('Display name is required for Twitch signup.')
-                          return
-                        }
-                        if (form.password.length < 6) {
-                          setAuthError('Password should be at least 6 characters.')
-                          return
-                        }
-                        if (!acceptedTerms) {
-                          setAuthError('Please accept the Terms & Conditions to continue.')
-                          return
-                        }
-                        setTwitchSignupPending({ displayName: form.name.trim(), password: form.password })
-                        startTwitchOAuth('/account')
-                      }}
-                    >
-                      Sign up with Twitch (no email)
-                    </Button>
-                  )}
+                  <Button
+                    type="button"
+                    size="md"
+                    className="w-full bg-[#9146FF] hover:bg-[#7d33ea] text-white shadow-lg shadow-[#9146FF]/30"
+                    leftIcon={twitchIcon}
+                    onClick={() => startTwitchOAuth('/auth/twitch/complete')}
+                  >
+                    CONNECT WITH TWITCH
+                  </Button>
                 </form>
               </>
             )}

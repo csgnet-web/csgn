@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/contexts/AuthContext'
-import { startTwitchOAuth, setTwitchSignupPending } from '@/lib/twitchAuth'
+import { startTwitchOAuth } from '@/lib/twitchAuth'
 
 interface AuthModalProps {
   isOpen: boolean
@@ -22,6 +22,11 @@ export function AuthModal({ isOpen, onClose, initialMode }: AuthModalProps) {
   const [verificationSent, setVerificationSent] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const { signIn, signUp, resendVerification } = useAuth()
+  const TwitchIcon = (
+    <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M4.286 0 0 4.286v15.428H5.143V24l4.286-4.286h3.429L24 8.571V0H4.286zm18 7.714-5.143 5.143h-3.428L10.714 15.86v-3.003H7.286V1.714h15v6z" />
+    </svg>
+  )
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -221,33 +226,16 @@ export function AuthModal({ isOpen, onClose, initialMode }: AuthModalProps) {
                     {mode === 'login' ? 'Sign In' : 'Create Account'}
                   </Button>
 
-                  {mode === 'signup' && (
-                    <Button
-                      variant="secondary"
-                      size="lg"
-                      className="w-full"
-                      type="button"
-                      onClick={() => {
-                        if (!displayName.trim()) {
-                          setError('Display name is required for Twitch signup')
-                          return
-                        }
-                        if (password.length < 6) {
-                          setError('Password should be at least 6 characters')
-                          return
-                        }
-                        if (!acceptedTerms) {
-                          setError('Please accept the Terms & Conditions to continue')
-                          return
-                        }
-                        setTwitchSignupPending({ displayName: displayName.trim(), password })
-                        startTwitchOAuth('/account')
-                      }}
-                      disabled={loading}
-                    >
-                      Sign up with Twitch (no email)
-                    </Button>
-                  )}
+                  <Button
+                    size="lg"
+                    className="w-full bg-[#9146FF] hover:bg-[#7d33ea] text-white shadow-lg shadow-[#9146FF]/30"
+                    type="button"
+                    onClick={() => startTwitchOAuth('/auth/twitch/complete')}
+                    disabled={loading}
+                    leftIcon={TwitchIcon}
+                  >
+                    CONNECT WITH TWITCH
+                  </Button>
 
                   <div className="text-center text-sm text-gray-400">
                     {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}{' '}
