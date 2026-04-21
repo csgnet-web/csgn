@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Navigate } from 'react-router-dom'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
-import { useAuth } from '@/contexts/AuthContext'
 import { subscribeToCurrentSlot, formatESTRange, type Slot } from '@/lib/slots'
 import { detectStream, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
 const DEFAULT_TWITCH_STREAM = 'https://www.twitch.tv/csgnet'
@@ -174,7 +172,6 @@ function StreamEmbed({ streamUrl, hostname }: { streamUrl: string; hostname: str
 
 /* ── Page ── */
 export default function Player() {
-  const { profile, loading } = useAuth()
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
 
   const [currentSlot, setCurrentSlot] = useState<Slot | null>(null)
@@ -195,19 +192,7 @@ export default function Player() {
     return unsub
   }, [])
 
-  if (loading) {
-    return (
-      <div className="w-screen h-screen bg-[#050507] flex items-center justify-center">
-        <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
-  }
-
-  if (!profile || profile.role !== 'admin') {
-    return <Navigate to="/" replace />
-  }
-
-  // Show the slot's raw Twitch/YouTube stream — this is what OBS captures
+  // Show the slot's raw Twitch/YouTube stream — this is what OBS captures 24/7.
   const streamUrl = playerOverride ?? currentSlot?.streamUrl ?? DEFAULT_TWITCH_STREAM
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : null
 

@@ -3,35 +3,52 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { useAuth } from '@/contexts/AuthContext'
-import { getTwitchReturnTo, resolveTwitchUserFromHash } from '@/lib/twitchAuth'
+import {
+  clearTwitchSignupPending,
+  getTwitchReturnTo,
+  getTwitchSignupPending,
+  resolveTwitchUserFromHash,
+} from '@/lib/twitchAuth'
 
 export default function TwitchCallback() {
-  const { user, refreshProfile } = useAuth()
+  const { user, refreshProfile, signUpWithTwitch } = useAuth()
   const navigate = useNavigate()
   const [error, setError] = useState('')
   const [countdown, setCountdown] = useState(5)
   const processedRef = useRef(false)
 
   useEffect(() => {
-    if (!user || processedRef.current) return
+    if (processedRef.current) return
     processedRef.current = true
 
     ;(async () => {
       try {
         const username = await resolveTwitchUserFromHash(window.location.hash)
-        await updateDoc(doc(db, 'users', user.uid), {
-          'socialLinks.twitch': username,
-          twitchUsername: username,
-        })
-        await refreshProfile()
-        localStorage.setItem('oauth_notice', 'Twitch connected successfully.')
+        const pendingSignup = getTwitchSignupPending()
+
+        if (!user && pendingSignup) {
+          await signUpWithTwitch(username, pendingSignup.password, pendingSignup.displayName)
+          clearTwitchSignupPending()
+          localStorage.setItem('oauth_notice', `Signed up with Twitch @${username}. You can now sign in with username + password.`)
+        } else {
+          if (!user) {
+            throw new Error('No active user to connect Twitch. Start from Account and try again.')
+          }
+          await updateDoc(doc(db, 'users', user.uid), {
+            'socialLinks.twitch': username,
+            twitchUsername: username,
+          })
+          await refreshProfile()
+          localStorage.setItem('oauth_notice', 'Twitch connected successfully.')
+        }
+
         navigate(getTwitchReturnTo(), { replace: true })
       } catch (err) {
         const message = err instanceof Error ? err.message : JSON.stringify(err)
         setError(message)
       }
     })()
-  }, [navigate, refreshProfile, user])
+  }, [navigate, refreshProfile, signUpWithTwitch, user])
 
   useEffect(() => {
     if (!error) return
@@ -50,7 +67,7 @@ export default function TwitchCallback() {
     return () => clearInterval(timer)
   }, [error, navigate])
 
-  if (!user) return <Navigate to="/account" replace />
+  if (!user && !getTwitchSignupPending()) return <Navigate to="/account" replace />
 
   return (
     <div className="min-h-screen pt-28 px-4">

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/contexts/AuthContext'
+import { startTwitchOAuth, setTwitchSignupPending } from '@/lib/twitchAuth'
 
 interface AuthModalProps {
   isOpen: boolean
@@ -51,7 +52,7 @@ export function AuthModal({ isOpen, onClose, initialMode }: AuthModalProps) {
     } catch (err: unknown) {
       const code = err instanceof Error && 'code' in err ? String((err as { code?: string }).code || '') : ''
       if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
-        setError('Invalid email or password')
+        setError('Invalid email/username or password')
       } else if (code === 'auth/email-already-in-use') {
         setError('An account with this email already exists')
       } else if (code === 'auth/weak-password') {
@@ -130,7 +131,7 @@ export function AuthModal({ isOpen, onClose, initialMode }: AuthModalProps) {
                   </button>
                   <img src="https://pbs.twimg.com/profile_images/1966988305255276544/3Qz3tNAa_200x200.jpg" alt="CSGN" className="w-12 h-12 rounded-xl object-cover mb-4 shadow-lg" />
                   <h2 className="text-2xl font-bold font-display text-white">{mode === 'login' ? 'Welcome back' : 'Join CSGN'}</h2>
-                  <p className="text-sm text-gray-400 mt-1">{mode === 'login' ? 'Sign in with email/password' : 'Create an account with email/password'}</p>
+                  <p className="text-sm text-gray-400 mt-1">{mode === 'login' ? 'Sign in with email or username + password' : 'Create an account with email/password or Twitch'}</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="px-8 pb-8 space-y-4">
@@ -177,15 +178,15 @@ export function AuthModal({ isOpen, onClose, initialMode }: AuthModalProps) {
                   )}
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1.5">Email</label>
+                    <label className="block text-sm font-medium text-gray-300 mb-1.5">{mode === 'login' ? 'Email or Username' : 'Email'}</label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                       <input
-                        type="email"
+                        type={mode === 'login' ? 'text' : 'email'}
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
-                        placeholder="you@example.com"
+                        placeholder={mode === 'login' ? 'you@example.com or twitch username' : 'you@example.com'}
                         required
                         disabled={loading}
                       />
@@ -219,6 +220,34 @@ export function AuthModal({ isOpen, onClose, initialMode }: AuthModalProps) {
                   <Button variant="primary" size="lg" className="w-full" type="submit" isLoading={loading}>
                     {mode === 'login' ? 'Sign In' : 'Create Account'}
                   </Button>
+
+                  {mode === 'signup' && (
+                    <Button
+                      variant="secondary"
+                      size="lg"
+                      className="w-full"
+                      type="button"
+                      onClick={() => {
+                        if (!displayName.trim()) {
+                          setError('Display name is required for Twitch signup')
+                          return
+                        }
+                        if (password.length < 6) {
+                          setError('Password should be at least 6 characters')
+                          return
+                        }
+                        if (!acceptedTerms) {
+                          setError('Please accept the Terms & Conditions to continue')
+                          return
+                        }
+                        setTwitchSignupPending({ displayName: displayName.trim(), password })
+                        startTwitchOAuth('/account')
+                      }}
+                      disabled={loading}
+                    >
+                      Sign up with Twitch (no email)
+                    </Button>
+                  )}
 
                   <div className="text-center text-sm text-gray-400">
                     {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}{' '}

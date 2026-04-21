@@ -15,7 +15,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { ConnectionGrid } from '@/components/account/ConnectionGrid'
-import { startTwitchOAuth } from '@/lib/twitchAuth'
+import { startTwitchOAuth, setTwitchSignupPending } from '@/lib/twitchAuth'
 import { startXOAuth } from '@/lib/xAuth'
 
 export default function Dashboard() {
@@ -234,7 +234,7 @@ export default function Dashboard() {
                   {mode === 'signup' && (
                     <input type="text" placeholder="Display name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
                   )}
-                  <input type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
+                  <input type={mode === 'login' ? 'text' : 'email'} placeholder={mode === 'login' ? 'Email or username' : 'Email'} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
                   <input type="password" placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
                   {mode === 'signup' && (
                     <label className="flex items-start gap-2 text-xs text-gray-400">
@@ -248,6 +248,32 @@ export default function Dashboard() {
                   <Button variant="primary" size="md" className="w-full" isLoading={loading}>
                     {mode === 'login' ? 'Sign In' : 'Create Account'}
                   </Button>
+                  {mode === 'signup' && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="md"
+                      className="w-full"
+                      onClick={() => {
+                        if (!form.name.trim()) {
+                          setAuthError('Display name is required for Twitch signup.')
+                          return
+                        }
+                        if (form.password.length < 6) {
+                          setAuthError('Password should be at least 6 characters.')
+                          return
+                        }
+                        if (!acceptedTerms) {
+                          setAuthError('Please accept the Terms & Conditions to continue.')
+                          return
+                        }
+                        setTwitchSignupPending({ displayName: form.name.trim(), password: form.password })
+                        startTwitchOAuth('/account')
+                      }}
+                    >
+                      Sign up with Twitch (no email)
+                    </Button>
+                  )}
                 </form>
               </>
             )}
