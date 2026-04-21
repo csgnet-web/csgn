@@ -30,12 +30,11 @@ export default function TwitchAuthComplete() {
       if (isExisting) {
         await signIn(flowState.twitchUsername, password)
       } else {
-        if (!displayName.trim()) throw new Error('Username is required.')
+        if (!displayName.trim()) throw new Error('Display name is required.')
         if (!acceptedTerms) throw new Error('Please accept the Terms & Conditions.')
         await signUpWithTwitch({
           twitchUsername: flowState.twitchUsername,
           email,
-          password,
           displayName: displayName.trim(),
         })
       }
@@ -59,11 +58,13 @@ export default function TwitchAuthComplete() {
           <form onSubmit={complete} className="space-y-3">
             {!isExisting && (
               <>
-                <input className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" placeholder="Username" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+                <input className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" placeholder="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
                 <input className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
               </>
             )}
-            <input className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" placeholder={isExisting ? 'Enter password to sign in' : 'Choose password'} type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+            {isExisting && (
+              <input className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" placeholder="Enter password to sign in" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+            )}
             {!isExisting && (
               <label className="flex items-start gap-2 text-xs text-gray-400">
                 <input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} className="mt-0.5" />
@@ -76,7 +77,7 @@ export default function TwitchAuthComplete() {
               </p>
             )}
             <Button variant="primary" size="md" className="w-full" isLoading={loading}>
-              {isExisting ? 'Sign In with Twitch' : 'Finish Twitch Sign Up'}
+              {isExisting ? 'Sign In with Twitch' : 'Create Account with Twitch'}
             </Button>
           </form>
         </Card>
