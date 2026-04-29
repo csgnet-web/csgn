@@ -51,18 +51,37 @@ function CSGNWipeOverlay({ visible }: { visible: boolean }) {
         visible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-full'
       }`}
       style={{
-        background: 'linear-gradient(135deg, #ff2346 0%, #0a0a14 60%)',
+        background: 'linear-gradient(135deg, #0a1628 0%, #ffb300 50%, #050c1e 100%)',
       }}
     >
+      {/* Diagonal field-stripe overlay */}
+      <div className="absolute inset-0" style={{
+        backgroundImage: 'repeating-linear-gradient(-55deg, rgba(255,179,0,0.06) 0px, rgba(255,179,0,0.06) 10px, transparent 10px, transparent 24px)',
+      }} />
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          {/* CSGN Logo SVG */}
-          <svg viewBox="0 0 120 40" className="h-12 w-auto fill-white opacity-90" xmlns="http://www.w3.org/2000/svg">
-            <text x="0" y="32" fontFamily="system-ui, sans-serif" fontWeight="900" fontSize="38" letterSpacing="2">CSGN</text>
+          <svg
+            viewBox="0 0 160 44"
+            className="h-14 w-auto"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <text
+              x="0" y="36"
+              fontFamily="'Bebas Neue', Impact, sans-serif"
+              fontWeight="400"
+              fontSize="48"
+              letterSpacing="6"
+              fill="#ffb300"
+            >CSGN</text>
           </svg>
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-            <span className="text-white/80 text-sm font-bold tracking-[0.2em] uppercase">Now Live</span>
+            <span className="w-2 h-2 rounded-full bg-field-500 animate-live-pulse" />
+            <span
+              className="text-gold-300 text-xs font-bold tracking-[0.35em] uppercase"
+              style={{ fontFamily: "'Share Tech Mono', monospace" }}
+            >
+              Now Live
+            </span>
           </div>
         </div>
       </div>
@@ -221,11 +240,27 @@ function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string
 function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: string }) {
   if (!streamUrl) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center bg-[#050507] gap-4">
-        <svg viewBox="0 0 120 40" className="h-8 w-auto fill-white/20" xmlns="http://www.w3.org/2000/svg">
-          <text x="0" y="32" fontFamily="system-ui, sans-serif" fontWeight="900" fontSize="38" letterSpacing="2">CSGN</text>
+      <div className="w-full h-full flex flex-col items-center justify-center bg-navy-950 gap-4">
+        {/* Field-line background */}
+        <div className="absolute inset-0 pointer-events-none" style={{
+          backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(255,179,0,0.04) 40px)',
+        }} />
+        <svg viewBox="0 0 160 44" className="h-10 w-auto relative" xmlns="http://www.w3.org/2000/svg">
+          <text
+            x="0" y="36"
+            fontFamily="'Bebas Neue', Impact, sans-serif"
+            fontWeight="400"
+            fontSize="48"
+            letterSpacing="6"
+            fill="rgba(255,179,0,0.18)"
+          >CSGN</text>
         </svg>
-        <p className="text-gray-500 font-mono text-sm tracking-widest uppercase">No Stream Active</p>
+        <p
+          className="text-gray-600 text-xs tracking-[0.4em] uppercase relative"
+          style={{ fontFamily: "'Share Tech Mono', monospace" }}
+        >
+          No Stream Active
+        </p>
       </div>
     )
   }
@@ -379,18 +414,35 @@ export default function Watch() {
   const liveShareRate = currentSlot?.creatorFees?.streamerShareRate ?? (liveVolumeSOL > 0 ? liveFeeSOL / liveVolumeSOL : 0)
 
   return (
-    <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
+    <div className="flex h-screen pt-16 bg-navy-950 overflow-hidden">
 
       {/* ── Main content ── */}
       <div className="flex-1 flex flex-col overflow-y-auto min-w-0">
 
-        {/* Status bar */}
-        <div className="shrink-0 flex items-center gap-3 bg-red-600 px-4 py-2">
-          <div className="flex items-center gap-2.5">
-            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-            <span className="text-white font-black tracking-[0.25em] text-sm uppercase">LIVE</span>
+        {/* Score bug / broadcast ticker bar */}
+        <div className="shrink-0 flex items-center gap-0 bg-navy-900 border-b border-gold-500/25 overflow-hidden">
+          {/* Team name / live indicator panel */}
+          <div className="flex items-center gap-2.5 bg-navy-800 border-r border-gold-500/30 px-4 py-2 shrink-0">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-field-500 opacity-80" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-field-500" />
+            </span>
+            <span
+              className="text-gold-400 font-bold tracking-[0.3em] text-xs uppercase"
+              style={{ fontFamily: "'Share Tech Mono', monospace" }}
+            >
+              ON AIR
+            </span>
           </div>
-          <div className="watch-roll-banner flex-1 min-w-0 lg:flex-none lg:w-[460px] lg:ml-auto" aria-label="Live game updates">
+          {/* Diagonal gold divider */}
+          <div className="w-4 h-full bg-navy-800 shrink-0" style={{
+            clipPath: 'polygon(0 0, 100% 0, 60% 100%, 0 100%)',
+          }} />
+          {/* Rolling ticker */}
+          <div
+            className="watch-roll-banner flex-1 min-w-0 lg:flex-none lg:w-[460px] lg:ml-auto px-3"
+            aria-label="Live game updates"
+          >
             <div className="watch-roll-banner__inner">
               {bannerItems.map((item, index) => (
                 <span
@@ -403,89 +455,151 @@ export default function Watch() {
               ))}
             </div>
           </div>
+          {/* CSGN brand end cap */}
+          <div
+            className="hidden lg:flex items-center gap-2 shrink-0 px-4 py-2 border-l border-gold-500/20"
+          >
+            <span
+              className="text-[10px] text-gold-500/60 font-bold tracking-[0.3em] uppercase"
+              style={{ fontFamily: "'Bebas Neue', Impact, sans-serif", fontSize: '0.8rem', letterSpacing: '0.2em' }}
+            >
+              CSGN
+            </span>
+          </div>
         </div>
 
         {/* Video player */}
-        <div className="shrink-0 px-4 sm:px-5 pt-4 sm:pt-5 pb-2">
-          <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)] max-w-[1280px] mx-auto">
-            <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(255,0,90,0.28),transparent_42%),radial-gradient(circle_at_85%_10%,rgba(80,0,255,0.26),transparent_35%)]" />
+        <div className="shrink-0 px-3 sm:px-4 pt-3 sm:pt-4 pb-2">
+          <div
+            className="relative overflow-hidden bg-black max-w-[1280px] mx-auto border-2 border-gold-500/20 shadow-[0_0_40px_rgba(255,179,0,0.12)]"
+            style={{ borderRadius: '2px' }}
+          >
+            {/* Corner accent marks */}
+            <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-gold-500/60 z-10 pointer-events-none" />
+            <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-gold-500/60 z-10 pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-gold-500/60 z-10 pointer-events-none" />
+            <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-gold-500/60 z-10 pointer-events-none" />
             <div className="w-full relative" style={{ aspectRatio: '16/9' }}>
               <CSGNPlayer streamUrl={streamUrl} hostname={hostname} />
               <CSGNWipeOverlay visible={showWipe} />
             </div>
-
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/55 to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-navy-950/60 to-transparent" />
           </div>
         </div>
 
-        {/* Streamer info row */}
-        <div className="shrink-0 flex items-start justify-between px-5 py-4 border-b border-white/[0.06]">
+        {/* Streamer info row — broadcast lower-third style */}
+        <div className="shrink-0 flex items-start justify-between px-4 py-3 border-b-2 border-gold-500/15 bg-navy-900/60">
           <div>
-            <h1 className="text-3xl sm:text-4xl font-black font-display text-white tracking-tight leading-none">
-              {streamerName || <span className="text-gray-600">No Stream</span>}
+            {/* Streamer name in Oswald — like a player name on a broadcast chyron */}
+            <h1
+              className="text-2xl sm:text-3xl font-bold text-white leading-none uppercase tracking-wide"
+              style={{ fontFamily: "'Oswald', system-ui, sans-serif", letterSpacing: '0.06em' }}
+            >
+              {streamerName || <span className="text-gray-600 opacity-40">No Stream</span>}
             </h1>
             {streamTitle && (
-              <p className="text-sm text-primary-300 font-medium mt-0.5 italic">"{streamTitle}"</p>
+              <p
+                className="text-sm text-gold-400/80 font-medium mt-0.5 tracking-wide"
+                style={{ fontFamily: "'Barlow Condensed', system-ui, sans-serif" }}
+              >
+                "{streamTitle}"
+              </p>
             )}
-            <p className="text-sm text-gray-400 mt-1 font-mono">{slotLabel}</p>
+            <p
+              className="text-xs text-gray-500 mt-1 tracking-widest uppercase"
+              style={{ fontFamily: "'Share Tech Mono', monospace" }}
+            >
+              {slotLabel}
+            </p>
           </div>
+          {/* Earnings — scoreboard number style */}
           <div className="text-right">
             {currentSlot ? (
               <>
-                <p className="text-2xl sm:text-3xl font-black font-mono text-yellow-400">
+                <p
+                  className="text-2xl sm:text-3xl font-bold text-gold-400 leading-none"
+                  style={{ fontFamily: "'Share Tech Mono', monospace" }}
+                >
                   {liveFeeUSD > 0 ? `$${liveFeeUSD.toFixed(2)}` : '—'}
                 </p>
-                <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-1"
+                  style={{ fontFamily: "'Share Tech Mono', monospace" }}>
                   {liveVolumeSOL > 0
-                    ? `${liveFeeSOL.toFixed(6)} SOL · ${liveVolumeSOL.toFixed(2)} SOL vol · ${(liveShareRate * 100).toFixed(3)}%`
+                    ? `${liveFeeSOL.toFixed(6)} SOL · ${liveVolumeSOL.toFixed(2)} VOL`
                     : 'Live Earnings'}
                 </p>
                 {currentSlot.creatorFees?.marketCapTierLabel && (
-                  <p className="text-[11px] text-gray-600 mt-0.5">{currentSlot.creatorFees.marketCapTierLabel}</p>
+                  <p className="text-[10px] text-gray-600 mt-0.5 uppercase tracking-wider"
+                    style={{ fontFamily: "'Share Tech Mono', monospace" }}>
+                    {currentSlot.creatorFees.marketCapTierLabel}
+                  </p>
                 )}
               </>
             ) : (
               <>
-                <p className="text-2xl sm:text-3xl font-black font-mono text-gray-600">—</p>
-                <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">Earnings</p>
+                <p
+                  className="text-2xl sm:text-3xl font-bold text-gray-600 leading-none"
+                  style={{ fontFamily: "'Share Tech Mono', monospace" }}
+                >
+                  —
+                </p>
+                <p className="text-[10px] text-gray-600 uppercase tracking-wider mt-1"
+                  style={{ fontFamily: "'Share Tech Mono', monospace" }}>
+                  Earnings
+                </p>
               </>
             )}
           </div>
         </div>
 
         {/* TODAY'S SCHEDULE */}
-        <div className="shrink-0 px-5 py-5 border-b border-white/[0.06]">
+        <div className="shrink-0 px-4 py-4 border-b border-gold-500/10">
           <button
             type="button"
-            className="w-full flex items-center justify-between mb-4"
+            className="w-full flex items-center justify-between mb-4 cursor-pointer"
             onClick={() => setIsScheduleOpen((prev) => !prev)}
             aria-expanded={isScheduleOpen}
           >
-            <h2 className="text-xs font-black tracking-[0.25em] uppercase text-gray-400">
-              Today's Schedule
-            </h2>
+            <div className="flex items-center gap-2">
+              <span className="w-1 h-4 bg-gold-500" />
+              <h2
+                className="text-[11px] font-bold tracking-[0.3em] uppercase text-gold-400"
+                style={{ fontFamily: "'Share Tech Mono', monospace" }}
+              >
+                Today's Lineup
+              </h2>
+            </div>
             <div className="flex items-center gap-4">
               {upcomingSlots.length > 0 && (
                 <div className="text-right space-y-0.5">
-                  <p className="text-[11px] text-gray-500 uppercase tracking-wider leading-none mb-1">Up Next</p>
+                  <p
+                    className="text-[10px] text-gold-500/50 uppercase tracking-wider leading-none mb-1"
+                    style={{ fontFamily: "'Share Tech Mono', monospace" }}
+                  >
+                    Up Next
+                  </p>
                   {upcomingSlots.slice(0, 3).map((s) => (
-                    <p key={s.id} className="text-[10px] font-display font-bold text-white leading-snug whitespace-nowrap">
+                    <p
+                      key={s.id}
+                      className="text-[10px] font-bold text-white leading-snug whitespace-nowrap uppercase"
+                      style={{ fontFamily: "'Oswald', system-ui, sans-serif", letterSpacing: '0.06em' }}
+                    >
                       {s.assignedName || (s.type === 'auction' ? 'Open Bid' : 'CEO')}{' '}
-                      <span className="font-normal text-gray-400">{formatCompactRange(s)}</span>
+                      <span className="font-normal text-gray-500 text-[9px]">{formatCompactRange(s)}</span>
                     </p>
                   ))}
                 </div>
               )}
-              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isScheduleOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`w-4 h-4 text-gold-500/60 transition-transform ${isScheduleOpen ? 'rotate-180' : ''}`} />
             </div>
           </button>
 
           {isScheduleOpen && (
             <>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 gap-2">
                 {scheduleGridSlots.map((slot) => {
                   const slotStart = toMillis(slot.startTime)
-                  const slotEnd = toMillis(slot.endTime)
+                  const slotEnd   = toMillis(slot.endTime)
                   const isCurrent = nowMs >= slotStart && nowMs < slotEnd
                   return (
                     <TodaySlotCard key={slot.id} slot={slot} isCurrent={isCurrent} />
@@ -496,47 +610,83 @@ export default function Watch() {
               <div className="mt-4 text-center">
                 <Link
                   to="/schedule"
-                  className="inline-flex items-center gap-1.5 px-5 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all font-medium"
+                  className="inline-flex items-center gap-1.5 px-5 py-2 bg-navy-800 border border-gold-500/25 text-sm text-gold-400 hover:text-gold-300 hover:border-gold-400/50 hover:bg-navy-700 transition-all font-bold tracking-widest uppercase"
+                  style={{ fontFamily: "'Oswald', system-ui, sans-serif", borderRadius: '2px' }}
                 >
-                  View Full Schedule <ChevronRight className="w-3.5 h-3.5" />
+                  Full Schedule <ChevronRight className="w-3.5 h-3.5" />
                 </Link>
               </div>
             </>
           )}
         </div>
 
-        {/* Game buttons */}
-        <div className="shrink-0 grid grid-cols-2 gap-3 px-5 py-5">
-          <button className="relative overflow-hidden flex flex-col items-center justify-center gap-1.5 py-2.5 sm:py-5 px-3 bg-red-600 hover:bg-red-500 active:scale-[0.98] rounded-xl font-black font-display text-white text-sm sm:text-base uppercase tracking-wider transition-all shadow-lg shadow-red-900/40 cursor-pointer">
-            <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
-            <Gamepad2 className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
-            <span className="text-center leading-tight">Play Starting 5<br /><span className="font-normal text-xs text-white/80">for free!</span></span>
+        {/* Game select buttons — NCAA game menu style */}
+        <div className="shrink-0 grid grid-cols-2 gap-2 px-4 py-4">
+          <button
+            className="relative overflow-hidden flex flex-col items-center justify-center gap-1.5 py-3 sm:py-5 px-3 cursor-pointer active:scale-[0.97] transition-all shadow-lg shadow-gold-900/30"
+            style={{
+              background: 'linear-gradient(160deg, #e09600 0%, #ffb300 50%, #e09600 100%)',
+              borderRadius: '2px',
+              border: '1px solid rgba(255,215,64,0.5)',
+            }}
+          >
+            <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent pointer-events-none" />
+            <Gamepad2 className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-navy-900" />
+            <span
+              className="text-center leading-tight text-navy-900 font-bold uppercase tracking-widest text-sm"
+              style={{ fontFamily: "'Oswald', system-ui, sans-serif" }}
+            >
+              Starting 5<br />
+              <span className="font-normal text-xs text-navy-800/80 tracking-wider normal-case">for free!</span>
+            </span>
           </button>
-          <button disabled className="relative overflow-hidden flex flex-col items-center justify-center gap-1.5 py-2.5 sm:py-5 px-3 bg-gray-700/60 rounded-xl font-black font-display text-white/70 text-sm sm:text-base uppercase tracking-wider transition-all shadow-lg cursor-not-allowed">
-            <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
-            <Grid3X3 className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
-            <span className="text-center leading-tight">Squares<br /><span className="font-normal text-xs text-white/70">Coming Soon</span></span>
+          <button
+            disabled
+            className="relative overflow-hidden flex flex-col items-center justify-center gap-1.5 py-3 sm:py-5 px-3 cursor-not-allowed transition-all"
+            style={{
+              background: 'linear-gradient(160deg, #0a1628 0%, #0e2040 100%)',
+              borderRadius: '2px',
+              border: '1px solid rgba(255,179,0,0.15)',
+            }}
+          >
+            <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent pointer-events-none" />
+            <Grid3X3 className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-gold-500/40" />
+            <span
+              className="text-center leading-tight text-gray-500 font-bold uppercase tracking-widest text-sm"
+              style={{ fontFamily: "'Oswald', system-ui, sans-serif" }}
+            >
+              Squares<br />
+              <span className="font-normal text-xs text-gray-600 tracking-wider normal-case">Coming Soon</span>
+            </span>
           </button>
         </div>
 
         {/* Mobile chat */}
         {isTwitch && (
-          <div className="lg:hidden shrink-0 px-5 pb-5">
-            <div className="rounded-xl overflow-hidden border border-white/10">
+          <div className="lg:hidden shrink-0 px-4 pb-4">
+            <div className="overflow-hidden border border-gold-500/20" style={{ borderRadius: '2px' }}>
               <button
                 type="button"
-                className="w-full bg-[#0e0e1a] px-4 py-3 flex items-center justify-between"
+                className="w-full bg-navy-900 px-4 py-3 flex items-center justify-between border-b border-gold-500/15 cursor-pointer"
                 onClick={() => setIsChatOpen((prev) => !prev)}
                 aria-expanded={isChatOpen}
               >
-                <span className="text-xs font-bold tracking-[0.2em] uppercase text-gray-400">Live Chat</span>
-                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isChatOpen ? 'rotate-180' : ''}`} />
+                <div className="flex items-center gap-2">
+                  <span className="w-1 h-3.5 bg-gold-500/60" />
+                  <span
+                    className="text-[11px] font-bold tracking-[0.25em] uppercase text-gold-400/80"
+                    style={{ fontFamily: "'Share Tech Mono', monospace" }}
+                  >
+                    Live Chat
+                  </span>
+                </div>
+                <ChevronDown className={`w-4 h-4 text-gold-500/50 transition-transform ${isChatOpen ? 'rotate-180' : ''}`} />
               </button>
               {isChatOpen && (
                 <iframe
                   src={chatSrc}
                   className="w-full"
-                  style={{ height: 360, background: '#0a0a14' }}
+                  style={{ height: 360, background: '#050c1e' }}
                   title="CSGN Chat"
                 />
               )}
@@ -547,24 +697,33 @@ export default function Watch() {
 
       {/* ── Right: Chat sidebar (desktop only) ── */}
       {isTwitch && (
-        <aside className="hidden lg:flex w-[340px] shrink-0 flex-col border-l border-white/[0.06] bg-[#07070f]">
+        <aside className="hidden lg:flex w-[340px] shrink-0 flex-col border-l-2 border-gold-500/20 bg-navy-950">
+          {/* Sidebar header — score panel style */}
           <button
             type="button"
-            className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between"
+            className="px-4 py-3 border-b border-gold-500/15 flex items-center justify-between bg-navy-900 cursor-pointer hover:bg-navy-800 transition-colors"
             onClick={() => setIsChatOpen((prev) => !prev)}
             aria-expanded={isChatOpen}
           >
             <div className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-xs font-bold tracking-[0.2em] uppercase text-gray-400">Live Chat</span>
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-field-500 opacity-70" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-field-500" />
+              </span>
+              <span
+                className="text-[11px] font-bold tracking-[0.25em] uppercase text-gold-400/80"
+                style={{ fontFamily: "'Share Tech Mono', monospace" }}
+              >
+                Live Chat
+              </span>
             </div>
-            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isChatOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`w-4 h-4 text-gold-500/50 transition-transform ${isChatOpen ? 'rotate-180' : ''}`} />
           </button>
           {isChatOpen && (
             <iframe
               src={chatSrc}
               className="flex-1 w-full"
-              style={{ background: '#07070f' }}
+              style={{ background: '#050c1e' }}
               title="CSGN Chat"
             />
           )}

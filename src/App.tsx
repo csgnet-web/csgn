@@ -39,7 +39,7 @@ function AppContent() {
   const hideFooter = location.pathname === '/watch' || isPlayerPage
 
   return (
-    <div className={`min-h-screen bg-[#050507]${isPlayerPage ? '' : ' csgn-bg'}`}>
+    <div className={`min-h-screen bg-[#050c1e]${isPlayerPage ? '' : ' csgn-bg'}`}>
       {!isPlayerPage && <Header />}
 
       <Suspense fallback={<Loading />}>
