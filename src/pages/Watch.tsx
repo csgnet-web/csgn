@@ -525,7 +525,7 @@ export default function Watch() {
                 <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-1"
                   style={{ fontFamily: "'Share Tech Mono', monospace" }}>
                   {liveVolumeSOL > 0
-                    ? `${liveFeeSOL.toFixed(6)} SOL · ${liveVolumeSOL.toFixed(2)} VOL`
+                    ? `${liveFeeSOL.toFixed(6)} SOL · ${liveVolumeSOL.toFixed(2)} VOL · ${(liveShareRate * 100).toFixed(3)}%`
                     : 'Live Earnings'}
                 </p>
                 {currentSlot.creatorFees?.marketCapTierLabel && (
