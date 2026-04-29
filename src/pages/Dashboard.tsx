@@ -19,17 +19,15 @@ import { startTwitchOAuth } from '@/lib/twitchAuth'
 import { startXOAuth } from '@/lib/xAuth'
 
 export default function Dashboard() {
-  const { user, profile, signIn, signUp, resendVerification, refreshProfile } = useAuth()
+  const { user, profile, signIn, resendVerification, refreshProfile } = useAuth()
   const { walletAddress, connect, disconnect, isConnecting, error } = usePhantomWallet()
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [authError, setAuthError] = useState('')
   const [oauthNotice, setOauthNotice] = useState('')
   const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', password: '' })
-  const [verificationSent, setVerificationSent] = useState(false)
+  const [form, setForm] = useState({ email: '', password: '' })
   const [resending, setResending] = useState(false)
   const [savingWallet, setSavingWallet] = useState(false)
-  const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [slotHistory, setSlotHistory] = useState<Slot[]>([])
   const [liveEstimateSOL, setLiveEstimateSOL] = useState(0)
   const [liveEstimateUSD, setLiveEstimateUSD] = useState(0)
@@ -103,17 +101,7 @@ export default function Dashboard() {
     setLoading(true)
     setAuthError('')
     try {
-      if (mode === 'login') {
-        await signIn(form.email, form.password)
-      } else {
-        if (!acceptedTerms) {
-          setAuthError('Please accept the Terms & Conditions to continue.')
-          setLoading(false)
-          return
-        }
-        await signUp(form.email, form.password, form.name || 'CSGN Viewer')
-        setVerificationSent(true)
-      }
+      await signIn(form.email, form.password)
     } catch {
       setAuthError('Authentication failed. Please verify your credentials.')
     } finally {
@@ -209,61 +197,48 @@ export default function Dashboard() {
       <div className="min-h-screen pt-24 lg:pt-32 pb-24">
         <div className="max-w-md mx-auto px-4">
           <Card hover={false} className="p-6 border-red-500/25 bg-white/[0.03]">
-            {verificationSent ? (
-              <div className="text-center py-4">
-                <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle2 className="w-7 h-7 text-emerald-400" />
-                </div>
-                <h2 className="text-2xl font-display font-bold text-white mb-2">Check Your Email</h2>
-                <p className="text-sm text-gray-400 mb-4">
-                  A verification link has been sent to <span className="text-white font-medium">{form.email}</span>.
-                </p>
-                <p className="text-xs text-gray-500 mb-5">You can browse CSGN while unverified, but verification is required to bid and submit requests.</p>
-                <Button variant="primary" size="md" className="w-full" onClick={() => setVerificationSent(false)}>
-                  Sign in to continue
+            <h1 className="text-3xl font-display font-bold text-white mb-1">Account</h1>
+            <p className="text-sm text-gray-400 mb-5">
+              {mode === 'login'
+                ? 'Sign in to access bidding, CEO Schedule requests, and slot management.'
+                : 'Sign up with Twitch — pick a username and password after connecting.'}
+            </p>
+            <div className="flex gap-2 mb-4">
+              <Button variant={mode === 'login' ? 'primary' : 'secondary'} size="sm" onClick={() => setMode('login')}>
+                <LogIn className="w-3.5 h-3.5" /> Sign In
+              </Button>
+              <Button variant={mode === 'signup' ? 'primary' : 'secondary'} size="sm" onClick={() => setMode('signup')}>
+                <UserPlus className="w-3.5 h-3.5" /> Create Account
+              </Button>
+            </div>
+            {mode === 'login' ? (
+              <form onSubmit={onSubmit} className="space-y-3">
+                <input type="text" placeholder="Email or username" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
+                <input type="password" placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
+                {authError && <p className="text-xs text-red-300">{authError}</p>}
+                <Button variant="primary" size="md" className="w-full" isLoading={loading}>
+                  Sign In
                 </Button>
-              </div>
+              </form>
             ) : (
-              <>
-                <h1 className="text-3xl font-display font-bold text-white mb-1">Account</h1>
-                <p className="text-sm text-gray-400 mb-5">Sign in to access bidding, CEO Schedule requests, and slot management.</p>
-                <div className="flex gap-2 mb-4">
-                  <Button variant={mode === 'login' ? 'primary' : 'secondary'} size="sm" onClick={() => setMode('login')}>
-                    <LogIn className="w-3.5 h-3.5" /> Sign In
-                  </Button>
-                  <Button variant={mode === 'signup' ? 'primary' : 'secondary'} size="sm" onClick={() => setMode('signup')}>
-                    <UserPlus className="w-3.5 h-3.5" /> Create Account
-                  </Button>
-                </div>
-                <form onSubmit={onSubmit} className="space-y-3">
-                  {mode === 'signup' && (
-                    <input type="text" placeholder="Display name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
-                  )}
-                  <input type={mode === 'login' ? 'text' : 'email'} placeholder={mode === 'login' ? 'Email or username' : 'Email'} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
-                  <input type="password" placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white" />
-                  {mode === 'signup' && (
-                    <label className="flex items-start gap-2 text-xs text-gray-400">
-                      <input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} className="mt-0.5" />
-                      <span>
-                        I agree to the <Link to="/terms" className="text-primary-400 hover:text-primary-300">Terms & Conditions</Link>.
-                      </span>
-                    </label>
-                  )}
-                  {authError && <p className="text-xs text-red-300">{authError}</p>}
-                  <Button variant="primary" size="md" className="w-full" isLoading={loading}>
-                    {mode === 'login' ? 'Sign In' : 'Create Account'}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="md"
-                    className="w-full bg-[#9146FF] hover:bg-[#7d33ea] text-white shadow-lg shadow-[#9146FF]/30"
-                    leftIcon={twitchIcon}
-                    onClick={() => startTwitchOAuth('/auth/twitch/complete')}
-                  >
-                    CONNECT WITH TWITCH
-                  </Button>
-                </form>
-              </>
+              <div className="space-y-3">
+                <Button
+                  type="button"
+                  variant="twitch"
+                  size="md"
+                  className="w-full"
+                  leftIcon={twitchIcon}
+                  onClick={() => startTwitchOAuth('/auth/twitch/complete')}
+                >
+                  CONNECT WITH TWITCH
+                </Button>
+                <p className="text-xs text-gray-500">
+                  We only read your public Twitch username. After connecting, you'll choose a CSGN username and password.
+                </p>
+                <p className="text-xs text-gray-500">
+                  By continuing you agree to the <Link to="/terms" className="text-primary-400 hover:text-primary-300">Terms & Conditions</Link>.
+                </p>
+              </div>
             )}
           </Card>
         </div>

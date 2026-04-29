@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Gamepad2, Grid3X3, Zap } from 'lucide-react'
 import { onSnapshot, doc, collection, query, orderBy } from 'firebase/firestore'
 import { db } from '@/config/firebase'
-import { formatESTRange, type Slot } from '@/lib/slots'
+import { claimEmptySlot, formatESTRange, type Slot } from '@/lib/slots'
 import { startFeeTracker } from '@/lib/dexscreener'
 import { detectStream as _detectStream, buildTwitchSrc, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
+import { useAuth } from '@/contexts/AuthContext'
+import { Button } from '@/components/ui/Button'
 const DEFAULT_TWITCH_STREAM = 'https://www.twitch.tv/csgnet'
 const FIXED_CHAT_CHANNEL = 'csgnet'
 
@@ -244,8 +246,11 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
 
 export default function Watch() {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
+  const { user, profile } = useAuth()
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
   const [isChatOpen, setIsChatOpen] = useState(false)
+  const [claiming, setClaiming] = useState(false)
+  const [claimError, setClaimError] = useState('')
 
   // Current live slot from Firestore (auto-detected by time)
   const [currentSlot, setCurrentSlot] = useState<Slot | null>(null)
@@ -364,6 +369,31 @@ export default function Watch() {
   const isTwitch = true
   const chatSrc = `https://www.twitch.tv/embed/${FIXED_CHAT_CHANNEL}/chat?parent=${hostname}&darkpopout`
 
+  // Preempt: a logged-in user with a connected Twitch can claim a slot that
+  // currently has no assignee and no admin override. Logged-out viewers must
+  // never see this UI.
+  const twitchHandle = profile?.socialLinks?.twitch?.trim() || ''
+  const slotIsEmpty = Boolean(currentSlot && !currentSlot.assignedUid && !manualOverride)
+  const canPreempt = Boolean(user && twitchHandle && slotIsEmpty)
+
+  const handleClaimSlot = async () => {
+    if (!user || !currentSlot || !twitchHandle) return
+    setClaiming(true)
+    setClaimError('')
+    try {
+      await claimEmptySlot(
+        currentSlot.id,
+        user.uid,
+        profile?.displayName || profile?.username || twitchHandle,
+        twitchHandle,
+      )
+    } catch (err) {
+      setClaimError(err instanceof Error ? err.message : 'Failed to take this slot.')
+    } finally {
+      setClaiming(false)
+    }
+  }
+
   // Next upcoming slots
   const upcomingSlots = todaySlots.filter((s) => toMillis(s.startTime) > nowMs)
 
@@ -452,6 +482,30 @@ export default function Watch() {
             )}
           </div>
         </div>
+
+        {/* Preempt empty slot — only visible to logged-in Twitch-connected users */}
+        {canPreempt && (
+          <div className="shrink-0 px-5 py-3 border-b border-white/[0.06] bg-[#9146FF]/5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-white">This slot is empty.</p>
+                <p className="text-xs text-gray-400">
+                  Take it now and stream as <span className="text-white">@{twitchHandle}</span>.
+                </p>
+                {claimError && <p className="text-xs text-red-300 mt-1">{claimError}</p>}
+              </div>
+              <Button
+                variant="twitch"
+                size="sm"
+                onClick={handleClaimSlot}
+                isLoading={claiming}
+                leftIcon={<Zap className="w-4 h-4" />}
+              >
+                Take this slot
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* TODAY'S SCHEDULE */}
         <div className="shrink-0 px-5 py-5 border-b border-white/[0.06]">

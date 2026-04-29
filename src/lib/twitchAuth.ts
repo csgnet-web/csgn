@@ -12,18 +12,10 @@ function getClientId() {
 }
 
 export function getTwitchRedirectUri() {
-  const callbackPath = '/auth/twitch/callback'
-  const host = window.location.hostname.toLowerCase()
-
-  if (host === 'csgn.fun' || host === 'www.csgn.fun') {
-    return `https://csgn.fun${callbackPath}`
-  }
-
-  if (host === 'flourishing-horse-40f91d.netlify.app') {
-    return `https://flourishing-horse-40f91d.netlify.app${callbackPath}`
-  }
-
-  return `${window.location.origin}${callbackPath}`
+  // Always anchor the redirect to the same origin that started the flow.
+  // www.csgn.fun is normalized to csgn.fun in main.tsx so localStorage state
+  // and Twitch's redirect both live on the apex domain.
+  return `${window.location.origin}/auth/twitch/callback`
 }
 
 export function startTwitchOAuth(returnTo: string) {

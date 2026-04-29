@@ -777,6 +777,35 @@ export async function updateSlotStreamUrl(slotId: string, streamUrl: string): Pr
   await updateDoc(ref, { streamUrl: streamUrl || DEFAULT_STREAM_URL })
 }
 
+/**
+ * Logged-in Twitch-connected user preempts an empty slot from the front page.
+ * Only succeeds if the slot has no assignee. Atomically updates assignment +
+ * stream URL so the front-page player switches to their Twitch channel.
+ */
+export async function claimEmptySlot(
+  slotId: string,
+  uid: string,
+  displayName: string,
+  twitchUsername: string,
+): Promise<void> {
+  const handle = twitchUsername.trim().toLowerCase()
+  if (!handle) throw new Error('Connect your Twitch account before claiming a slot.')
+
+  const ref = doc(db, SLOTS_COLLECTION, slotId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('Slot not found')
+
+  const slot = snap.data() as Slot
+  if (slot.assignedUid) throw new Error('This slot is no longer empty.')
+
+  await updateDoc(ref, {
+    assignedUid: uid,
+    assignedName: displayName,
+    streamUrl: `https://twitch.tv/${handle}`,
+    status: 'live',
+  })
+}
+
 /** Admin: assign a user to a CEO slot. */
 export async function assignCEOSlot(
   slotId: string,

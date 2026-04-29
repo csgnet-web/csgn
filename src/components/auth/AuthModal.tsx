@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { X, Mail, Lock, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/contexts/AuthContext'
 import { startTwitchOAuth } from '@/lib/twitchAuth'
@@ -15,53 +15,31 @@ export function AuthModal({ isOpen, onClose, initialMode }: AuthModalProps) {
   const [mode, setMode] = useState<'login' | 'signup'>(initialMode)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [displayName, setDisplayName] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [verificationSent, setVerificationSent] = useState(false)
-  const [acceptedTerms, setAcceptedTerms] = useState(false)
-  const { signIn, signUp, resendVerification } = useAuth()
+  const { signIn, resendVerification } = useAuth()
   const TwitchIcon = (
     <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <path d="M4.286 0 0 4.286v15.428H5.143V24l4.286-4.286h3.429L24 8.571V0H4.286zm18 7.714-5.143 5.143h-3.428L10.714 15.86v-3.003H7.286V1.714h15v6z" />
     </svg>
   )
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setLoading(true)
 
     try {
-      if (mode === 'login') {
-        await signIn(email, password)
-        onClose()
-        setEmail('')
-        setPassword('')
-        setDisplayName('')
-      } else {
-        if (!displayName.trim()) {
-          setError('Display name is required')
-          setLoading(false)
-          return
-        }
-        if (!acceptedTerms) {
-          setError('Please accept the Terms & Conditions to continue')
-          setLoading(false)
-          return
-        }
-        await signUp(email, password, displayName)
-        setVerificationSent(true)
-      }
+      await signIn(email, password)
+      onClose()
+      setEmail('')
+      setPassword('')
     } catch (err: unknown) {
       const code = err instanceof Error && 'code' in err ? String((err as { code?: string }).code || '') : ''
       if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
         setError('Invalid email/username or password')
-      } else if (code === 'auth/email-already-in-use') {
-        setError('An account with this email already exists')
-      } else if (code === 'auth/weak-password') {
-        setError('Password should be at least 6 characters')
       } else if (code === 'auth/invalid-email') {
         setError('Please enter a valid email address')
       } else {
@@ -136,121 +114,116 @@ export function AuthModal({ isOpen, onClose, initialMode }: AuthModalProps) {
                   </button>
                   <img src="https://pbs.twimg.com/profile_images/1966988305255276544/3Qz3tNAa_200x200.jpg" alt="CSGN" className="w-12 h-12 rounded-xl object-cover mb-4 shadow-lg" />
                   <h2 className="text-2xl font-bold font-display text-white">{mode === 'login' ? 'Welcome back' : 'Join CSGN'}</h2>
-                  <p className="text-sm text-gray-400 mt-1">{mode === 'login' ? 'Sign in with email or username + password' : 'Create an account with email/password or Twitch'}</p>
+                  <p className="text-sm text-gray-400 mt-1">
+                    {mode === 'login'
+                      ? 'Sign in with email or username + password'
+                      : 'Sign up with Twitch — pick a username and password after connecting'}
+                  </p>
                 </div>
 
-                <form onSubmit={handleSubmit} className="px-8 pb-8 space-y-4">
-                  {error && (
-                    <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-400">
-                      <AlertCircle className="w-4 h-4 shrink-0" />
-                      {error}
-                    </div>
-                  )}
-
-                  {mode === 'signup' && (
-                    <>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1.5">Display Name</label>
-                        <div className="relative">
-                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                          <input
-                            type="text"
-                            value={displayName}
-                            onChange={(e) => setDisplayName(e.target.value)}
-                            className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
-                            placeholder="Your streamer name"
-                            disabled={loading}
-                          />
-                        </div>
+                {mode === 'login' ? (
+                  <form onSubmit={handleLogin} className="px-8 pb-8 space-y-4">
+                    {error && (
+                      <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-400">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        {error}
                       </div>
-                      <label className="flex items-start gap-2 text-xs text-gray-400">
+                    )}
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Email or Username</label>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                         <input
-                          type="checkbox"
-                          checked={acceptedTerms}
-                          onChange={(e) => setAcceptedTerms(e.target.checked)}
-                          className="mt-0.5"
+                          type="text"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                          placeholder="you@example.com or twitch username"
+                          required
                           disabled={loading}
                         />
-                        <span>
-                          I agree to the{' '}
-                          <a href="/terms" target="_blank" rel="noreferrer" className="text-primary-400 hover:text-primary-300">
-                            Terms & Conditions
-                          </a>
-                          .
-                        </span>
-                      </label>
-                    </>
-                  )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1.5">{mode === 'login' ? 'Email or Username' : 'Email'}</label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                      <input
-                        type={mode === 'login' ? 'text' : 'email'}
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
-                        placeholder={mode === 'login' ? 'you@example.com or twitch username' : 'you@example.com'}
-                        required
-                        disabled={loading}
-                      />
+                      </div>
                     </div>
-                  </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
-                        placeholder={mode === 'signup' ? 'Min. 6 characters' : 'Enter password'}
-                        required
-                        minLength={6}
-                        disabled={loading}
-                      />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                          placeholder="Enter password"
+                          required
+                          minLength={6}
+                          disabled={loading}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors cursor-pointer"
+                        >
+                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <Button variant="primary" size="lg" className="w-full" type="submit" isLoading={loading}>
+                      Sign In
+                    </Button>
+
+                    <div className="text-center text-sm text-gray-400">
+                      Don't have an account?{' '}
                       <button
                         type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors cursor-pointer"
+                        onClick={() => {
+                          setMode('signup')
+                          setError('')
+                        }}
+                        className="text-primary-400 hover:text-primary-300 font-medium transition-colors cursor-pointer"
                       >
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        Sign up with Twitch
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="px-8 pb-8 space-y-4">
+                    <p className="text-sm text-gray-300">
+                      Connect your Twitch account to continue. After connecting, you'll choose a CSGN username and password.
+                    </p>
+
+                    <Button
+                      variant="twitch"
+                      size="lg"
+                      className="w-full"
+                      type="button"
+                      onClick={() => startTwitchOAuth('/auth/twitch/complete')}
+                      leftIcon={TwitchIcon}
+                    >
+                      CONNECT WITH TWITCH
+                    </Button>
+
+                    <p className="text-xs text-gray-500 text-center">
+                      We only read your public Twitch username. No streaming permissions are requested.
+                    </p>
+
+                    <div className="text-center text-sm text-gray-400">
+                      Already have an account?{' '}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMode('login')
+                          setError('')
+                        }}
+                        className="text-primary-400 hover:text-primary-300 font-medium transition-colors cursor-pointer"
+                      >
+                        Sign in
                       </button>
                     </div>
                   </div>
-
-                  <Button variant="primary" size="lg" className="w-full" type="submit" isLoading={loading}>
-                    {mode === 'login' ? 'Sign In' : 'Create Account'}
-                  </Button>
-
-                  <Button
-                    size="lg"
-                    className="w-full bg-[#9146FF] hover:bg-[#7d33ea] text-white shadow-lg shadow-[#9146FF]/30"
-                    type="button"
-                    onClick={() => startTwitchOAuth('/auth/twitch/complete')}
-                    disabled={loading}
-                    leftIcon={TwitchIcon}
-                  >
-                    CONNECT WITH TWITCH
-                  </Button>
-
-                  <div className="text-center text-sm text-gray-400">
-                    {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}{' '}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMode(mode === 'login' ? 'signup' : 'login')
-                        setError('')
-                      }}
-                      className="text-primary-400 hover:text-primary-300 font-medium transition-colors cursor-pointer"
-                    >
-                      {mode === 'login' ? 'Sign up' : 'Sign in'}
-                    </button>
-                  </div>
-                </form>
+                )}
               </>
             )}
           </motion.div>

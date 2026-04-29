@@ -1,7 +1,7 @@
 import { forwardRef } from 'react'
 import { motion, type HTMLMotionProps } from 'framer-motion'
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'gold'
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'gold' | 'twitch'
 type Size = 'sm' | 'md' | 'lg'
 
 interface ButtonProps extends Omit<HTMLMotionProps<'button'>, 'size'> {
@@ -21,6 +21,8 @@ const variants: Record<Variant, string> = {
   danger:
     'bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white shadow-lg shadow-red-600/25',
   gold: 'bg-gradient-to-r from-amber-600 to-yellow-500 hover:from-amber-500 hover:to-yellow-400 text-black font-semibold shadow-lg shadow-amber-600/25',
+  twitch:
+    'bg-[#9146FF] hover:bg-[#7c2bf5] active:bg-[#6822d4] text-white shadow-lg shadow-[#9146FF]/30',
 }
 
 const sizes: Record<Size, string> = {
