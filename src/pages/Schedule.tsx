@@ -6,8 +6,9 @@ import { db } from '@/config/firebase'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
-import { LAUNCH_DATE_UTC, PHASE_2_END_UTC, type Slot } from '@/lib/slots'
+import { claimOpenSlot, LAUNCH_DATE_UTC, PHASE_2_END_UTC, type Slot } from '@/lib/slots'
 import { startFeeTracker } from '@/lib/dexscreener'
+import { useAuth } from '@/contexts/AuthContext'
 const WEEK_SPAN = 7
 
 function toMillis(value: unknown): number {
@@ -78,11 +79,33 @@ function etMiddayFromOffset(offset: number): Date {
 }
 
 export default function Schedule() {
+  const { user, profile } = useAuth()
   const [selectedDay, setSelectedDay] = useState(0)
   const [weekOffset, setWeekOffset] = useState(0)
   const [allSlots, setAllSlots] = useState<Slot[]>([])
   const [loading, setLoading] = useState(true)
   const [liveSlotFeeSOL, setLiveSlotFeeSOL] = useState<Record<string, number>>({})
+  const [claimingId, setClaimingId] = useState<string | null>(null)
+  const [claimError, setClaimError] = useState('')
+
+  const twitchHandle = profile?.twitchUsername || profile?.socialLinks?.twitch || ''
+
+  const handleClaim = async (slot: Slot) => {
+    if (!user || !profile || !twitchHandle) return
+    setClaimingId(slot.id)
+    setClaimError('')
+    try {
+      await claimOpenSlot(slot.id, {
+        uid: user.uid,
+        displayName: profile.displayName || twitchHandle,
+        twitchUsername: twitchHandle,
+      })
+    } catch (err) {
+      setClaimError(err instanceof Error ? err.message : 'Could not claim slot.')
+    } finally {
+      setClaimingId(null)
+    }
+  }
   const days = useMemo(() => {
     const labels: string[] = []
     for (let i = 0; i < WEEK_SPAN; i++) {
@@ -227,6 +250,9 @@ export default function Schedule() {
             </h3>
             <Badge variant="blue">All times ET</Badge>
           </div>
+          {claimError && (
+            <div className="px-4 py-2 text-xs text-red-300 bg-red-500/5 border-b border-red-500/20">{claimError}</div>
+          )}
 
           <div className="divide-y divide-white/[0.04]">
             {loading ? (
@@ -280,7 +306,7 @@ export default function Schedule() {
                       <span className="text-[11px] text-cyan-300 block mt-0.5">Streamer fee: {feeLabel}</span>
                     </div>
 
-                    <div className="flex flex-col items-end gap-0.5 shrink-0">
+                    <div className="flex flex-col items-end gap-1 shrink-0">
                       {slot.status === 'pending_deposit' && <Badge variant="gold" className="!text-[9px] !px-1.5 !py-0.5">Awaiting Confirm</Badge>}
                       {slot.status === 'confirmed' && <Badge variant="green" className="!text-[9px] !px-1.5 !py-0.5">Confirmed</Badge>}
                       {showBidLink && (
@@ -289,6 +315,16 @@ export default function Schedule() {
                       <Badge variant={isEmptyOpenSlot ? 'default' : 'gold'} className="!text-[9px] !px-1.5 !py-0.5">
                         {isEmptyOpenSlot ? 'Empty Slot' : 'CEO Creator'}
                       </Badge>
+                      {slot.status === 'open' && !slot.assignedUid && displayStatus !== 'past' && user && twitchHandle && (
+                        <button
+                          type="button"
+                          onClick={() => void handleClaim(slot)}
+                          disabled={claimingId === slot.id}
+                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+                        >
+                          {claimingId === slot.id ? 'Claiming…' : 'Take Slot'}
+                        </button>
+                      )}
                     </div>
                   </motion.div>
                 )

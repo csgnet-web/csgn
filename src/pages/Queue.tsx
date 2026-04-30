@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { Clock3, Crown, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Clock3, Crown, ChevronLeft, ChevronRight, Radio } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { fetchSlots, type Slot } from '@/lib/slots'
+import { claimOpenSlot, fetchSlots, type Slot } from '@/lib/slots'
 
 const WEEK_SPAN = 7
 
@@ -47,6 +47,10 @@ export default function Queue() {
   const [loading, setLoading] = useState(true)
   const [weekOffset, setWeekOffset] = useState(0)
   const [selectedDay, setSelectedDay] = useState(0)
+  const [claimingId, setClaimingId] = useState<string | null>(null)
+  const [claimError, setClaimError] = useState('')
+
+  const twitchHandle = profile?.twitchUsername || profile?.socialLinks?.twitch || ''
 
   const loadSlots = useCallback(async () => {
     const now = new Date()
@@ -59,6 +63,24 @@ export default function Queue() {
     }
     setLoading(false)
   }, [])
+
+  const handleClaim = async (slot: Slot) => {
+    if (!user || !profile || !twitchHandle) return
+    setClaimingId(slot.id)
+    setClaimError('')
+    try {
+      await claimOpenSlot(slot.id, {
+        uid: user.uid,
+        displayName: profile.displayName || twitchHandle,
+        twitchUsername: twitchHandle,
+      })
+      await loadSlots()
+    } catch (err) {
+      setClaimError(err instanceof Error ? err.message : 'Could not claim slot.')
+    } finally {
+      setClaimingId(null)
+    }
+  }
 
   useEffect(() => {
     loadSlots()
@@ -163,23 +185,44 @@ export default function Queue() {
               <p className="text-sm text-gray-500 py-4">No slots found for this day yet.</p>
             ) : (
               <div className="space-y-3">
-                {selectedDaySlots.map((slot) => (
-                  <div key={slot.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-white font-medium">{slot.label}</p>
-                        <p className="text-xs text-gray-500">
-                          <Clock3 className="w-3 h-3 inline mr-1" />
-                          Airs {formatDate(new Date(slot.startTime))}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="gold">CEO Creator</Badge>
-                        <Badge variant="purple">Bidding: Coming Soon</Badge>
+                {claimError && (
+                  <div className="text-xs text-red-300 bg-red-500/5 border border-red-500/20 rounded-lg p-2">{claimError}</div>
+                )}
+                {selectedDaySlots.map((slot) => {
+                  const isOpen = slot.status === 'open' && !slot.assignedUid
+                  const isPast = new Date(slot.endTime).getTime() <= Date.now()
+                  return (
+                    <div key={slot.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-white font-medium">{slot.assignedName ? `${slot.assignedName} · ${slot.label}` : slot.label}</p>
+                          <p className="text-xs text-gray-500">
+                            <Clock3 className="w-3 h-3 inline mr-1" />
+                            Airs {formatDate(new Date(slot.startTime))}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {isOpen && !isPast && user && twitchHandle && (
+                            <button
+                              type="button"
+                              onClick={() => void handleClaim(slot)}
+                              disabled={claimingId === slot.id}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+                            >
+                              <Radio className="w-3 h-3" />
+                              {claimingId === slot.id ? 'Claiming…' : 'Take Slot'}
+                            </button>
+                          )}
+                          {isOpen ? (
+                            <Badge variant="default">Open</Badge>
+                          ) : (
+                            <Badge variant="gold">CEO Creator</Badge>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </Card>

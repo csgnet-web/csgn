@@ -753,6 +753,51 @@ export async function declineSlotRequest(slotId: string, requestId: string, reas
   })
 }
 
+/** Build a canonical Twitch URL from a username. */
+export function buildTwitchStreamUrl(twitchUsername: string): string {
+  const cleaned = twitchUsername.trim().replace(/^@/, '').toLowerCase()
+  return cleaned ? `https://www.twitch.tv/${cleaned}` : DEFAULT_STREAM_URL
+}
+
+/**
+ * Claim an open slot for a registered user. Sets the slot's stream URL to the
+ * user's Twitch channel and marks them as the assigned streamer immediately,
+ * which pushes their feed onto /watch and /player on the next snapshot.
+ */
+export async function claimOpenSlot(
+  slotId: string,
+  params: { uid: string; displayName: string; twitchUsername: string },
+): Promise<void> {
+  const ref = doc(db, SLOTS_COLLECTION, slotId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('Slot not found')
+
+  const slot = snap.data() as Slot
+  if (slot.status !== 'open' || slot.assignedUid) {
+    throw new Error('Slot is no longer open')
+  }
+  if (!params.twitchUsername) {
+    throw new Error('Connect a Twitch account before claiming a slot.')
+  }
+
+  const now = Date.now()
+  const startMs = new Date(slot.startTime).getTime()
+  const endMs = new Date(slot.endTime).getTime()
+  if (now >= endMs) throw new Error('This slot has already ended.')
+
+  const isLiveNow = now >= startMs && now < endMs
+  const streamUrl = buildTwitchStreamUrl(params.twitchUsername)
+
+  await updateDoc(ref, {
+    assignedUid: params.uid,
+    assignedName: params.displayName,
+    streamUrl,
+    streamTitle: params.displayName,
+    description: '',
+    status: isLiveNow ? 'live' : 'confirmed',
+  })
+}
+
 /** Admin: assign/switch a streamer on any slot. */
 export async function assignSlot(
   slotId: string,
