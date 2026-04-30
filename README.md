@@ -16,7 +16,7 @@ The 24/7 crypto-native streaming network built on Solana. The ESPN and TMZ of cr
 
 ```bash
 npm install
-cp .env.example .env    # Add your Firebase config
+cp .env.example .env    # Add Firebase + Twitch config
 npm run dev             # Start dev server at localhost:5173
 ```
 
@@ -30,13 +30,24 @@ npm run dev             # Start dev server at localhost:5173
 ## Environment Variables
 
 ```
+# Firebase
 VITE_FIREBASE_API_KEY=
 VITE_FIREBASE_AUTH_DOMAIN=
 VITE_FIREBASE_PROJECT_ID=
 VITE_FIREBASE_STORAGE_BUCKET=
 VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
+
+# Twitch OAuth (frontend)
+VITE_TWITCH_CLIENT_ID=
+VITE_TWITCH_REDIRECT_BASE_URL=
+
+# Twitch OAuth (Netlify functions)
+TWITCH_CLIENT_ID=
+TWITCH_CLIENT_SECRET=
 ```
+
+For Netlify deploys, set `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` in Netlify site environment variables (not in frontend build vars).
 
 ## Pages
 

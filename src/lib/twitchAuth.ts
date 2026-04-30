@@ -1,5 +1,4 @@
 const TWITCH_AUTHORIZE_URL = 'https://id.twitch.tv/oauth2/authorize'
-const TWITCH_USERS_URL = 'https://api.twitch.tv/helix/users'
 
 const STATE_KEY = 'twitch_oauth_state'
 const RETURN_TO_KEY = 'twitch_oauth_return_to'
@@ -31,9 +30,10 @@ export function startTwitchOAuth(returnTo: string) {
   localStorage.setItem(RETURN_TO_KEY, returnTo)
 
   const params = new URLSearchParams({
-    response_type: 'token',
+    response_type: 'code',
     client_id: clientId,
     redirect_uri: getTwitchRedirectUri(),
+    scope: 'user:read:email',
     state,
     force_verify: 'true',
   })
@@ -75,41 +75,39 @@ export function clearTwitchAuthFlowState() {
   localStorage.removeItem(AUTH_FLOW_KEY)
 }
 
-export async function resolveTwitchUserFromHash(hash: string) {
-  const clientId = getClientId()
-  if (!clientId) throw new Error('Missing VITE_TWITCH_CLIENT_ID')
-
-  const hashParams = new URLSearchParams(hash.replace(/^#/, ''))
-  const accessToken = hashParams.get('access_token')
-  const state = hashParams.get('state')
-  const error = hashParams.get('error')
-  const errorDescription = hashParams.get('error_description')
+export async function resolveTwitchUserFromCallback(search: string) {
+  const query = new URLSearchParams(search)
+  const code = query.get('code')
+  const state = query.get('state')
+  const error = query.get('error')
+  const errorDescription = query.get('error_description')
 
   if (error) {
     throw new Error(`Twitch auth failed: ${error}${errorDescription ? ` (${decodeURIComponent(errorDescription)})` : ''}`)
   }
-  if (!accessToken || !state) throw new Error('Missing Twitch OAuth response fields')
+
+  if (!code || !state) throw new Error('Missing Twitch OAuth response fields')
 
   const expectedState = localStorage.getItem(STATE_KEY)
   if (!expectedState || expectedState !== state) throw new Error('Invalid Twitch OAuth state')
 
-  const response = await fetch(TWITCH_USERS_URL, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Client-Id': clientId,
-    },
+  const response = await fetch('/.netlify/functions/twitch-profile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code,
+      redirectUri: getTwitchRedirectUri(),
+      clientId: getClientId(),
+    }),
   })
 
-  if (!response.ok) {
-    const errText = await response.text()
-    throw new Error(`Unable to validate Twitch account (${response.status}): ${errText}`)
-  }
+  const json = (await response.json()) as { username?: string; error?: string; detail?: string }
 
-  const json = await response.json() as { data?: Array<{ login?: string }> }
-  const login = json.data?.[0]?.login
-  if (!login) throw new Error('No Twitch username returned')
+  if (!response.ok || !json.username) {
+    throw new Error(json.error || json.detail || `Twitch verification failed (${response.status})`)
+  }
 
   localStorage.removeItem(STATE_KEY)
 
-  return login
+  return json.username.toLowerCase()
 }
