@@ -37,6 +37,7 @@ export interface UserProfile {
   createdAt: unknown
   bio?: string
   walletAddress?: string
+  twitchUsername?: string
   socialLinks?: { twitter?: string; twitch?: string }
   notifications?: UserNotification[]
   xp?: number
@@ -48,7 +49,7 @@ interface AuthContextType {
   loading: boolean
   signIn: (identifier: string, password: string) => Promise<void>
   signUp: (email: string, password: string, displayName: string) => Promise<void>
-  signUpWithTwitch: (params: { twitchUsername: string; email: string; password: string; displayName: string }) => Promise<void>
+  signUpWithTwitch: (params: { twitchUsername: string; email: string; password: string; displayName: string; walletAddress: string }) => Promise<void>
   getProfileByTwitchUsername: (twitchUsername: string) => Promise<UserProfile | null>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
@@ -164,40 +165,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const getProfileByTwitchUsername = async (twitchUsername: string) => {
     const normalizedUsername = twitchUsername.trim().toLowerCase()
-    const usersQ = query(collection(db, 'users'), where('usernameLower', '==', normalizedUsername), limit(1))
-    const snap = await getDocs(usersQ)
-    return snap.docs[0]?.data() as UserProfile | null
+    const byTwitch = query(collection(db, 'users'), where('twitchUsername', '==', normalizedUsername), limit(1))
+    const byTwitchSnap = await getDocs(byTwitch)
+    if (!byTwitchSnap.empty) return byTwitchSnap.docs[0].data() as UserProfile
+
+    const bySocial = query(collection(db, 'users'), where('socialLinks.twitch', '==', normalizedUsername), limit(1))
+    const bySocialSnap = await getDocs(bySocial)
+    if (!bySocialSnap.empty) return bySocialSnap.docs[0].data() as UserProfile
+
+    return null
   }
 
-  const signUpWithTwitch = async ({ twitchUsername, email, password, displayName }: { twitchUsername: string; email: string; password: string; displayName: string }) => {
-    const normalizedUsername = twitchUsername.trim().toLowerCase()
+  const signUpWithTwitch = async ({ twitchUsername, email, password, displayName, walletAddress }: { twitchUsername: string; email: string; password: string; displayName: string; walletAddress: string }) => {
+    if (!walletAddress) throw new Error('A connected Phantom wallet is required to register.')
+    const normalizedTwitch = twitchUsername.trim().toLowerCase()
+    const normalizedDisplay = displayName.trim()
+    const normalizedUsernameLower = normalizedDisplay.toLowerCase()
     const { user } = await createUserWithEmailAndPassword(auth, email, password)
-    await updateProfile(user, { displayName })
+    await updateProfile(user, { displayName: normalizedDisplay })
     await sendEmailVerification(user)
 
     try {
-      await createProfile(user, displayName, {
+      await createProfile(user, normalizedDisplay, {
         email,
         authEmail: email,
-        username: twitchUsername,
-        usernameLower: normalizedUsername,
+        username: normalizedDisplay,
+        usernameLower: normalizedUsernameLower,
         authProvider: 'twitch',
-        socialLinks: { twitch: normalizedUsername },
-      })
+        walletAddress,
+        twitchUsername: normalizedTwitch,
+        socialLinks: { twitch: normalizedTwitch },
+      } as Partial<UserProfile>)
     } catch (err) {
       console.warn('Failed to create Firestore profile (user still created in Auth):', err)
       setProfile({
         uid: user.uid,
         email,
         authEmail: email,
-        displayName,
-        username: twitchUsername,
-        usernameLower: normalizedUsername,
+        displayName: normalizedDisplay,
+        username: normalizedDisplay,
+        usernameLower: normalizedUsernameLower,
         authProvider: 'twitch',
         photoURL: user.photoURL,
         role: 'viewer',
         createdAt: null,
-        socialLinks: { twitch: normalizedUsername },
+        walletAddress,
+        socialLinks: { twitch: normalizedTwitch },
       })
     }
   }

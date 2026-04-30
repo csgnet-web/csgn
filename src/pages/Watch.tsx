@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronRight, Gamepad2, Grid3X3 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Gamepad2, Grid3X3, Radio } from 'lucide-react'
 import { onSnapshot, doc, collection, query, orderBy } from 'firebase/firestore'
 import { db } from '@/config/firebase'
-import { formatESTRange, type Slot } from '@/lib/slots'
+import { claimOpenSlot, formatESTRange, type Slot } from '@/lib/slots'
 import { startFeeTracker } from '@/lib/dexscreener'
+import { useAuth } from '@/contexts/AuthContext'
 import { detectStream as _detectStream, buildTwitchSrc, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
 const DEFAULT_TWITCH_STREAM = 'https://www.twitch.tv/csgnet'
 const FIXED_CHAT_CHANNEL = 'csgnet'
@@ -244,8 +245,11 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
 
 export default function Watch() {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
+  const { user, profile } = useAuth()
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
   const [isChatOpen, setIsChatOpen] = useState(false)
+  const [claiming, setClaiming] = useState(false)
+  const [claimError, setClaimError] = useState('')
 
   // Current live slot from Firestore (auto-detected by time)
   const [currentSlot, setCurrentSlot] = useState<Slot | null>(null)
@@ -367,6 +371,49 @@ export default function Watch() {
   // Next upcoming slots
   const upcomingSlots = todaySlots.filter((s) => toMillis(s.startTime) > nowMs)
 
+  const twitchHandle = profile?.twitchUsername || profile?.socialLinks?.twitch || ''
+  const canClaimCurrent =
+    Boolean(user) &&
+    Boolean(profile) &&
+    Boolean(twitchHandle) &&
+    Boolean(currentSlot) &&
+    currentSlot?.status === 'open' &&
+    !currentSlot?.assignedUid
+
+  const handleClaimCurrent = async () => {
+    if (!user || !profile || !currentSlot || !twitchHandle) return
+    setClaiming(true)
+    setClaimError('')
+    try {
+      await claimOpenSlot(currentSlot.id, {
+        uid: user.uid,
+        displayName: profile.displayName || twitchHandle,
+        twitchUsername: twitchHandle,
+      })
+    } catch (err) {
+      setClaimError(err instanceof Error ? err.message : 'Could not claim slot.')
+    } finally {
+      setClaiming(false)
+    }
+  }
+
+  const handleClaimSlot = async (slot: Slot) => {
+    if (!user || !profile || !twitchHandle) return
+    setClaiming(true)
+    setClaimError('')
+    try {
+      await claimOpenSlot(slot.id, {
+        uid: user.uid,
+        displayName: profile.displayName || twitchHandle,
+        twitchUsername: twitchHandle,
+      })
+    } catch (err) {
+      setClaimError(err instanceof Error ? err.message : 'Could not claim slot.')
+    } finally {
+      setClaiming(false)
+    }
+  }
+
   // For the schedule grid: current slot (if any) + next 2, otherwise next 3
   const currentTodaySlot = todaySlots.find((s) => {
     const start = toMillis(s.startTime)
@@ -428,6 +475,23 @@ export default function Watch() {
               <p className="text-sm text-primary-300 font-medium mt-0.5 italic">"{streamTitle}"</p>
             )}
             <p className="text-sm text-gray-400 mt-1 font-mono">{slotLabel}</p>
+            {canClaimCurrent && (
+              <div className="mt-3 flex flex-col gap-1">
+                <button
+                  type="button"
+                  onClick={() => void handleClaimCurrent()}
+                  disabled={claiming}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 rounded-lg text-xs font-bold text-emerald-200 uppercase tracking-wider transition-colors disabled:opacity-60 disabled:cursor-wait cursor-pointer"
+                >
+                  <Radio className="w-3.5 h-3.5" />
+                  {claiming ? 'Going Live…' : `Take this slot (Go Live as @${twitchHandle})`}
+                </button>
+                {claimError && <span className="text-[11px] text-red-300">{claimError}</span>}
+              </div>
+            )}
+            {user && !twitchHandle && currentSlot?.status === 'open' && !currentSlot?.assignedUid && (
+              <p className="mt-3 text-[11px] text-amber-300">Connect Twitch on your <Link to="/account" className="underline">Account</Link> to take open slots.</p>
+            )}
           </div>
           <div className="text-right">
             {currentSlot ? (
@@ -487,8 +551,21 @@ export default function Watch() {
                   const slotStart = toMillis(slot.startTime)
                   const slotEnd = toMillis(slot.endTime)
                   const isCurrent = nowMs >= slotStart && nowMs < slotEnd
+                  const claimable = Boolean(user && twitchHandle) && slot.status === 'open' && !slot.assignedUid && slotEnd > nowMs
                   return (
-                    <TodaySlotCard key={slot.id} slot={slot} isCurrent={isCurrent} />
+                    <div key={slot.id} className="flex flex-col gap-1.5">
+                      <TodaySlotCard slot={slot} isCurrent={isCurrent} />
+                      {claimable && (
+                        <button
+                          type="button"
+                          onClick={() => void handleClaimSlot(slot)}
+                          disabled={claiming}
+                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+                        >
+                          Take Slot
+                        </button>
+                      )}
+                    </div>
                   )
                 })}
               </div>

@@ -1,24 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   clearTwitchAuthFlowState,
-  getTwitchAuthFlowState,
   getTwitchReturnTo,
   resolveTwitchUserFromHash,
   setTwitchAuthFlowState,
 } from '@/lib/twitchAuth'
 
 export default function TwitchCallback() {
-  const { user, refreshProfile, getProfileByTwitchUsername } = useAuth()
+  const { user, loading, refreshProfile, getProfileByTwitchUsername } = useAuth()
   const navigate = useNavigate()
   const [error, setError] = useState('')
   const [countdown, setCountdown] = useState(5)
   const processedRef = useRef(false)
 
   useEffect(() => {
+    if (loading) return
     if (processedRef.current) return
     processedRef.current = true
 
@@ -27,7 +27,7 @@ export default function TwitchCallback() {
         const username = await resolveTwitchUserFromHash(window.location.hash)
         const returnTo = getTwitchReturnTo()
 
-        if (!user && returnTo === '/auth/twitch/complete') {
+        if (!user) {
           const existing = await getProfileByTwitchUsername(username)
           setTwitchAuthFlowState({
             twitchUsername: username,
@@ -36,25 +36,23 @@ export default function TwitchCallback() {
           })
           localStorage.setItem('oauth_notice', `Twitch connected: @${username}`)
           navigate('/auth/twitch/complete', { replace: true })
-        } else {
-          if (!user) {
-            throw new Error('No active user to connect Twitch. Start from Account and try again.')
-          }
-          await updateDoc(doc(db, 'users', user.uid), {
-            'socialLinks.twitch': username,
-            twitchUsername: username,
-          })
-          await refreshProfile()
-          localStorage.setItem('oauth_notice', 'Twitch connected successfully.')
-          clearTwitchAuthFlowState()
-          navigate(returnTo, { replace: true })
+          return
         }
+
+        await updateDoc(doc(db, 'users', user.uid), {
+          'socialLinks.twitch': username,
+          twitchUsername: username,
+        })
+        await refreshProfile()
+        localStorage.setItem('oauth_notice', 'Twitch connected successfully.')
+        clearTwitchAuthFlowState()
+        navigate(returnTo === '/auth/twitch/complete' ? '/account' : returnTo, { replace: true })
       } catch (err) {
         const message = err instanceof Error ? err.message : JSON.stringify(err)
         setError(message)
       }
     })()
-  }, [getProfileByTwitchUsername, navigate, refreshProfile, user])
+  }, [getProfileByTwitchUsername, loading, navigate, refreshProfile, user])
 
   useEffect(() => {
     if (!error) return
@@ -72,8 +70,6 @@ export default function TwitchCallback() {
 
     return () => clearInterval(timer)
   }, [error, navigate])
-
-  if (!user && !getTwitchAuthFlowState()) return <Navigate to="/account" replace />
 
   return (
     <div className="min-h-screen pt-28 px-4">
