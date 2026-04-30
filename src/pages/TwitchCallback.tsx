@@ -11,14 +11,13 @@ import {
 } from '@/lib/twitchAuth'
 
 export default function TwitchCallback() {
-  const { user, loading, refreshProfile, getProfileByTwitchUsername } = useAuth()
+  const { user, refreshProfile, getProfileByTwitchUsername } = useAuth()
   const navigate = useNavigate()
   const [error, setError] = useState('')
   const [countdown, setCountdown] = useState(5)
   const processedRef = useRef(false)
 
   useEffect(() => {
-    if (loading) return
     if (processedRef.current) return
     processedRef.current = true
 
@@ -52,7 +51,7 @@ export default function TwitchCallback() {
         setError(message)
       }
     })()
-  }, [getProfileByTwitchUsername, loading, navigate, refreshProfile, user])
+  }, [getProfileByTwitchUsername, navigate, refreshProfile, user])
 
   useEffect(() => {
     if (!error) return
