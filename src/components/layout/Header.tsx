@@ -12,7 +12,6 @@ const navLinks = [
   { href: '/watch', label: 'Watch Live', live: true },
   { href: '/schedule', label: 'Schedule' },
   { href: '/queue', label: 'Queue', authOnly: true },
-  { href: '/apply', label: 'Apply' },
   { href: '/about', label: 'About' },
 ]
 

@@ -9,7 +9,6 @@ import { useAuth } from '@/contexts/AuthContext'
 
 const Watch = lazy(() => import('@/pages/Watch'))
 const Schedule = lazy(() => import('@/pages/Schedule'))
-const Apply = lazy(() => import('@/pages/Apply'))
 const About = lazy(() => import('@/pages/About'))
 const StreamerQuickApply = lazy(() => import('@/pages/StreamerQuickApply'))
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
@@ -48,7 +47,7 @@ function AppContent() {
             <Route path="/" element={<Watch />} />
             <Route path="/watch" element={<Watch />} />
             <Route path="/schedule" element={<Schedule />} />
-            <Route path="/apply" element={<Apply />} />
+            <Route path="/apply" element={<Navigate to="/queue" replace />} />
             <Route path="/about" element={<About />} />
             <Route path="/about/streamer-quick-apply" element={<StreamerQuickApply />} />
             <Route path="/account" element={<Dashboard />} />
