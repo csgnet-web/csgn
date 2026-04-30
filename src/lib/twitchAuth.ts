@@ -13,14 +13,10 @@ function getClientId() {
 
 export function getTwitchRedirectUri() {
   const callbackPath = '/auth/twitch/callback'
-  const host = window.location.hostname.toLowerCase()
+  const configuredBase = (import.meta.env.VITE_TWITCH_REDIRECT_BASE_URL as string | undefined)?.trim()
 
-  if (host === 'csgn.fun' || host === 'www.csgn.fun') {
-    return `https://csgn.fun${callbackPath}`
-  }
-
-  if (host === 'flourishing-horse-40f91d.netlify.app') {
-    return `https://flourishing-horse-40f91d.netlify.app${callbackPath}`
+  if (configuredBase) {
+    return `${configuredBase.replace(/\/$/, '')}${callbackPath}`
   }
 
   return `${window.location.origin}${callbackPath}`
