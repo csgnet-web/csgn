@@ -129,8 +129,13 @@ export default function Dashboard() {
     }
   }
 
-  const connectTwitch = () => {
-    startTwitchOAuth('/account')
+  const connectTwitch = async () => {
+    try {
+      await startTwitchOAuth('/account')
+    } catch (err) {
+      console.warn('Failed to start Twitch OAuth:', err)
+      setOauthNotice(err instanceof Error ? err.message : 'Failed to connect Twitch.')
+    }
   }
 
   const clearPhantom = async () => {

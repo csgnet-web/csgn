@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import {
   clearTwitchAuthFlowState,
   getTwitchReturnTo,
-  resolveTwitchUserFromHash,
+  resolveTwitchUserFromCallback,
   setTwitchAuthFlowState,
 } from '@/lib/twitchAuth'
 
@@ -23,7 +23,7 @@ export default function TwitchCallback() {
 
     ;(async () => {
       try {
-        const username = await resolveTwitchUserFromHash(window.location.hash)
+        const username = await resolveTwitchUserFromCallback(window.location.search)
         const returnTo = getTwitchReturnTo()
 
         if (!user) {
