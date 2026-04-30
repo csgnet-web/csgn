@@ -11,11 +11,11 @@ interface AuthModalProps {
   initialMode?: 'login' | 'signup'
 }
 
-type Tab = 'email' | 'twitch'
+type Tab = 'twitch' | 'email'
 
 export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalProps) {
   const { signIn } = useAuth()
-  const [tab, setTab] = useState<Tab>('email')
+  const [tab, setTab] = useState<Tab>('twitch')
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -118,21 +118,21 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                   <div className="grid grid-cols-2 gap-1.5 p-1 bg-white/5 border border-white/10 rounded-xl">
                     <button
                       type="button"
-                      onClick={() => { setTab('email'); setError('') }}
-                      className={`px-3 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors cursor-pointer ${
-                        tab === 'email' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
-                      }`}
-                    >
-                      Email & Password
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => { setTab('twitch'); setError('') }}
                       className={`px-3 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors cursor-pointer ${
                         tab === 'twitch' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
                       }`}
                     >
                       Twitch
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setTab('email'); setError('') }}
+                      className={`px-3 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors cursor-pointer ${
+                        tab === 'email' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      Email & Password
                     </button>
                   </div>
 

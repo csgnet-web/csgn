@@ -7,7 +7,7 @@ import { db } from '@/config/firebase'
 
 /* ─── Constants ─── */
 
-export const DEFAULT_STREAM_URL = 'https://twitch.tv/shrood'
+export const DEFAULT_STREAM_URL = 'https://twitch.tv/csgnet'
 
 /**
  * Phase boundary timestamps (UTC).
@@ -252,6 +252,24 @@ const SLOTS_COLLECTION = 'slots'
 export const SLOTS_PER_DAY = 12
 
 
+
+const SLOT_LIMIT_EXEMPT_IDENTIFIERS = new Set(['admin', 'csgn', 'balls'])
+
+async function enforceActiveSlotLimit(uid: string, displayName: string): Promise<void> {
+  const normalized = displayName.trim().toLowerCase()
+  if (SLOT_LIMIT_EXEMPT_IDENTIFIERS.has(normalized)) return
+
+  const nowIso = new Date().toISOString()
+  const snap = await getDocs(query(collection(db, SLOTS_COLLECTION), where('assignedUid', '==', uid), orderBy('endTime', 'asc'), limit(50)))
+  const activeCount = snap.docs
+    .map((d) => d.data() as Slot)
+    .filter((s) => ['confirmed', 'live'].includes(s.status) && s.endTime > nowIso)
+    .length
+
+  if (activeCount >= 3) {
+    throw new Error('You already hold 3 active slots. Wait for one to end before taking another.')
+  }
+}
 
 interface ExpectedSlotDef {
   id: string
@@ -779,6 +797,7 @@ export async function claimOpenSlot(
   if (!params.twitchUsername) {
     throw new Error('Connect a Twitch account before claiming a slot.')
   }
+  await enforceActiveSlotLimit(params.uid, params.displayName)
 
   const now = Date.now()
   const startMs = new Date(slot.startTime).getTime()
@@ -850,6 +869,18 @@ export async function assignCEOSlot(
 
 /** Admin: update slot status. */
 export async function updateSlotStatus(slotId: string, status: SlotStatus): Promise<void> {
+  if (status === 'open') {
+    await updateDoc(doc(db, SLOTS_COLLECTION, slotId), {
+      status,
+      assignedUid: null,
+      assignedName: null,
+      streamUrl: DEFAULT_STREAM_URL,
+      streamTitle: '',
+      description: '',
+    })
+    return
+  }
+
   await updateDoc(doc(db, SLOTS_COLLECTION, slotId), { status })
 }
 

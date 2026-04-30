@@ -38,7 +38,7 @@ export function startTwitchOAuth(returnTo: string) {
     response_type: 'token',
     client_id: clientId,
     redirect_uri: getTwitchRedirectUri(),
-    scope: '',
+    scope: 'user:read:email',
     state,
     force_verify: 'true',
   })
