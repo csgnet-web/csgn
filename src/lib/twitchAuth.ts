@@ -38,7 +38,6 @@ export function startTwitchOAuth(returnTo: string) {
     response_type: 'token',
     client_id: clientId,
     redirect_uri: getTwitchRedirectUri(),
-    scope: 'user:read:email',
     state,
     force_verify: 'true',
   })
@@ -88,8 +87,11 @@ export async function resolveTwitchUserFromHash(hash: string) {
   const accessToken = hashParams.get('access_token')
   const state = hashParams.get('state')
   const error = hashParams.get('error')
+  const errorDescription = hashParams.get('error_description')
 
-  if (error) throw new Error(`Twitch auth failed: ${error}`)
+  if (error) {
+    throw new Error(`Twitch auth failed: ${error}${errorDescription ? ` (${decodeURIComponent(errorDescription)})` : ''}`)
+  }
   if (!accessToken || !state) throw new Error('Missing Twitch OAuth response fields')
 
   const expectedState = localStorage.getItem(STATE_KEY)
@@ -102,7 +104,10 @@ export async function resolveTwitchUserFromHash(hash: string) {
     },
   })
 
-  if (!response.ok) throw new Error('Unable to validate Twitch account')
+  if (!response.ok) {
+    const errText = await response.text()
+    throw new Error(`Unable to validate Twitch account (${response.status}): ${errText}`)
+  }
 
   const json = await response.json() as { data?: Array<{ login?: string }> }
   const login = json.data?.[0]?.login
