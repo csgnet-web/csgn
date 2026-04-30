@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  User, Mail, Wallet, Trophy,
+  User, Mail, Wallet, Trophy, Lock,
   CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Crown, X as XIcon, Info,
 } from 'lucide-react'
 import { doc, updateDoc } from 'firebase/firestore'
@@ -19,11 +19,16 @@ import { startTwitchOAuth } from '@/lib/twitchAuth'
 import { startXOAuth } from '@/lib/xAuth'
 
 export default function Dashboard() {
-  const { user, profile, resendVerification, refreshProfile } = useAuth()
+  const { user, profile, signIn, resendVerification, refreshProfile } = useAuth()
   const { walletAddress, connect, disconnect, isConnecting, error } = usePhantomWallet()
   const [oauthNotice, setOauthNotice] = useState('')
   const [resending, setResending] = useState(false)
   const [savingWallet, setSavingWallet] = useState(false)
+  const [signInTab, setSignInTab] = useState<'email' | 'twitch'>('email')
+  const [signInIdentifier, setSignInIdentifier] = useState('')
+  const [signInPassword, setSignInPassword] = useState('')
+  const [signInLoading, setSignInLoading] = useState(false)
+  const [signInError, setSignInError] = useState('')
   const [slotHistory, setSlotHistory] = useState<Slot[]>([])
   const [liveEstimateSOL, setLiveEstimateSOL] = useState(0)
   const [liveEstimateUSD, setLiveEstimateUSD] = useState(0)
@@ -175,25 +180,125 @@ export default function Dashboard() {
   }
 
   if (!user) {
+    const handleEmailSignIn = async (e: React.FormEvent) => {
+      e.preventDefault()
+      setSignInLoading(true)
+      setSignInError('')
+      try {
+        await signIn(signInIdentifier, signInPassword)
+      } catch (err: unknown) {
+        const code = err instanceof Error && 'code' in err ? String((err as { code?: string }).code || '') : ''
+        if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+          setSignInError('Invalid email/username or password.')
+        } else if (code === 'auth/invalid-email') {
+          setSignInError('Please enter a valid email address.')
+        } else {
+          setSignInError('Sign in failed. Please try again.')
+        }
+      } finally {
+        setSignInLoading(false)
+      }
+    }
+
     return (
       <div className="min-h-screen pt-24 lg:pt-32 pb-24">
-        <div className="max-w-md mx-auto px-4">
+        <div className="max-w-md mx-auto px-4 space-y-4">
           <Card hover={false} className="p-6 border-red-500/25 bg-white/[0.03]">
-            <h1 className="text-3xl font-display font-bold text-white mb-1">Account</h1>
-            <p className="text-sm text-gray-400 mb-5">
-              CSGN runs on Twitch. Sign in or create an account by connecting your Twitch — you'll then choose a username,
-              email, connect Phantom (required), and pick a password.
+            <h1 className="text-3xl font-display font-bold text-white mb-1">Sign in</h1>
+            <p className="text-sm text-gray-400 mb-4">
+              Use your email & password, or connect your Twitch account. Two separate paths — pick the one that matches how you use CSGN.
+            </p>
+
+            <div className="grid grid-cols-2 gap-1.5 p-1 bg-white/5 border border-white/10 rounded-xl mb-4">
+              <button
+                type="button"
+                onClick={() => { setSignInTab('email'); setSignInError('') }}
+                className={`px-3 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors cursor-pointer ${
+                  signInTab === 'email' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                Email & Password
+              </button>
+              <button
+                type="button"
+                onClick={() => { setSignInTab('twitch'); setSignInError('') }}
+                className={`px-3 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors cursor-pointer ${
+                  signInTab === 'twitch' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                Twitch
+              </button>
+            </div>
+
+            {signInTab === 'email' ? (
+              <form onSubmit={handleEmailSignIn} className="space-y-3">
+                {signInError && (
+                  <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-300">
+                    <AlertTriangle className="w-4 h-4 shrink-0" /> {signInError}
+                  </div>
+                )}
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <input
+                    type="text"
+                    value={signInIdentifier}
+                    onChange={(e) => setSignInIdentifier(e.target.value)}
+                    className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                    placeholder="Email or username"
+                    required
+                    disabled={signInLoading}
+                  />
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <input
+                    type="password"
+                    value={signInPassword}
+                    onChange={(e) => setSignInPassword(e.target.value)}
+                    className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                    placeholder="Password"
+                    required
+                    minLength={6}
+                    disabled={signInLoading}
+                  />
+                </div>
+                <Button variant="primary" size="md" className="w-full" isLoading={signInLoading}>
+                  Sign In
+                </Button>
+              </form>
+            ) : (
+              <div className="space-y-3">
+                <Button
+                  type="button"
+                  size="lg"
+                  className="w-full bg-[#9146FF] hover:bg-[#7d33ea] text-white shadow-lg shadow-[#9146FF]/30"
+                  leftIcon={twitchIcon}
+                  onClick={() => startTwitchOAuth('/auth/twitch/complete')}
+                >
+                  CONTINUE WITH TWITCH
+                </Button>
+                <p className="text-[11px] text-gray-500 text-center leading-relaxed">
+                  We'll match your Twitch login to your CSGN account, then ask for your password.
+                </p>
+              </div>
+            )}
+          </Card>
+
+          <Card hover={false} className="p-6 border-white/10 bg-white/[0.02]">
+            <h2 className="text-lg font-display font-bold text-white mb-1">New to CSGN?</h2>
+            <p className="text-sm text-gray-400 mb-4">
+              New accounts are created by connecting Twitch. After Twitch you'll choose a username, email, connect your Phantom wallet (required), and pick a password.
             </p>
             <Button
               type="button"
-              size="lg"
-              className="w-full bg-[#9146FF] hover:bg-[#7d33ea] text-white shadow-lg shadow-[#9146FF]/30"
+              size="md"
+              className="w-full bg-[#9146FF] hover:bg-[#7d33ea] text-white"
               leftIcon={twitchIcon}
               onClick={() => startTwitchOAuth('/auth/twitch/complete')}
             >
-              CONTINUE WITH TWITCH
+              CREATE ACCOUNT WITH TWITCH
             </Button>
-            <p className="text-[11px] text-gray-500 mt-4 text-center">
+            <p className="text-[11px] text-gray-500 mt-3 text-center">
               By continuing you agree to the{' '}
               <Link to="/terms" className="text-primary-400 hover:text-primary-300">Terms & Conditions</Link>.
             </p>
