@@ -13,8 +13,6 @@ const FIXED_CHAT_CHANNEL = 'csgnet'
 const bannerItems = [
   'STARTING 5: IMMINENT',
   'SQUARES COMING SOON',
-  'Squares Closing in 04:03:20:55',
-  'Starting 5 Closing in 01:02:23',
 ] as const
 
 /* ── Helpers to parse stream URLs (imported from @/lib/player) ── */

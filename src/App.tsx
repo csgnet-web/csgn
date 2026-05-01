@@ -32,7 +32,7 @@ function AppContent() {
   const { user } = useAuth()
   const location = useLocation()
   const isPlayerPage = location.pathname === '/player'
-  const hideFooter = location.pathname === '/watch' || isPlayerPage
+  const hideFooter = location.pathname === '/watch' || location.pathname === '/' || isPlayerPage
 
   return (
     <div className={`min-h-screen bg-[#050507]${isPlayerPage ? '' : ' csgn-bg'}`}>
