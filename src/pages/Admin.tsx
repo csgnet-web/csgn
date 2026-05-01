@@ -39,6 +39,7 @@ import {
   getMinimumBid,
   formatESTRange,
   DEFAULT_STREAM_URL,
+  migrateShroodSlotsToCsgnet,
   type Slot,
   type SlotType,
   type SlotStatus,
@@ -120,6 +121,7 @@ export default function Admin() {
   const [confirmWipe, setConfirmWipe] = useState(false)
   const [syncingWeek, setSyncingWeek] = useState(false)
   const [syncingYear, setSyncingYear] = useState(false)
+  const [migratingLegacyUrls, setMigratingLegacyUrls] = useState(false)
   const [syncStartDate, setSyncStartDate] = useState(() => new Date().toISOString().slice(0, 10))
 
   // Auth events tab state
@@ -291,6 +293,25 @@ export default function Admin() {
       }
     }
     setSelectedApp(null)
+  }
+
+
+  const handleMigrateLegacyStreamUrls = async () => {
+    setMigratingLegacyUrls(true)
+    setActionError(null)
+    try {
+      const { updated } = await migrateShroodSlotsToCsgnet()
+      await loadSlots()
+      if (updated === 0) {
+        setActionError('No slots were using https://twitch.tv/shrood.')
+      } else {
+        alert(`Updated ${updated} slot URL${updated === 1 ? '' : 's'} to https://twitch.tv/csgnet.`)
+      }
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to migrate legacy stream URLs.')
+    } finally {
+      setMigratingLegacyUrls(false)
+    }
   }
 
   const handleGenerateThreeDays = async () => {
@@ -1010,6 +1031,16 @@ export default function Admin() {
                   onClick={handleReseedYearAsCEO}
                 >
                   Reseed 365 Days (CEO)
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  leftIcon={<LinkIcon className="w-4 h-4" />}
+                  isLoading={migratingLegacyUrls}
+                  onClick={handleMigrateLegacyStreamUrls}
+                >
+                  Migrate shrood → csgnet
                 </Button>
                 {!confirmWipe ? (
                   <Button
