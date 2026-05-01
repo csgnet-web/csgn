@@ -1,12 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Crown, Radio, Info, ChevronLeft, ChevronRight } from 'lucide-react'
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
-import { db } from '@/config/firebase'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
-import { claimOpenSlot, LAUNCH_DATE_UTC, PHASE_2_END_UTC, type Slot } from '@/lib/slots'
+import { claimOpenSlot, LAUNCH_DATE_UTC, PHASE_2_END_UTC, subscribeToSlots, type Slot } from '@/lib/slots'
 import { startFeeTracker } from '@/lib/dexscreener'
 import { useAuth } from '@/contexts/AuthContext'
 const WEEK_SPAN = 7
@@ -133,30 +131,16 @@ export default function Schedule() {
 
   useEffect(() => {
     setLoading(true)
-    const slotsQuery = query(collection(db, 'slots'), orderBy('startTime', 'asc'))
-    const unsub = onSnapshot(
-      slotsQuery,
-      (snap) => {
-        const from = etMiddayFromOffset(-1).getTime()
-        const to = etMiddayFromOffset(8).getTime()
-        const normalized = snap.docs
-          .map((d) => d.data() as Slot)
-          .filter((slot) => toMillis(slot.startTime) > 0 && toMillis(slot.endTime) > 0)
-          .filter((slot) => {
-            const start = toMillis(slot.startTime)
-            return start >= from && start <= to
-          })
-          .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
-        setAllSlots(normalized)
-        setLoading(false)
-      },
-      (err) => {
-        console.warn('Failed to subscribe to slots from Firestore:', err)
-        setAllSlots([])
-        setLoading(false)
-      },
-    )
-    return () => unsub()
+    const fromDate = etMiddayFromOffset(-1)
+    const toDate = etMiddayFromOffset(8)
+    const unsub = subscribeToSlots(fromDate, toDate, (slots) => {
+      const normalized = slots
+        .filter((slot) => toMillis(slot.startTime) > 0 && toMillis(slot.endTime) > 0)
+        .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
+      setAllSlots(normalized)
+      setLoading(false)
+    })
+    return unsub
   }, [])
 
   const slots = useMemo(() => {

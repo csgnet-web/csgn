@@ -626,9 +626,8 @@ export function subscribeToSlots(from: Date, to: Date, callback: (slots: Slot[])
 /** Get the currently active slot based on current time. */
 export function subscribeToCurrentSlot(callback: (slot: Slot | null) => void): Unsubscribe {
   const now = new Date()
-  // Wide window so long-running /player sessions continue auto-switching slot content.
-  const from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) // 7 days ago
-  const to = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000) // next year
+  const from = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000)
+  const to = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000)
 
   const q = query(
     collection(db, SLOTS_COLLECTION),
@@ -673,10 +672,10 @@ export function subscribeToCurrentSlot(callback: (slot: Slot | null) => void): U
 /** Place a bid on an auction slot using CSGN tokens. */
 export async function placeBid(slotId: string, bid: SlotBid): Promise<void> {
   const ref = doc(db, SLOTS_COLLECTION, slotId)
-  const snap = await getDocs(query(collection(db, SLOTS_COLLECTION), where('id', '==', slotId)))
-  if (snap.empty) throw new Error('Slot not found')
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('Slot not found')
 
-  const slot = snap.docs[0].data() as Slot
+  const slot = snap.data() as Slot
   if (slot.status !== 'open') throw new Error('Bidding is closed for this slot')
   if (slot.type !== 'auction') throw new Error('This slot is not an auction slot')
 
@@ -695,10 +694,10 @@ export async function placeBid(slotId: string, bid: SlotBid): Promise<void> {
 /** Submit a slot request for a CEO slot. */
 export async function requestSlot(slotId: string, request: Omit<SlotRequest, 'id' | 'status'>): Promise<void> {
   const ref = doc(db, SLOTS_COLLECTION, slotId)
-  const snap = await getDocs(query(collection(db, SLOTS_COLLECTION), where('id', '==', slotId)))
-  if (snap.empty) throw new Error('Slot not found')
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('Slot not found')
 
-  const slot = snap.docs[0].data() as Slot
+  const slot = snap.data() as Slot
   if (slot.type !== 'ceo') throw new Error('Requests are only for CEO schedule slots')
   if (slot.status !== 'open') throw new Error('This slot is no longer accepting requests')
 
@@ -718,10 +717,11 @@ export async function requestSlot(slotId: string, request: Omit<SlotRequest, 'id
 
 /** Admin: accept a slot request. */
 export async function acceptSlotRequest(slotId: string, requestId: string, responseNote?: string): Promise<void> {
-  const snap = await getDocs(query(collection(db, SLOTS_COLLECTION), where('id', '==', slotId)))
-  if (snap.empty) throw new Error('Slot not found')
+  const ref = doc(db, SLOTS_COLLECTION, slotId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('Slot not found')
 
-  const slot = snap.docs[0].data() as Slot
+  const slot = snap.data() as Slot
   const request = slot.requests?.find((r) => r.id === requestId)
   if (!request) throw new Error('Request not found')
 
@@ -729,7 +729,6 @@ export async function acceptSlotRequest(slotId: string, requestId: string, respo
     r.id === requestId ? { ...r, status: 'accepted' as const, responseNote } : r
   )
 
-  const ref = doc(db, SLOTS_COLLECTION, slotId)
   await updateDoc(ref, {
     requests: updatedRequests,
     assignedUid: request.uid,
@@ -748,10 +747,11 @@ export async function acceptSlotRequest(slotId: string, requestId: string, respo
 
 /** Admin: decline a slot request. */
 export async function declineSlotRequest(slotId: string, requestId: string, reason: string): Promise<void> {
-  const snap = await getDocs(query(collection(db, SLOTS_COLLECTION), where('id', '==', slotId)))
-  if (snap.empty) throw new Error('Slot not found')
+  const ref = doc(db, SLOTS_COLLECTION, slotId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('Slot not found')
 
-  const slot = snap.docs[0].data() as Slot
+  const slot = snap.data() as Slot
   const request = slot.requests?.find((r) => r.id === requestId)
   if (!request) throw new Error('Request not found')
 
@@ -759,7 +759,6 @@ export async function declineSlotRequest(slotId: string, requestId: string, reas
     r.id === requestId ? { ...r, status: 'declined' as const, responseNote: reason } : r
   )
 
-  const ref = doc(db, SLOTS_COLLECTION, slotId)
   await updateDoc(ref, { requests: updatedRequests })
 
   await addUserNotification(request.uid, {
@@ -901,10 +900,11 @@ export async function updateCreatorFees(slotId: string, fees: CreatorFees): Prom
 
 /** Admin: mark creator fees as paid. */
 export async function markFeesPaid(slotId: string): Promise<void> {
-  const snap = await getDocs(query(collection(db, SLOTS_COLLECTION), where('id', '==', slotId)))
-  if (snap.empty) throw new Error('Slot not found')
+  const ref = doc(db, SLOTS_COLLECTION, slotId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('Slot not found')
 
-  const slot = snap.docs[0].data() as Slot
+  const slot = snap.data() as Slot
   const fees = slot.creatorFees
   if (!fees) throw new Error('No fee record for this slot')
 
@@ -915,7 +915,7 @@ export async function markFeesPaid(slotId: string): Promise<void> {
     updatedAt: new Date().toISOString(),
   }
 
-  await updateDoc(doc(db, SLOTS_COLLECTION, slotId), { creatorFees: updatedFees })
+  await updateDoc(ref, { creatorFees: updatedFees })
 
   if (slot.assignedUid) {
     await addUserNotification(slot.assignedUid, {
@@ -930,10 +930,11 @@ export async function markFeesPaid(slotId: string): Promise<void> {
 
 /** Admin: decline creator fee payment with reason. */
 export async function declineFeesPayment(slotId: string, reason: string): Promise<void> {
-  const snap = await getDocs(query(collection(db, SLOTS_COLLECTION), where('id', '==', slotId)))
-  if (snap.empty) throw new Error('Slot not found')
+  const ref = doc(db, SLOTS_COLLECTION, slotId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('Slot not found')
 
-  const slot = snap.docs[0].data() as Slot
+  const slot = snap.data() as Slot
   const fees = slot.creatorFees
   if (!fees) throw new Error('No fee record for this slot')
 
@@ -944,7 +945,7 @@ export async function declineFeesPayment(slotId: string, reason: string): Promis
     updatedAt: new Date().toISOString(),
   }
 
-  await updateDoc(doc(db, SLOTS_COLLECTION, slotId), { creatorFees: updatedFees })
+  await updateDoc(ref, { creatorFees: updatedFees })
 
   if (slot.assignedUid) {
     await addUserNotification(slot.assignedUid, {
@@ -988,10 +989,10 @@ export async function addUserNotification(
 /** Resolve an auction slot: pick highest bidder, notify them. */
 export async function resolveAuction(slotId: string): Promise<{ winnerUid: string; amount: number } | null> {
   const ref = doc(db, SLOTS_COLLECTION, slotId)
-  const snap = await getDocs(query(collection(db, SLOTS_COLLECTION), where('id', '==', slotId)))
-  if (snap.empty) return null
+  const snap = await getDoc(ref)
+  if (!snap.exists()) return null
 
-  const slot = snap.docs[0].data() as Slot
+  const slot = snap.data() as Slot
   if (slot.bids.length === 0) {
     await updateDoc(ref, { status: 'unfilled', streamUrl: DEFAULT_STREAM_URL })
     return null

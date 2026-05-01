@@ -5,7 +5,7 @@
  * converts to SOL, and applies creator fee rate based on market-cap tiers.
  */
 
-import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { doc, getDoc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { CSGN_MINT, type CreatorFees } from '@/lib/slots'
 
@@ -116,6 +116,11 @@ async function fetchCsgnData(): Promise<{ volumeH1Usd: number; volumeH24Usd: num
   }
 }
 
+interface SlotFeeContext {
+  exists: boolean
+  existing: CreatorFees | undefined
+}
+
 async function saveFeeToFirestore(
   slotId: string,
   tradingVolumeSOL: number,
@@ -125,13 +130,13 @@ async function saveFeeToFirestore(
   marketCapSOL: number,
   checkpoints: NonNullable<CreatorFees['marketCapCheckpoints']>,
   tierVolumeMap: Map<string, number>,
+  context: SlotFeeContext,
 ): Promise<void> {
   try {
-    const slotRef = doc(db, 'slots', slotId)
-    const snap = await getDoc(slotRef)
-    if (!snap.exists()) return
+    if (!context.exists) return
 
-    const existing = snap.data()?.creatorFees as CreatorFees | undefined
+    const slotRef = doc(db, 'slots', slotId)
+    const existing = context.existing
     if (existing?.paymentStatus === 'paid' || existing?.paymentStatus === 'declined') return
 
     const activeTier = resolvePumpFeeTier(marketCapSOL)
@@ -209,6 +214,22 @@ export function startFeeTracker(options: FeeTrackerOptions): () => void {
   const tierVolumeMap = new Map<string, number>()
   let marketCapCheckpoints: NonNullable<CreatorFees['marketCapCheckpoints']> = []
 
+  // Subscribe once to the slot doc so per-poll writes can read paymentStatus
+  // and other fee metadata from a local closure instead of paying for a
+  // fresh getDoc on every 15s tick.
+  const slotContext: SlotFeeContext = { exists: false, existing: undefined }
+  const unsubSlot = onSnapshot(
+    doc(db, 'slots', slotId),
+    (snap) => {
+      slotContext.exists = snap.exists()
+      slotContext.existing = snap.data()?.creatorFees as CreatorFees | undefined
+    },
+    () => {
+      // ignore listener errors; saveFeeToFirestore will simply skip writes
+      slotContext.exists = false
+    },
+  )
+
   const poll = async () => {
     if (stopped) return
 
@@ -255,11 +276,12 @@ export function startFeeTracker(options: FeeTrackerOptions): () => void {
     const feeUSD = feeSOL * solPriceUsd
 
     onUpdate(feeSOL, deltaVolumeSOL, feeUSD, estimatedSlotVolumeUsd)
-    await saveFeeToFirestore(slotId, deltaVolumeSOL, feeSOL, estimatedSlotVolumeUsd, feeUSD, marketCapSOL, marketCapCheckpoints, tierVolumeMap)
+    await saveFeeToFirestore(slotId, deltaVolumeSOL, feeSOL, estimatedSlotVolumeUsd, feeUSD, marketCapSOL, marketCapCheckpoints, tierVolumeMap, slotContext)
   }
 
   const stop = () => {
     stopped = true
+    unsubSlot()
     if (intervalId !== null) {
       clearInterval(intervalId)
       intervalId = null
