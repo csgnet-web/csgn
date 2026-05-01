@@ -55,7 +55,7 @@ export default function TwitchAuthComplete() {
     setLoading(true)
     setError('')
     try {
-      await signIn(flowState.twitchUsername, password)
+      await signIn(flowState.existingAuthEmail || flowState.twitchUsername, password)
       clearTwitchAuthFlowState()
       navigate('/account', { replace: true })
     } catch {

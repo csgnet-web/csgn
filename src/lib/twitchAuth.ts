@@ -76,7 +76,13 @@ export function clearTwitchAuthFlowState() {
   localStorage.removeItem(AUTH_FLOW_KEY)
 }
 
-export async function resolveTwitchUserFromHash(hash: string) {
+export interface ResolvedTwitchUser {
+  username: string
+  email?: string
+  accessToken: string
+}
+
+export async function resolveTwitchUserFromHash(hash: string): Promise<ResolvedTwitchUser> {
   const clientId = getClientId()
   if (!clientId) throw new Error('Missing VITE_TWITCH_CLIENT_ID')
 
@@ -112,5 +118,9 @@ export async function resolveTwitchUserFromHash(hash: string) {
 
   localStorage.removeItem(STATE_KEY)
 
-  return login
+  return {
+    username: login.toLowerCase(),
+    email: json.data?.[0]?.email?.toLowerCase(),
+    accessToken,
+  }
 }
