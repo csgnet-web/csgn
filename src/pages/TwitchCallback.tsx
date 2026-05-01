@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { doc, updateDoc } from 'firebase/firestore'
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { useAuth } from '@/contexts/AuthContext'
 import {
@@ -39,10 +39,23 @@ export default function TwitchCallback() {
           return
         }
 
-        await updateDoc(doc(db, 'users', user.uid), {
-          'socialLinks.twitch': username,
-          twitchUsername: username,
-        })
+        await setDoc(
+          doc(db, 'users', user.uid),
+          {
+            uid: user.uid,
+            email: user.email || '',
+            authEmail: user.email || '',
+            displayName: user.displayName || username,
+            photoURL: user.photoURL || null,
+            role: 'viewer',
+            updatedAt: serverTimestamp(),
+            twitchUsername: username,
+            socialLinks: {
+              twitch: username,
+            },
+          },
+          { merge: true },
+        )
         await refreshProfile()
         localStorage.setItem('oauth_notice', 'Twitch connected successfully.')
         clearTwitchAuthFlowState()
