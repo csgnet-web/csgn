@@ -105,9 +105,9 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
 .watch-roll-banner {
   height: 1.5rem;
   width: 100%;
-  max-width: 340px;
+  max-width: 520px;
   perspective: 600px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .watch-roll-banner__inner {
@@ -125,14 +125,13 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
   align-items: center;
   justify-content: flex-end;
   font-family: var(--font-mono);
-  font-size: clamp(0.58rem, 1.9vw, 0.75rem);
+  font-size: clamp(0.56rem, 1.3vw, 0.8rem);
   line-height: 1;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.9);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
   padding-left: 0.4rem;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
@@ -150,6 +149,10 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
 @media (max-width: 640px) {
   .watch-roll-banner {
     max-width: none;
+  }
+  .watch-roll-banner__face {
+    justify-content: flex-start;
+    font-size: clamp(0.56rem, 2.8vw, 0.74rem);
   }
 }
 

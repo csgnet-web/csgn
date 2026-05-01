@@ -11,8 +11,8 @@ const DEFAULT_TWITCH_STREAM = 'https://www.twitch.tv/csgnet'
 const FIXED_CHAT_CHANNEL = 'csgnet'
 
 const bannerItems = [
-  'Starting 5 \u2022 $14.70',
-  'Squares Entries: 25',
+  'STARTING 5: IMMINENT',
+  'SQUARES COMING SOON',
   'Squares Closing in 04:03:20:55',
   'Starting 5 Closing in 01:02:23',
 ] as const
@@ -432,12 +432,12 @@ export default function Watch() {
       <div className="flex-1 flex flex-col overflow-y-auto min-w-0">
 
         {/* Status bar */}
-        <div className="shrink-0 flex items-center gap-3 bg-red-600 px-4 py-2">
+        <div className="shrink-0 flex items-center gap-2 sm:gap-3 bg-red-600 px-3 sm:px-4 py-2">
           <div className="flex items-center gap-2.5">
             <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
             <span className="text-white font-black tracking-[0.25em] text-sm uppercase">LIVE</span>
           </div>
-          <div className="watch-roll-banner flex-1 min-w-0 lg:flex-none lg:w-[460px] lg:ml-auto" aria-label="Live game updates">
+          <div className="watch-roll-banner flex-1 min-w-[180px] sm:min-w-[240px] lg:flex-none lg:w-[520px] lg:ml-auto" aria-label="Live game updates">
             <div className="watch-roll-banner__inner">
               {bannerItems.map((item, index) => (
                 <span

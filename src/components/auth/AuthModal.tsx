@@ -119,7 +119,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
               </p>
             </div>
 
-            <div className="px-6 sm:px-8 pb-6 sm:pb-8 space-y-4 overflow-y-auto max-h-[calc(92vh-120px)]">
+            <div className="px-6 sm:px-8 pb-8 sm:pb-10 space-y-4 overflow-y-auto max-h-[calc(92vh-120px)]">
               <form onSubmit={handleEmailSubmit} className="space-y-3">
                 {error && (
                   <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-300">
@@ -210,9 +210,11 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                     </div>
                   </div>
                 )}
-                <Button variant="primary" size="lg" className="w-full" type="submit" isLoading={loading}>
-                  {isRegister ? 'Create Account' : 'Sign In'}
-                </Button>
+                <div className="sticky bottom-0 pt-2 pb-1 bg-gradient-to-t from-[#0c0c1a] via-[#0c0c1a] to-transparent">
+                  <Button variant="primary" size="lg" className="w-full" type="submit" isLoading={loading}>
+                    {isRegister ? 'Create Account' : 'Sign In'}
+                  </Button>
+                </div>
               </form>
             </div>
           </motion.div>
