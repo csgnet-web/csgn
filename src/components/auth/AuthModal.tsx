@@ -51,7 +51,6 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
       if (isRegister) {
         if (password !== confirmPassword) throw new Error('Password confirmation does not match.')
         if (!displayName.trim()) throw new Error('Display name is required.')
-        if (!twitchUsername.trim()) throw new Error('Connect your Twitch username to continue.')
         await signUp(identifier, password, displayName.trim(), {
           photoURL: photoURL.trim() || null,
           twitchUsername: twitchUsername.trim().replace(/^@/, ''),
@@ -67,8 +66,6 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
         setError('Passwords do not match.')
       } else if (err instanceof Error && err.message.includes('Display name')) {
         setError('Please add a display name.')
-      } else if (err instanceof Error && err.message.includes('Twitch')) {
-        setError('Please connect your Twitch username.')
       } else if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
         setError('Invalid email/username or password.')
       } else if (code === 'auth/invalid-email') {
@@ -169,12 +166,12 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                     <div>
                       <p className="block text-sm font-medium text-gray-300 mb-1.5">SOCIALS</p>
                       <div className="flex items-center gap-2">
-                        <button type="button" className={`flex-1 h-11 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 ${twitchUsername ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`} onClick={() => {
-                          const val = window.prompt('Enter your Twitch username (no @):', twitchUsername || '')
-                          if (!val) return
-                          setTwitchUsername(val.trim().replace(/^@/, '').toLowerCase())
-                        }}>
-                          <Twitch className="w-4 h-4" /> {twitchUsername ? `@${twitchUsername}` : 'Connect Twitch'}
+                        <button
+                          type="button"
+                          className="flex-1 h-11 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 bg-white/5 border-white/10 text-white hover:bg-white/10"
+                          onClick={() => {}}
+                        >
+                          <Twitch className="w-4 h-4" /> Connect Twitch
                         </button>
                         <button type="button" className={`flex-1 h-11 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 ${connectedWallet || walletAddress ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`} onClick={async () => {
                           const addr = await connect()
