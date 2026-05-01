@@ -36,6 +36,7 @@ export function startTwitchOAuth(returnTo: string) {
     redirect_uri: getTwitchRedirectUri(),
     state,
     force_verify: 'true',
+    scope: 'user:read:email',
   })
 
   window.location.href = `${TWITCH_AUTHORIZE_URL}?${params.toString()}`
@@ -105,7 +106,7 @@ export async function resolveTwitchUserFromHash(hash: string) {
     throw new Error(`Unable to validate Twitch account (${response.status}): ${errText}`)
   }
 
-  const json = await response.json() as { data?: Array<{ login?: string }> }
+  const json = await response.json() as { data?: Array<{ login?: string; email?: string }> }
   const login = json.data?.[0]?.login
   if (!login) throw new Error('No Twitch username returned')
 
