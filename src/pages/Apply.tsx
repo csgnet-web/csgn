@@ -10,9 +10,6 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { SectionHeading } from '@/components/ui/SectionHeading'
-import { ConnectionGrid } from '@/components/account/ConnectionGrid'
-import { startTwitchOAuth } from '@/lib/twitchAuth'
-import { startXOAuth } from '@/lib/xAuth'
 
 const contentTypes = [
   { value: 'crypto-news', label: 'Crypto News & Drama', icon: Mic },
@@ -29,7 +26,6 @@ export default function Apply() {
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [oauthNotice, setOauthNotice] = useState('')
   const [hasExistingApplication, setHasExistingApplication] = useState(false)
   const [checkingExisting, setCheckingExisting] = useState(true)
   const [form, setForm] = useState({
@@ -45,13 +41,6 @@ export default function Apply() {
     weeklyHours: '5-10',
   })
 
-
-  useEffect(() => {
-    const msg = localStorage.getItem('oauth_notice')
-    if (!msg) return
-    setOauthNotice(msg)
-    localStorage.removeItem('oauth_notice')
-  }, [])
 
   useEffect(() => {
     if (!user) return
@@ -76,24 +65,6 @@ export default function Apply() {
   }
 
 
-  const clearSocial = async (platform: 'twitter' | 'twitch') => {
-    if (!user) return
-    await updateDoc(doc(db, 'users', user.uid), { [`socialLinks.${platform}`]: '' })
-    await refreshProfile()
-  }
-
-  const connectX = async () => {
-    try {
-      await startXOAuth('/apply')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to connect X account.')
-    }
-  }
-
-  const connectTwitch = () => {
-    startTwitchOAuth('/apply')
-  }
-
   const connectPhantom = async () => {
     if (!user) return
     const wallet = await connect()
@@ -117,10 +88,6 @@ export default function Apply() {
     }
     if (!profile?.walletAddress) {
       setError('Connect your Phantom wallet before applying.')
-      return
-    }
-    if (!profile?.socialLinks?.twitch) {
-      setError('Connect your Twitch account before applying.')
       return
     }
     if (hasExistingApplication) {
@@ -184,11 +151,6 @@ export default function Apply() {
           </div>
 
           <form onSubmit={handleSubmit} className="p-6 space-y-6">
-            {oauthNotice && (
-              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-sm text-emerald-300">
-                {oauthNotice}
-              </div>
-            )}
 
             {(checkingExisting || hasExistingApplication) && (
               <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-sm text-amber-300">
@@ -232,51 +194,19 @@ export default function Apply() {
               </div>
             </div>
 
-            {/* Platform Connections */}
+            {/* Wallet Connection */}
             <div className="space-y-4">
-              <h4 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Platform Connections</h4>
-              <ConnectionGrid
-                items={[
-                  {
-                    id: 'x',
-                    label: 'X',
-                    connected: Boolean(profile?.socialLinks?.twitter),
-                    username: profile?.socialLinks?.twitter ? `@${profile.socialLinks.twitter}` : undefined,
-                    onConnect: () => void connectX(),
-                    onDisconnect: () => void clearSocial('twitter'),
-                    disabled: true,
-                    statusText: '',
-                    icon: (
-                      <svg viewBox="0 0 24 24" className="w-7 h-7 fill-current" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                      </svg>
-                    ),
-                  },
-                  {
-                    id: 'twitch',
-                    label: 'Twitch',
-                    connected: Boolean(profile?.socialLinks?.twitch),
-                    username: profile?.socialLinks?.twitch ? `@${profile.socialLinks.twitch}` : undefined,
-                    onConnect: () => connectTwitch(),
-                    onDisconnect: () => void clearSocial('twitch'),
-                    icon: (
-                      <svg viewBox="0 0 24 24" className="w-7 h-7 fill-current" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                        <path d="M4.286 0 0 4.286v15.428H5.143V24l4.286-4.286h3.429L24 8.571V0H4.286zm18 7.714-5.143 5.143h-3.428L10.714 15.86v-3.003H7.286V1.714h15v6z" />
-                      </svg>
-                    ),
-                  },
-                  {
-                    id: 'phantom',
-                    label: 'Phantom',
-                    connected: Boolean(profile?.walletAddress),
-                    username: profile?.walletAddress ? `${profile.walletAddress.slice(0, 6)}...${profile.walletAddress.slice(-4)}` : undefined,
-                    onConnect: () => void connectPhantom(),
-                    onDisconnect: () => void disconnectPhantom(),
-                    loading: isConnecting,
-                    icon: <span className="text-lg font-bold">◎</span>,
-                  },
-                ]}
-              />
+              <h4 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Wallet Connection</h4>
+              <div className="flex items-center gap-3">
+                <Button type="button" variant="secondary" onClick={() => void connectPhantom()} isLoading={isConnecting}>
+                  {profile?.walletAddress ? 'Update Phantom Wallet' : 'Connect Phantom Wallet'}
+                </Button>
+                {profile?.walletAddress && (
+                  <Button type="button" variant="ghost" onClick={() => void disconnectPhantom()}>
+                    Disconnect
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* Content Type */}
@@ -377,7 +307,7 @@ export default function Apply() {
                 size="lg"
                 className="w-full sm:w-auto"
                 isLoading={loading}
-                disabled={loading || checkingExisting || hasExistingApplication || !profile?.walletAddress || !profile?.socialLinks?.twitch}
+                disabled={loading || checkingExisting || hasExistingApplication || !profile?.walletAddress}
                 leftIcon={<Send className="w-4 h-4" />}
               >
                 Submit Application

@@ -32,7 +32,6 @@ export interface UserProfile {
   displayName: string
   username?: string
   usernameLower?: string
-  authProvider?: 'email' | 'twitch'
   photoURL: string | null
   role: 'viewer' | 'streamer' | 'admin'
   createdAt: unknown
@@ -50,8 +49,6 @@ interface AuthContextType {
   loading: boolean
   signIn: (identifier: string, password: string) => Promise<void>
   signUp: (email: string, password: string, displayName: string) => Promise<void>
-  signUpWithTwitch: (params: { twitchUsername: string; email: string; password: string; displayName: string; walletAddress: string }) => Promise<void>
-  getProfileByTwitchUsername: (twitchUsername: string) => Promise<UserProfile | null>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
   resendVerification: () => Promise<void>
@@ -87,7 +84,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role: 'viewer',
       createdAt: serverTimestamp(),
       notifications: [],
-      authProvider: 'email',
       ...overrides,
     }
     await setDoc(doc(db, 'users', user.uid), profileData)
@@ -175,56 +171,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const getProfileByTwitchUsername = async (twitchUsername: string) => {
-    const normalizedUsername = twitchUsername.trim().toLowerCase()
-    const byTwitch = query(collection(db, 'users'), where('twitchUsername', '==', normalizedUsername), limit(1))
-    const byTwitchSnap = await getDocs(byTwitch)
-    if (!byTwitchSnap.empty) return byTwitchSnap.docs[0].data() as UserProfile
-
-    const bySocial = query(collection(db, 'users'), where('socialLinks.twitch', '==', normalizedUsername), limit(1))
-    const bySocialSnap = await getDocs(bySocial)
-    if (!bySocialSnap.empty) return bySocialSnap.docs[0].data() as UserProfile
-
-    return null
-  }
-
-  const signUpWithTwitch = async ({ twitchUsername, email, password, displayName, walletAddress }: { twitchUsername: string; email: string; password: string; displayName: string; walletAddress: string }) => {
-    const normalizedTwitch = twitchUsername.trim().toLowerCase()
-    void logAuthEvent('signup-twitch-start', { twitchUsername: normalizedTwitch })
-    let createdUid: string | null = null
-    try {
-      if (!walletAddress) throw new Error('A connected Phantom wallet is required to register.')
-      const normalizedDisplay = displayName.trim()
-      const normalizedUsernameLower = normalizedDisplay.toLowerCase()
-      const { user } = await createUserWithEmailAndPassword(auth, email, password)
-      createdUid = user.uid
-      await updateProfile(user, { displayName: normalizedDisplay })
-      try {
-        await sendEmailVerification(user)
-      } catch (err) {
-        console.warn('Failed to send email verification:', err)
-      }
-      await createProfile(user, normalizedDisplay, {
-        email,
-        authEmail: email,
-        username: normalizedDisplay,
-        usernameLower: normalizedUsernameLower,
-        authProvider: 'twitch',
-        walletAddress,
-        twitchUsername: normalizedTwitch,
-        socialLinks: { twitch: normalizedTwitch },
-      } as Partial<UserProfile>)
-      void logAuthEvent('signup-twitch-success', { uid: user.uid, twitchUsername: normalizedTwitch })
-    } catch (err) {
-      void logAuthEvent('signup-twitch-failure', {
-        uid: createdUid,
-        twitchUsername: normalizedTwitch,
-        errorMessage: err instanceof Error ? err.message : String(err),
-      })
-      throw err
-    }
-  }
-
   const signOut = async () => {
     await firebaseSignOut(auth)
     setProfile(null)
@@ -242,7 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, profile, loading, signIn, signUp, signUpWithTwitch, getProfileByTwitchUsername, signOut, refreshProfile, resendVerification }}
+      value={{ user, profile, loading, signIn, signUp, signOut, refreshProfile, resendVerification }}
     >
       {children}
     </AuthContext.Provider>
