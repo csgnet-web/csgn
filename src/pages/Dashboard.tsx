@@ -231,9 +231,14 @@ Use your email/username and password to access your account.
             >
               <Twitch className="w-4 h-4" /> Connect Twitch
             </button>
-            <Button variant="secondary" size="sm" onClick={() => void handleConnectAndSave()} isLoading={isConnecting || savingWallet}>
-              {profile?.walletAddress ? 'Update Phantom Connection' : 'Connect Phantom Wallet'}
-            </Button>
+            <button
+              type="button"
+              className="w-full h-10 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 bg-white/5 border-white/10 text-white hover:bg-white/10"
+              onClick={() => void handleConnectAndSave()}
+              disabled={isConnecting || savingWallet}
+            >
+              <Wallet className="w-4 h-4" /> {isConnecting || savingWallet ? 'Connecting...' : (profile?.walletAddress ? 'Update Phantom Connection' : 'Connect Phantom Wallet')}
+            </button>
             {savedWallet && <p className="text-xs text-gray-500 font-mono flex items-center gap-1"><Wallet className="w-3 h-3" /> Saved: {savedWallet.slice(0, 8)}...{savedWallet.slice(-6)}</p>}
           </div>
 

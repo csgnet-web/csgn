@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3, Radio } from 'lucide-react'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
@@ -242,6 +242,19 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
 }
 
 export default function Watch() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [showSignupNotice, setShowSignupNotice] = useState(Boolean((location.state as { accountCreated?: boolean } | null)?.accountCreated))
+
+  useEffect(() => {
+    if (!showSignupNotice) return
+    const t = setTimeout(() => {
+      setShowSignupNotice(false)
+      navigate(location.pathname, { replace: true })
+    }, 3200)
+    return () => clearTimeout(t)
+  }, [showSignupNotice, navigate, location.pathname])
+
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
   const { user, profile } = useAuth()
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
@@ -428,6 +441,13 @@ export default function Watch() {
 
       {/* ── Main content ── */}
       <div className="flex-1 flex flex-col overflow-y-auto min-w-0">
+        {showSignupNotice && (
+          <div className="shrink-0 px-4 sm:px-5 pt-3">
+            <div className="max-w-[1280px] mx-auto rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+              Account created. You can connect Twitch and Phantom later in /account.
+            </div>
+          </div>
+        )}
 
         {/* Status bar */}
         <div className="shrink-0 flex items-center gap-2 sm:gap-3 bg-red-600 px-3 sm:px-4 py-2">
