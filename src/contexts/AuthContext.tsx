@@ -164,17 +164,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { user } = await createUserWithEmailAndPassword(auth, email, password)
       createdUid = user.uid
-      await updateProfile(user, { displayName, photoURL: options?.photoURL || null })
+      try {
+        await updateProfile(user, { displayName, photoURL: options?.photoURL || null })
+      } catch (err) {
+        console.warn('Failed to update auth profile during sign-up:', err)
+      }
       try {
         await sendEmailVerification(user)
       } catch (err) {
         console.warn('Failed to send email verification:', err)
       }
-      await createProfile(user, displayName, {
-        photoURL: options?.photoURL || null,
-        twitchUsername: options?.twitchUsername?.trim().replace(/^@/, '').toLowerCase() || undefined,
-        walletAddress: options?.walletAddress?.trim() || undefined,
-      })
+      try {
+        await createProfile(user, displayName, {
+          photoURL: options?.photoURL || null,
+          twitchUsername: options?.twitchUsername?.trim().replace(/^@/, '').toLowerCase() || undefined,
+          walletAddress: options?.walletAddress?.trim() || undefined,
+        })
+      } catch (err) {
+        console.warn('Failed to create Firestore profile during sign-up:', err)
+      }
       void logAuthEvent('signup-email-success', { uid: user.uid })
     } catch (err) {
       void logAuthEvent('signup-email-failure', {

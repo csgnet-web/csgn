@@ -145,14 +145,14 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                     <div className="grid grid-cols-2 gap-2.5">
                       <div>
                         <label className="block text-sm font-medium text-gray-300 mb-1.5">Display Name</label>
-                        <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-base sm:text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Your name" required disabled={loading} />
+                        <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full h-12 px-4 bg-white/5 border border-white/10 rounded-xl text-base sm:text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Your name" required disabled={loading} />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-300 mb-1.5">Profile Picture</label>
                         <input
                           type="file"
                           accept=".jpg,.jpeg,.png,image/jpeg,image/png"
-                          className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-base sm:text-sm text-gray-300 file:mr-2 file:px-2 file:py-1.5 file:rounded-lg file:border-0 file:bg-white/10 file:text-white"
+                          className="w-full h-12 px-3 bg-white/5 border border-white/10 rounded-xl text-base sm:text-sm text-gray-300 file:mr-2 file:h-8 file:px-2 file:rounded-lg file:border-0 file:bg-white/10 file:text-white"
                           disabled={loading}
                           onChange={(e) => {
                             const file = e.target.files?.[0]
@@ -173,7 +173,6 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                       </div>
                     </div>
                     <div>
-                      <p className="block text-sm font-medium text-gray-300 mb-1.5">SOCIALS</p>
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
@@ -187,9 +186,6 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                           if (addr) setConnectedWallet(addr)
                         }} disabled={loading || isConnecting}>
                           <Wallet className="w-4 h-4" /> {connectedWallet || walletAddress ? 'Phantom Connected' : 'Connect Phantom'}
-                        </button>
-                        <button type="button" disabled className="h-11 w-11 rounded-xl border border-white/10 bg-white/5 text-gray-500 cursor-not-allowed flex items-center justify-center">
-                          <X className="w-4 h-4" />
                         </button>
                       </div>
                       {socialError && <p className="text-xs text-red-300 mt-1">{socialError}</p>}
