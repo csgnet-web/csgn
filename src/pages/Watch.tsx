@@ -92,7 +92,7 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
   const streamer = slot.assignedName || (slot.type === 'auction' ? 'Open Bid' : 'CEO Schedule')
   return (
     <div
-      className={`relative rounded-xl overflow-hidden flex flex-col min-h-[89px] sm:min-h-[178px] lg:min-h-[44px] transition-all duration-300 ${
+      className={`relative rounded-xl overflow-hidden flex flex-col min-h-[89px] sm:min-h-[178px] lg:min-h-[88px] lg:h-[88px] transition-all duration-300 ${
         isCurrent
           ? 'ring-2 ring-red-500 shadow-[0_0_24px_rgba(255,35,70,0.5)]'
           : 'ring-1 ring-white/10 hover:ring-white/20'
@@ -116,7 +116,7 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
         )}
       </div>
 
-      <div className="flex flex-1 items-end justify-center pt-2 sm:pt-6 lg:pt-1 pb-0.5 sm:pb-1 lg:pb-0 px-2 sm:px-3 min-h-[48px] sm:min-h-[100px] lg:min-h-[24px]">
+      <div className="flex flex-1 items-end justify-center pt-2 sm:pt-6 lg:pt-0.5 pb-0.5 sm:pb-1 lg:pb-0 px-2 sm:px-3 min-h-[48px] sm:min-h-[100px] lg:min-h-[42px]">
         <svg viewBox="0 0 120 160" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
           <defs>
             <linearGradient id={`ag${slot.id}`} x1="60" y1="0" x2="60" y2="160" gradientUnits="userSpaceOnUse">
@@ -129,7 +129,7 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
         </svg>
       </div>
 
-      <div className="px-2 sm:px-3 lg:px-1 pb-1.5 sm:pb-3 lg:pb-1 pt-1 sm:pt-2.5 lg:pt-0.5 bg-gradient-to-t from-black/80 to-transparent space-y-0.5 sm:space-y-1 lg:space-y-0">
+      <div className="px-2 sm:px-3 lg:px-1 pb-1.5 sm:pb-3 lg:pb-0.5 pt-1 sm:pt-2.5 lg:pt-0 bg-gradient-to-t from-black/80 to-transparent space-y-0.5 sm:space-y-1 lg:space-y-0">
         <p className="text-white font-black font-display text-[10px] sm:text-sm lg:text-[8px] leading-tight break-words">{streamer}</p>
         <p className="text-white/60 text-[9px] sm:text-[11px] lg:text-[7px] leading-snug break-words">{slot.type === 'auction' ? 'Auction Slot' : 'CEO Schedule'}</p>
         <p className="text-white/60 text-[8px] sm:text-[10px] lg:text-[7px] font-mono leading-none whitespace-nowrap">{formatCompactRange(slot)}</p>
@@ -560,7 +560,7 @@ export default function Watch() {
                           type="button"
                           onClick={() => void handleClaimSlot(slot)}
                           disabled={claiming}
-                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 lg:py-0.5 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
                         >
                           Take Slot
                         </button>

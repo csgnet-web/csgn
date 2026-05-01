@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   User, Mail, Wallet, Trophy, Lock,
-  CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Crown, X as XIcon, Info,
+  CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Crown, Twitch, X as XIcon, Info,
 } from 'lucide-react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
@@ -20,8 +20,6 @@ export default function Dashboard() {
   const { walletAddress, connect, isConnecting, error } = usePhantomWallet()
   const [resending, setResending] = useState(false)
   const [savingWallet, setSavingWallet] = useState(false)
-  const [twitchInput, setTwitchInput] = useState('')
-  const [savingTwitch, setSavingTwitch] = useState(false)
   const [signInIdentifier, setSignInIdentifier] = useState('')
   const [signInPassword, setSignInPassword] = useState('')
   const [signInLoading, setSignInLoading] = useState(false)
@@ -181,7 +179,6 @@ Use your email/username and password to access your account.
   }
 
   const savedWallet = profile?.walletAddress
-  const savedTwitch = profile?.twitchUsername || profile?.socialLinks?.twitch || ''
 
   return (
     <div className="min-h-screen pt-24 lg:pt-32 pb-24">
@@ -227,34 +224,13 @@ Use your email/username and password to access your account.
           </div>
 
           <div className="mt-4 space-y-3">
-            <div className="space-y-2">
-              <p className="text-xs text-gray-400">Twitch username</p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={twitchInput}
-                  onChange={(e) => setTwitchInput(e.target.value.replace(/\s+/g, ''))}
-                  placeholder={savedTwitch ? `@${savedTwitch}` : '@yourchannel'}
-                  className="flex-1 px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
-                />
-                <Button variant="secondary" size="sm" isLoading={savingTwitch} onClick={async () => {
-                  if (!user) return
-                  const clean = twitchInput.trim().replace(/^@/, '').toLowerCase()
-                  if (!clean) return
-                  setSavingTwitch(true)
-                  try {
-                    await updateDoc(doc(db, 'users', user.uid), { twitchUsername: clean })
-                    setTwitchInput('')
-                    await refreshProfile()
-                  } finally {
-                    setSavingTwitch(false)
-                  }
-                }}>
-                  {savedTwitch ? 'Update Twitch' : 'Connect Twitch'}
-                </Button>
-              </div>
-              {savedTwitch && <p className="text-xs text-emerald-300">Connected: @{savedTwitch}</p>}
-            </div>
+            <button
+              type="button"
+              className="w-full h-10 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 bg-white/5 border-white/10 text-white hover:bg-white/10"
+              onClick={() => {}}
+            >
+              <Twitch className="w-4 h-4" /> Connect Twitch
+            </button>
             <Button variant="secondary" size="sm" onClick={() => void handleConnectAndSave()} isLoading={isConnecting || savingWallet}>
               {profile?.walletAddress ? 'Update Phantom Connection' : 'Connect Phantom Wallet'}
             </Button>
