@@ -14,17 +14,12 @@ import { startFeeTracker } from '@/lib/dexscreener'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { ConnectionGrid } from '@/components/account/ConnectionGrid'
-import { startTwitchOAuth } from '@/lib/twitchAuth'
-import { startXOAuth } from '@/lib/xAuth'
 
 export default function Dashboard() {
   const { user, profile, signIn, resendVerification, refreshProfile } = useAuth()
-  const { walletAddress, connect, disconnect, isConnecting, error } = usePhantomWallet()
-  const [oauthNotice, setOauthNotice] = useState('')
+  const { walletAddress, connect, isConnecting, error } = usePhantomWallet()
   const [resending, setResending] = useState(false)
   const [savingWallet, setSavingWallet] = useState(false)
-  const [signInTab, setSignInTab] = useState<'email' | 'twitch'>('email')
   const [signInIdentifier, setSignInIdentifier] = useState('')
   const [signInPassword, setSignInPassword] = useState('')
   const [signInLoading, setSignInLoading] = useState(false)
@@ -34,12 +29,6 @@ export default function Dashboard() {
   const [liveEstimateUSD, setLiveEstimateUSD] = useState(0)
   const [liveVolumeSOL, setLiveVolumeSOL] = useState(0)
   const [slotInfo, setSlotInfo] = useState<Slot | null>(null)
-  const twitchIcon = (
-    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <path d="M4.286 0 0 4.286v15.428H5.143V24l4.286-4.286h3.429L24 8.571V0H4.286zm18 7.714-5.143 5.143h-3.428L10.714 15.86v-3.003H7.286V1.714h15v6z" />
-    </svg>
-  )
-
   const bids = useMemo(() => user ? queueStore.getBids().filter((bid) => bid.uid === user.uid) : [], [user])
   const assigned = useMemo(() => user ? queueStore.getAssignedSlots().filter((slot) => slot.uid === user.uid) : [], [user])
 
@@ -56,12 +45,6 @@ export default function Dashboard() {
     [slotHistory],
   )
 
-  useEffect(() => {
-    const msg = localStorage.getItem('oauth_notice')
-    if (!msg) return
-    setOauthNotice(msg)
-    localStorage.removeItem('oauth_notice')
-  }, [])
 
   useEffect(() => {
     if (!user) return
@@ -113,36 +96,6 @@ export default function Dashboard() {
   }
 
 
-
-  const clearSocialHandle = async (platform: 'twitter' | 'twitch') => {
-    if (!user) return
-    await updateDoc(doc(db, 'users', user.uid), { [`socialLinks.${platform}`]: '' })
-    await refreshProfile()
-  }
-
-  const connectX = async () => {
-    try {
-      await startXOAuth('/account')
-    } catch (err) {
-      console.warn('Failed to start X OAuth:', err)
-      setOauthNotice(err instanceof Error ? err.message : 'Failed to connect X.')
-    }
-  }
-
-  const connectTwitch = () => {
-    startTwitchOAuth('/account')
-  }
-
-  const clearPhantom = async () => {
-    if (!user) return
-    try {
-      await disconnect()
-      await updateDoc(doc(db, 'users', user.uid), { walletAddress: '' })
-      await refreshProfile()
-    } catch (err) {
-      console.warn('Failed to disconnect wallet:', err)
-    }
-  }
 
   const handleDismissNotification = async (notifId: string) => {
     if (!user) return
@@ -206,102 +159,19 @@ export default function Dashboard() {
           <Card hover={false} className="p-6 border-red-500/25 bg-white/[0.03]">
             <h1 className="text-3xl font-display font-bold text-white mb-1">Sign in</h1>
             <p className="text-sm text-gray-400 mb-4">
-              Use your email & password, or connect your Twitch account. Two separate paths — pick the one that matches how you use CSGN.
+Use your email/username and password to access your account.
             </p>
 
-            <div className="grid grid-cols-2 gap-1.5 p-1 bg-white/5 border border-white/10 rounded-xl mb-4">
-              <button
-                type="button"
-                onClick={() => { setSignInTab('email'); setSignInError('') }}
-                className={`px-3 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors cursor-pointer ${
-                  signInTab === 'email' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                Email & Password
-              </button>
-              <button
-                type="button"
-                onClick={() => { setSignInTab('twitch'); setSignInError('') }}
-                className={`px-3 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors cursor-pointer ${
-                  signInTab === 'twitch' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                Twitch
-              </button>
-            </div>
-
-            {signInTab === 'email' ? (
-              <form onSubmit={handleEmailSignIn} className="space-y-3">
-                {signInError && (
-                  <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-300">
-                    <AlertTriangle className="w-4 h-4 shrink-0" /> {signInError}
-                  </div>
-                )}
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                  <input
-                    type="text"
-                    value={signInIdentifier}
-                    onChange={(e) => setSignInIdentifier(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
-                    placeholder="Email or username"
-                    required
-                    disabled={signInLoading}
-                  />
+            <form onSubmit={handleEmailSignIn} className="space-y-3">
+              {signInError && (
+                <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-300">
+                  <AlertTriangle className="w-4 h-4 shrink-0" /> {signInError}
                 </div>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                  <input
-                    type="password"
-                    value={signInPassword}
-                    onChange={(e) => setSignInPassword(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
-                    placeholder="Password"
-                    required
-                    minLength={6}
-                    disabled={signInLoading}
-                  />
-                </div>
-                <Button variant="primary" size="md" className="w-full" isLoading={signInLoading}>
-                  Sign In
-                </Button>
-              </form>
-            ) : (
-              <div className="space-y-3">
-                <Button
-                  type="button"
-                  size="lg"
-                  className="w-full bg-[#9146FF] hover:bg-[#7d33ea] text-white shadow-lg shadow-[#9146FF]/30"
-                  leftIcon={twitchIcon}
-                  onClick={() => startTwitchOAuth('/auth/twitch/complete')}
-                >
-                  CONTINUE WITH TWITCH
-                </Button>
-                <p className="text-[11px] text-gray-500 text-center leading-relaxed">
-                  We'll match your Twitch login to your CSGN account, then ask for your password.
-                </p>
-              </div>
-            )}
-          </Card>
-
-          <Card hover={false} className="p-6 border-white/10 bg-white/[0.02]">
-            <h2 className="text-lg font-display font-bold text-white mb-1">New to CSGN?</h2>
-            <p className="text-sm text-gray-400 mb-4">
-              New accounts are created by connecting Twitch. After Twitch you'll choose a username, email, connect your Phantom wallet (required), and pick a password.
-            </p>
-            <Button
-              type="button"
-              size="md"
-              className="w-full bg-[#9146FF] hover:bg-[#7d33ea] text-white"
-              leftIcon={twitchIcon}
-              onClick={() => startTwitchOAuth('/auth/twitch/complete')}
-            >
-              CREATE ACCOUNT WITH TWITCH
-            </Button>
-            <p className="text-[11px] text-gray-500 mt-3 text-center">
-              By continuing you agree to the{' '}
-              <Link to="/terms" className="text-primary-400 hover:text-primary-300">Terms & Conditions</Link>.
-            </p>
+              )}
+              <div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="text" value={signInIdentifier} onChange={(e) => setSignInIdentifier(e.target.value)} className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Email or username" required disabled={signInLoading} /></div>
+              <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="password" value={signInPassword} onChange={(e) => setSignInPassword(e.target.value)} className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Password" required minLength={6} disabled={signInLoading} /></div>
+              <Button variant="primary" size="md" className="w-full" isLoading={signInLoading}>Sign In</Button>
+            </form>
           </Card>
         </div>
       </div>
@@ -353,60 +223,11 @@ export default function Dashboard() {
             <Badge variant="blue">{profile?.role || 'viewer'}</Badge>
           </div>
 
-          {oauthNotice && (
-            <div className="mt-4 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-sm text-emerald-300">
-              {oauthNotice}
-            </div>
-          )}
-
           <div className="mt-4 space-y-3">
-            <ConnectionGrid
-              items={[
-                {
-                  id: 'x',
-                  label: 'X',
-                  connected: Boolean(profile?.socialLinks?.twitter),
-                  username: profile?.socialLinks?.twitter ? `@${profile.socialLinks.twitter}` : undefined,
-                  onConnect: () => void connectX(),
-                  onDisconnect: () => void clearSocialHandle('twitter'),
-                  disabled: true,
-                  statusText: '',
-                  icon: (
-                    <svg viewBox="0 0 24 24" className="w-7 h-7 fill-current" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                    </svg>
-                  ),
-                },
-                {
-                  id: 'twitch',
-                  label: 'Twitch',
-                  connected: Boolean(profile?.socialLinks?.twitch),
-                  username: profile?.socialLinks?.twitch ? `@${profile.socialLinks.twitch}` : undefined,
-                  onConnect: () => connectTwitch(),
-                  onDisconnect: () => void clearSocialHandle('twitch'),
-                  icon: (
-                    <svg viewBox="0 0 24 24" className="w-7 h-7 fill-current" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                      <path d="M4.286 0 0 4.286v15.428H5.143V24l4.286-4.286h3.429L24 8.571V0H4.286zm18 7.714-5.143 5.143h-3.428L10.714 15.86v-3.003H7.286V1.714h15v6z" />
-                    </svg>
-                  ),
-                },
-                {
-                  id: 'phantom',
-                  label: 'Phantom',
-                  connected: Boolean(profile?.walletAddress),
-                  username: profile?.walletAddress ? `${profile.walletAddress.slice(0, 6)}...${profile.walletAddress.slice(-4)}` : undefined,
-                  onConnect: () => void handleConnectAndSave(),
-                  onDisconnect: () => void clearPhantom(),
-                  loading: isConnecting || savingWallet,
-                  icon: <span className="text-lg font-bold">◎</span>,
-                },
-              ]}
-            />
-            {savedWallet && (
-              <p className="text-xs text-gray-500 font-mono flex items-center gap-1">
-                <Wallet className="w-3 h-3" /> Saved: {savedWallet.slice(0, 8)}...{savedWallet.slice(-6)}
-              </p>
-            )}
+            <Button variant="secondary" size="sm" onClick={() => void handleConnectAndSave()} isLoading={isConnecting || savingWallet}>
+              {profile?.walletAddress ? 'Update Phantom Connection' : 'Connect Phantom Wallet'}
+            </Button>
+            {savedWallet && <p className="text-xs text-gray-500 font-mono flex items-center gap-1"><Wallet className="w-3 h-3" /> Saved: {savedWallet.slice(0, 8)}...{savedWallet.slice(-6)}</p>}
           </div>
 
           {error && <p className="text-xs text-red-300 mt-2">{error}</p>}
