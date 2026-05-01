@@ -54,7 +54,7 @@ export default function Queue() {
 
   const loadSlots = useCallback(async () => {
     const now = new Date()
-    const future = new Date(now.getTime() + 370 * 24 * 60 * 60 * 1000)
+    const future = new Date(now.getTime() + 28 * 24 * 60 * 60 * 1000)
     try {
       const data = await fetchSlots(now, future)
       setSlots(data)

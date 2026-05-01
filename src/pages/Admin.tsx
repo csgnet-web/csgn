@@ -5,11 +5,11 @@ import {
   Shield, Users, FileText, Radio, Clock, Check, X, Eye,
   Search, BarChart3, TrendingUp, Plus, Gavel, Crown,
   Trash2, UserCheck, AlertTriangle, Tv, DollarSign,
-  Wallet, CheckCircle2, XCircle, RefreshCw, Link as LinkIcon, ExternalLink, Monitor,
+  Wallet, CheckCircle2, XCircle, RefreshCw, Link as LinkIcon, ExternalLink, Monitor, Activity,
 } from 'lucide-react'
 import {
   collection, query, getDocs, doc, updateDoc, setDoc, onSnapshot, orderBy,
-  where,
+  where, limit,
 } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -45,7 +45,17 @@ import {
   type CreatorFees,
 } from '@/lib/slots'
 
-type Tab = 'overview' | 'applications' | 'streamers' | 'schedule' | 'fees'
+type Tab = 'overview' | 'applications' | 'streamers' | 'schedule' | 'fees' | 'auth'
+
+interface AuthEventData {
+  id: string
+  kind: string
+  ts: unknown
+  uid: string | null
+  twitchUsername: string | null
+  errorMessage: string | null
+  ua: string | null
+}
 
 interface AppData {
   id: string
@@ -111,6 +121,11 @@ export default function Admin() {
   const [syncingWeek, setSyncingWeek] = useState(false)
   const [syncingYear, setSyncingYear] = useState(false)
   const [syncStartDate, setSyncStartDate] = useState(() => new Date().toISOString().slice(0, 10))
+
+  // Auth events tab state
+  const [authEvents, setAuthEvents] = useState<AuthEventData[]>([])
+  const [authEventsLoading, setAuthEventsLoading] = useState(false)
+  const [authEventsError, setAuthEventsError] = useState<string | null>(null)
 
   // Fees tab state
   const [feeSlots, setFeeSlots] = useState<Slot[]>([])
@@ -239,10 +254,28 @@ export default function Admin() {
     setFeeSlotsLoading(false)
   }, [users])
 
+  const loadAuthEvents = useCallback(async () => {
+    setAuthEventsLoading(true)
+    setAuthEventsError(null)
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'auth_events'),
+        orderBy('ts', 'desc'),
+        limit(50),
+      ))
+      setAuthEvents(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<AuthEventData, 'id'>) })))
+    } catch (err: any) {
+      setAuthEventsError(err?.message || 'Failed to load auth events.')
+      setAuthEvents([])
+    }
+    setAuthEventsLoading(false)
+  }, [])
+
   useEffect(() => {
     if (activeTab === 'schedule') loadSlots()
     if (activeTab === 'fees') loadFeeSlots()
-  }, [activeTab, loadSlots, loadFeeSlots])
+    if (activeTab === 'auth') loadAuthEvents()
+  }, [activeTab, loadSlots, loadFeeSlots, loadAuthEvents])
 
   const handleAppStatus = async (appId: string, status: 'approved' | 'rejected') => {
     await updateDoc(doc(db, 'applications', appId), { status })
@@ -524,6 +557,7 @@ export default function Admin() {
     { id: 'streamers' as Tab, label: 'Streamers', icon: Users },
     { id: 'schedule' as Tab, label: 'Schedule', icon: Clock },
     { id: 'fees' as Tab, label: 'Creator Fees', icon: DollarSign },
+    { id: 'auth' as Tab, label: 'Auth Events', icon: Activity },
   ]
 
   const typeIcon = (type: SlotType) => {
@@ -1634,6 +1668,62 @@ export default function Admin() {
                 </motion.div>
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === 'auth' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-white">Auth Events</h2>
+                <p className="text-sm text-gray-400">Latest 50 sign-up / sign-in / Twitch link attempts.</p>
+              </div>
+              <Button onClick={loadAuthEvents} disabled={authEventsLoading} variant="secondary">
+                <RefreshCw className={`w-4 h-4 mr-2 ${authEventsLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
+
+            {authEventsError && (
+              <Card className="p-4 border-red-400/30 bg-red-500/10">
+                <p className="text-sm text-red-200">{authEventsError}</p>
+              </Card>
+            )}
+
+            <Card className="p-0 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-white/[0.04] text-gray-400">
+                  <tr>
+                    <th className="text-left px-4 py-2 font-medium">Time</th>
+                    <th className="text-left px-4 py-2 font-medium">Kind</th>
+                    <th className="text-left px-4 py-2 font-medium">Twitch</th>
+                    <th className="text-left px-4 py-2 font-medium">UID</th>
+                    <th className="text-left px-4 py-2 font-medium">Error</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {authEvents.length === 0 && !authEventsLoading && (
+                    <tr><td className="px-4 py-3 text-gray-500" colSpan={5}>No auth events yet.</td></tr>
+                  )}
+                  {authEvents.map((ev) => {
+                    const tsDate = ev.ts && typeof ev.ts === 'object' && 'toDate' in ev.ts && typeof (ev.ts as { toDate: unknown }).toDate === 'function'
+                      ? (ev.ts as { toDate: () => Date }).toDate()
+                      : null
+                    const tsLabel = tsDate ? tsDate.toLocaleString() : '—'
+                    const isFailure = ev.kind.endsWith('-failure')
+                    return (
+                      <tr key={ev.id} className="border-t border-white/[0.06]">
+                        <td className="px-4 py-2 text-gray-300 whitespace-nowrap">{tsLabel}</td>
+                        <td className={`px-4 py-2 whitespace-nowrap ${isFailure ? 'text-red-300' : 'text-gray-200'}`}>{ev.kind}</td>
+                        <td className="px-4 py-2 text-gray-300">{ev.twitchUsername || '—'}</td>
+                        <td className="px-4 py-2 text-gray-500 font-mono text-xs">{ev.uid || '—'}</td>
+                        <td className="px-4 py-2 text-red-200 text-xs break-all">{ev.errorMessage || ''}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </Card>
           </div>
         )}
       </div>

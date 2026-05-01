@@ -10,6 +10,7 @@ import {
 } from 'firebase/auth'
 import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore'
 import { auth, db } from '@/config/firebase'
+import { logAuthEvent } from '@/lib/authEvents'
 
 export interface UserNotification {
   id: string
@@ -127,39 +128,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const signIn = async (identifier: string, password: string) => {
-    const email = await resolveSignInEmail(identifier)
-    const { user } = await signInWithEmailAndPassword(auth, email, password)
+    void logAuthEvent('signin-start', { meta: { identifierKind: identifier.includes('@') ? 'email' : 'username' } })
     try {
-      await fetchProfile(user.uid)
+      const email = await resolveSignInEmail(identifier)
+      const { user } = await signInWithEmailAndPassword(auth, email, password)
+      try {
+        await fetchProfile(user.uid)
+      } catch (err) {
+        console.warn('Failed to fetch profile on sign-in:', err)
+        setProfile({
+          uid: user.uid,
+          email: user.email || '',
+          displayName: user.displayName || 'User',
+          photoURL: user.photoURL,
+          role: 'viewer',
+          createdAt: null,
+        })
+      }
+      void logAuthEvent('signin-success', { uid: user.uid })
     } catch (err) {
-      console.warn('Failed to fetch profile on sign-in:', err)
-      setProfile({
-        uid: user.uid,
-        email: user.email || '',
-        displayName: user.displayName || 'User',
-        photoURL: user.photoURL,
-        role: 'viewer',
-        createdAt: null,
-      })
+      void logAuthEvent('signin-failure', { errorMessage: err instanceof Error ? err.message : String(err) })
+      throw err
     }
   }
 
   const signUp = async (email: string, password: string, displayName: string) => {
-    const { user } = await createUserWithEmailAndPassword(auth, email, password)
-    await updateProfile(user, { displayName })
-    await sendEmailVerification(user)
+    void logAuthEvent('signup-email-start')
+    let createdUid: string | null = null
     try {
+      const { user } = await createUserWithEmailAndPassword(auth, email, password)
+      createdUid = user.uid
+      await updateProfile(user, { displayName })
+      try {
+        await sendEmailVerification(user)
+      } catch (err) {
+        console.warn('Failed to send email verification:', err)
+      }
       await createProfile(user, displayName)
+      void logAuthEvent('signup-email-success', { uid: user.uid })
     } catch (err) {
-      console.warn('Failed to create Firestore profile (user still created in Auth):', err)
-      setProfile({
-        uid: user.uid,
-        email: user.email || '',
-        displayName,
-        photoURL: user.photoURL,
-        role: 'viewer',
-        createdAt: null,
+      void logAuthEvent('signup-email-failure', {
+        uid: createdUid,
+        errorMessage: err instanceof Error ? err.message : String(err),
       })
+      throw err
     }
   }
 
@@ -177,15 +189,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const signUpWithTwitch = async ({ twitchUsername, email, password, displayName, walletAddress }: { twitchUsername: string; email: string; password: string; displayName: string; walletAddress: string }) => {
-    if (!walletAddress) throw new Error('A connected Phantom wallet is required to register.')
     const normalizedTwitch = twitchUsername.trim().toLowerCase()
-    const normalizedDisplay = displayName.trim()
-    const normalizedUsernameLower = normalizedDisplay.toLowerCase()
-    const { user } = await createUserWithEmailAndPassword(auth, email, password)
-    await updateProfile(user, { displayName: normalizedDisplay })
-    await sendEmailVerification(user)
-
+    void logAuthEvent('signup-twitch-start', { twitchUsername: normalizedTwitch })
+    let createdUid: string | null = null
     try {
+      if (!walletAddress) throw new Error('A connected Phantom wallet is required to register.')
+      const normalizedDisplay = displayName.trim()
+      const normalizedUsernameLower = normalizedDisplay.toLowerCase()
+      const { user } = await createUserWithEmailAndPassword(auth, email, password)
+      createdUid = user.uid
+      await updateProfile(user, { displayName: normalizedDisplay })
+      try {
+        await sendEmailVerification(user)
+      } catch (err) {
+        console.warn('Failed to send email verification:', err)
+      }
       await createProfile(user, normalizedDisplay, {
         email,
         authEmail: email,
@@ -196,22 +214,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         twitchUsername: normalizedTwitch,
         socialLinks: { twitch: normalizedTwitch },
       } as Partial<UserProfile>)
+      void logAuthEvent('signup-twitch-success', { uid: user.uid, twitchUsername: normalizedTwitch })
     } catch (err) {
-      console.warn('Failed to create Firestore profile (user still created in Auth):', err)
-      setProfile({
-        uid: user.uid,
-        email,
-        authEmail: email,
-        displayName: normalizedDisplay,
-        username: normalizedDisplay,
-        usernameLower: normalizedUsernameLower,
-        authProvider: 'twitch',
-        photoURL: user.photoURL,
-        role: 'viewer',
-        createdAt: null,
-        walletAddress,
-        socialLinks: { twitch: normalizedTwitch },
+      void logAuthEvent('signup-twitch-failure', {
+        uid: createdUid,
+        twitchUsername: normalizedTwitch,
+        errorMessage: err instanceof Error ? err.message : String(err),
       })
+      throw err
     }
   }
 

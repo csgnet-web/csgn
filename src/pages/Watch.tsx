@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3, Radio } from 'lucide-react'
-import { onSnapshot, doc, collection, query, orderBy } from 'firebase/firestore'
+import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
-import { claimOpenSlot, formatESTRange, type Slot } from '@/lib/slots'
+import { claimOpenSlot, formatESTRange, subscribeToSlots, type Slot } from '@/lib/slots'
 import { startFeeTracker } from '@/lib/dexscreener'
 import { useAuth } from '@/contexts/AuthContext'
 import { detectStream as _detectStream, buildTwitchSrc, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
@@ -295,14 +295,14 @@ export default function Watch() {
 
   // Direct subscription to slots table for identical behavior (logged in/out/admin).
   useEffect(() => {
-    const slotsQuery = query(collection(db, 'slots'), orderBy('startTime', 'asc'))
-    const unsub = onSnapshot(slotsQuery, (snap) => {
-      const data = snap.docs
-        .map((d) => d.data() as Slot)
+    const from = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    const to = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000)
+    const unsub = subscribeToSlots(from, to, (slots) => {
+      const data = slots
         .filter((slot) => toMillis(slot.startTime) > 0 && toMillis(slot.endTime) > 0)
         .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
       setAllSlots(data)
-    }, () => setAllSlots([]))
+    })
     return unsub
   }, [])
 

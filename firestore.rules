@@ -43,5 +43,14 @@ service cloud.firestore {
       allow create: if isSignedIn();
       allow read, update: if isAdmin();
     }
+
+    // ── auth_events ───────────────────────────────────────────────────────────
+    // Audit log for sign-up / sign-in attempts. Anyone may write (so failures
+    // before auth completes are still captured); only admins can read.
+    match /auth_events/{eventId} {
+      allow create: if true;
+      allow read:   if isAdmin();
+      allow update, delete: if false;
+    }
   }
 }

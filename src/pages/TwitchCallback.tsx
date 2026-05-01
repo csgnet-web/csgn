@@ -9,6 +9,7 @@ import {
   resolveTwitchUserFromHash,
   setTwitchAuthFlowState,
 } from '@/lib/twitchAuth'
+import { logAuthEvent } from '@/lib/authEvents'
 
 export default function TwitchCallback() {
   const { user, loading, refreshProfile, getProfileByTwitchUsername } = useAuth()
@@ -23,9 +24,14 @@ export default function TwitchCallback() {
     processedRef.current = true
 
     ;(async () => {
+      void logAuthEvent('twitch-callback-start', { uid: user?.uid ?? null })
       try {
         const username = await resolveTwitchUserFromHash(window.location.hash)
         const returnTo = getTwitchReturnTo()
+        void logAuthEvent('twitch-callback-resolved', {
+          twitchUsername: username,
+          uid: user?.uid ?? null,
+        })
 
         if (!user) {
           const existing = await getProfileByTwitchUsername(username)
@@ -57,11 +63,16 @@ export default function TwitchCallback() {
           { merge: true },
         )
         await refreshProfile()
+        void logAuthEvent('twitch-link-merged', { uid: user.uid, twitchUsername: username })
         localStorage.setItem('oauth_notice', 'Twitch connected successfully.')
         clearTwitchAuthFlowState()
         navigate(returnTo === '/auth/twitch/complete' ? '/account' : returnTo, { replace: true })
       } catch (err) {
         const message = err instanceof Error ? err.message : JSON.stringify(err)
+        void logAuthEvent('twitch-link-failure', {
+          uid: user?.uid ?? null,
+          errorMessage: message,
+        })
         setError(message)
       }
     })()
