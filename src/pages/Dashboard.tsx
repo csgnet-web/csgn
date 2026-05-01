@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   User, Mail, Wallet, Trophy, Lock,
-  CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Crown, X as XIcon, Info,
+  CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Crown, Twitch, X as XIcon, Info,
 } from 'lucide-react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
@@ -224,6 +224,13 @@ Use your email/username and password to access your account.
           </div>
 
           <div className="mt-4 space-y-3">
+            <button
+              type="button"
+              className="w-full h-10 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 bg-white/5 border-white/10 text-white hover:bg-white/10"
+              onClick={() => {}}
+            >
+              <Twitch className="w-4 h-4" /> Connect Twitch
+            </button>
             <Button variant="secondary" size="sm" onClick={() => void handleConnectAndSave()} isLoading={isConnecting || savingWallet}>
               {profile?.walletAddress ? 'Update Phantom Connection' : 'Connect Phantom Wallet'}
             </Button>

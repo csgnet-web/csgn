@@ -48,7 +48,12 @@ interface AuthContextType {
   profile: UserProfile | null
   loading: boolean
   signIn: (identifier: string, password: string) => Promise<void>
-  signUp: (email: string, password: string, displayName: string) => Promise<void>
+  signUp: (
+    email: string,
+    password: string,
+    displayName: string,
+    options?: { photoURL?: string | null; twitchUsername?: string; walletAddress?: string },
+  ) => Promise<void>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
   resendVerification: () => Promise<void>
@@ -148,19 +153,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const signUp = async (email: string, password: string, displayName: string) => {
+  const signUp = async (
+    email: string,
+    password: string,
+    displayName: string,
+    options?: { photoURL?: string | null; twitchUsername?: string; walletAddress?: string },
+  ) => {
     void logAuthEvent('signup-email-start')
     let createdUid: string | null = null
     try {
       const { user } = await createUserWithEmailAndPassword(auth, email, password)
       createdUid = user.uid
-      await updateProfile(user, { displayName })
+      await updateProfile(user, { displayName, photoURL: options?.photoURL || null })
       try {
         await sendEmailVerification(user)
       } catch (err) {
         console.warn('Failed to send email verification:', err)
       }
-      await createProfile(user, displayName)
+      await createProfile(user, displayName, {
+        photoURL: options?.photoURL || null,
+        twitchUsername: options?.twitchUsername?.trim().replace(/^@/, '').toLowerCase() || undefined,
+        walletAddress: options?.walletAddress?.trim() || undefined,
+      })
       void logAuthEvent('signup-email-success', { uid: user.uid })
     } catch (err) {
       void logAuthEvent('signup-email-failure', {

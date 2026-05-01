@@ -109,7 +109,7 @@ export interface Slot {
   startTime: string           // ISO UTC
   endTime: string             // ISO UTC
   status: SlotStatus
-  streamUrl: string           // defaults to twitch.tv/shrood
+  streamUrl: string           // defaults to twitch.tv/csgnet
   streamTitle: string         // display title for the stream
   assignedUid: string | null
   assignedName: string | null
@@ -1008,7 +1008,7 @@ export async function resolveAuction(slotId: string): Promise<{ winnerUid: strin
     status: 'pending_deposit',
     assignedUid: winner.uid,
     assignedName: winner.displayName,
-    // streamUrl remains the default (shrood) until confirmed
+    // streamUrl remains the default (csgnet) until confirmed
   })
 
   await addUserNotification(winner.uid, {
