@@ -25,6 +25,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [socialError, setSocialError] = useState('')
 
   const isRegister = initialMode === 'signup'
 
@@ -38,6 +39,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
     setConnectedWallet('')
     setPassword('')
     setConfirmPassword('')
+    setSocialError('')
     onClose()
   }
 
@@ -84,7 +86,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -96,9 +98,9 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-md bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+            className="relative w-full max-w-md max-h-[92vh] bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
           >
-            <div className="relative px-8 pt-8 pb-4">
+            <div className="relative px-6 sm:px-8 pt-6 sm:pt-8 pb-4">
               <button
                 onClick={handleClose}
                 className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-white/5 cursor-pointer"
@@ -120,7 +122,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
               </p>
             </div>
 
-            <div className="px-8 pb-8 space-y-4">
+            <div className="px-6 sm:px-8 pb-6 sm:pb-8 space-y-4 overflow-y-auto max-h-[calc(92vh-120px)]">
               <form onSubmit={handleEmailSubmit} className="space-y-3">
                 {error && (
                   <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-300">
@@ -141,27 +143,50 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                       <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="How should we show your name?" required disabled={loading} />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Profile Picture URL (optional)</label>
-                      <input type="url" value={photoURL} onChange={(e) => setPhotoURL(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="https://..." disabled={loading} />
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Profile Picture (.jpg/.png, max 4MB)</label>
+                      <input
+                        type="file"
+                        accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                        className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-gray-300 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-white/10 file:text-white"
+                        disabled={loading}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (!file) return
+                          const allowed = ['image/jpeg', 'image/png']
+                          if (!allowed.includes(file.type) || file.size > 4 * 1024 * 1024) {
+                            setSocialError('Profile image must be JPG/PNG and up to 4MB.')
+                            e.currentTarget.value = ''
+                            setPhotoURL('')
+                            return
+                          }
+                          setSocialError('')
+                          const reader = new FileReader()
+                          reader.onload = () => setPhotoURL(typeof reader.result === 'string' ? reader.result : '')
+                          reader.readAsDataURL(file)
+                        }}
+                      />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Twitch Username</label>
-                      <div className="relative">
-                        <Twitch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                        <input type="text" value={twitchUsername} onChange={(e) => setTwitchUsername(e.target.value.replace(/\s+/g, ''))} className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="@yourchannel" required disabled={loading} />
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs text-gray-300 flex items-center gap-2"><Wallet className="w-4 h-4 text-cyan-400" /> Phantom Wallet</p>
-                        <Button type="button" variant="secondary" size="sm" isLoading={isConnecting} onClick={async () => {
+                      <p className="block text-sm font-medium text-gray-300 mb-1.5">SOCIALS</p>
+                      <div className="flex items-center gap-2">
+                        <button type="button" className={`flex-1 h-11 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 ${twitchUsername ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`} onClick={() => {
+                          const val = window.prompt('Enter your Twitch username (no @):', twitchUsername || '')
+                          if (!val) return
+                          setTwitchUsername(val.trim().replace(/^@/, '').toLowerCase())
+                        }}>
+                          <Twitch className="w-4 h-4" /> {twitchUsername ? `@${twitchUsername}` : 'Connect Twitch'}
+                        </button>
+                        <button type="button" className={`flex-1 h-11 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 ${connectedWallet || walletAddress ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`} onClick={async () => {
                           const addr = await connect()
                           if (addr) setConnectedWallet(addr)
-                        }}>Connect</Button>
+                        }} disabled={loading || isConnecting}>
+                          <Wallet className="w-4 h-4" /> {connectedWallet || walletAddress ? 'Phantom Connected' : 'Connect Phantom'}
+                        </button>
+                        <button type="button" disabled className="h-11 w-11 rounded-xl border border-white/10 bg-white/5 text-gray-500 cursor-not-allowed flex items-center justify-center">
+                          <X className="w-4 h-4" />
+                        </button>
                       </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                        {(connectedWallet || walletAddress) ? `Connected: ${(connectedWallet || walletAddress || '').slice(0, 8)}...${(connectedWallet || walletAddress || '').slice(-6)}` : 'Optional now, but required before payout.'}
-                      </p>
+                      {socialError && <p className="text-xs text-red-300 mt-1">{socialError}</p>}
                       {walletError && <p className="text-xs text-red-300 mt-1">{walletError}</p>}
                     </div>
                   </>
