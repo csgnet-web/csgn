@@ -4,7 +4,6 @@ import { ChevronDown, ChevronRight, Gamepad2, Grid3X3, Radio } from 'lucide-reac
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { claimOpenSlot, formatESTRange, subscribeToSlots, type Slot } from '@/lib/slots'
-import { startFeeTracker } from '@/lib/dexscreener'
 import { useAuth } from '@/contexts/AuthContext'
 import { detectStream as _detectStream, buildTwitchSrc, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
 const DEFAULT_TWITCH_STREAM = 'https://www.twitch.tv/csgnet'
@@ -13,6 +12,8 @@ const FIXED_CHAT_CHANNEL = 'csgnet'
 const bannerItems = [
   'STARTING 5: IMMINENT',
   'SQUARES COMING SOON',
+  "CSGN: Crypto's Entertainment Flagship",
+  'Connect Your Twitch and Go Live on CSGN',
 ] as const
 
 /* ── Helpers to parse stream URLs (imported from @/lib/player) ── */
@@ -270,10 +271,8 @@ export default function Watch() {
   // Manual override from admin config/liveStream
   const [manualOverride, setManualOverride] = useState<{ url: string; streamerName: string; title: string } | null>(null)
 
-  // Live fee tracking
-  const [liveVolumeSOL, setLiveVolumeSOL] = useState<number>(0)
-  const [liveFeeSOL, setLiveFeeSOL] = useState<number>(0)
-  const [liveFeeUSD, setLiveFeeUSD] = useState<number>(0)
+  // Live fee display from shared slot state
+  const [pulseFee, setPulseFee] = useState(false)
 
   // Wipe animation state
   const [showWipe, setShowWipe] = useState(false)
@@ -335,26 +334,15 @@ export default function Watch() {
     }
   }, [allSlots, nowMs])
 
-  // Start live fee tracker when a slot is active
+  const liveFeeSOL = currentSlot?.creatorFees?.feeOwedSOL ?? 0
+  const liveFeeUSD = currentSlot?.creatorFees?.feeOwedUSD ?? 0
+  const liveVolumeSOL = currentSlot?.creatorFees?.tradingVolumeSOL ?? 0
+
   useEffect(() => {
-    if (!currentSlot) {
-      setLiveVolumeSOL(0)
-      setLiveFeeSOL(0)
-      setLiveFeeUSD(0)
-      return
-    }
-    const stop = startFeeTracker({
-      slotId: currentSlot.id,
-      slotStartTime: currentSlot.startTime,
-      slotEndTime: currentSlot.endTime,
-      onUpdate: (feeSOL, volumeSOL, feeUSD) => {
-        setLiveFeeSOL(feeSOL)
-        setLiveVolumeSOL(volumeSOL)
-        setLiveFeeUSD(feeUSD)
-      },
-    })
-    return stop
-  }, [currentSlot?.id])
+    setPulseFee(true)
+    const t = setTimeout(() => setPulseFee(false), 550)
+    return () => clearTimeout(t)
+  }, [currentSlot?.id, liveFeeUSD])
 
   // Build today's slot list directly from subscribed slots.
   useEffect(() => {
@@ -514,7 +502,7 @@ export default function Watch() {
           <div className="text-right">
             {currentSlot ? (
               <>
-                <p className="text-2xl sm:text-3xl font-black font-mono text-yellow-400">
+                <p className={`text-2xl sm:text-3xl font-black font-mono text-yellow-400 ${pulseFee ? 'animate-fee-shake' : ''}`}>
                   {liveFeeUSD > 0 ? `$${liveFeeUSD.toFixed(2)}` : '—'}
                 </p>
                 <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">

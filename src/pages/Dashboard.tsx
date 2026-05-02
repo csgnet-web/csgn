@@ -10,7 +10,6 @@ import { useAuth, type UserNotification } from '@/contexts/AuthContext'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { queueStore } from '@/lib/queue'
 import { fetchSlots, type Slot } from '@/lib/slots'
-import { startFeeTracker } from '@/lib/dexscreener'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -61,23 +60,10 @@ export default function Dashboard() {
   }, [user?.uid])
 
   useEffect(() => {
-    if (!liveAssignedSlot) {
-      setLiveEstimateSOL(0)
-      setLiveVolumeSOL(0)
-      return
-    }
-    const stop = startFeeTracker({
-      slotId: liveAssignedSlot.id,
-      slotStartTime: liveAssignedSlot.startTime,
-      slotEndTime: liveAssignedSlot.endTime,
-      onUpdate: (feeSOL, volumeSOL, feeUSD) => {
-        setLiveEstimateSOL(feeSOL)
-        setLiveVolumeSOL(volumeSOL)
-        setLiveEstimateUSD(feeUSD)
-      },
-    })
-    return stop
-  }, [liveAssignedSlot?.id])
+    setLiveEstimateSOL(liveAssignedSlot?.creatorFees?.feeOwedSOL || 0)
+    setLiveVolumeSOL(liveAssignedSlot?.creatorFees?.tradingVolumeSOL || 0)
+    setLiveEstimateUSD(liveAssignedSlot?.creatorFees?.feeOwedUSD || 0)
+  }, [liveAssignedSlot?.id, liveAssignedSlot?.creatorFees?.updatedAt])
 
 
   const handleConnectAndSave = async () => {
