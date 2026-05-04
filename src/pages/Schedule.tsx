@@ -1,11 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { Crown, Radio, Info, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Radio, Info, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { LiveIndicator } from '@/components/ui/LiveIndicator'
-import { claimOpenSlot, LAUNCH_DATE_UTC, PHASE_2_END_UTC, subscribeToSlots, type Slot } from '@/lib/slots'
-import { startFeeTracker } from '@/lib/dexscreener'
+import { subscribeToSlots, type Slot } from '@/lib/slots'
 import { useAuth } from '@/contexts/AuthContext'
 const WEEK_SPAN = 7
 
@@ -26,13 +24,6 @@ function toMillis(value: unknown): number {
 
 function toDate(value: unknown): Date {
   return new Date(toMillis(value))
-}
-
-function getSlotPhase(slot: Slot): 'phase1' | 'phase2' | 'later' {
-  const start = toDate(slot.startTime).toISOString()
-  if (start < LAUNCH_DATE_UTC) return 'phase1'
-  if (start < PHASE_2_END_UTC) return 'phase2'
-  return 'later'
 }
 
 function getSlotDisplayStatus(slot: Slot): 'past' | 'live' | 'upcoming' {
@@ -77,33 +68,11 @@ function etMiddayFromOffset(offset: number): Date {
 }
 
 export default function Schedule() {
-  const { user, profile } = useAuth()
+  useAuth()
   const [selectedDay, setSelectedDay] = useState(0)
   const [weekOffset, setWeekOffset] = useState(0)
   const [allSlots, setAllSlots] = useState<Slot[]>([])
   const [loading, setLoading] = useState(true)
-  const [liveSlotFeeSOL, setLiveSlotFeeSOL] = useState<Record<string, number>>({})
-  const [claimingId, setClaimingId] = useState<string | null>(null)
-  const [claimError, setClaimError] = useState('')
-
-  const twitchHandle = profile?.twitchUsername || profile?.socialLinks?.twitch || ''
-
-  const handleClaim = async (slot: Slot) => {
-    if (!user || !profile || !twitchHandle) return
-    setClaimingId(slot.id)
-    setClaimError('')
-    try {
-      await claimOpenSlot(slot.id, {
-        uid: user.uid,
-        displayName: profile.displayName || twitchHandle,
-        twitchUsername: twitchHandle,
-      })
-    } catch (err) {
-      setClaimError(err instanceof Error ? err.message : 'Could not claim slot.')
-    } finally {
-      setClaimingId(null)
-    }
-  }
   const days = useMemo(() => {
     const labels: string[] = []
     for (let i = 0; i < WEEK_SPAN; i++) {
@@ -143,31 +112,6 @@ export default function Schedule() {
     return unsub
   }, [])
 
-  const slots = useMemo(() => {
-    const targetMidday = etMiddayFromOffset(weekOffset * WEEK_SPAN + selectedDay)
-    const targetKey = etDayKey(targetMidday)
-    return allSlots
-      .filter((slot) => etDayKey(toDate(slot.startTime)) === targetKey)
-      .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
-  }, [allSlots, selectedDay, weekOffset])
-
-  const activeLiveSlot = useMemo(
-    () => allSlots.find((slot) => getSlotDisplayStatus(slot) === 'live') ?? null,
-    [allSlots],
-  )
-
-  useEffect(() => {
-    if (!activeLiveSlot) return
-    const stop = startFeeTracker({
-      slotId: activeLiveSlot.id,
-      slotStartTime: activeLiveSlot.startTime,
-      slotEndTime: activeLiveSlot.endTime,
-      onUpdate: (feeSOL) => {
-        setLiveSlotFeeSOL((prev) => ({ ...prev, [activeLiveSlot.id]: feeSOL }))
-      },
-    })
-    return stop
-  }, [activeLiveSlot?.id])
 
   useEffect(() => {
     if (loading || selectedDay !== 0) return
@@ -182,10 +126,12 @@ export default function Schedule() {
     if (firstDayWithSlots > 0) setSelectedDay(firstDayWithSlots)
   }, [allSlots, days, loading, selectedDay])
 
-  const typeIcon = () => <Crown className="w-4 h-4" />
   const typeLabel = (slot: Slot) => (slot.status === 'open' && !slot.assignedName ? 'Empty Slot' : (slot.assignedName || 'CEO Creator'))
 
-  const emptyLabel = useMemo(() => (selectedDay === 0 ? 'No slots found for today.' : 'No slots scheduled for this day yet.'), [selectedDay])
+  const slotsByDay = useMemo(() => days.map((_, i) => {
+  const key = etDayKey(etMiddayFromOffset(weekOffset * WEEK_SPAN + i))
+  return allSlots.filter((slot) => etDayKey(toDate(slot.startTime)) === key).sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
+}), [allSlots, days, weekOffset])
 
   return (
     <div className="min-h-screen pt-20 lg:pt-24 pb-24">
@@ -228,92 +174,29 @@ export default function Schedule() {
 
         <Card hover={false} className="overflow-hidden">
           <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
-            <h3 className="font-semibold font-display text-white flex items-center gap-2">
-              <Radio className="w-4 h-4 text-primary-400" />
-              {days[selectedDay]}'s Schedule
-            </h3>
+            <h3 className="font-semibold font-display text-white flex items-center gap-2"><Radio className="w-4 h-4 text-primary-400" /> TV Guide Schedule</h3>
             <Badge variant="blue">All times ET</Badge>
           </div>
-          {claimError && (
-            <div className="px-4 py-2 text-xs text-red-300 bg-red-500/5 border-b border-red-500/20">{claimError}</div>
-          )}
-
-          <div className="divide-y divide-white/[0.04]">
-            {loading ? (
-              <div className="py-16 text-center">
-                <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                <p className="text-sm text-gray-500">Loading schedule...</p>
-              </div>
-            ) : slots.length === 0 ? (
-              <div className="py-16 text-center">
-                <p className="text-sm text-gray-500">{emptyLabel}</p>
-                <p className="text-xs text-gray-600 mt-1">Slots follow fixed ET rules and are kept in canonical order.</p>
-              </div>
-            ) : (
-              slots.map((slot, i) => {
-                const displayStatus = getSlotDisplayStatus(slot)
-                const phase = getSlotPhase(slot)
-                const streamerName = typeLabel(slot)
-                const isEmptyOpenSlot = slot.status === 'open' && !slot.assignedName && !slot.streamUrl
-                const streamerFeeSOL = liveSlotFeeSOL[slot.id] ?? slot.creatorFees?.feeOwedSOL ?? 0
-                const feeLabel = streamerFeeSOL > 0 ? `${streamerFeeSOL.toFixed(6)} SOL` : '—'
-
-                const showBidLink = slot.status === 'open' && phase !== 'phase1'
-
-                return (
-                  <motion.div
-                    key={slot.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: i * 0.03 }}
-                    className={`flex items-center gap-4 px-4 sm:px-6 py-4 transition-colors ${
-                      displayStatus === 'live'
-                        ? 'bg-primary-500/5 border-l-2 border-l-primary-500'
-                        : 'hover:bg-white/[0.02]'
-                    }`}
-                  >
-                    <div className="w-20 sm:w-28 shrink-0">
-                      <span className="text-sm font-mono text-gray-400">{formatTimeET(slot.startTime)}</span>
-                      <span className="text-xs text-gray-600 block">to {formatTimeET(slot.endTime)}</span>
-                    </div>
-
-                    <div className={`w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 ${isEmptyOpenSlot ? 'text-gray-500' : 'text-gold'}`}>
-                      {typeIcon()}
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-sm font-medium truncate ${isEmptyOpenSlot ? 'text-gray-400' : 'text-white'}`}>{streamerName}</span>
-                        {displayStatus === 'live' && <LiveIndicator />}
+          <div className="overflow-x-auto">
+            <div className="min-w-[980px] grid grid-cols-7 divide-x divide-white/[0.06]">
+              {days.map((day, dayIdx) => (
+                <div key={day} className="min-h-[420px]">
+                  <div className="px-3 py-2 border-b border-white/[0.06] text-xs font-semibold text-gray-300 sticky top-0 bg-[#0b0b18]">{day}</div>
+                  <div className="divide-y divide-white/[0.04]">
+                    {(slotsByDay[dayIdx] || []).map((slot) => {
+                      const displayStatus = getSlotDisplayStatus(slot)
+                      const streamerName = typeLabel(slot)
+                      const feeSOL = slot.creatorFees?.feeOwedSOL ?? 0
+                      return <div key={slot.id} className={`px-3 py-2 text-xs ${displayStatus==='live' ? 'bg-primary-500/8' : ''}`}>
+                        <p className="font-mono text-gray-400">{formatTimeET(slot.startTime)} - {formatTimeET(slot.endTime)}</p>
+                        <p className="text-white truncate">{streamerName}</p>
+                        <p className="text-cyan-300">{feeSOL > 0 ? `${feeSOL.toFixed(4)} SOL` : '—'}</p>
                       </div>
-                      {slot.description && <span className="text-xs text-gray-500 truncate block">{slot.description}</span>}
-                      <span className="text-[11px] text-cyan-300 block mt-0.5">Streamer fee: {feeLabel}</span>
-                    </div>
-
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      {slot.status === 'pending_deposit' && <Badge variant="gold" className="!text-[9px] !px-1.5 !py-0.5">Awaiting Confirm</Badge>}
-                      {slot.status === 'confirmed' && <Badge variant="green" className="!text-[9px] !px-1.5 !py-0.5">Confirmed</Badge>}
-                      {showBidLink && (
-                        <Badge variant="purple" className="!text-[9px] !px-1.5 !py-0.5">Bidding: Coming Soon</Badge>
-                      )}
-                      <Badge variant={isEmptyOpenSlot ? 'default' : 'gold'} className="!text-[9px] !px-1.5 !py-0.5">
-                        {isEmptyOpenSlot ? 'Empty Slot' : 'CEO Creator'}
-                      </Badge>
-                      {slot.status === 'open' && !slot.assignedUid && displayStatus !== 'past' && user && twitchHandle && (
-                        <button
-                          type="button"
-                          onClick={() => void handleClaim(slot)}
-                          disabled={claimingId === slot.id}
-                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
-                        >
-                          {claimingId === slot.id ? 'Claiming…' : 'Take Slot'}
-                        </button>
-                      )}
-                    </div>
-                  </motion.div>
-                )
-              })
-            )}
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </Card>
 

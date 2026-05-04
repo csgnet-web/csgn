@@ -151,7 +151,7 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
     max-width: none;
   }
   .watch-roll-banner__face {
-    justify-content: flex-start;
+    justify-content: flex-end;
     font-size: clamp(0.56rem, 2.8vw, 0.74rem);
   }
 }
@@ -167,3 +167,11 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
 .csgn-wipe {
   animation: csgn-wipe-in 1.4s cubic-bezier(0.77, 0, 0.18, 1) forwards;
 }
+
+@keyframes fee-shake {
+  0%,100% { transform: translateX(0); }
+  25% { transform: translateX(-1px); }
+  50% { transform: translateX(1px); }
+  75% { transform: translateX(-1px); }
+}
+.animate-fee-shake { animation: fee-shake 0.5s ease-in-out; }

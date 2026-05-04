@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AlertCircle, Eye, EyeOff, Lock, Mail, Twitch, Wallet, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -13,6 +14,7 @@ interface AuthModalProps {
 
 export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalProps) {
   const { signIn, signUp } = useAuth()
+  const navigate = useNavigate()
   const { connect, isConnecting, walletAddress, error: walletError } = usePhantomWallet()
   const [identifier, setIdentifier] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -59,7 +61,12 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
       } else {
         await signIn(identifier, password)
       }
-      handleClose()
+      if (isRegister) {
+        handleClose()
+        navigate('/watch', { state: { accountCreated: true } })
+      } else {
+        handleClose()
+      }
     } catch (err: unknown) {
       const code = err instanceof Error && 'code' in err ? String((err as { code?: string }).code || '') : ''
       if (err instanceof Error && err.message.includes('confirmation')) {
@@ -112,11 +119,11 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
               <h2 className="text-2xl font-bold font-display text-white">
                 {isRegister ? 'Join CSGN' : 'Welcome back'}
               </h2>
-              <p className="text-sm text-gray-400 mt-1">
-                {isRegister
-                  ? 'Create your CSGN account with email & password.'
-                  : 'Sign in with your email/username and password.'}
-              </p>
+              {!isRegister && (
+                <p className="text-sm text-gray-400 mt-1">
+                  Sign in with your email/username and password.
+                </p>
+              )}
             </div>
 
             <div className="px-6 sm:px-8 pb-8 sm:pb-10 space-y-4 overflow-y-auto max-h-[calc(92vh-120px)]">
@@ -130,41 +137,42 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                   <label className="block text-sm font-medium text-gray-300 mb-1.5">{isRegister ? 'Email' : 'Email or Username'}</label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                    <input type="text" value={identifier} onChange={(e) => setIdentifier(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder={isRegister ? 'you@example.com' : 'you@example.com or username'} required disabled={loading} />
+                    <input type="text" value={identifier} onChange={(e) => setIdentifier(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-base sm:text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder={isRegister ? 'you@example.com' : 'you@example.com or username'} required disabled={loading} />
                   </div>
                 </div>
                 {isRegister && (
                   <>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Display Name</label>
-                      <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="How should we show your name?" required disabled={loading} />
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1.5">Display Name</label>
+                        <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full h-12 px-4 bg-white/5 border border-white/10 rounded-xl text-base sm:text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Your name" required disabled={loading} />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1.5">Profile Picture</label>
+                        <input
+                          type="file"
+                          accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                          className="w-full h-12 px-3 bg-white/5 border border-white/10 rounded-xl text-base sm:text-sm text-gray-300 file:mr-2 file:h-8 file:px-2 file:rounded-lg file:border-0 file:bg-white/10 file:text-white"
+                          disabled={loading}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            const allowed = ['image/jpeg', 'image/png']
+                            if (!allowed.includes(file.type) || file.size > 4 * 1024 * 1024) {
+                              setSocialError('Profile image must be JPG/PNG and up to 4MB.')
+                              e.currentTarget.value = ''
+                              setPhotoURL('')
+                              return
+                            }
+                            setSocialError('')
+                            const reader = new FileReader()
+                            reader.onload = () => setPhotoURL(typeof reader.result === 'string' ? reader.result : '')
+                            reader.readAsDataURL(file)
+                          }}
+                        />
+                      </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Profile Picture (.jpg/.png, max 4MB)</label>
-                      <input
-                        type="file"
-                        accept=".jpg,.jpeg,.png,image/jpeg,image/png"
-                        className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-gray-300 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-white/10 file:text-white"
-                        disabled={loading}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0]
-                          if (!file) return
-                          const allowed = ['image/jpeg', 'image/png']
-                          if (!allowed.includes(file.type) || file.size > 4 * 1024 * 1024) {
-                            setSocialError('Profile image must be JPG/PNG and up to 4MB.')
-                            e.currentTarget.value = ''
-                            setPhotoURL('')
-                            return
-                          }
-                          setSocialError('')
-                          const reader = new FileReader()
-                          reader.onload = () => setPhotoURL(typeof reader.result === 'string' ? reader.result : '')
-                          reader.readAsDataURL(file)
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <p className="block text-sm font-medium text-gray-300 mb-1.5">SOCIALS</p>
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
@@ -179,9 +187,6 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                         }} disabled={loading || isConnecting}>
                           <Wallet className="w-4 h-4" /> {connectedWallet || walletAddress ? 'Phantom Connected' : 'Connect Phantom'}
                         </button>
-                        <button type="button" disabled className="h-11 w-11 rounded-xl border border-white/10 bg-white/5 text-gray-500 cursor-not-allowed flex items-center justify-center">
-                          <X className="w-4 h-4" />
-                        </button>
                       </div>
                       {socialError && <p className="text-xs text-red-300 mt-1">{socialError}</p>}
                       {walletError && <p className="text-xs text-red-300 mt-1">{walletError}</p>}
@@ -192,7 +197,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                   <label className="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                    <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Enter password" required minLength={6} disabled={loading} />
+                    <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-base sm:text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Enter password" required minLength={6} disabled={loading} />
                     <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors cursor-pointer">
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -203,7 +208,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                     <label className="block text-sm font-medium text-gray-300 mb-1.5">Confirm Password</label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                      <input type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Confirm password" required minLength={6} disabled={loading} />
+                      <input type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-base sm:text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Confirm password" required minLength={6} disabled={loading} />
                       <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors cursor-pointer">
                         {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>

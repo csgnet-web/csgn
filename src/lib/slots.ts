@@ -598,6 +598,25 @@ export async function migratePhaseSlotsToCEO(): Promise<{ updated: number }> {
   return { updated }
 }
 
+
+/**
+ * One-time migration: replace legacy shrood Twitch URLs with csgnet.
+ * Updates any slot whose streamUrl points to twitch.tv/shrood (with or without www).
+ */
+export async function migrateShroodSlotsToCsgnet(): Promise<{ updated: number }> {
+  const allSnap = await getDocs(collection(db, SLOTS_COLLECTION))
+  let updated = 0
+  for (const slotDoc of allSnap.docs) {
+    const data = slotDoc.data() as Slot
+    const current = (data.streamUrl || '').trim().toLowerCase()
+    if (current === 'https://twitch.tv/shrood' || current === 'https://www.twitch.tv/shrood') {
+      await updateDoc(slotDoc.ref, { streamUrl: DEFAULT_STREAM_URL })
+      updated++
+    }
+  }
+  return { updated }
+}
+
 /** Fetch all slots for a date range. */
 export async function fetchSlots(from: Date, to: Date): Promise<Slot[]> {
   const q = query(

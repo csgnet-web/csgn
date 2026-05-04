@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Zap, Users, Tv, Rocket, ArrowRight, Shield, Radio } from 'lucide-react'
+import { Zap, Users, Tv, Rocket, Shield, Radio } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -14,54 +14,6 @@ const fadeUp = {
     transition: { delay: i * 0.1, duration: 0.6 },
   }),
 }
-
-const roadmap = [
-  {
-    phase: 'Phase 1',
-    title: 'Network Launch',
-    time: 'Now – Q2 2026',
-    items: [
-      'Launch 24/7 RTMP broadcast to pump.fun & website',
-      'Onboard first 10-20 vetted streamers',
-      'Establish daily social media cadence',
-      'Prove the model and build initial audience',
-    ],
-    active: true,
-  },
-  {
-    phase: 'Phase 2',
-    title: 'Games & Retention',
-    time: 'Q3 2026',
-    items: [
-      'Launch Daily Grid (Pick 5 prediction game)',
-      'Launch Squares (weekly sports score game)',
-      'Integrate game results into live broadcast',
-      'Build games engine for rapid deployment',
-    ],
-  },
-  {
-    phase: 'Phase 3',
-    title: 'Scale & Monetize',
-    time: 'Q4 2026 – Q1 2027',
-    items: [
-      'Close first brand sponsorship deals',
-      'Launch gaming tournaments with prize pools',
-      'Expand to 50+ active streamers',
-      'Automated clip-to-social pipeline',
-    ],
-  },
-  {
-    phase: 'Phase 4',
-    title: 'Expansion & IP',
-    time: '2027+',
-    items: [
-      'CSGN-branded leagues and tournaments',
-      'First live meet-up and events',
-      'Talent management operations',
-      'Merchandise line launch',
-    ],
-  },
-]
 
 const values = [
   { icon: Radio, title: 'Always On', desc: '24/7 means 24/7. The network never goes dark.' },
@@ -158,120 +110,11 @@ export default function About() {
           </div>
         </section>
 
-        {/* Team */}
-        <section className="mb-24" id="team">
-          <SectionHeading
-            badge="Team"
-            title="Lean. Focused."
-            highlight="Relentless."
-            description="CSGN is founder-led with a lean team structure designed for rapid iteration and creative control."
-          />
-
-          <div className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
-            <Card className="p-6" hover={false}>
-              <div className="flex items-start gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-accent-600 flex items-center justify-center text-xl font-bold text-white shrink-0">
-                  C
-                </div>
-                <div>
-                  <h3 className="font-bold font-display text-white">CEO</h3>
-                  <p className="text-sm text-primary-400 mb-2">Creative Director & On-Air Talent</p>
-                  <p className="text-xs text-gray-400 leading-relaxed">
-                    Business strategist, on-screen personality, and the creative vision behind CSGN.
-                    Sets the tone, controls prime time, and drives the network's culture.
-                  </p>
-                </div>
-              </div>
-            </Card>
-
-            <Card className="p-6" hover={false}>
-              <div className="flex items-start gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-primary-600 flex items-center justify-center text-xl font-bold text-white shrink-0">
-                  T
-                </div>
-                <div>
-                  <h3 className="font-bold font-display text-white">CTO</h3>
-                  <p className="text-sm text-cyan-400 mb-2">Technical Architecture & Platform Lead</p>
-                  <p className="text-xs text-gray-400 leading-relaxed">
-                    Leads broadcast infrastructure, platform development, and product engineering.
-                    Top-1000 CS:GO credentials bring competitive gaming credibility.
-                  </p>
-                </div>
-              </div>
-            </Card>
-          </div>
-        </section>
-
-        {/* Roadmap */}
-        <section className="mb-24">
-          <SectionHeading
-            badge="Roadmap"
-            title="From Launch to"
-            highlight="Powerhouse"
-            description="A clear, phased approach to building the world's first crypto sports broadcasting network."
-          />
-
-          <div className="space-y-6">
-            {roadmap.map((phase, i) => (
-              <motion.div
-                key={phase.phase}
-                custom={i}
-                initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true }}
-                variants={fadeUp}
-              >
-                <Card
-                  className={`p-6 ${phase.active ? 'border-primary-500/30 bg-primary-500/[0.03]' : ''}`}
-                  hover={false}
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-start gap-4">
-                    <div className="sm:w-48 shrink-0">
-                      <Badge variant={phase.active ? 'blue' : 'default'} pulse={phase.active}>
-                        {phase.phase}
-                      </Badge>
-                      <h3 className="text-lg font-bold font-display text-white mt-2">{phase.title}</h3>
-                      <p className="text-sm text-gray-500">{phase.time}</p>
-                    </div>
-                    <ul className="flex-1 space-y-2">
-                      {phase.items.map((item) => (
-                        <li key={item} className="flex items-start gap-2 text-sm text-gray-400">
-                          <ArrowRight className="w-3.5 h-3.5 text-primary-400 mt-0.5 shrink-0" />
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        </section>
-
-        <section className="mb-24">
-          <Card className="p-6 sm:p-8 border-primary-500/20 bg-primary-500/[0.04]" hover={false}>
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div>
-                <Badge variant="blue" className="mb-3">For Streamers</Badge>
-                <h2 className="text-2xl font-display font-bold text-white mb-2">Apply in 2 minutes</h2>
-                <p className="text-sm text-gray-300 max-w-2xl">
-                  Share this one-pager with creators to show the exact, fastest way to apply at CSGN.fun/apply.
-                </p>
-              </div>
-              <Link to="/about/streamer-quick-apply" className="shrink-0">
-                <Button variant="primary" size="md" rightIcon={<ArrowRight className="w-4 h-4" />}>
-                  Open One-Pager
-                </Button>
-              </Link>
-            </div>
-          </Card>
-        </section>
-
         {/* CTA */}
         <section id="contact" className="text-center">
           <Card className="p-10 lg:p-14" hover={false} glow>
             <h2 className="text-3xl sm:text-4xl font-bold font-display text-white mb-4">
-              Join the Network
+              Join Crypto's Entertainment Flagship
             </h2>
             <p className="text-lg text-gray-400 mb-8 max-w-xl mx-auto">
               Whether you want to watch, stream, or invest—CSGN is building the future of sports broadcasting.

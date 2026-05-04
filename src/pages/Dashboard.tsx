@@ -10,7 +10,6 @@ import { useAuth, type UserNotification } from '@/contexts/AuthContext'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { queueStore } from '@/lib/queue'
 import { fetchSlots, type Slot } from '@/lib/slots'
-import { startFeeTracker } from '@/lib/dexscreener'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -61,23 +60,10 @@ export default function Dashboard() {
   }, [user?.uid])
 
   useEffect(() => {
-    if (!liveAssignedSlot) {
-      setLiveEstimateSOL(0)
-      setLiveVolumeSOL(0)
-      return
-    }
-    const stop = startFeeTracker({
-      slotId: liveAssignedSlot.id,
-      slotStartTime: liveAssignedSlot.startTime,
-      slotEndTime: liveAssignedSlot.endTime,
-      onUpdate: (feeSOL, volumeSOL, feeUSD) => {
-        setLiveEstimateSOL(feeSOL)
-        setLiveVolumeSOL(volumeSOL)
-        setLiveEstimateUSD(feeUSD)
-      },
-    })
-    return stop
-  }, [liveAssignedSlot?.id])
+    setLiveEstimateSOL(liveAssignedSlot?.creatorFees?.feeOwedSOL || 0)
+    setLiveVolumeSOL(liveAssignedSlot?.creatorFees?.tradingVolumeSOL || 0)
+    setLiveEstimateUSD(liveAssignedSlot?.creatorFees?.feeOwedUSD || 0)
+  }, [liveAssignedSlot?.id, liveAssignedSlot?.creatorFees?.updatedAt])
 
 
   const handleConnectAndSave = async () => {
@@ -231,9 +217,14 @@ Use your email/username and password to access your account.
             >
               <Twitch className="w-4 h-4" /> Connect Twitch
             </button>
-            <Button variant="secondary" size="sm" onClick={() => void handleConnectAndSave()} isLoading={isConnecting || savingWallet}>
-              {profile?.walletAddress ? 'Update Phantom Connection' : 'Connect Phantom Wallet'}
-            </Button>
+            <button
+              type="button"
+              className="w-full h-10 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 bg-white/5 border-white/10 text-white hover:bg-white/10"
+              onClick={() => void handleConnectAndSave()}
+              disabled={isConnecting || savingWallet}
+            >
+              <Wallet className="w-4 h-4" /> {isConnecting || savingWallet ? 'Connecting...' : (profile?.walletAddress ? 'Update Phantom Connection' : 'Connect Phantom Wallet')}
+            </button>
             {savedWallet && <p className="text-xs text-gray-500 font-mono flex items-center gap-1"><Wallet className="w-3 h-3" /> Saved: {savedWallet.slice(0, 8)}...{savedWallet.slice(-6)}</p>}
           </div>
 
