@@ -5,9 +5,9 @@ import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { claimOpenSlot, formatESTRange, subscribeToSlots, type Slot } from '@/lib/slots'
 import { useAuth } from '@/contexts/AuthContext'
-import { detectStream as _detectStream, buildTwitchSrc, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
-const DEFAULT_TWITCH_STREAM = 'https://www.twitch.tv/csgnet'
+ 
 const FIXED_CHAT_CHANNEL = 'csgnet'
+const RESTREAM_PLAYER_SRC = 'https://player.restream.io/?token=e533c1e2dff542bf9ed97ecba6b08597'
 
 const bannerItems = [
   'STARTING 5: IMMINENT',
@@ -15,11 +15,6 @@ const bannerItems = [
   "CSGN: Crypto's Entertainment Flagship",
   'Connect Your Twitch and Go Live on CSGN',
 ] as const
-
-/* ── Helpers to parse stream URLs (imported from @/lib/player) ── */
-// parseTwitchChannel, parseYouTubeId, detectStream, buildYouTubeSrc, buildTwitchSrc
-
-function detectStream(url: string) { return _detectStream(url) }
 
 function toMillis(value: unknown): number {
   if (typeof value === 'string' || value instanceof Date || typeof value === 'number') {
@@ -137,109 +132,19 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
   )
 }
 
-/* ── YouTube sub-component: autoplays then unmutes via IFrame API ── */
-function YouTubePlayer({ videoId }: { videoId: string }) {
-  const iframeRef = useRef<HTMLIFrameElement>(null)
-
-  useEffect(() => {
-    const el = iframeRef.current
-    if (!el) return
-
-    const sendCmd = (func: string, args: unknown[] | string = '') =>
-      el.contentWindow?.postMessage(
-        JSON.stringify({ event: 'command', func, args }), '*'
-      )
-
-    const unmute = () => {
-      sendCmd('unMute')
-      sendCmd('setVolume', [100])
-    }
-
-    // When the iframe HTML loads, subscribe to YouTube player events.
-    // YouTube will then reply with "onReady" once its JS player is initialised.
-    const subscribe = () =>
-      el.contentWindow?.postMessage(
-        JSON.stringify({ event: 'listening', id: 1 }), '*'
-      )
-
-    const onMessage = (e: MessageEvent) => {
-      if (e.source !== el.contentWindow) return
-      try {
-        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data
-        // onReady: player is initialised — unmute immediately
-        if (data.event === 'onReady') unmute()
-        // onStateChange 1 = PLAYING — belt-and-suspenders unmute
-        if (data.event === 'onStateChange' && data.info === 1) unmute()
-      } catch { /* non-JSON messages from other sources */ }
-    }
-
-    // Fallback: retry unmute 1 s and 3 s after load in case onReady is missed
-    let t1: ReturnType<typeof setTimeout>
-    let t2: ReturnType<typeof setTimeout>
-    const onLoad = () => {
-      subscribe()
-      t1 = setTimeout(unmute, 1000)
-      t2 = setTimeout(unmute, 3000)
-    }
-
-    window.addEventListener('message', onMessage)
-    el.addEventListener('load', onLoad)
-    return () => {
-      window.removeEventListener('message', onMessage)
-      el.removeEventListener('load', onLoad)
-      clearTimeout(t1)
-      clearTimeout(t2)
-    }
-  }, [videoId])
-
+function CSGNPlayer() {
   return (
-    <iframe
-      ref={iframeRef}
-      src={buildYouTubeSrc(videoId)}
-      className="w-full h-full"
-      allow={PLAYER_ALLOW}
-      allowFullScreen
-      title="Live Stream"
-    />
+    <div style={{ padding: '56.25% 0 0 0', position: 'relative', width: '100%', height: '100%' }}>
+      <iframe
+        src={RESTREAM_PLAYER_SRC}
+        allow="autoplay; fullscreen"
+        allowFullScreen
+        frameBorder="0"
+        title="CSGN Live Stream"
+        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+      />
+    </div>
   )
-}
-
-/* ── Twitch sub-component: straightforward iframe embed ── */
-function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string }) {
-  return (
-    <iframe
-      src={buildTwitchSrc(channel, hostname)}
-      className="w-full h-full"
-      allow={PLAYER_ALLOW}
-      allowFullScreen
-      title="Live Stream"
-    />
-  )
-}
-
-/* ── CSGN Player: renders Twitch or YouTube, or NO STREAM ACTIVE ── */
-function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: string }) {
-  if (!streamUrl) {
-    return (
-      <div className="w-full h-full flex flex-col items-center justify-center bg-[#050507] gap-4">
-        <svg viewBox="0 0 120 40" className="h-8 w-auto fill-white/20" xmlns="http://www.w3.org/2000/svg">
-          <text x="0" y="32" fontFamily="system-ui, sans-serif" fontWeight="900" fontSize="38" letterSpacing="2">CSGN</text>
-        </svg>
-        <p className="text-gray-500 font-mono text-sm tracking-widest uppercase">No Stream Active</p>
-      </div>
-    )
-  }
-
-  const stream = detectStream(streamUrl)
-
-  if (stream?.type === 'youtube') {
-    return <YouTubePlayer videoId={stream.id} />
-  }
-
-  // Twitch: use parsed channel or treat raw value as channel name
-  const fallbackChannel = detectStream(DEFAULT_TWITCH_STREAM)?.id || FIXED_CHAT_CHANNEL
-  const channel = stream?.id || fallbackChannel
-  return <TwitchPlayer channel={channel} hostname={hostname} />
 }
 
 export default function Watch() {
@@ -358,7 +263,6 @@ export default function Watch() {
   // The slot's raw Twitch/YouTube URL is intentionally NOT used here; that feed
   // is consumed by /player (OBS capture) and then re-broadcast to this page via
   // the CSGN output stream the admin sets in the override.
-  const streamUrl = manualOverride?.url || currentSlot?.streamUrl || DEFAULT_TWITCH_STREAM
   const streamerName = manualOverride?.streamerName || currentSlot?.assignedName || ''
   const streamTitle = manualOverride?.title || currentSlot?.streamTitle || currentSlot?.description || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
@@ -463,7 +367,7 @@ export default function Watch() {
           <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)] max-w-[1280px] mx-auto">
             <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(255,0,90,0.28),transparent_42%),radial-gradient(circle_at_85%_10%,rgba(80,0,255,0.26),transparent_35%)]" />
             <div className="w-full relative" style={{ aspectRatio: '16/9' }}>
-              <CSGNPlayer streamUrl={streamUrl} hostname={hostname} />
+              <CSGNPlayer />
               <CSGNWipeOverlay visible={showWipe} />
             </div>
 

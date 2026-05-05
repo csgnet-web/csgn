@@ -75,10 +75,10 @@ export function detectStream(url: string): DetectedStream | null {
  *
  * The iframe MUST also carry allow="autoplay" for browsers to honour these.
  */
-export function buildYouTubeSrc(videoId: string): string {
+export function buildYouTubeSrc(videoId: string, muted = true): string {
   const params = new URLSearchParams({
     autoplay: '1',
-    mute: '1',        // start muted → guaranteed autoplay; JS unmutes on load
+    mute: muted ? '1' : '0',
     enablejsapi: '1', // allows postMessage commands (unMute / setVolume)
     rel: '0',
     modestbranding: '1',
@@ -99,12 +99,12 @@ export function buildYouTubeSrc(videoId: string): string {
  *
  * The iframe MUST also carry allow="autoplay" for browsers to honour these.
  */
-export function buildTwitchSrc(channel: string, hostname: string): string {
+export function buildTwitchSrc(channel: string, hostname: string, muted = false): string {
   const params = new URLSearchParams({
     channel,
     parent: hostname,
     autoplay: 'true',
-    muted: 'false',
+    muted: muted ? 'true' : 'false',
   })
   return `https://player.twitch.tv/?${params.toString()}`
 }
