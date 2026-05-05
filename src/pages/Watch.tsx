@@ -138,7 +138,7 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
 }
 
 /* ── YouTube sub-component: autoplays then unmutes via IFrame API ── */
-function YouTubePlayer({ videoId }: { videoId: string }) {
+function YouTubePlayer({ videoId, muted }: { videoId: string; muted: boolean }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
   useEffect(() => {
@@ -195,7 +195,7 @@ function YouTubePlayer({ videoId }: { videoId: string }) {
   return (
     <iframe
       ref={iframeRef}
-      src={buildYouTubeSrc(videoId)}
+      src={buildYouTubeSrc(videoId, muted)}
       className="w-full h-full"
       allow={PLAYER_ALLOW}
       allowFullScreen
@@ -205,10 +205,10 @@ function YouTubePlayer({ videoId }: { videoId: string }) {
 }
 
 /* ── Twitch sub-component: straightforward iframe embed ── */
-function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string }) {
+function TwitchPlayer({ channel, hostname, muted }: { channel: string; hostname: string; muted: boolean }) {
   return (
     <iframe
-      src={buildTwitchSrc(channel, hostname)}
+      src={buildTwitchSrc(channel, hostname, muted)}
       className="w-full h-full"
       allow={PLAYER_ALLOW}
       allowFullScreen
@@ -219,6 +219,7 @@ function TwitchPlayer({ channel, hostname }: { channel: string; hostname: string
 
 /* ── CSGN Player: renders Twitch or YouTube, or NO STREAM ACTIVE ── */
 function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: string }) {
+  const [muted, setMuted] = useState(true)
   if (!streamUrl) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center bg-[#050507] gap-4">
@@ -232,14 +233,23 @@ function CSGNPlayer({ streamUrl, hostname }: { streamUrl: string; hostname: stri
 
   const stream = detectStream(streamUrl)
 
-  if (stream?.type === 'youtube') {
-    return <YouTubePlayer videoId={stream.id} />
-  }
+  const playerNode = stream?.type === 'youtube'
+    ? <YouTubePlayer videoId={stream.id} muted={muted} />
+    : <TwitchPlayer channel={stream?.id || detectStream(DEFAULT_TWITCH_STREAM)?.id || FIXED_CHAT_CHANNEL} hostname={hostname} muted={muted} />
 
-  // Twitch: use parsed channel or treat raw value as channel name
-  const fallbackChannel = detectStream(DEFAULT_TWITCH_STREAM)?.id || FIXED_CHAT_CHANNEL
-  const channel = stream?.id || fallbackChannel
-  return <TwitchPlayer channel={channel} hostname={hostname} />
+  return (
+    <>
+      {playerNode}
+      {muted && (
+        <button
+          onClick={() => setMuted(false)}
+          className="absolute left-3 bottom-3 z-20 rounded-md border border-white/40 bg-black/75 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white hover:bg-black/85"
+        >
+          🔊 Tap to Unmute
+        </button>
+      )}
+    </>
+  )
 }
 
 export default function Watch() {

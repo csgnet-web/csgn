@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { Radio, Info, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Radio, Info } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { subscribeToSlots, type Slot } from '@/lib/slots'
@@ -62,21 +62,24 @@ function etMiddayFromOffset(offset: number): Date {
   }).formatToParts(now)
 
   const get = (type: string) => Number(nyParts.find((p) => p.type === type)?.value || '0')
-  const base = new Date(Date.UTC(get('year'), get('month') - 1, get('day'), 12, 0, 0, 0))
+  const hourET = Number(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hour: 'numeric',
+    hour12: false,
+  }).format(now))
+  const dayOffset = hourET < 1 ? -1 : 0
+  const base = new Date(Date.UTC(get('year'), get('month') - 1, get('day') + dayOffset, 12, 0, 0, 0))
   base.setUTCDate(base.getUTCDate() + offset)
   return base
 }
 
 export default function Schedule() {
   useAuth()
-  const [selectedDay, setSelectedDay] = useState(0)
-  const [weekOffset, setWeekOffset] = useState(0)
   const [allSlots, setAllSlots] = useState<Slot[]>([])
-  const [loading, setLoading] = useState(true)
   const days = useMemo(() => {
     const labels: string[] = []
     for (let i = 0; i < WEEK_SPAN; i++) {
-      const absoluteOffset = weekOffset * WEEK_SPAN + i
+      const absoluteOffset = i
       const d = etMiddayFromOffset(absoluteOffset)
       if (absoluteOffset === 0) {
         labels.push('Today')
@@ -96,10 +99,9 @@ export default function Schedule() {
       )
     }
     return labels
-  }, [weekOffset])
+  }, [])
 
   useEffect(() => {
-    setLoading(true)
     const fromDate = etMiddayFromOffset(-1)
     const toDate = etMiddayFromOffset(8)
     const unsub = subscribeToSlots(fromDate, toDate, (slots) => {
@@ -107,74 +109,23 @@ export default function Schedule() {
         .filter((slot) => toMillis(slot.startTime) > 0 && toMillis(slot.endTime) > 0)
         .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
       setAllSlots(normalized)
-      setLoading(false)
     })
     return unsub
   }, [])
 
-
-  useEffect(() => {
-    if (loading || selectedDay !== 0) return
-    const todayKey = etDayKey(etMiddayFromOffset(0))
-    const hasTodaySlots = allSlots.some((slot) => etDayKey(toDate(slot.startTime)) === todayKey)
-    if (hasTodaySlots) return
-
-    const firstDayWithSlots = days.findIndex((_, idx) => {
-      const dayKey = etDayKey(etMiddayFromOffset(idx))
-      return allSlots.some((slot) => etDayKey(toDate(slot.startTime)) === dayKey)
-    })
-    if (firstDayWithSlots > 0) setSelectedDay(firstDayWithSlots)
-  }, [allSlots, days, loading, selectedDay])
-
   const typeLabel = (slot: Slot) => (slot.status === 'open' && !slot.assignedName ? 'Empty Slot' : (slot.assignedName || 'CEO Creator'))
 
   const slotsByDay = useMemo(() => days.map((_, i) => {
-  const key = etDayKey(etMiddayFromOffset(weekOffset * WEEK_SPAN + i))
+  const key = etDayKey(etMiddayFromOffset(i))
   return allSlots.filter((slot) => etDayKey(toDate(slot.startTime)) === key).sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
-}), [allSlots, days, weekOffset])
+}), [allSlots, days])
 
   return (
     <div className="min-h-screen pt-20 lg:pt-24 pb-24">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2">
-          <button
-            onClick={() => {
-              setWeekOffset((prev) => prev - 1)
-              setSelectedDay(0)
-            }}
-            className="px-3 py-2 text-gray-300 hover:text-white border border-white/10 rounded-xl"
-            aria-label="Previous week"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          {days.map((day, i) => (
-            <button
-              key={day}
-              onClick={() => setSelectedDay(i)}
-              className={`px-4 py-2 text-sm font-medium rounded-xl whitespace-nowrap transition-all cursor-pointer ${
-                selectedDay === i
-                  ? 'bg-primary-500/20 text-primary-400 border border-primary-500/30'
-                  : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
-              }`}
-            >
-              {day}
-            </button>
-          ))}
-          <button
-            onClick={() => {
-              setWeekOffset((prev) => prev + 1)
-              setSelectedDay(0)
-            }}
-            className="px-3 py-2 text-gray-300 hover:text-white border border-white/10 rounded-xl"
-            aria-label="Next week"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-
         <Card hover={false} className="overflow-hidden">
           <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
-            <h3 className="font-semibold font-display text-white flex items-center gap-2"><Radio className="w-4 h-4 text-primary-400" /> TV Guide Schedule</h3>
+            <h3 className="font-semibold font-display text-white flex items-center gap-2"><Radio className="w-4 h-4 text-primary-400" /> Schedule</h3>
             <Badge variant="blue">All times ET</Badge>
           </div>
           <div className="overflow-x-auto">
