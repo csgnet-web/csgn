@@ -133,12 +133,19 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
 }
 
 function CSGNPlayer() {
+  const src = useMemo(() => {
+    const url = new URL(RESTREAM_PLAYER_SRC)
+    url.searchParams.set('autoplay', 'true')
+    url.searchParams.set('muted', 'false')
+    url.searchParams.set('controls', 'false')
+    return url.toString()
+  }, [])
+
   return (
     <div style={{ padding: '56.25% 0 0 0', position: 'relative', width: '100%', height: '100%' }}>
       <iframe
-        src={RESTREAM_PLAYER_SRC}
-        allow="autoplay; fullscreen"
-        allowFullScreen
+        src={src}
+        allow="autoplay"
         frameBorder="0"
         title="CSGN Live Stream"
         style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
