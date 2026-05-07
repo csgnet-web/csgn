@@ -133,16 +133,36 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
 }
 
 function CSGNPlayer() {
+  const [hasUnmuted, setHasUnmuted] = useState(false)
+
+  const src = useMemo(() => {
+    const url = new URL(RESTREAM_PLAYER_SRC)
+    url.searchParams.set('autoplay', 'true')
+    url.searchParams.set('controls', 'false')
+    url.searchParams.set('muted', hasUnmuted ? 'false' : 'true')
+    return url.toString()
+  }, [hasUnmuted])
+
   return (
     <div style={{ padding: '56.25% 0 0 0', position: 'relative', width: '100%', height: '100%' }}>
       <iframe
-        src={RESTREAM_PLAYER_SRC}
-        allow="autoplay; fullscreen"
-        allowFullScreen
+        key={src}
+        src={src}
+        allow="autoplay"
         frameBorder="0"
         title="CSGN Live Stream"
         style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
       />
+
+      {!hasUnmuted && (
+        <button
+          type="button"
+          onClick={() => setHasUnmuted(true)}
+          className="absolute left-1/2 top-1/2 z-30 -translate-x-1/2 -translate-y-1/2 bg-black/85 border border-white/20 px-6 py-3 text-white font-semibold tracking-[0.2em] uppercase rounded-md hover:bg-black/95 transition-colors"
+        >
+          Tap to Unmute
+        </button>
+      )}
     </div>
   )
 }
