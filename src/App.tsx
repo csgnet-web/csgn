@@ -5,7 +5,6 @@ import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
 import { CSGNMark } from '@/components/ui/Logo'
 import { lazy, Suspense } from 'react'
-import { useAuth } from '@/contexts/AuthContext'
 
 const Watch = lazy(() => import('@/pages/Watch'))
 const Schedule = lazy(() => import('@/pages/Schedule'))
@@ -29,7 +28,6 @@ function Loading() {
 }
 
 function AppContent() {
-  const { user } = useAuth()
   const location = useLocation()
   const isPlayerPage = location.pathname === '/player'
   const hideFooter = location.pathname === '/watch' || location.pathname === '/' || isPlayerPage
@@ -49,7 +47,7 @@ function AppContent() {
             <Route path="/about/streamer-quick-apply" element={<StreamerQuickApply />} />
             <Route path="/account" element={<Dashboard />} />
             <Route path="/dashboard" element={<Navigate to="/account" replace />} />
-            <Route path="/queue" element={user ? <Queue /> : <Navigate to="/watch" replace />} />
+            <Route path="/queue" element={<Queue />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/player" element={<Player />} />
             <Route path="/terms" element={<Terms />} />

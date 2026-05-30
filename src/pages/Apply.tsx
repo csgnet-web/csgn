@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import { Send, User, CheckCircle, AlertCircle, Mic, Gamepad2, Tv, FileText } from 'lucide-react'
 import { collection, addDoc, serverTimestamp, doc, updateDoc, getDocs, query, where, limit } from 'firebase/firestore'
 import { db } from '@/config/firebase'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth } from '@/contexts/useAuth'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -56,7 +56,7 @@ export default function Apply() {
         setCheckingExisting(false)
       }
     })()
-  }, [user?.uid, submitted])
+  }, [user, submitted])
 
   if (!user) return <Navigate to="/account" replace />
 

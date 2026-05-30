@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Link } from 'react-router-dom'
 import { Clock3, Crown, ChevronLeft, ChevronRight, Radio } from 'lucide-react'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth } from '@/contexts/useAuth'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { claimOpenSlot, fetchSlots, type Slot } from '@/lib/slots'
+import { fetchSlots, type Slot } from '@/lib/slots'
+import { api } from '@/lib/api'
 
 const WEEK_SPAN = 7
 
@@ -50,7 +50,6 @@ export default function Queue() {
   const [claimingId, setClaimingId] = useState<string | null>(null)
   const [claimError, setClaimError] = useState('')
 
-  const twitchHandle = profile?.twitchUsername || profile?.socialLinks?.twitch || ''
 
   const loadSlots = useCallback(async () => {
     const now = new Date()
@@ -64,27 +63,37 @@ export default function Queue() {
     setLoading(false)
   }, [])
 
-  const handleClaim = async (slot: Slot) => {
-    if (!user || !profile || !twitchHandle) return
+  const handleClaim = useCallback(async (slot: Slot) => {
+    if (!user || !profile) {
+      localStorage.setItem('pendingClaimSlotId', slot.id)
+      window.dispatchEvent(new Event('csgn:openRegister'))
+      return
+    }
     setClaimingId(slot.id)
     setClaimError('')
     try {
-      await claimOpenSlot(slot.id, {
-        uid: user.uid,
-        displayName: profile.displayName || twitchHandle,
-        twitchUsername: twitchHandle,
-      })
+      await api.claimSlot(slot.id)
       await loadSlots()
     } catch (err) {
       setClaimError(err instanceof Error ? err.message : 'Could not claim slot.')
     } finally {
       setClaimingId(null)
     }
-  }
+  }, [loadSlots, profile, user])
 
   useEffect(() => {
     loadSlots()
   }, [loadSlots])
+
+  useEffect(() => {
+    if (!user || !profile) return
+    const pending = localStorage.getItem('pendingClaimSlotId')
+    if (!pending || claimingId) return
+    const slot = slots.find((item) => item.id === pending)
+    if (!slot) return
+    localStorage.removeItem('pendingClaimSlotId')
+    void handleClaim(slot)
+  }, [user, profile, slots, claimingId, handleClaim])
 
   const dayLabels = useMemo(() => {
     const labels: string[] = []
@@ -158,16 +167,12 @@ export default function Queue() {
         <Card hover={false} className="p-5 bg-white/5 border-red-500/20">
           <h1 className="text-3xl font-display font-bold text-white">Queue</h1>
           <p className="text-sm text-gray-400 mt-1">
-            All slots are currently CEO Creator type. Bidding is visible but temporarily disabled.
+            Open slots can be claimed by verified CSGN accounts. Bidding is not part of v1.
           </p>
           <p className="text-xs text-amber-300 mt-2">
-            {user ? 'Bidding: Coming Soon.' : 'Sign in for account features. Bidding: Coming Soon.'}
+            {user ? 'Verified accounts can claim up to two future/live slots.' : 'Take Slot will open registration and resume your claim after signup.'}
           </p>
-          {profile?.role === 'streamer' ? (
-            <p className="text-xs text-cyan-300 mt-1">Streamer account detected: you can apply/request slots here as this feature rolls out.</p>
-          ) : (
-            <p className="text-xs text-gray-400 mt-1">Want to stream? <Link to="/apply" className="text-primary-400 hover:text-primary-300">Apply for streamer access</Link>.</p>
-          )}
+          <p className="text-xs text-gray-400 mt-1">Registration requires Firebase email/password, verified Phantom, and verified Twitch.</p>
         </Card>
 
         {loading ? (
@@ -202,7 +207,7 @@ export default function Queue() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
-                          {isOpen && !isPast && user && twitchHandle && (
+                          {isOpen && !isPast && (
                             <button
                               type="button"
                               onClick={() => void handleClaim(slot)}

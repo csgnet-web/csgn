@@ -6,8 +6,8 @@ import {
 } from 'lucide-react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
-import { useAuth, type UserNotification } from '@/contexts/AuthContext'
-import { usePhantomWallet } from '@/hooks/usePhantomWallet'
+import { useAuth } from '@/contexts/useAuth'
+import type { UserNotification } from '@/contexts/AuthContext'
 import { queueStore } from '@/lib/queue'
 import { fetchSlots, type Slot } from '@/lib/slots'
 import { Card } from '@/components/ui/Card'
@@ -16,9 +16,7 @@ import { Badge } from '@/components/ui/Badge'
 
 export default function Dashboard() {
   const { user, profile, signIn, resendVerification, refreshProfile } = useAuth()
-  const { walletAddress, connect, isConnecting, error } = usePhantomWallet()
   const [resending, setResending] = useState(false)
-  const [savingWallet, setSavingWallet] = useState(false)
   const [signInIdentifier, setSignInIdentifier] = useState('')
   const [signInPassword, setSignInPassword] = useState('')
   const [signInLoading, setSignInLoading] = useState(false)
@@ -57,30 +55,13 @@ export default function Dashboard() {
         setSlotHistory([])
       }
     })()
-  }, [user?.uid])
+  }, [user])
 
   useEffect(() => {
     setLiveEstimateSOL(liveAssignedSlot?.creatorFees?.feeOwedSOL || 0)
     setLiveVolumeSOL(liveAssignedSlot?.creatorFees?.tradingVolumeSOL || 0)
     setLiveEstimateUSD(liveAssignedSlot?.creatorFees?.feeOwedUSD || 0)
-  }, [liveAssignedSlot?.id, liveAssignedSlot?.creatorFees?.updatedAt])
-
-
-  const handleConnectAndSave = async () => {
-    const connected = await connect()
-    if (!user) return
-    const toSave = connected || walletAddress
-    if (!toSave) return
-    setSavingWallet(true)
-    try {
-      await updateDoc(doc(db, 'users', user.uid), { walletAddress: toSave })
-      await refreshProfile()
-    } catch (err) {
-      console.warn('Failed to save wallet address:', err)
-    }
-    setSavingWallet(false)
-  }
-
+  }, [liveAssignedSlot])
 
 
   const handleDismissNotification = async (notifId: string) => {
@@ -154,7 +135,7 @@ Use your email/username and password to access your account.
                   <AlertTriangle className="w-4 h-4 shrink-0" /> {signInError}
                 </div>
               )}
-              <div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="text" value={signInIdentifier} onChange={(e) => setSignInIdentifier(e.target.value)} className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Email or username" required disabled={signInLoading} /></div>
+              <div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="text" value={signInIdentifier} onChange={(e) => setSignInIdentifier(e.target.value)} className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Email" required disabled={signInLoading} /></div>
               <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="password" value={signInPassword} onChange={(e) => setSignInPassword(e.target.value)} className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Password" required minLength={6} disabled={signInLoading} /></div>
               <Button variant="primary" size="md" className="w-full" isLoading={signInLoading}>Sign In</Button>
             </form>
@@ -164,7 +145,8 @@ Use your email/username and password to access your account.
     )
   }
 
-  const savedWallet = profile?.walletAddress
+  const savedWallet = profile?.phantom?.walletAddress || profile?.walletAddress
+  const twitchDisplay = profile?.twitch?.displayName || profile?.twitch?.username || profile?.twitchUsername
 
   return (
     <div className="min-h-screen pt-24 lg:pt-32 pb-24">
@@ -185,7 +167,7 @@ Use your email/username and password to access your account.
                 isLoading={resending}
                 onClick={async () => {
                   setResending(true)
-                  try { await resendVerification() } catch {}
+                  try { await resendVerification() } catch (err) { console.warn('Failed to resend verification email:', err) }
                   setResending(false)
                 }}
               >
@@ -201,7 +183,7 @@ Use your email/username and password to access your account.
             <div>
               <h1 className="text-3xl font-display font-bold text-white">Account Hub</h1>
               <div className="mt-2 space-y-1 text-sm text-gray-300">
-                <p className="flex items-center gap-2"><User className="w-4 h-4 text-red-400" /> {profile?.displayName || 'Viewer'}</p>
+                <p className="flex items-center gap-2"><User className="w-4 h-4 text-red-400" /> {profile?.username || profile?.displayName || 'User'}</p>
                 <p className="flex items-center gap-2"><Mail className="w-4 h-4 text-red-400" /> {profile?.email}</p>
                 <p className="flex items-center gap-2"><Crown className="w-4 h-4 text-cyan-400" /> XP {(profile?.xp ?? 0).toLocaleString()}</p>
               </div>
@@ -210,25 +192,14 @@ Use your email/username and password to access your account.
           </div>
 
           <div className="mt-4 space-y-3">
-            <button
-              type="button"
-              className="w-full h-10 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 bg-white/5 border-white/10 text-white hover:bg-white/10"
-              onClick={() => {}}
-            >
-              <Twitch className="w-4 h-4" /> Connect Twitch
-            </button>
-            <button
-              type="button"
-              className="w-full h-10 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 bg-white/5 border-white/10 text-white hover:bg-white/10"
-              onClick={() => void handleConnectAndSave()}
-              disabled={isConnecting || savingWallet}
-            >
-              <Wallet className="w-4 h-4" /> {isConnecting || savingWallet ? 'Connecting...' : (profile?.walletAddress ? 'Update Phantom Connection' : 'Connect Phantom Wallet')}
-            </button>
-            {savedWallet && <p className="text-xs text-gray-500 font-mono flex items-center gap-1"><Wallet className="w-3 h-3" /> Saved: {savedWallet.slice(0, 8)}...{savedWallet.slice(-6)}</p>}
+            <div className="w-full rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-200 flex items-center gap-2">
+              <Twitch className="w-4 h-4" /> Twitch verified: {twitchDisplay || 'Connected'}
+            </div>
+            <div className="w-full rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-200 flex items-center gap-2">
+              <Wallet className="w-4 h-4" /> Phantom verified
+            </div>
+            {savedWallet && <p className="text-xs text-gray-500 font-mono flex items-center gap-1"><Wallet className="w-3 h-3" /> Verified: {savedWallet.slice(0, 8)}...{savedWallet.slice(-6)}</p>}
           </div>
-
-          {error && <p className="text-xs text-red-300 mt-2">{error}</p>}
         </Card>
 
         <Card hover={false} className="p-5">
