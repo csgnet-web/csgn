@@ -1,56 +1,59 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
     function isSignedIn() {
       return request.auth != null;
     }
 
     function isAdmin() {
       return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // ── slots ────────────────────────────────────────────────────────────────
-    // Public read so /schedule and /watch work for unauthenticated visitors.
-    // Authenticated users can update (place bids, submit slot requests).
-    // Only admins can create or delete slots.
     match /slots/{slotId} {
-      allow read:             if true;
-      allow update:           if isSignedIn();
-      allow create, delete:   if isAdmin();
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
-    // ── config ───────────────────────────────────────────────────────────────
-    // Public read so /watch can show the live-stream override for all visitors.
-    // Only admins can write config documents.
+    match /public/currentBroadcast {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     match /config/{docId} {
-      allow read:   if true;
-      allow write:  if isAdmin();
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
-    // ── users ─────────────────────────────────────────────────────────────────
-    // Each user can read and write their own profile. Admins can read all.
     match /users/{userId} {
-      allow read:   if request.auth != null && (request.auth.uid == userId || isAdmin());
-      allow write:  if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
-    // ── applications ──────────────────────────────────────────────────────────
-    // Authenticated users can submit applications.
-    // Admins can review/update all applications.
+    match /uniqueEmails/{docId} { allow read, write: if isAdmin(); }
+    match /uniqueUsernames/{docId} { allow read, write: if isAdmin(); }
+    match /uniquePhantomWallets/{docId} { allow read, write: if isAdmin(); }
+    match /uniqueTwitchUsers/{docId} { allow read, write: if isAdmin(); }
+    match /oauthStates/{docId} { allow read, write: if isAdmin(); }
+    match /phantomChallenges/{docId} { allow read, write: if isAdmin(); }
+    match /auditLogs/{docId} { allow read, write: if isAdmin(); }
+
     match /applications/{appId} {
       allow create: if isSignedIn();
-      allow read, update: if isAdmin();
+      allow read, update, delete: if isAdmin();
     }
 
-    // ── auth_events ───────────────────────────────────────────────────────────
-    // Audit log for sign-up / sign-in attempts. Anyone may write (so failures
-    // before auth completes are still captured); only admins can read.
     match /auth_events/{eventId} {
       allow create: if true;
-      allow read:   if isAdmin();
+      allow read: if isAdmin();
       allow update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

@@ -5,12 +5,12 @@ import {
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   sendEmailVerification,
-  updateProfile,
   type User,
 } from 'firebase/auth'
-import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore'
+import { doc, getDoc } from 'firebase/firestore'
 import { auth, db } from '@/config/firebase'
 import { logAuthEvent } from '@/lib/authEvents'
+import { api } from '@/lib/api'
 
 export interface UserNotification {
   id: string
@@ -28,13 +28,18 @@ export interface UserNotification {
 export interface UserProfile {
   uid: string
   email: string
+  emailLower?: string
   authEmail?: string
-  displayName: string
-  username?: string
+  displayName?: string
+  username: string
   usernameLower?: string
-  photoURL: string | null
-  role: 'viewer' | 'streamer' | 'admin'
+  photoURL?: string | null
+  role: 'user' | 'viewer' | 'streamer' | 'admin'
+  status?: 'active' | 'disabled'
   createdAt: unknown
+  updatedAt?: unknown
+  phantom?: { verified: boolean; walletAddress: string; verifiedAt: unknown }
+  twitch?: { verified: boolean; twitchUserId: string; username: string; displayName: string; profileImageUrl: string; verifiedAt: unknown }
   bio?: string
   walletAddress?: string
   twitchUsername?: string
@@ -47,13 +52,8 @@ interface AuthContextType {
   user: User | null
   profile: UserProfile | null
   loading: boolean
-  signIn: (identifier: string, password: string) => Promise<void>
-  signUp: (
-    email: string,
-    password: string,
-    displayName: string,
-    options?: { photoURL?: string | null; twitchUsername?: string; walletAddress?: string },
-  ) => Promise<void>
+  signIn: (email: string, password: string) => Promise<void>
+  signUp: (email: string, password: string, username: string, proofs: { phantomProofToken: string; twitchProofToken: string }) => Promise<void>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
   resendVerification: () => Promise<void>
@@ -69,40 +69,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchProfile = async (uid: string) => {
     const docRef = doc(db, 'users', uid)
     const docSnap = await getDoc(docRef)
-    if (docSnap.exists()) {
-      setProfile(docSnap.data() as UserProfile)
-    }
-    return docSnap.exists() ? (docSnap.data() as UserProfile) : null
-  }
-
-  const createProfile = async (
-    user: User,
-    displayName: string,
-    overrides?: Partial<UserProfile>,
-  ) => {
-    const profileData: UserProfile = {
-      uid: user.uid,
-      email: user.email || '',
-      authEmail: user.email || '',
-      displayName,
-      photoURL: user.photoURL,
-      role: 'viewer',
-      createdAt: serverTimestamp(),
-      notifications: [],
-      ...overrides,
-    }
-    await setDoc(doc(db, 'users', user.uid), profileData)
-    setProfile(profileData)
+    const data = docSnap.exists() ? (docSnap.data() as UserProfile) : null
+    setProfile(data)
+    return data
   }
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setUser(user)
-      if (user) {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUser(firebaseUser)
+      if (firebaseUser) {
         try {
-          await fetchProfile(user.uid)
+          await fetchProfile(firebaseUser.uid)
         } catch (err) {
           console.warn('Failed to fetch user profile from Firestore:', err)
+          setProfile(null)
         }
       } else {
         setProfile(null)
@@ -112,40 +92,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe
   }, [])
 
-  const resolveSignInEmail = async (identifier: string) => {
-    if (identifier.includes('@')) return identifier
-
-    const username = identifier.trim().toLowerCase()
-    const usersQ = query(collection(db, 'users'), where('usernameLower', '==', username), limit(1))
-    const snap = await getDocs(usersQ)
-    const profile = snap.docs[0]?.data() as UserProfile | undefined
-    const authEmail = profile?.authEmail || profile?.email
-    if (!authEmail) {
-      const err = new Error('Invalid username or password') as Error & { code?: string }
-      err.code = 'auth/user-not-found'
-      throw err
-    }
-    return authEmail
-  }
-
-  const signIn = async (identifier: string, password: string) => {
-    void logAuthEvent('signin-start', { meta: { identifierKind: identifier.includes('@') ? 'email' : 'username' } })
+  const signIn = async (email: string, password: string) => {
+    void logAuthEvent('signin-start', { meta: { identifierKind: 'email' } })
     try {
-      const email = await resolveSignInEmail(identifier)
       const { user } = await signInWithEmailAndPassword(auth, email, password)
-      try {
-        await fetchProfile(user.uid)
-      } catch (err) {
-        console.warn('Failed to fetch profile on sign-in:', err)
-        setProfile({
-          uid: user.uid,
-          email: user.email || '',
-          displayName: user.displayName || 'User',
-          photoURL: user.photoURL,
-          role: 'viewer',
-          createdAt: null,
-        })
-      }
+      await fetchProfile(user.uid)
       void logAuthEvent('signin-success', { uid: user.uid })
     } catch (err) {
       void logAuthEvent('signin-failure', { errorMessage: err instanceof Error ? err.message : String(err) })
@@ -153,42 +104,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const signUp = async (
-    email: string,
-    password: string,
-    displayName: string,
-    options?: { photoURL?: string | null; twitchUsername?: string; walletAddress?: string },
-  ) => {
+  const signUp = async (email: string, password: string, username: string, proofs: { phantomProofToken: string; twitchProofToken: string }) => {
     void logAuthEvent('signup-email-start')
     let createdUid: string | null = null
     try {
       const { user } = await createUserWithEmailAndPassword(auth, email, password)
       createdUid = user.uid
-      try {
-        await updateProfile(user, { displayName, photoURL: options?.photoURL || null })
-      } catch (err) {
-        console.warn('Failed to update auth profile during sign-up:', err)
-      }
-      try {
-        await sendEmailVerification(user)
-      } catch (err) {
-        console.warn('Failed to send email verification:', err)
-      }
-      try {
-        await createProfile(user, displayName, {
-          photoURL: options?.photoURL || null,
-          twitchUsername: options?.twitchUsername?.trim().replace(/^@/, '').toLowerCase() || undefined,
-          walletAddress: options?.walletAddress?.trim() || undefined,
-        })
-      } catch (err) {
-        console.warn('Failed to create Firestore profile during sign-up:', err)
-      }
+      try { await sendEmailVerification(user) } catch (err) { console.warn('Failed to send email verification:', err) }
+      await user.getIdToken(true)
+      await api.finalizeCreateAccount({ username, ...proofs })
+      await fetchProfile(user.uid)
       void logAuthEvent('signup-email-success', { uid: user.uid })
     } catch (err) {
-      void logAuthEvent('signup-email-failure', {
-        uid: createdUid,
-        errorMessage: err instanceof Error ? err.message : String(err),
-      })
+      void logAuthEvent('signup-email-failure', { uid: createdUid, errorMessage: err instanceof Error ? err.message : String(err) })
       throw err
     }
   }
@@ -203,18 +131,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const resendVerification = async () => {
-    if (user && !user.emailVerified) {
-      await sendEmailVerification(user)
-    }
+    if (user && !user.emailVerified) await sendEmailVerification(user)
   }
 
-  return (
-    <AuthContext.Provider
-      value={{ user, profile, loading, signIn, signUp, signOut, refreshProfile, resendVerification }}
-    >
-      {children}
-    </AuthContext.Provider>
-  )
+  return <AuthContext.Provider value={{ user, profile, loading, signIn, signUp, signOut, refreshProfile, resendVerification }}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {

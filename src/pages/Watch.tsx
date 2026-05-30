@@ -3,7 +3,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3, Radio } from 'lucide-react'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
-import { claimOpenSlot, formatESTRange, subscribeToSlots, type Slot } from '@/lib/slots'
+import { formatESTRange, subscribeToSlots, type Slot } from '@/lib/slots'
+import { api } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
  
 const FIXED_CHAT_CHANNEL = 'csgnet'
@@ -274,25 +275,22 @@ export default function Watch() {
   // Next upcoming slots
   const upcomingSlots = todaySlots.filter((s) => toMillis(s.startTime) > nowMs)
 
-  const twitchHandle = profile?.twitchUsername || profile?.socialLinks?.twitch || ''
   const canClaimCurrent =
-    Boolean(user) &&
-    Boolean(profile) &&
-    Boolean(twitchHandle) &&
     Boolean(currentSlot) &&
     currentSlot?.status === 'open' &&
     !currentSlot?.assignedUid
 
   const handleClaimCurrent = async () => {
-    if (!user || !profile || !currentSlot || !twitchHandle) return
+    if (!currentSlot) return
+    if (!user || !profile) {
+      localStorage.setItem('pendingClaimSlotId', currentSlot.id)
+      window.dispatchEvent(new Event('csgn:openRegister'))
+      return
+    }
     setClaiming(true)
     setClaimError('')
     try {
-      await claimOpenSlot(currentSlot.id, {
-        uid: user.uid,
-        displayName: profile.displayName || twitchHandle,
-        twitchUsername: twitchHandle,
-      })
+      await api.claimSlot(currentSlot.id)
     } catch (err) {
       setClaimError(err instanceof Error ? err.message : 'Could not claim slot.')
     } finally {
@@ -301,21 +299,31 @@ export default function Watch() {
   }
 
   const handleClaimSlot = async (slot: Slot) => {
-    if (!user || !profile || !twitchHandle) return
+    if (!user || !profile) {
+      localStorage.setItem('pendingClaimSlotId', slot.id)
+      window.dispatchEvent(new Event('csgn:openRegister'))
+      return
+    }
     setClaiming(true)
     setClaimError('')
     try {
-      await claimOpenSlot(slot.id, {
-        uid: user.uid,
-        displayName: profile.displayName || twitchHandle,
-        twitchUsername: twitchHandle,
-      })
+      await api.claimSlot(slot.id)
     } catch (err) {
       setClaimError(err instanceof Error ? err.message : 'Could not claim slot.')
     } finally {
       setClaiming(false)
     }
   }
+
+  useEffect(() => {
+    if (!user || !profile || claiming) return
+    const pending = localStorage.getItem('pendingClaimSlotId')
+    if (!pending) return
+    const slot = allSlots.find((item) => item.id === pending)
+    if (!slot) return
+    localStorage.removeItem('pendingClaimSlotId')
+    void handleClaimSlot(slot)
+  }, [user, profile, allSlots, claiming])
 
   // For the schedule grid: current slot (if any) + next 2, otherwise next 3
   const currentTodaySlot = todaySlots.find((s) => {
@@ -336,7 +344,7 @@ export default function Watch() {
         {showSignupNotice && (
           <div className="shrink-0 px-4 sm:px-5 pt-3">
             <div className="max-w-[1280px] mx-auto rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
-              Account created. You can connect Twitch and Phantom later in /account.
+              Account created. Verified Twitch and Phantom are ready for slot claims.
             </div>
           </div>
         )}
@@ -394,14 +402,12 @@ export default function Watch() {
                   className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 rounded-lg text-xs font-bold text-emerald-200 uppercase tracking-wider transition-colors disabled:opacity-60 disabled:cursor-wait cursor-pointer"
                 >
                   <Radio className="w-3.5 h-3.5" />
-                  {claiming ? 'Going Live…' : `Take this slot (Go Live as @${twitchHandle})`}
+                  {claiming ? 'Claiming…' : 'Take this slot'}
                 </button>
                 {claimError && <span className="text-[11px] text-red-300">{claimError}</span>}
               </div>
             )}
-            {user && !twitchHandle && currentSlot?.status === 'open' && !currentSlot?.assignedUid && (
-              <p className="mt-3 text-[11px] text-amber-300">Connect Twitch on your <Link to="/account" className="underline">Account</Link> to take open slots.</p>
-            )}
+
           </div>
           <div className="text-right">
             {currentSlot ? (
@@ -461,7 +467,7 @@ export default function Watch() {
                   const slotStart = toMillis(slot.startTime)
                   const slotEnd = toMillis(slot.endTime)
                   const isCurrent = nowMs >= slotStart && nowMs < slotEnd
-                  const claimable = Boolean(user && twitchHandle) && slot.status === 'open' && !slot.assignedUid && slotEnd > nowMs
+                  const claimable = slot.status === 'open' && !slot.assignedUid && slotEnd > nowMs
                   return (
                     <div key={slot.id} className="flex flex-col gap-1.5">
                       <TodaySlotCard slot={slot} isCurrent={isCurrent} />

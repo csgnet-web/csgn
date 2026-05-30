@@ -1,0 +1,25 @@
+import { auth } from '@/config/firebase'
+
+async function functionFetch<T>(name: string, init: RequestInit = {}, authRequired = false): Promise<T> {
+  const headers = new Headers(init.headers)
+  if (!headers.has('Content-Type') && init.body) headers.set('Content-Type', 'application/json')
+  if (authRequired) {
+    const token = await auth.currentUser?.getIdToken()
+    if (!token) throw new Error('Please sign in first.')
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+  const res = await fetch(`/.netlify/functions/${name}`, { ...init, headers })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data?.message || `Request failed: ${res.status}`)
+  return data as T
+}
+
+export type TwitchProof = { proofToken: string; twitch: { twitchUserId: string; username: string; displayName: string; profileImageUrl: string } }
+
+export const api = {
+  createPhantomChallenge: (walletAddress: string) => functionFetch<{ challengeToken: string; message: string }>('createPhantomChallenge', { method: 'POST', body: JSON.stringify({ walletAddress }) }),
+  verifyPhantomSignature: (walletAddress: string, signature: string, challengeToken: string) => functionFetch<{ proofToken: string; walletAddress: string }>('verifyPhantomSignature', { method: 'POST', body: JSON.stringify({ walletAddress, signature, challengeToken }) }),
+  startTwitchOAuth: () => functionFetch<{ authUrl: string }>('startTwitchOAuth', { method: 'POST' }),
+  finalizeCreateAccount: (body: { username: string; phantomProofToken: string; twitchProofToken: string }) => functionFetch<{ user: unknown }>('finalizeCreateAccount', { method: 'POST', body: JSON.stringify(body) }, true),
+  claimSlot: (slotId: string) => functionFetch<{ ok: boolean; slotId: string }>('claimSlot', { method: 'POST', body: JSON.stringify({ slotId }) }, true),
+}
