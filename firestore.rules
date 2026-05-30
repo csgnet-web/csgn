@@ -38,6 +38,7 @@ service cloud.firestore {
     match /uniquePhantomWallets/{docId} { allow read, write: if isAdmin(); }
     match /uniqueTwitchUsers/{docId} { allow read, write: if isAdmin(); }
     match /oauthStates/{docId} { allow read, write: if isAdmin(); }
+    match /twitchOAuthResults/{docId} { allow read, write: if false; }
     match /phantomChallenges/{docId} { allow read, write: if isAdmin(); }
     match /auditLogs/{docId} { allow read, write: if isAdmin(); }
 

@@ -26,6 +26,10 @@ export function noContent(): HandlerResponse {
   return { statusCode: 204, headers: corsHeaders(), body: '' }
 }
 
+export function redirect(location: string): HandlerResponse {
+  return { statusCode: 302, headers: { ...corsHeaders(), Location: location, 'Cache-Control': 'no-store' }, body: '' }
+}
+
 export function parseJson<T = Record<string, unknown>>(event: HandlerEvent): T {
   if (!event.body) return {} as T
   return JSON.parse(event.body) as T

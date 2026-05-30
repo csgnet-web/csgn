@@ -15,6 +15,7 @@ const Queue = lazy(() => import('@/pages/Queue'))
 const Admin = lazy(() => import('@/pages/Admin'))
 const Player = lazy(() => import('@/pages/Player'))
 const Terms = lazy(() => import('@/pages/Terms'))
+const TwitchComplete = lazy(() => import('@/pages/TwitchComplete'))
 
 function Loading() {
   return (
@@ -51,6 +52,7 @@ function AppContent() {
             <Route path="/admin" element={<Admin />} />
             <Route path="/player" element={<Player />} />
             <Route path="/terms" element={<Terms />} />
+            <Route path="/auth/twitch/complete" element={<TwitchComplete />} />
           </Routes>
         </AnimatePresence>
       </Suspense>
