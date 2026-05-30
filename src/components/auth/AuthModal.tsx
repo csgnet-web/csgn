@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/useAuth'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { api, type TwitchProof } from '@/lib/api'
 import { clearTwitchProof, readTwitchProof } from '@/lib/twitchProof'
+import { clearRegisterDraft, readRegisterDraft, storeRegisterDraft } from '@/lib/registerDraft'
 
 interface AuthModalProps { isOpen: boolean; onClose: () => void; initialMode?: 'login' | 'signup' }
 
@@ -44,6 +45,16 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
   useEffect(() => {
     if (!isOpen || !isRegister) return
 
+    // Restore any in-progress register fields saved before a Twitch redirect.
+    // Read-once: clear immediately so later effect runs don't clobber edits.
+    const draft = readRegisterDraft()
+    if (draft) {
+      setEmail(draft.email); setUsername(draft.username)
+      setPassword(draft.password); setConfirmPassword(draft.confirmPassword)
+      if (draft.phantomProofToken) { setPhantomProofToken(draft.phantomProofToken); setVerifiedWallet(draft.verifiedWallet) }
+      clearRegisterDraft()
+    }
+
     const proof = readTwitchProof()
     if (proof) { setTwitchProofToken(proof.proofToken); setTwitch(proof.twitch); setVerifying(null) }
 
@@ -64,6 +75,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
   const reset = () => {
     setError(''); setEmail(''); setUsername(''); setPassword(''); setConfirmPassword('')
     setPhantomProofToken(''); setVerifiedWallet(''); setTwitchProofToken(''); setTwitch(null); setVerifying(null)
+    clearRegisterDraft()
   }
 
   const handleClose = () => { reset(); onClose() }
@@ -88,8 +100,10 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
     setError(''); setVerifying('twitch')
     try {
       const { authUrl } = await api.startTwitchOAuth()
-      // Full-page redirect (no popup / window.opener) so this works inside
-      // mobile in-app browsers like Phantom on iPhone.
+      // Persist the in-progress form so the user doesn't lose it across the
+      // full-page redirect, then redirect (no popup / window.opener) so this
+      // works inside mobile in-app browsers like Phantom on iPhone.
+      storeRegisterDraft({ email, username, password, confirmPassword, phantomProofToken, verifiedWallet })
       window.location.href = authUrl
     } catch (err) {
       setVerifying(null)
@@ -106,6 +120,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
         if (!twitchProofToken) throw new Error('Verify your Twitch account before creating an account.')
         await signUp(email, password, username, { phantomProofToken, twitchProofToken })
         clearTwitchProof()
+        clearRegisterDraft()
       } else {
         await signIn(email, password)
       }
