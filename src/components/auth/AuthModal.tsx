@@ -1,14 +1,24 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AlertCircle, CheckCircle2, Eye, EyeOff, Lock, Mail, Twitch, User, Wallet, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/contexts/useAuth'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { api, type TwitchProof } from '@/lib/api'
+import { clearTwitchProof, readTwitchProof } from '@/lib/twitchProof'
+import { clearRegisterDraft, readRegisterDraft, storeRegisterDraft } from '@/lib/registerDraft'
 
 interface AuthModalProps { isOpen: boolean; onClose: () => void; initialMode?: 'login' | 'signup' }
 
 type TwitchState = TwitchProof['twitch'] | null
+
+const TWITCH_ERROR_MESSAGES: Record<string, string> = {
+  duplicate_twitch: 'This Twitch account is already linked to a CSGN account.',
+  oauth_state_expired: 'Twitch verification expired. Please connect Twitch again.',
+  oauth_exchange_failed: 'Twitch sign-in failed. Confirm the Twitch redirect URI matches exactly, then try again.',
+  oauth_failed: 'Twitch verification failed. Please try again.',
+}
 
 export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalProps) {
   const { signIn, signUp } = useAuth()
@@ -28,25 +38,44 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
   const [verifying, setVerifying] = useState<'phantom' | 'twitch' | null>(null)
 
   const isRegister = initialMode === 'signup'
+  const [searchParams, setSearchParams] = useSearchParams()
 
+  // On open, pick up any Twitch proof handed back by the OAuth redirect flow
+  // (stored in sessionStorage) and surface any twitchError carried in the URL.
   useEffect(() => {
-    const onMessage = (event: MessageEvent) => {
-      const data = event.data as Partial<TwitchProof> & { type?: string; error?: string; message?: string }
-      if (data?.type !== 'csgn:twitchProof') return
-      if (data.error) {
-        setVerifying(null)
-        setError(data.message || 'Twitch verification failed. Confirm the Twitch redirect URI matches the registered URI exactly.')
-        return
-      }
-      if (data.proofToken && data.twitch) { setTwitchProofToken(data.proofToken); setTwitch(data.twitch); setVerifying(null) }
+    if (!isOpen || !isRegister) return
+
+    // Restore any in-progress register fields saved before a Twitch redirect.
+    // Read-once: clear immediately so later effect runs don't clobber edits.
+    const draft = readRegisterDraft()
+    if (draft) {
+      setEmail(draft.email); setUsername(draft.username)
+      setPassword(draft.password); setConfirmPassword(draft.confirmPassword)
+      if (draft.phantomProofToken) { setPhantomProofToken(draft.phantomProofToken); setVerifiedWallet(draft.verifiedWallet) }
+      clearRegisterDraft()
     }
-    window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
-  }, [])
+
+    const proof = readTwitchProof()
+    if (proof) { setTwitchProofToken(proof.proofToken); setTwitch(proof.twitch); setVerifying(null) }
+
+    const twitchError = searchParams.get('twitchError')
+    if (twitchError) {
+      setError(TWITCH_ERROR_MESSAGES[twitchError] || TWITCH_ERROR_MESSAGES.oauth_failed)
+      setVerifying(null)
+    }
+
+    // Clean the OAuth flow params so a refresh doesn't re-trigger anything.
+    if (searchParams.has('auth') || searchParams.has('twitch') || searchParams.has('twitchError')) {
+      const next = new URLSearchParams(searchParams)
+      next.delete('auth'); next.delete('twitch'); next.delete('twitchError')
+      setSearchParams(next, { replace: true })
+    }
+  }, [isOpen, isRegister, searchParams, setSearchParams])
 
   const reset = () => {
     setError(''); setEmail(''); setUsername(''); setPassword(''); setConfirmPassword('')
     setPhantomProofToken(''); setVerifiedWallet(''); setTwitchProofToken(''); setTwitch(null); setVerifying(null)
+    clearRegisterDraft()
   }
 
   const handleClose = () => { reset(); onClose() }
@@ -71,7 +100,11 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
     setError(''); setVerifying('twitch')
     try {
       const { authUrl } = await api.startTwitchOAuth()
-      window.open(authUrl, 'csgn-twitch-oauth', 'width=520,height=720,popup=yes')
+      // Persist the in-progress form so the user doesn't lose it across the
+      // full-page redirect, then redirect (no popup / window.opener) so this
+      // works inside mobile in-app browsers like Phantom on iPhone.
+      storeRegisterDraft({ email, username, password, confirmPassword, phantomProofToken, verifiedWallet })
+      window.location.href = authUrl
     } catch (err) {
       setVerifying(null)
       setError(err instanceof Error ? err.message : 'Could not start Twitch verification.')
@@ -86,6 +119,8 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
         if (!phantomProofToken) throw new Error('Verify your Phantom wallet before creating an account.')
         if (!twitchProofToken) throw new Error('Verify your Twitch account before creating an account.')
         await signUp(email, password, username, { phantomProofToken, twitchProofToken })
+        clearTwitchProof()
+        clearRegisterDraft()
       } else {
         await signIn(email, password)
       }

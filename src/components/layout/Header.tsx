@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Menu, X, ChevronDown, User, LogOut, LayoutDashboard, Shield } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -25,12 +25,21 @@ export function Header() {
   })
 
   const location = useLocation()
+  const [searchParams] = useSearchParams()
   const { user, profile, signOut } = useAuth()
 
   const openAuth = useCallback((mode: 'login' | 'signup') => {
     setMobileOpen(false)
     setAuthModal({ open: true, mode })
   }, [])
+
+  // The mobile-safe Twitch OAuth flow returns to /?auth=register; open the
+  // register modal so AuthModal can pick up the stored Twitch proof.
+  useEffect(() => {
+    if (searchParams.get('auth') !== 'register') return
+    const id = setTimeout(() => openAuth('signup'), 0)
+    return () => clearTimeout(id)
+  }, [searchParams, openAuth])
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20)

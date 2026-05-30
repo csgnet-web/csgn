@@ -16,6 +16,16 @@
 - [ ] Twitch application redirect URI exactly matches `TWITCH_REDIRECT_URI` character-for-character; local should use `http://localhost:8888/.netlify/functions/twitchOAuthCallback` and production should use `https://csgn.fun/.netlify/functions/twitchOAuthCallback`.
 - [ ] Twitch client ID/secret are backend-only Netlify variables.
 - [ ] OAuth callback is reachable directly at `/.netlify/functions/twitchOAuthCallback` in local Netlify dev and production.
+- [ ] `twitchOAuthCallback` never leaves the user on the function URL: it always redirects to `${CSGN_ALLOWED_ORIGIN}/auth/twitch/complete?handoffId=...` on success or `${CSGN_ALLOWED_ORIGIN}/?auth=register&twitchError=...` on failure.
+
+## Twitch mobile OAuth test (Phantom on iPhone)
+- [ ] Open CSGN in the Phantom mobile browser on an iPhone.
+- [ ] Tap GET STARTED to open the register modal.
+- [ ] Tap Connect Twitch (full-page redirect, no popup).
+- [ ] Approve the Twitch authorization prompt.
+- [ ] Confirm the browser returns to the app and never stays on `/.netlify/functions/twitchOAuthCallback`.
+- [ ] Confirm the register modal reopens and shows Twitch connected with the Twitch username.
+- [ ] Confirm Create Account can be completed without reconnecting Twitch.
 
 ## Local test checklist
 - [ ] Run `npm test`.
@@ -32,7 +42,8 @@
 
 ## Security test checklist
 - [ ] Frontend cannot directly create trusted `users/{uid}` documents.
-- [ ] Frontend cannot directly write `slots`, `config`, `public/currentBroadcast`, unique locks, OAuth states, Phantom challenges, or audit logs.
+- [ ] Frontend cannot directly write `slots`, `config`, `public/currentBroadcast`, unique locks, OAuth states, Twitch OAuth results, Phantom challenges, or audit logs.
+- [ ] `twitchOAuthResults` is backend-only (`allow read, write: if false;`) and `consumeTwitchOAuthResult` never returns Twitch access tokens or `TWITCH_CLIENT_SECRET`.
 - [ ] User functions reject missing or invalid Firebase ID tokens.
 - [ ] Admin functions reject non-admin users.
 - [ ] Phantom verification fails if the challenge expires, is reused, or the signature is invalid.
