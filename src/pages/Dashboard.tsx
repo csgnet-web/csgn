@@ -6,7 +6,8 @@ import {
 } from 'lucide-react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
-import { useAuth, type UserNotification } from '@/contexts/AuthContext'
+import { useAuth } from '@/contexts/useAuth'
+import type { UserNotification } from '@/contexts/AuthContext'
 import { queueStore } from '@/lib/queue'
 import { fetchSlots, type Slot } from '@/lib/slots'
 import { Card } from '@/components/ui/Card'
@@ -54,13 +55,13 @@ export default function Dashboard() {
         setSlotHistory([])
       }
     })()
-  }, [user?.uid])
+  }, [user])
 
   useEffect(() => {
     setLiveEstimateSOL(liveAssignedSlot?.creatorFees?.feeOwedSOL || 0)
     setLiveVolumeSOL(liveAssignedSlot?.creatorFees?.tradingVolumeSOL || 0)
     setLiveEstimateUSD(liveAssignedSlot?.creatorFees?.feeOwedUSD || 0)
-  }, [liveAssignedSlot?.id, liveAssignedSlot?.creatorFees?.updatedAt])
+  }, [liveAssignedSlot])
 
 
   const handleDismissNotification = async (notifId: string) => {
@@ -166,7 +167,7 @@ Use your email/username and password to access your account.
                 isLoading={resending}
                 onClick={async () => {
                   setResending(true)
-                  try { await resendVerification() } catch {}
+                  try { await resendVerification() } catch (err) { console.warn('Failed to resend verification email:', err) }
                   setResending(false)
                 }}
               >

@@ -4,7 +4,7 @@ import { Radio, Info } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { subscribeToSlots, type Slot } from '@/lib/slots'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth } from '@/contexts/useAuth'
 const WEEK_SPAN = 7
 
 function toMillis(value: unknown): number {

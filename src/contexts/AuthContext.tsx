@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -11,55 +11,8 @@ import { doc, getDoc } from 'firebase/firestore'
 import { auth, db } from '@/config/firebase'
 import { logAuthEvent } from '@/lib/authEvents'
 import { api } from '@/lib/api'
-
-export interface UserNotification {
-  id: string
-  type: 'auction_won' | 'prime_assigned' | 'slot_request_accepted' | 'slot_request_declined' | 'fee_paid' | 'fee_declined'
-  slotId: string
-  slotLabel: string
-  slotStart: string
-  message: string
-  depositRequired?: number
-  depositDeadline?: string
-  read: boolean
-  createdAt: string
-}
-
-export interface UserProfile {
-  uid: string
-  email: string
-  emailLower?: string
-  authEmail?: string
-  displayName?: string
-  username: string
-  usernameLower?: string
-  photoURL?: string | null
-  role: 'user' | 'viewer' | 'streamer' | 'admin'
-  status?: 'active' | 'disabled'
-  createdAt: unknown
-  updatedAt?: unknown
-  phantom?: { verified: boolean; walletAddress: string; verifiedAt: unknown }
-  twitch?: { verified: boolean; twitchUserId: string; username: string; displayName: string; profileImageUrl: string; verifiedAt: unknown }
-  bio?: string
-  walletAddress?: string
-  twitchUsername?: string
-  socialLinks?: { twitter?: string; twitch?: string }
-  notifications?: UserNotification[]
-  xp?: number
-}
-
-interface AuthContextType {
-  user: User | null
-  profile: UserProfile | null
-  loading: boolean
-  signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string, username: string, proofs: { phantomProofToken: string; twitchProofToken: string }) => Promise<void>
-  signOut: () => Promise<void>
-  refreshProfile: () => Promise<void>
-  resendVerification: () => Promise<void>
-}
-
-const AuthContext = createContext<AuthContextType | null>(null)
+import { AuthContext, type UserProfile } from './AuthContextCore'
+export type { UserNotification, UserProfile } from './AuthContextCore'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
@@ -135,10 +88,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return <AuthContext.Provider value={{ user, profile, loading, signIn, signUp, signOut, refreshProfile, resendVerification }}>{children}</AuthContext.Provider>
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext)
-  if (!context) throw new Error('useAuth must be used within AuthProvider')
-  return context
 }

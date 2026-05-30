@@ -936,7 +936,7 @@ export async function addUserNotification(
   const snap = await getDoc(userRef)
   if (!snap.exists()) return
 
-  const existing = (snap.data().notifications || []) as any[]
+  const existing = (snap.data().notifications || []) as Array<Record<string, unknown>>
   const newNotification = {
     ...notification,
     id: crypto.randomUUID(),

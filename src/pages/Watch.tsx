@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3, Radio } from 'lucide-react'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { formatESTRange, subscribeToSlots, type Slot } from '@/lib/slots'
 import { api } from '@/lib/api'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth } from '@/contexts/useAuth'
  
 const FIXED_CHAT_CHANNEL = 'csgnet'
 const RESTREAM_PLAYER_SRC = 'https://player.restream.io/?token=e533c1e2dff542bf9ed97ecba6b08597'
@@ -280,25 +280,7 @@ export default function Watch() {
     currentSlot?.status === 'open' &&
     !currentSlot?.assignedUid
 
-  const handleClaimCurrent = async () => {
-    if (!currentSlot) return
-    if (!user || !profile) {
-      localStorage.setItem('pendingClaimSlotId', currentSlot.id)
-      window.dispatchEvent(new Event('csgn:openRegister'))
-      return
-    }
-    setClaiming(true)
-    setClaimError('')
-    try {
-      await api.claimSlot(currentSlot.id)
-    } catch (err) {
-      setClaimError(err instanceof Error ? err.message : 'Could not claim slot.')
-    } finally {
-      setClaiming(false)
-    }
-  }
-
-  const handleClaimSlot = async (slot: Slot) => {
+  const handleClaimSlot = useCallback(async (slot: Slot) => {
     if (!user || !profile) {
       localStorage.setItem('pendingClaimSlotId', slot.id)
       window.dispatchEvent(new Event('csgn:openRegister'))
@@ -313,7 +295,12 @@ export default function Watch() {
     } finally {
       setClaiming(false)
     }
-  }
+  }, [profile, user])
+
+  const handleClaimCurrent = useCallback(async () => {
+    if (!currentSlot) return
+    await handleClaimSlot(currentSlot)
+  }, [currentSlot, handleClaimSlot])
 
   useEffect(() => {
     if (!user || !profile || claiming) return
@@ -323,7 +310,7 @@ export default function Watch() {
     if (!slot) return
     localStorage.removeItem('pendingClaimSlotId')
     void handleClaimSlot(slot)
-  }, [user, profile, allSlots, claiming])
+  }, [user, profile, allSlots, claiming, handleClaimSlot])
 
   // For the schedule grid: current slot (if any) + next 2, otherwise next 3
   const currentTodaySlot = todaySlots.find((s) => {

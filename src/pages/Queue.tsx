@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Clock3, Crown, ChevronLeft, ChevronRight, Radio } from 'lucide-react'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth } from '@/contexts/useAuth'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { fetchSlots, type Slot } from '@/lib/slots'
@@ -63,7 +63,7 @@ export default function Queue() {
     setLoading(false)
   }, [])
 
-  const handleClaim = async (slot: Slot) => {
+  const handleClaim = useCallback(async (slot: Slot) => {
     if (!user || !profile) {
       localStorage.setItem('pendingClaimSlotId', slot.id)
       window.dispatchEvent(new Event('csgn:openRegister'))
@@ -79,7 +79,7 @@ export default function Queue() {
     } finally {
       setClaimingId(null)
     }
-  }
+  }, [loadSlots, profile, user])
 
   useEffect(() => {
     loadSlots()
@@ -93,7 +93,7 @@ export default function Queue() {
     if (!slot) return
     localStorage.removeItem('pendingClaimSlotId')
     void handleClaim(slot)
-  }, [user, profile, slots, claimingId])
+  }, [user, profile, slots, claimingId, handleClaim])
 
   const dayLabels = useMemo(() => {
     const labels: string[] = []

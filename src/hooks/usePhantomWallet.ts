@@ -15,7 +15,7 @@ const STORAGE_KEY = 'csgn_wallet_address'
 
 function bytesToBase58(bytes: Uint8Array): string {
   const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
-  let digits = [0]
+  const digits = [0]
   for (const byte of bytes) {
     let carry = byte
     for (let i = 0; i < digits.length; i++) {

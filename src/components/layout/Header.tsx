@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Menu, X, ChevronDown, User, LogOut, LayoutDashboard, Shield } from 'lucide-react'
@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
 import { Logo } from '@/components/ui/Logo'
 import { AuthModal } from '@/components/auth/AuthModal'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth } from '@/contexts/useAuth'
 
 const navLinks = [
   { href: '/watch', label: 'Watch Live', live: true },
@@ -27,6 +27,11 @@ export function Header() {
   const location = useLocation()
   const { user, profile, signOut } = useAuth()
 
+  const openAuth = useCallback((mode: 'login' | 'signup') => {
+    setMobileOpen(false)
+    setAuthModal({ open: true, mode })
+  }, [])
+
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20)
     window.addEventListener('scroll', handleScroll)
@@ -42,12 +47,7 @@ export function Header() {
       window.removeEventListener('csgn:openRegister', openRegister)
       window.removeEventListener('csgn:openLogin', openLogin)
     }
-  }, [])
-
-  const openAuth = (mode: 'login' | 'signup') => {
-    setMobileOpen(false)
-    setAuthModal({ open: true, mode })
-  }
+  }, [openAuth])
 
   return (
     <>
