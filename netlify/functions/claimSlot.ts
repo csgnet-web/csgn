@@ -57,7 +57,11 @@ export const handler = withHttp(async (event) => {
   if (slot.status !== 'open' || slot.assignedUid || slot.isClaimable === false) throw conflict('Slot is not available', 'slot_unavailable')
   if (!slot.endTime || new Date(slot.endTime).getTime() <= nowMs) throw conflict('Past slots cannot be claimed', 'slot_past')
   const max = user.slotLimits?.maxConcurrentClaims || 2
-  const claimed = await queryCollection('slots', [fieldFilter('assignedUid', 'EQUAL', authUser.uid), fieldFilter('endTime', 'GREATER_THAN', new Date().toISOString())], [], 10)
+  const allUserSlots = await queryCollection('slots', [fieldFilter('assignedUid', 'EQUAL', authUser.uid)], [], 20)
+  const claimed = allUserSlots.filter((s) => {
+    const endTime = s.data.endTime
+    return typeof endTime === 'string' && new Date(endTime).getTime() > nowMs
+  })
   if (!isAdmin && claimed.length >= max) throw conflict(`You can claim up to ${max} future/live slots.`, 'claim_limit_reached')
   const now = new Date()
   const twitchChannelUrl = `https://www.twitch.tv/${twitchUsername}`

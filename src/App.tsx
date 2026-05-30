@@ -2,7 +2,6 @@ import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-route
 import { AnimatePresence } from 'framer-motion'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { Header } from '@/components/layout/Header'
-import { Footer } from '@/components/layout/Footer'
 import { CSGNMark } from '@/components/ui/Logo'
 import { lazy, Suspense } from 'react'
 
@@ -31,7 +30,6 @@ function Loading() {
 function AppContent() {
   const location = useLocation()
   const isPlayerPage = location.pathname === '/player'
-  const hideFooter = location.pathname === '/watch' || location.pathname === '/' || isPlayerPage
 
   return (
     <div className={`min-h-screen bg-[#050507]${isPlayerPage ? '' : ' csgn-bg'}`}>
@@ -56,8 +54,6 @@ function AppContent() {
           </Routes>
         </AnimatePresence>
       </Suspense>
-
-      {!hideFooter && <Footer />}
     </div>
   )
 }

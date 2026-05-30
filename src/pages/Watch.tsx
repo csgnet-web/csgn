@@ -272,8 +272,8 @@ export default function Watch() {
   const isTwitch = true
   const chatSrc = `https://www.twitch.tv/embed/${FIXED_CHAT_CHANNEL}/chat?parent=${hostname}&darkpopout`
 
-  // Next upcoming slots
-  const upcomingSlots = todaySlots.filter((s) => toMillis(s.startTime) > nowMs)
+  // Next upcoming slots — look across all days so we always have up to 3
+  const upcomingSlots = allSlots.filter((s) => toMillis(s.startTime) > nowMs)
 
   const canClaimCurrent =
     Boolean(currentSlot) &&
