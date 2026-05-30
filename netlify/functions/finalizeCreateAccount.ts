@@ -1,6 +1,6 @@
 import { requireUser } from './_shared/auth'
 import { auditLog } from './_shared/audit'
-import { badRequest } from './_shared/errors'
+import { badRequest, conflict } from './_shared/errors'
 import { createWrite, commitWrites, getDoc } from './_shared/firebaseAdmin'
 import { verifyProofToken } from './_shared/proofTokens'
 import { json, parseJson, requireMethod, withHttp } from './_shared/http'
@@ -21,6 +21,16 @@ export const handler = withHttp(async (event) => {
   const phantom = verifyProofToken<PhantomProof>(body.phantomProofToken || '', 'phantom_wallet')
   const twitch = verifyProofToken<TwitchProof>(body.twitchProofToken || '', 'twitch_account')
   if (await getDoc(`users/${authUser.uid}`)) throw badRequest('Account already finalized.', 'account_exists')
+  const [existingEmail, existingUsername, existingWallet, existingTwitch] = await Promise.all([
+    getDoc(`uniqueEmails/${emailKey(emailLower)}`),
+    getDoc(`uniqueUsernames/${usernameLower}`),
+    getDoc(`uniquePhantomWallets/${phantom.walletAddress}`),
+    getDoc(`uniqueTwitchUsers/${twitch.twitchUserId}`),
+  ])
+  if (existingEmail) throw conflict('An account with this email already exists.', 'duplicate_email')
+  if (existingUsername) throw conflict('That username is already taken.', 'duplicate_username')
+  if (existingWallet) throw conflict('This Phantom wallet is already linked to a CSGN account.', 'duplicate_phantom')
+  if (existingTwitch) throw conflict('This Twitch account is already linked to a CSGN account.', 'duplicate_twitch')
   const now = new Date()
   const userDoc = {
     uid: authUser.uid,
