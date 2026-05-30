@@ -31,9 +31,13 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      const data = event.data as Partial<TwitchProof> & { type?: string; error?: string }
+      const data = event.data as Partial<TwitchProof> & { type?: string; error?: string; message?: string }
       if (data?.type !== 'csgn:twitchProof') return
-      if (data.error) { setError('Twitch verification failed. Please try again.'); return }
+      if (data.error) {
+        setVerifying(null)
+        setError(data.message || 'Twitch verification failed. Confirm the Twitch redirect URI matches the registered URI exactly.')
+        return
+      }
       if (data.proofToken && data.twitch) { setTwitchProofToken(data.proofToken); setTwitch(data.twitch); setVerifying(null) }
     }
     window.addEventListener('message', onMessage)

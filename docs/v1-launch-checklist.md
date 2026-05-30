@@ -13,9 +13,9 @@
 - [ ] Seeded slot documents include `startTime`, `endTime`, `status`, and `isClaimable`.
 
 ## Twitch setup
-- [ ] Twitch application redirect URI exactly matches `TWITCH_REDIRECT_URI`.
+- [ ] Twitch application redirect URI exactly matches `TWITCH_REDIRECT_URI` character-for-character; production should use `https://csgn.fun/auth/twitch/callback` unless the Netlify env var is intentionally set to another callback URL.
 - [ ] Twitch client ID/secret are backend-only Netlify variables.
-- [ ] OAuth callback is reachable at `/.netlify/functions/twitchOAuthCallback`.
+- [ ] OAuth callback is reachable at `/auth/twitch/callback`, which Netlify rewrites to `/.netlify/functions/twitchOAuthCallback`.
 
 ## Local test checklist
 - [ ] Run `npm test`.
