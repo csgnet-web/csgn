@@ -3,11 +3,6 @@
   publish = "dist"
 
 [[redirects]]
-  from = "/auth/twitch/callback"
-  to = "/.netlify/functions/twitchOAuthCallback"
-  status = 200
-
-[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200

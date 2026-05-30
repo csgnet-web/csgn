@@ -3,7 +3,7 @@ import { unauthorized } from './_shared/errors'
 import { createProofToken } from './_shared/proofTokens'
 import { html, requireMethod, withHttp } from './_shared/http'
 
-type StateDoc = { used?: boolean; expiresAt?: string; provider?: string; redirectUri?: string }
+type StateDoc = { used?: boolean; expiresAt?: string; provider?: string }
 type TwitchToken = { access_token: string }
 type TwitchUser = { id: string; login: string; display_name: string; profile_image_url: string }
 
@@ -30,7 +30,8 @@ export const handler = withHttp(async (event) => {
   if (!stateDoc || stateDoc.used || stateDoc.provider !== 'twitch') throw unauthorized('Invalid OAuth state')
   if (!stateDoc.expiresAt || new Date(stateDoc.expiresAt).getTime() <= Date.now()) throw unauthorized('OAuth state expired')
 
-  const redirectUri = stateDoc.redirectUri || process.env.TWITCH_REDIRECT_URI || ''
+  const redirectUri = process.env.TWITCH_REDIRECT_URI || ''
+  console.info('twitchOAuthCallback redirect_uri configured:', Boolean(redirectUri), redirectUri || '(missing)')
   const tokenRes = await fetch('https://id.twitch.tv/oauth2/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
