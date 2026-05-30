@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Menu, X, ChevronDown, User, LogOut, LayoutDashboard, Shield } from 'lucide-react'
@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
 import { Logo } from '@/components/ui/Logo'
 import { AuthModal } from '@/components/auth/AuthModal'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth } from '@/contexts/useAuth'
 
 const navLinks = [
   { href: '/watch', label: 'Watch Live', live: true },
@@ -27,16 +27,27 @@ export function Header() {
   const location = useLocation()
   const { user, profile, signOut } = useAuth()
 
+  const openAuth = useCallback((mode: 'login' | 'signup') => {
+    setMobileOpen(false)
+    setAuthModal({ open: true, mode })
+  }, [])
+
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20)
     window.addEventListener('scroll', handleScroll)
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  const openAuth = (mode: 'login' | 'signup') => {
-    setMobileOpen(false)
-    setAuthModal({ open: true, mode })
-  }
+  useEffect(() => {
+    const openRegister = () => openAuth('signup')
+    const openLogin = () => openAuth('login')
+    window.addEventListener('csgn:openRegister', openRegister)
+    window.addEventListener('csgn:openLogin', openLogin)
+    return () => {
+      window.removeEventListener('csgn:openRegister', openRegister)
+      window.removeEventListener('csgn:openLogin', openLogin)
+    }
+  }, [openAuth])
 
   return (
     <>
@@ -66,7 +77,7 @@ export function Header() {
                     onClick={(e) => {
                       if (isLocked) {
                         e.preventDefault()
-                        openAuth('login')
+                        openAuth('signup')
                       }
                     }}
                     className={`relative px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 ${
@@ -99,10 +110,10 @@ export function Header() {
                     className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all cursor-pointer"
                   >
                     <div className="w-7 h-7 rounded-full bg-gradient-to-br from-primary-500 to-accent-600 flex items-center justify-center text-xs font-bold text-white">
-                      {(profile?.displayName || user.email || 'U')[0].toUpperCase()}
+                      {(profile?.username || profile?.displayName || user.email || 'U')[0].toUpperCase()}
                     </div>
                     <span className="text-sm font-medium text-white hidden sm:block max-w-[120px] truncate">
-                      {profile?.displayName || 'User'}
+                      {profile?.username || profile?.displayName || 'User'}
                     </span>
                     <span className="hidden sm:inline text-[10px] font-mono text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 rounded px-1.5 py-0.5">
                       XP {(profile?.xp ?? 0).toLocaleString()}
@@ -204,7 +215,7 @@ export function Header() {
                       onClick={(e) => {
                         if (isLocked) {
                           e.preventDefault()
-                          openAuth('login')
+                          openAuth('signup')
                           return
                         }
                         setMobileOpen(false)
