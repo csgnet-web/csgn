@@ -3,8 +3,8 @@ import { Zap, Users, Tv, Rocket, Shield, Radio } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { SectionHeading } from '@/components/ui/SectionHeading'
 import { Button } from '@/components/ui/Button'
+import { SectionHeading } from '@/components/ui/SectionHeading'
 
 const fadeUp = {
   hidden: { opacity: 0, y: 30 },
@@ -120,11 +120,14 @@ export default function About() {
               Whether you want to watch, stream, or invest—CSGN is building the future of sports broadcasting.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link to="/apply">
-                <Button variant="primary" size="lg" leftIcon={<Rocket className="w-5 h-5" />}>
-                  Apply to Stream
-                </Button>
-              </Link>
+              <Button
+                variant="primary"
+                size="lg"
+                leftIcon={<Rocket className="w-5 h-5" />}
+                onClick={() => window.dispatchEvent(new Event('csgn:openRegister'))}
+              >
+                Join to Stream
+              </Button>
               <Link to="/watch">
                 <Button variant="secondary" size="lg" leftIcon={<Tv className="w-5 h-5" />}>
                   Watch Live

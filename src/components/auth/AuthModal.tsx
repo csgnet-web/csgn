@@ -42,6 +42,12 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
   const isRegister = mode === 'signup'
   const [searchParams, setSearchParams] = useSearchParams()
 
+  // Sync mode to the initialMode prop whenever the modal opens so that
+  // reopening via "Sign In" after previously switching to signup resets correctly.
+  useEffect(() => {
+    if (isOpen) setMode(initialMode)
+  }, [isOpen, initialMode])
+
   // On open, pick up any Twitch proof handed back by the OAuth redirect flow
   // (stored in sessionStorage) and surface any twitchError carried in the URL.
   useEffect(() => {
