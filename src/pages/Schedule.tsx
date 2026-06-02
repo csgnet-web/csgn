@@ -26,12 +26,11 @@ function toDate(value: unknown): Date {
   return new Date(toMillis(value))
 }
 
-function getSlotDisplayStatus(slot: Slot): 'past' | 'live' | 'upcoming' {
-  const now = Date.now()
+function getSlotDisplayStatus(slot: Slot, nowMs = Date.now()): 'past' | 'live' | 'upcoming' {
   const start = toMillis(slot.startTime)
   const end = toMillis(slot.endTime)
-  if (now >= start && now < end) return 'live'
-  if (now >= end) return 'past'
+  if (nowMs >= start && nowMs < end) return 'live'
+  if (nowMs >= end) return 'past'
   return 'upcoming'
 }
 
@@ -76,6 +75,7 @@ function etMiddayFromOffset(offset: number): Date {
 export default function Schedule() {
   useAuth()
   const [allSlots, setAllSlots] = useState<Slot[]>([])
+  const [nowMs, setNowMs] = useState(() => Date.now())
   const days = useMemo(() => {
     const labels: string[] = []
     for (let i = 0; i < WEEK_SPAN; i++) {
@@ -102,6 +102,11 @@ export default function Schedule() {
   }, [])
 
   useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
     const fromDate = etMiddayFromOffset(-1)
     const toDate = etMiddayFromOffset(8)
     const unsub = subscribeToSlots(fromDate, toDate, (slots) => {
@@ -116,9 +121,20 @@ export default function Schedule() {
   const typeLabel = (slot: Slot) => (slot.status === 'open' && !slot.assignedName ? 'Empty Slot' : (slot.assignedName || 'CEO Creator'))
 
   const slotsByDay = useMemo(() => days.map((_, i) => {
-  const key = etDayKey(etMiddayFromOffset(i))
-  return allSlots.filter((slot) => etDayKey(toDate(slot.startTime)) === key).sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
-}), [allSlots, days])
+    const key = etDayKey(etMiddayFromOffset(i))
+    const daySlots = allSlots
+      .filter((slot) => etDayKey(toDate(slot.startTime)) === key)
+      .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
+
+    if (i !== 0) return daySlots
+
+    return daySlots.filter((slot) => toMillis(slot.endTime) > nowMs)
+  }), [allSlots, days, nowMs])
+
+  const todayHiddenSlotCount = useMemo(() => {
+    const key = etDayKey(etMiddayFromOffset(0))
+    return allSlots.filter((slot) => etDayKey(toDate(slot.startTime)) === key && toMillis(slot.endTime) <= nowMs).length
+  }, [allSlots, nowMs])
 
   return (
     <div className="min-h-screen pt-20 lg:pt-24 pb-24">
@@ -135,7 +151,7 @@ export default function Schedule() {
                   <div className="px-3 py-2 border-b border-white/[0.06] text-xs font-semibold text-gray-300 sticky top-0 bg-[#0b0b18]">{day}</div>
                   <div className="divide-y divide-white/[0.04]">
                     {(slotsByDay[dayIdx] || []).map((slot) => {
-                      const displayStatus = getSlotDisplayStatus(slot)
+                      const displayStatus = getSlotDisplayStatus(slot, nowMs)
                       const streamerName = typeLabel(slot)
                       const feeSOL = slot.creatorFees?.feeOwedSOL ?? 0
                       return <div key={slot.id} className={`px-3 py-2 text-xs ${displayStatus==='live' ? 'bg-primary-500/8' : ''}`}>
@@ -144,6 +160,13 @@ export default function Schedule() {
                         <p className="text-cyan-300">{feeSOL > 0 ? `${feeSOL.toFixed(4)} SOL` : '—'}</p>
                       </div>
                     })}
+                    {dayIdx === 0 && Array.from({ length: todayHiddenSlotCount }).map((_, idx) => (
+                      <div key={`today-empty-${idx}`} className="px-3 py-2 text-xs" aria-hidden="true">
+                        <p className="font-mono text-gray-400 opacity-0">00:00 AM - 00:00 AM</p>
+                        <p className="text-white truncate opacity-0">Empty Slot</p>
+                        <p className="text-cyan-300 opacity-0">—</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}
