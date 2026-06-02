@@ -36,9 +36,17 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [verifying, setVerifying] = useState<'phantom' | 'twitch' | null>(null)
+  const [returnedFromTwitch, setReturnedFromTwitch] = useState(false)
 
-  const isRegister = initialMode === 'signup'
+  const [mode, setMode] = useState<'login' | 'signup'>(initialMode)
+  const isRegister = mode === 'signup'
   const [searchParams, setSearchParams] = useSearchParams()
+
+  // Sync mode to the initialMode prop whenever the modal opens so that
+  // reopening via "Sign In" after previously switching to signup resets correctly.
+  useEffect(() => {
+    if (isOpen) setMode(initialMode)
+  }, [isOpen, initialMode])
 
   // On open, pick up any Twitch proof handed back by the OAuth redirect flow
   // (stored in sessionStorage) and surface any twitchError carried in the URL.
@@ -50,8 +58,10 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
     const draft = readRegisterDraft()
     if (draft) {
       setEmail(draft.email); setUsername(draft.username)
-      setPassword(draft.password); setConfirmPassword(draft.confirmPassword)
-      if (draft.phantomProofToken) { setPhantomProofToken(draft.phantomProofToken); setVerifiedWallet(draft.verifiedWallet) }
+      if (draft.phantomProofToken) {
+        setPhantomProofToken(draft.phantomProofToken); setVerifiedWallet(draft.verifiedWallet)
+        setReturnedFromTwitch(true)
+      }
       clearRegisterDraft()
     }
 
@@ -75,7 +85,16 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
   const reset = () => {
     setError(''); setEmail(''); setUsername(''); setPassword(''); setConfirmPassword('')
     setPhantomProofToken(''); setVerifiedWallet(''); setTwitchProofToken(''); setTwitch(null); setVerifying(null)
+    setReturnedFromTwitch(false)
     clearRegisterDraft()
+  }
+
+  const switchMode = () => {
+    setError(''); setPassword(''); setConfirmPassword('')
+    setPhantomProofToken(''); setVerifiedWallet(''); setTwitchProofToken(''); setTwitch(null); setVerifying(null)
+    setReturnedFromTwitch(false)
+    clearRegisterDraft()
+    setMode(m => m === 'login' ? 'signup' : 'login')
   }
 
   const handleClose = () => { reset(); onClose() }
@@ -103,7 +122,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
       // Persist the in-progress form so the user doesn't lose it across the
       // full-page redirect, then redirect (no popup / window.opener) so this
       // works inside mobile in-app browsers like Phantom on iPhone.
-      storeRegisterDraft({ email, username, password, confirmPassword, phantomProofToken, verifiedWallet })
+      storeRegisterDraft({ email, username, phantomProofToken, verifiedWallet })
       window.location.href = authUrl
     } catch (err) {
       setVerifying(null)
@@ -143,7 +162,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
               <button onClick={handleClose} className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-white/5 cursor-pointer"><X className="w-5 h-5" /></button>
               <img src="https://pbs.twimg.com/profile_images/1966988305255276544/3Qz3tNAa_200x200.jpg" alt="CSGN" className="w-12 h-12 rounded-xl object-cover mb-4 shadow-lg" />
               <h2 className="text-2xl font-bold font-display text-white">{isRegister ? 'Join CSGN' : 'Welcome back'}</h2>
-              <p className="text-sm text-gray-400 mt-1">{isRegister ? 'Verify Phantom and Twitch, then create your CSGN account.' : 'Sign in with Firebase email/password.'}</p>
+              <p className="text-sm text-gray-400 mt-1">{isRegister ? 'Verify Phantom and Twitch, then create your CSGN account.' : 'Sign in with email/password.'}</p>
             </div>
             <div className="px-6 sm:px-8 pb-8 sm:pb-10 space-y-4 overflow-y-auto max-h-[calc(92vh-120px)]">
               <form onSubmit={handleSubmit} className="space-y-3">
@@ -157,10 +176,19 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                 </div>}
                 {verifiedWallet && <p className="text-xs text-emerald-300 truncate">Wallet verified: {verifiedWallet}</p>}
                 {walletError && <p className="text-xs text-red-300">{walletError}</p>}
+                {isRegister && returnedFromTwitch && !password && (
+                  <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-sm text-amber-300"><AlertCircle className="w-4 h-4 shrink-0" /> For security, please re-enter your password to continue.</div>
+                )}
                 <label className="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
                 <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="Enter password" required minLength={6} disabled={loading} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button></div>
                 {isRegister && <><label className="block text-sm font-medium text-gray-300 mb-1.5">Confirm Password</label><div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="Confirm password" required minLength={6} disabled={loading} /><button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button></div></>}
                 <Button variant="primary" size="lg" className="w-full" type="submit" isLoading={loading}>{isRegister ? 'Create Account' : 'Sign In'}</Button>
+                <p className="text-sm text-center text-gray-500 mt-2">
+                  {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
+                  <button type="button" onClick={switchMode} className="text-primary-400 hover:text-primary-300 underline cursor-pointer">
+                    {isRegister ? 'Sign in' : 'Create one'}
+                  </button>
+                </p>
               </form>
             </div>
           </motion.div>

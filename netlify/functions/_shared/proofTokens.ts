@@ -9,7 +9,7 @@ function base64url(input: Buffer | string): string {
 
 function secret(): string {
   const value = process.env.CSGN_PROOF_SIGNING_SECRET
-  if (!value || value.length < 16) throw new Error('CSGN_PROOF_SIGNING_SECRET is not configured')
+  if (!value || value.length < 32) throw new Error('CSGN_PROOF_SIGNING_SECRET must be at least 32 characters')
   return value
 }
 

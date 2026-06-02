@@ -212,7 +212,7 @@ export default function Queue() {
                               type="button"
                               onClick={() => void handleClaim(slot)}
                               disabled={claimingId === slot.id}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+                              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
                             >
                               <Radio className="w-3 h-3" />
                               {claimingId === slot.id ? 'Claiming…' : 'Take Slot'}

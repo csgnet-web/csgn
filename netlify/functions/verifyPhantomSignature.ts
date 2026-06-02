@@ -5,6 +5,7 @@ import { badRequest, unauthorized } from './_shared/errors'
 import { createProofToken, verifyProofToken } from './_shared/proofTokens'
 import { json, parseJson, requireMethod, withHttp } from './_shared/http'
 import { normalizeWalletAddress, requireString } from './_shared/validators'
+import { checkRateLimit, clientIp } from './_shared/rateLimit'
 
 type ChallengeProof = { type: string; challengeId: string; walletAddress: string; exp: number; iat: number; jti: string }
 type ChallengeDoc = { walletAddress?: string; message?: string; used?: boolean; expiresAt?: string }
@@ -20,6 +21,7 @@ function verifyEd25519(message: string, signatureB58: string, publicKeyB58: stri
 
 export const handler = withHttp(async (event) => {
   requireMethod(event, 'POST')
+  await checkRateLimit(clientIp(event), 'verifyPhantomSignature', 10)
   const body = parseJson<Body>(event)
   const walletAddress = normalizeWalletAddress(requireString(body.walletAddress, 'walletAddress'))
   const challenge = verifyProofToken<ChallengeProof>(requireString(body.challengeToken, 'challengeToken'), 'phantom_challenge')

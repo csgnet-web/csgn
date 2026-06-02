@@ -5,6 +5,7 @@ import { createWrite, commitWrites, getDoc } from './_shared/firebaseAdmin'
 import { verifyProofToken } from './_shared/proofTokens'
 import { json, parseJson, requireMethod, withHttp } from './_shared/http'
 import { emailKey, normalizeEmail, normalizeUsername, usernameKey } from './_shared/validators'
+import { checkRateLimit, clientIp } from './_shared/rateLimit'
 
 type Body = { username?: string; phantomProofToken?: string; twitchProofToken?: string }
 type PhantomProof = { type: string; walletAddress: string; exp: number; iat: number; jti: string }
@@ -12,6 +13,7 @@ type TwitchProof = { type: string; twitchUserId: string; username: string; displ
 
 export const handler = withHttp(async (event) => {
   requireMethod(event, 'POST')
+  await checkRateLimit(clientIp(event), 'finalizeCreateAccount', 5)
   const authUser = await requireUser(event)
   if (!authUser.email) throw badRequest('Firebase user must have an email.', 'missing_email')
   const body = parseJson<Body>(event)
