@@ -2,16 +2,17 @@ import { randomBytes } from 'node:crypto'
 import { writeDoc } from './_shared/firebaseAdmin'
 import { json, requireMethod, withHttp } from './_shared/http'
 import { badRequest } from './_shared/errors'
+import { checkRateLimit, clientIp } from './_shared/rateLimit'
 
 function twitchRedirectUri(): string {
   const redirectUri = process.env.TWITCH_REDIRECT_URI?.trim()
-  console.info('startTwitchOAuth redirect_uri configured:', Boolean(redirectUri), redirectUri || '(missing)')
   if (!redirectUri) throw badRequest('TWITCH_REDIRECT_URI is not configured.', 'missing_twitch_redirect_uri')
   return redirectUri
 }
 
 export const handler = withHttp(async (event) => {
   requireMethod(event, 'POST')
+  await checkRateLimit(clientIp(event), 'startTwitchOAuth', 5)
   const state = randomBytes(24).toString('base64url')
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
   const redirectUri = twitchRedirectUri()

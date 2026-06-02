@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { AuthProvider } from '@/contexts/AuthContext'
+import { LiveSlotProvider } from '@/contexts/LiveSlotContext'
 import { Header } from '@/components/layout/Header'
 import { CSGNMark } from '@/components/ui/Logo'
 import { lazy, Suspense } from 'react'
@@ -62,7 +63,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppContent />
+        <LiveSlotProvider>
+          <AppContent />
+        </LiveSlotProvider>
       </AuthProvider>
     </BrowserRouter>
   )

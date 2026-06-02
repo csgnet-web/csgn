@@ -1,16 +1,13 @@
 // Temporary, per-tab persistence of the in-progress register form so the
-// user's typed email/username/password survive the full-page Twitch OAuth
-// redirect. sessionStorage is scoped to the tab and cleared when it closes;
-// the draft is also cleared on a successful Create Account or when the modal
-// is closed manually.
+// user's email, username, and phantom proof survive the full-page Twitch OAuth
+// redirect. Passwords are intentionally NOT stored here — the user re-enters
+// them on return. sessionStorage is scoped to the tab and cleared when it closes.
 
 export const REGISTER_DRAFT_KEY = 'csgn:registerDraft'
 
 export interface RegisterDraft {
   email: string
   username: string
-  password: string
-  confirmPassword: string
   phantomProofToken: string
   verifiedWallet: string
 }
@@ -31,8 +28,6 @@ export function readRegisterDraft(): RegisterDraft | null {
     return {
       email: typeof parsed.email === 'string' ? parsed.email : '',
       username: typeof parsed.username === 'string' ? parsed.username : '',
-      password: typeof parsed.password === 'string' ? parsed.password : '',
-      confirmPassword: typeof parsed.confirmPassword === 'string' ? parsed.confirmPassword : '',
       phantomProofToken: typeof parsed.phantomProofToken === 'string' ? parsed.phantomProofToken : '',
       verifiedWallet: typeof parsed.verifiedWallet === 'string' ? parsed.verifiedWallet : '',
     }

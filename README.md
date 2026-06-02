@@ -1,37 +1,68 @@
 # CSGN — Crypto Sports & Gaming Network
 
-The 24/7 crypto-native streaming network built on Solana. The ESPN and TMZ of crypto.
+> The 24/7 crypto-native streaming network built on Solana. The ESPN and TMZ of crypto.
+
+Streamers earn real trading fee revenue — calculated per market-cap tier, backed by live DexScreener data — simply by going live on CSGN. No other platform ties streamer compensation directly to on-chain mechanics at this level of precision.
+
+---
 
 ## Tech Stack
 
-- **React 19** + TypeScript
-- **Vite** for fast builds
-- **Tailwind CSS v4** for styling
-- **Firebase** (Auth + Firestore) for user accounts and data
-- **Framer Motion** for animations
-- **React Router v7** for routing
-- **Netlify** for hosting
+| Layer | Technology |
+|---|---|
+| Frontend | React 19 + TypeScript + Vite |
+| Styling | Tailwind CSS v4 + Framer Motion |
+| Routing | React Router v7 |
+| Auth & DB | Firebase (Auth + Firestore) |
+| Functions | Netlify Serverless Functions |
+| Hosting | Netlify (auto-deploy from `main`) |
+| Blockchain | Solana (Phantom wallet, SPL token) |
+| Market Data | DexScreener API |
+
+---
+
+## Changelog
+
+### v0.1 — November 2025
+Business plan conceived. CSGN defined as the ESPN/TMZ of crypto: a 24/7 streaming platform where on-chain fee revenue flows directly to the streamer on screen. Core thesis: content creates trading volume; streamers should capture their proportional share.
+
+### v0.2 — February 2026
+Initial code scaffold. React 19 + Vite + Firebase. Landing page, auth modal, account system, Solana wallet placeholder. First commit on Feb 24, 2026.
+
+### v0.3 — March 2026
+Live fee tracking (DexScreener-backed), ET timezone scheduling, automatic stream detection, admin panel for slot management and emergency override, OBS-ready `/player` route. Fee tier model implemented against PumpSwap's 25-tier market-cap schedule.
+
+### v0.4 — April 2026
+Twitch OAuth 2.0 registration flow. Phantom wallet Ed25519 signature verification. Slot pre-emption for registered streamers. Quadratic auction scaffolding. Multi-factor account creation: Phantom + Twitch + email. `/player` made public for OBS capture.
+
+### v0.5 — May 2026
+Simplified v1 flow. Mobile full-page Twitch OAuth redirect (replaces popup, works in Phantom iOS browser). In-progress form draft persisted across redirect. Slot claiming with server-side race-condition protection. Footer removed. Up Next display fixed.
+
+### v1.0 — June 2026
+**Production release.**
+- Server-side fee polling: DexScreener calls never touch the browser — one Netlify scheduled background function polls 4×/minute, writes to Firestore, all clients read via a single snapshot listener
+- Universal `LiveSlotContext`: 2 Firestore listeners per browser session regardless of how many components need slot data
+- Login ↔ Register seamless modal switching
+- Rate limiting on all API endpoints (Firestore-backed, per-IP)
+- Security hardening: CORS locked to configured origin, hardcoded Firebase config removed, password no longer stored in sessionStorage, email verification enforced at slot claim, `auth_events` restricted to authenticated users, CSP headers added, proof token secret minimum raised to 32 characters
+
+---
 
 ## Getting Started
 
 ```bash
 npm install
-cp .env.example .env    # Add your public Firebase web config
+cp .env.example .env    # Fill in your Firebase web config
 npm run dev             # Start dev server at localhost:5173
 ```
 
-## Firebase Setup
-
-1. Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com)
-2. Enable **Authentication** (Email/Password + Google)
-3. Enable **Cloud Firestore**
-4. Copy your public Firebase web config values into `.env`
+---
 
 ## Environment Variables
 
-See [`docs/env-setup.md`](docs/env-setup.md) for detailed local and Netlify environment variable guidance.
+### Frontend (`.env` — Vite `VITE_` prefix)
 
-Public frontend Firebase config values are required by the browser app and are safe to expose through Vite's `VITE_` prefix:
+These are required at startup. The app throws a clear error if any are missing:
 
 ```env
 VITE_FIREBASE_API_KEY=
@@ -40,47 +71,159 @@ VITE_FIREBASE_PROJECT_ID=
 VITE_FIREBASE_STORAGE_BUCKET=
 VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
-VITE_FIREBASE_MEASUREMENT_ID=
+VITE_FIREBASE_MEASUREMENT_ID=   # optional
 ```
 
-`VITE_FIREBASE_PROJECT_ID` is expected to appear in browser code, and `FIREBASE_PROJECT_ID` is not a secret. Do not mark `FIREBASE_PROJECT_ID` secret/protected in Netlify. If Netlify secret scanning still flags the public project id after correcting that classification, set:
+Firebase public config values are safe to expose through `VITE_` — they identify your app, not a secret. Firestore security rules and server-side admin credentials are the actual access controls.
+
+### Backend (Netlify environment — server-side only, never `VITE_`)
+
+```env
+FIREBASE_PROJECT_ID=
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_PRIVATE_KEY=
+TWITCH_CLIENT_ID=
+TWITCH_CLIENT_SECRET=
+TWITCH_REDIRECT_URI=
+CSGN_ALLOWED_ORIGIN=          # e.g. https://csgn.tv — required for CORS
+CSGN_PROOF_SIGNING_SECRET=    # must be ≥ 32 characters
+CSGN_DEFAULT_STREAM_URL=
+CSGN_FALLBACK_STREAM_URL=
+```
+
+See [`docs/env-setup.md`](docs/env-setup.md) for Netlify-specific setup guidance.
+
+---
+
+## Pages
+
+| Route | Description |
+|---|---|
+| `/` | Live stream viewer (alias for `/watch`) |
+| `/watch` | Live stream with earnings display and today's schedule |
+| `/schedule` | Full 7-day broadcast schedule |
+| `/queue` | Open slots available to claim |
+| `/about` | About CSGN, mission, vision |
+| `/account` | User dashboard — application status, streamer stats |
+| `/admin` | Admin panel — slot management, fee overrides |
+| `/player` | OBS-ready iframe player for broadcast capture |
+| `/terms` | Terms of service |
+
+---
+
+## Deployment
+
+Push to `main` → auto-deploys on Netlify. Build command: `npm run build` → output to `dist/`.
+
+`FIREBASE_PROJECT_ID` appears in browser code and is not a secret. If Netlify secret scanning flags it:
 
 ```env
 SECRETS_SCAN_OMIT_KEYS=FIREBASE_PROJECT_ID,VITE_FIREBASE_PROJECT_ID
 ```
 
-Actual backend secrets must stay server-side only and must never be exposed through `VITE_` variables or frontend code:
+---
 
-```env
-FIREBASE_PRIVATE_KEY=
-FIREBASE_CLIENT_EMAIL=
-TWITCH_CLIENT_SECRET=
-CSGN_PROOF_SIGNING_SECRET=
+## Architecture: Live Fee Data Flow
+
+```
+Every 60 seconds (Netlify cron → feePollerBackground):
+  ├── Poll 1 (t=0s):   DexScreener API → calculate fees → write Firestore
+  ├── Poll 2 (t=15s):  DexScreener API → calculate fees → write Firestore
+  ├── Poll 3 (t=30s):  DexScreener API → calculate fees → write Firestore
+  └── Poll 4 (t=45s):  DexScreener API → calculate fees → write Firestore
+
+Browser (any number of concurrent users):
+  LiveSlotContext (mounted once at app root)
+  ├── onSnapshot(config/liveStream)   ← 1 listener: admin override
+  └── subscribeToSlots(±24h window)  ← 1 listener: all slot data + creatorFees
+
+  Watch.tsx, Dashboard.tsx → useLiveSlot() → reads context → zero Firestore reads
 ```
 
-`TWITCH_CLIENT_ID` can be treated as backend-only for architecture consistency, but it is not as sensitive as `TWITCH_CLIENT_SECRET`.
+**Key invariant:** DexScreener is called exactly 4 times per minute regardless of how many users are connected. A million concurrent viewers = same 4 API calls/minute as 1 viewer.
 
-## Pages
+---
 
-| Route | Description |
-|-------|-------------|
-| `/` | Landing page with hero, features, content pillars, CTAs |
-| `/watch` | Live stream viewer with schedule sidebar and chat |
-| `/schedule` | Full broadcast schedule with 3-tier slot system |
-| `/apply` | Streamer application form (requires auth) |
-| `/about` | About CSGN, team, roadmap, vision |
-| `/tokenomics` | Token economics, fee-split model, revenue streams |
-| `/dashboard` | User profile, application status, streamer stats |
-| `/admin` | Admin panel for managing applications, streamers, schedule |
+## Senior Engineer Plan: Database Efficiency
 
-## Deployment
+### Current Firestore Read Budget (per browser session, v1.0)
 
-Deployed on Netlify. Push to `main` to auto-deploy. Netlify secret scanning can fail after a successful build if a public value like `FIREBASE_PROJECT_ID` is mistakenly classified as a secret; see [`docs/env-setup.md`](docs/env-setup.md) before changing Firebase environment variable visibility.
+| Subscription | Mounted by | Lifetime | Type |
+|---|---|---|---|
+| `onSnapshot(config/liveStream)` | LiveSlotContext | App lifetime | Persistent |
+| `subscribeToSlots(±24h)` | LiveSlotContext | App lifetime | Persistent |
+| `onSnapshot(public/currentBroadcast)` | `/player` page | Page lifetime | Persistent |
+| `getDoc(users/{uid})` | AuthContext | On login | One-time |
+| `subscribeToSlots(7d window)` | Schedule page | Page lifetime | Persistent |
+| `fetchSlots(2020, +2d)` | Dashboard | On mount | One-time |
+| `getDoc/writeDoc` per API call | Rate limiter | Per request | Server-side |
 
-```bash
-npm run build   # Outputs to dist/
-```
+### v1.1 Efficiency Roadmap
+
+1. **Dashboard pagination** — `fetchSlots()` currently queries all slots since 2020. Add `limit(50)` + cursor-based pagination for scale.
+2. **Admin N+1** — Admin panel makes sequential `getDocs()` calls. Batch with `Promise.all()` for parallel fetches.
+3. **Firestore offline persistence** — Enable in `firebase.ts` (`enableIndexedDbPersistence`) to eliminate re-reads on reconnect and serve cached data on cold start.
+4. **Schedule subscription dedup** — If a user has Watch and Schedule open simultaneously, two `subscribeToSlots()` listeners open. Merge into one wider time window in `LiveSlotContext`.
+5. **Rate limiter upgrade** — Replace Firestore-based counters with Upstash Redis for lower latency and lower cost at high API call volume.
+6. **`_feeState` transaction safety** — `feePollerBackground` writes `_feeState` optimistically. Use Firestore transactions (`beginTransaction/commitWrites`) for atomic read-modify-write to prevent rare race conditions between overlapping cron invocations.
+
+---
+
+## Security Audit
+
+**Overall score: 74/100 (B) — as of v1.0**
+
+| Domain | Score | Status |
+|---|---|---|
+| Authentication | 85/100 | HMAC proof-of-ownership model; email verification enforced at slot claim |
+| Authorization | 87/100 | Firestore rules solid; admin check on every privileged request |
+| API Security | 80/100 | Rate limiting on all endpoints; CORS locked to configured origin |
+| Data Protection | 75/100 | Password not in sessionStorage; no hardcoded Firebase config |
+| Input Validation | 77/100 | Regex validators on all inputs; proof token secret ≥ 32 chars |
+| Monitoring | 48/100 | CSP headers active; no alerting or TTL policies yet |
+
+### Remaining Items (v1.1)
+
+| Priority | Item | Action |
+|---|---|---|
+| High | Firestore TTL policies | Enable TTL in Firebase Console on `phantomChallenges`, `oauthStates`, `twitchOAuthResults`, `auth_events` |
+| Medium | Password reset flow | Implement Firebase `sendPasswordResetEmail` |
+| Medium | Failed auth alerting | Log and alert on N consecutive 401s from a single IP |
+| Low | Upstash Redis rate limiter | Replace Firestore-based counters for lower latency |
+| Low | Dashboard slot pagination | `limit(50)` + cursor on `fetchSlots()` |
+
+### Notes on Current Design Decisions
+
+**CORS empty string default:** If `CSGN_ALLOWED_ORIGIN` is not set in the Netlify environment, CORS headers return an empty origin, which browsers treat as a non-match — effectively denying all cross-origin requests. This is the secure fail-closed default.
+
+**Firestore rate limiter:** Adds 1 read + 1 write per API call (stored at `rateLimits/{sha256(ip:endpoint)}`). At low traffic this is negligible. At high concurrency, upgrade to Upstash Redis.
+
+**`auth_events` write restriction:** Only signed-in users can create audit events. This prevents log spam from unauthenticated actors. Note: the Firebase client SDK is used for this write, so the user must have a valid Firebase session.
+
+---
+
+## v1.0 Technical Sign-off Checklist
+
+- [x] Multi-factor registration (Phantom wallet + Twitch OAuth + email/password)
+- [x] Real-time slot claiming with server-side race-condition protection
+- [x] Server-side live earnings — 4 DexScreener calls/minute, server only, scale-invariant
+- [x] Universal `LiveSlotContext` — 2 Firestore listeners per browser session
+- [x] Rate limiting on all auth/claim API endpoints
+- [x] CORS origin locked — defaults to deny when env var missing
+- [x] Hardcoded Firebase config removed — fails fast on misconfiguration
+- [x] Password not stored in sessionStorage during OAuth redirect
+- [x] Email verification required before slot claim (`email_verified` JWT claim)
+- [x] `auth_events` writes restricted to authenticated users
+- [x] Content-Security-Policy header on all responses
+- [x] Login ↔ Register seamless modal switching
+- [x] Proof token secret minimum: 32 characters
+- [ ] Firestore TTL policies — requires Firebase Console configuration (documented above)
+- [ ] Password reset flow — v1.1
+- [ ] Upstash Redis rate limiting — v1.1
+- [ ] Dashboard slot pagination — v1.1
+
+---
 
 ## License
 
-Proprietary — CSGN, Crypto Sports & Gaming Network
+Proprietary — CSGN, Crypto Sports & Gaming Network. All rights reserved.

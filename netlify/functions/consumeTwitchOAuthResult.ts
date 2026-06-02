@@ -1,6 +1,7 @@
 import { getDoc, writeDoc } from './_shared/firebaseAdmin'
 import { badRequest } from './_shared/errors'
 import { json, parseJson, requireMethod, withHttp } from './_shared/http'
+import { checkRateLimit, clientIp } from './_shared/rateLimit'
 
 type ResultDoc = {
   used?: boolean
@@ -14,6 +15,7 @@ type ResultDoc = {
 
 export const handler = withHttp(async (event) => {
   requireMethod(event, 'POST')
+  await checkRateLimit(clientIp(event), 'consumeTwitchOAuthResult', 10)
   const { handoffId } = parseJson<{ handoffId?: string }>(event)
   if (!handoffId) throw badRequest('Missing handoffId.', 'missing_handoff_id')
 

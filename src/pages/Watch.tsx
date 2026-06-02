@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3, Radio } from 'lucide-react'
-import { onSnapshot, doc } from 'firebase/firestore'
-import { db } from '@/config/firebase'
-import { formatESTRange, subscribeToSlots, type Slot } from '@/lib/slots'
+import { formatESTRange, type Slot } from '@/lib/slots'
 import { api } from '@/lib/api'
 import { useAuth } from '@/contexts/useAuth'
+import { useLiveSlot } from '@/contexts/LiveSlotContext'
  
 const FIXED_CHAT_CHANNEL = 'csgnet'
 const RESTREAM_PLAYER_SRC = 'https://player.restream.io/?token=e533c1e2dff542bf9ed97ecba6b08597'
@@ -164,81 +163,29 @@ export default function Watch() {
 
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
   const { user, profile } = useAuth()
+  const { currentSlot, allSlots, manualOverride, nowMs } = useLiveSlot()
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [claiming, setClaiming] = useState(false)
   const [claimError, setClaimError] = useState('')
-
-  // Current live slot from Firestore (auto-detected by time)
-  const [currentSlot, setCurrentSlot] = useState<Slot | null>(null)
-  // Today's upcoming slots for the schedule sidebar
-  const [todaySlots, setTodaySlots] = useState<Slot[]>([])
-
-  // Manual override from admin config/liveStream
-  const [manualOverride, setManualOverride] = useState<{ url: string; streamerName: string; title: string } | null>(null)
-
-  // Live fee display from shared slot state
   const [pulseFee, setPulseFee] = useState(false)
-
-  // Wipe animation state
   const [showWipe, setShowWipe] = useState(false)
   const prevSlotIdRef = useRef<string | null>(null)
   const wipeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [allSlots, setAllSlots] = useState<Slot[]>([])
-  const [nowMs, setNowMs] = useState(() => Date.now())
 
+  // Wipe animation — triggers on slot change
   useEffect(() => {
-    const t = setInterval(() => setNowMs(Date.now()), 30_000)
-    return () => clearInterval(t)
-  }, [])
-
-  // Subscribe to admin manual override config
-  useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'config', 'liveStream'), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data()
-        if (data.url) {
-          setManualOverride({ url: data.url, streamerName: data.streamerName || '', title: data.title || '' })
-        } else {
-          setManualOverride(null)
-        }
-      } else {
-        setManualOverride(null)
-      }
-    }, () => setManualOverride(null))
-    return unsub
-  }, [])
-
-  // Direct subscription to slots table for identical behavior (logged in/out/admin).
-  useEffect(() => {
-    const from = new Date(Date.now() - 24 * 60 * 60 * 1000)
-    const to = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000)
-    const unsub = subscribeToSlots(from, to, (slots) => {
-      const data = slots
-        .filter((slot) => toMillis(slot.startTime) > 0 && toMillis(slot.endTime) > 0)
-        .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
-      setAllSlots(data)
-    })
-    return unsub
-  }, [])
-
-  // Compute current slot from shared slots list.
-  useEffect(() => {
-    const slot = allSlots.find((s) => nowMs >= toMillis(s.startTime) && nowMs < toMillis(s.endTime)) ?? null
-    const newId = slot?.id ?? null
-
+    const newId = currentSlot?.id ?? null
     if (prevSlotIdRef.current !== null && newId !== prevSlotIdRef.current) {
       setShowWipe(true)
       if (wipeTimerRef.current) clearTimeout(wipeTimerRef.current)
       wipeTimerRef.current = setTimeout(() => setShowWipe(false), 1400)
     }
-
     prevSlotIdRef.current = newId
-    setCurrentSlot(slot)
     return () => {
       if (wipeTimerRef.current) clearTimeout(wipeTimerRef.current)
     }
-  }, [allSlots, nowMs])
+  }, [currentSlot?.id])
 
   const liveFeeSOL = currentSlot?.creatorFees?.feeOwedSOL ?? 0
   const liveFeeUSD = currentSlot?.creatorFees?.feeOwedUSD ?? 0
@@ -250,14 +197,11 @@ export default function Watch() {
     return () => clearTimeout(t)
   }, [currentSlot?.id, liveFeeUSD])
 
-  // Build today's slot list directly from subscribed slots.
-  useEffect(() => {
+  const todaySlots = useMemo(() => {
     const todayKey = etDayKeyFromMillis(nowMs)
-    setTodaySlots(
-      allSlots
-        .filter((slot) => etDayKeyFromMillis(toMillis(slot.startTime)) === todayKey)
-        .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime)),
-    )
+    return allSlots
+      .filter((slot) => etDayKeyFromMillis(toMillis(slot.startTime)) === todayKey)
+      .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
   }, [allSlots, nowMs])
 
   // Derive stream URL — ONLY from admin manual override (config/liveStream).
@@ -386,7 +330,7 @@ export default function Watch() {
                   type="button"
                   onClick={() => void handleClaimCurrent()}
                   disabled={claiming}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 rounded-lg text-xs font-bold text-emerald-200 uppercase tracking-wider transition-colors disabled:opacity-60 disabled:cursor-wait cursor-pointer"
+                  className="inline-flex items-center justify-center gap-2 px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 rounded-lg text-xs font-bold text-emerald-200 uppercase tracking-wider transition-colors disabled:opacity-60 disabled:cursor-wait cursor-pointer"
                 >
                   <Radio className="w-3.5 h-3.5" />
                   {claiming ? 'Claiming…' : 'Take this slot'}
@@ -463,7 +407,7 @@ export default function Watch() {
                           type="button"
                           onClick={() => void handleClaimSlot(slot)}
                           disabled={claiming}
-                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 lg:py-0.5 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+                          className="flex items-center justify-center w-full text-[10px] font-bold uppercase tracking-wider px-2 py-1 lg:py-0.5 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
                         >
                           Take Slot
                         </button>

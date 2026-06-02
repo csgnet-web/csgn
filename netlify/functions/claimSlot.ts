@@ -4,6 +4,7 @@ import { badRequest, conflict, forbidden, notFound } from './_shared/errors'
 import { beginTransaction, commitWrites, fieldFilter, getDoc, queryCollection, updateWrite } from './_shared/firebaseAdmin'
 import { json, parseJson, requireMethod, withHttp } from './_shared/http'
 import { resolveBroadcast } from './resolveCurrentBroadcast'
+import { checkRateLimit, clientIp } from './_shared/rateLimit'
 
 const DEFAULT_ADMIN_TWITCH = 'csgnet'
 
@@ -33,12 +34,14 @@ function cleanTwitchUsername(value: string): string {
 
 export const handler = withHttp(async (event) => {
   requireMethod(event, 'POST')
+  await checkRateLimit(clientIp(event), 'claimSlot', 20)
   const authUser = await requireUser(event)
   const slotId = parseJson<Body>(event).slotId
   if (!slotId || !/^[a-zA-Z0-9_-]{3,120}$/.test(slotId)) throw badRequest('Valid slotId is required.', 'invalid_slot_id')
   const transaction = await beginTransaction()
   const user = await getDoc<UserDoc>(`users/${authUser.uid}`, transaction)
   const isAdmin = user?.role === 'admin'
+  if (!isAdmin && authUser.email_verified !== true) throw forbidden('Email verification required before claiming slots')
   if (!user || (user.status !== 'active' && !isAdmin)) throw forbidden('Active CSGN account required')
 
   const twitchUsername = cleanTwitchUsername(

@@ -165,8 +165,7 @@ export default function Schedule() {
               <div>
                 <h4 className="font-semibold text-white mb-1">Want to be on the schedule?</h4>
                 <p className="text-sm text-gray-400 leading-relaxed">
-                  Apply to become a CSGN streamer. All calendar slots are currently CEO Creator type, and bidding UI is marked as coming soon.
-                  Streamers earn a performance-based share based on the active fee schedule.
+                  Create a CSGN account by connecting your Phantom wallet and Twitch account, claim an open slot and earn 30% of CSGN's trading fees for your time streamed!
                 </p>
               </div>
             </div>
