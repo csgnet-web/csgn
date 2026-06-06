@@ -10,6 +10,7 @@ export interface RegisterDraft {
   username: string
   phantomProofToken: string
   verifiedWallet: string
+  tosAccepted: boolean
 }
 
 export function storeRegisterDraft(draft: RegisterDraft): void {
@@ -30,6 +31,7 @@ export function readRegisterDraft(): RegisterDraft | null {
       username: typeof parsed.username === 'string' ? parsed.username : '',
       phantomProofToken: typeof parsed.phantomProofToken === 'string' ? parsed.phantomProofToken : '',
       verifiedWallet: typeof parsed.verifiedWallet === 'string' ? parsed.verifiedWallet : '',
+      tosAccepted: parsed.tosAccepted === true,
     }
   } catch {
     clearRegisterDraft()

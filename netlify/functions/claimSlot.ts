@@ -19,6 +19,7 @@ type UserDoc = {
   twitchUsername?: string
   walletAddress?: string
   socialLinks?: { twitch?: string }
+  tosVersion?: string
 }
 type SlotDoc = { status?: string; isClaimable?: boolean; assignedUid?: string; startTime?: string; endTime?: string }
 
@@ -53,6 +54,7 @@ export const handler = withHttp(async (event) => {
     throw forbidden('Verified Phantom and Twitch are required')
   }
   if (!twitchUsername || !twitchUserId || !walletAddress) throw forbidden('A Twitch channel and wallet are required to claim slots')
+  if (!isAdmin && !user.tosVersion) throw forbidden('Terms of Service acceptance is required to claim slots')
 
   const slot = await getDoc<SlotDoc>(`slots/${slotId}`, transaction)
   if (!slot) throw notFound('Slot not found')
@@ -69,8 +71,8 @@ export const handler = withHttp(async (event) => {
   const now = new Date()
   const twitchChannelUrl = `https://www.twitch.tv/${twitchUsername}`
   await commitWrites([updateWrite(`slots/${slotId}`, {
-    status: 'claimed', isClaimable: false, sourceType: 'user_twitch', assignedUid: authUser.uid, assignedUsername: user.username || twitchUsername,
-    assignedName: user.username || twitchUsername, twitchUserId, twitchUsername, twitchChannelUrl, streamUrl: twitchChannelUrl,
+    status: 'confirmed', isClaimable: false, sourceType: 'user_twitch', assignedUid: authUser.uid, assignedUsername: user.username || twitchUsername,
+    assignedName: user.username || twitchUsername, twitchChannel: twitchUsername, twitchUserId, twitchUsername, twitchChannelUrl, streamUrl: twitchChannelUrl,
     walletAddress, claimedAt: now, updatedAt: now,
   })], transaction)
   await auditLog('claimSlot', authUser.uid, { slotId })

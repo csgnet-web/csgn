@@ -62,7 +62,7 @@ async function findActiveSlot(): Promise<{ path: string; data: SlotDoc } | null>
       const s = r.data as SlotDoc
       const start = s.startTime ? new Date(s.startTime).getTime() : 0
       const end = s.endTime ? new Date(s.endTime).getTime() : 0
-      return nowMs >= start && nowMs < end && s.status === 'claimed'
+      return nowMs >= start && nowMs < end && s.status === 'confirmed'
     }) ?? null
   )
 }

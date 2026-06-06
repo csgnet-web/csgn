@@ -7,7 +7,7 @@ import { json, parseJson, requireMethod, withHttp } from './_shared/http'
 import { emailKey, normalizeEmail, normalizeUsername, usernameKey } from './_shared/validators'
 import { checkRateLimit, clientIp } from './_shared/rateLimit'
 
-type Body = { username?: string; phantomProofToken?: string; twitchProofToken?: string }
+type Body = { username?: string; phantomProofToken?: string; twitchProofToken?: string; tosVersion?: string }
 type PhantomProof = { type: string; walletAddress: string; exp: number; iat: number; jti: string }
 type TwitchProof = { type: string; twitchUserId: string; username: string; displayName: string; profileImageUrl: string; exp: number; iat: number; jti: string }
 
@@ -17,6 +17,8 @@ export const handler = withHttp(async (event) => {
   const authUser = await requireUser(event)
   if (!authUser.email) throw badRequest('Firebase user must have an email.', 'missing_email')
   const body = parseJson<Body>(event)
+  const tosVersion = (body.tosVersion || '').trim()
+  if (!tosVersion) throw badRequest('Terms of Service acceptance is required.', 'tos_not_accepted')
   const username = normalizeUsername(body.username || '')
   const usernameLower = usernameKey(username)
   const emailLower = normalizeEmail(authUser.email)
@@ -45,6 +47,8 @@ export const handler = withHttp(async (event) => {
     role: 'user',
     status: 'active',
     slotLimits: { maxConcurrentClaims: 2 },
+    acceptedTosAt: now,
+    tosVersion,
     createdAt: now,
     updatedAt: now,
   }

@@ -33,10 +33,13 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
   const [twitch, setTwitch] = useState<TwitchState>(null)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [tosAccepted, setTosAccepted] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [verifying, setVerifying] = useState<'phantom' | 'twitch' | null>(null)
   const [returnedFromTwitch, setReturnedFromTwitch] = useState(false)
+
+  const TOS_VERSION = '1'
 
   const [mode, setMode] = useState<'login' | 'signup'>(initialMode)
   const isRegister = mode === 'signup'
@@ -58,6 +61,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
     const draft = readRegisterDraft()
     if (draft) {
       setEmail(draft.email); setUsername(draft.username)
+      if (draft.tosAccepted) setTosAccepted(true)
       if (draft.phantomProofToken) {
         setPhantomProofToken(draft.phantomProofToken); setVerifiedWallet(draft.verifiedWallet)
         setReturnedFromTwitch(true)
@@ -85,14 +89,14 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
   const reset = () => {
     setError(''); setEmail(''); setUsername(''); setPassword(''); setConfirmPassword('')
     setPhantomProofToken(''); setVerifiedWallet(''); setTwitchProofToken(''); setTwitch(null); setVerifying(null)
-    setReturnedFromTwitch(false)
+    setReturnedFromTwitch(false); setTosAccepted(false)
     clearRegisterDraft()
   }
 
   const switchMode = () => {
     setError(''); setPassword(''); setConfirmPassword('')
     setPhantomProofToken(''); setVerifiedWallet(''); setTwitchProofToken(''); setTwitch(null); setVerifying(null)
-    setReturnedFromTwitch(false)
+    setReturnedFromTwitch(false); setTosAccepted(false)
     clearRegisterDraft()
     setMode(m => m === 'login' ? 'signup' : 'login')
   }
@@ -122,7 +126,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
       // Persist the in-progress form so the user doesn't lose it across the
       // full-page redirect, then redirect (no popup / window.opener) so this
       // works inside mobile in-app browsers like Phantom on iPhone.
-      storeRegisterDraft({ email, username, phantomProofToken, verifiedWallet })
+      storeRegisterDraft({ email, username, phantomProofToken, verifiedWallet, tosAccepted })
       window.location.href = authUrl
     } catch (err) {
       setVerifying(null)
@@ -135,9 +139,10 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
     try {
       if (isRegister) {
         if (password !== confirmPassword) throw new Error('Passwords do not match.')
+        if (!tosAccepted) throw new Error('You must accept the Terms & Conditions to create an account.')
         if (!phantomProofToken) throw new Error('Verify your Phantom wallet before creating an account.')
         if (!twitchProofToken) throw new Error('Verify your Twitch account before creating an account.')
-        await signUp(email, password, username, { phantomProofToken, twitchProofToken })
+        await signUp(email, password, username, { phantomProofToken, twitchProofToken, tosVersion: TOS_VERSION })
         clearTwitchProof()
         clearRegisterDraft()
       } else {
@@ -182,6 +187,24 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                 <label className="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
                 <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="Enter password" required minLength={6} disabled={loading} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button></div>
                 {isRegister && <><label className="block text-sm font-medium text-gray-300 mb-1.5">Confirm Password</label><div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="Confirm password" required minLength={6} disabled={loading} /><button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button></div></>}
+                {isRegister && (
+                  <label className="flex items-start gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={tosAccepted}
+                      onChange={(e) => setTosAccepted(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded border-white/20 bg-white/5 text-primary-500 focus:ring-primary-500/50"
+                      disabled={loading}
+                    />
+                    <span className="text-xs text-gray-400">
+                      I have read and agree to the{' '}
+                      <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:text-primary-300 underline">
+                        Terms &amp; Conditions
+                      </a>
+                      . I understand that Slot assignments and payouts are subject to review.
+                    </span>
+                  </label>
+                )}
                 <Button variant="primary" size="lg" className="w-full" type="submit" isLoading={loading}>{isRegister ? 'Create Account' : 'Sign In'}</Button>
                 <p className="text-sm text-center text-gray-500 mt-2">
                   {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}

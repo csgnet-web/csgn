@@ -35,6 +35,8 @@ export interface UserProfile {
   socialLinks?: { twitter?: string; twitch?: string }
   notifications?: UserNotification[]
   xp?: number
+  acceptedTosAt?: unknown
+  tosVersion?: string
 }
 
 export interface AuthContextType {
@@ -42,7 +44,7 @@ export interface AuthContextType {
   profile: UserProfile | null
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string, username: string, proofs: { phantomProofToken: string; twitchProofToken: string }) => Promise<void>
+  signUp: (email: string, password: string, username: string, proofs: { phantomProofToken: string; twitchProofToken: string; tosVersion: string }) => Promise<void>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
   resendVerification: () => Promise<void>

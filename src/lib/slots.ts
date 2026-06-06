@@ -35,13 +35,14 @@ export const CSGN_DECIMALS = 6
 export type SlotType = 'auction' | 'ceo'
 
 export type SlotStatus =
-  | 'open'            // accepting bids
-  | 'closing'         // within 2h of airtime — bidding closed, winner notified
-  | 'pending_deposit' // auction winner must confirm within 1h
-  | 'confirmed'       // confirmed or CEO-assigned
-  | 'live'            // currently airing
-  | 'completed'       // finished airing
-  | 'unfilled'        // nobody won / deposited
+  | 'open'             // accepting bids / claimable
+  | 'closing'          // within 2h of airtime — bidding closed, winner notified
+  | 'pending_deposit'  // auction winner must confirm within 1h
+  | 'confirmed'        // confirmed, CEO-assigned, or claimed by a verified streamer
+  | 'offline'          // assigned but streamer detected offline (OBS controller)
+  | 'live'             // currently airing
+  | 'completed'        // finished airing
+  | 'unfilled'         // nobody won / deposited
 
 export type FeePaymentStatus = 'pending' | 'paid' | 'declined'
 
@@ -109,6 +110,7 @@ export interface Slot {
   startTime: string           // ISO UTC
   endTime: string             // ISO UTC
   status: SlotStatus
+  twitchChannel?: string      // Twitch channel name (no URL prefix) — written on claim
   streamUrl: string           // defaults to twitch.tv/csgnet
   streamTitle: string         // display title for the stream
   assignedUid: string | null
