@@ -38,8 +38,9 @@ export type SlotStatus =
   | 'open'            // accepting bids
   | 'closing'         // within 2h of airtime — bidding closed, winner notified
   | 'pending_deposit' // auction winner must confirm within 1h
-  | 'confirmed'       // confirmed or CEO-assigned
-  | 'live'            // currently airing
+  | 'confirmed'       // claimed/CEO-assigned, window not started
+  | 'offline'         // window open, Twitch stream currently offline (controller-managed)
+  | 'live'            // window open, currently airing (controller-managed)
   | 'completed'       // finished airing
   | 'unfilled'        // nobody won / deposited
 
