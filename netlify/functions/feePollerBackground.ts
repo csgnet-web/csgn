@@ -3,7 +3,7 @@
 // Writes live creatorFees to the active slot doc in Firestore.
 // Browser clients NEVER call DexScreener — they read from the single Firestore listener.
 
-import { getDoc, queryCollection, writeDoc, fieldFilter, order } from './_shared/firebaseAdmin'
+import { queryCollection, writeDoc, fieldFilter, order } from './_shared/firebaseAdmin'
 import {
   fetchDexData,
   resolvePumpFeeTier,
