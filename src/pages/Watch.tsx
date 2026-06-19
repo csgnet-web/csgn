@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Gamepad2, Grid3X3, Radio } from 'lucide-react'
-import { formatESTRange, type Slot } from '@/lib/slots'
+import { formatESTRange, slotDisplayName, type Slot } from '@/lib/slots'
 import { api } from '@/lib/api'
 import { useAuth } from '@/contexts/useAuth'
 import { useLiveSlot } from '@/contexts/LiveSlotContext'
@@ -83,7 +83,7 @@ function formatCompactRange(slot: Pick<Slot, 'startTime' | 'endTime'>): string {
 
 /* ── Schedule card for today's lineup ── */
 function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) {
-  const streamer = slot.assignedName || (slot.type === 'auction' ? 'Open Bid' : 'CEO Schedule')
+  const streamer = slotDisplayName(slot)
   return (
     <div
       className={`relative rounded-xl overflow-hidden flex flex-col min-h-[89px] sm:min-h-[178px] lg:min-h-[88px] lg:h-[88px] transition-all duration-300 ${
@@ -134,16 +134,14 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
 
 function CSGNPlayer() {
   return (
-    <div style={{ padding: '56.25% 0 0 0', position: 'relative', width: '100%', height: '100%' }}>
-      <iframe
-        src={RESTREAM_PLAYER_SRC}
-        allow="autoplay; fullscreen"
-        allowFullScreen
-        frameBorder="0"
-        title="CSGN Live Stream"
-        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
-      />
-    </div>
+    <iframe
+      src={RESTREAM_PLAYER_SRC}
+      allow="autoplay; fullscreen"
+      allowFullScreen
+      frameBorder="0"
+      title="CSGN Live Stream"
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+    />
   )
 }
 
@@ -208,8 +206,8 @@ export default function Watch() {
   // The slot's raw Twitch/YouTube URL is intentionally NOT used here; that feed
   // is consumed by /player (OBS capture) and then re-broadcast to this page via
   // the CSGN output stream the admin sets in the override.
-  const streamerName = manualOverride?.streamerName || currentSlot?.assignedName || ''
-  const streamTitle = manualOverride?.title || currentSlot?.streamTitle || currentSlot?.description || ''
+  const streamerName = currentSlot?.assignedName || manualOverride?.streamerName || ''
+  const streamTitle = currentSlot?.streamTitle || currentSlot?.description || manualOverride?.title || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
 
   // Chat sidebar: only shown when the CSGN output stream is itself a Twitch channel
@@ -318,7 +316,7 @@ export default function Watch() {
         <div className="shrink-0 flex items-start justify-between px-5 py-4 border-b border-white/[0.06]">
           <div>
             <h1 className="text-3xl sm:text-4xl font-black font-display text-white tracking-tight leading-none">
-              {streamerName || <span className="text-gray-600">No Stream</span>}
+              {streamerName || <span className="text-gray-600">OFF-AIR</span>}
             </h1>
             {streamTitle && (
               <p className="text-sm text-primary-300 font-medium mt-0.5 italic">"{streamTitle}"</p>
@@ -381,7 +379,7 @@ export default function Watch() {
                   <p className="text-[11px] text-gray-500 uppercase tracking-wider leading-none mb-1">Up Next</p>
                   {upcomingSlots.slice(0, 3).map((s) => (
                     <p key={s.id} className="text-[10px] font-display font-bold text-white leading-snug whitespace-nowrap">
-                      {s.assignedName || (s.type === 'auction' ? 'Open Bid' : 'CEO')}{' '}
+                      {slotDisplayName(s)}{' '}
                       <span className="font-normal text-gray-400">{formatCompactRange(s)}</span>
                     </p>
                   ))}

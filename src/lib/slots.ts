@@ -248,6 +248,18 @@ export function formatESTRange(slot: Pick<Slot, 'startTime' | 'endTime'>): strin
   return `${fmt(slot.startTime)} – ${fmt(slot.endTime)} ET`
 }
 
+/**
+ * Canonical streamer display name for a slot. Used identically on the Watch
+ * (home), Schedule, and Queue pages so any given slot reads the same name on
+ * every surface. A claimed slot always shows its assigned name; an unclaimed
+ * slot falls back to a consistent type/status label.
+ */
+export function slotDisplayName(slot: Pick<Slot, 'assignedName' | 'type' | 'status'>): string {
+  if (slot.assignedName) return slot.assignedName
+  if (slot.status === 'open') return slot.type === 'auction' ? 'Open Bid' : 'Open Slot'
+  return slot.type === 'auction' ? 'Auction' : 'CEO Creator'
+}
+
 /* ─── Firestore operations ─── */
 
 const SLOTS_COLLECTION = 'slots'
