@@ -62,7 +62,10 @@ async function findActiveSlot(): Promise<{ path: string; data: SlotDoc } | null>
       const s = r.data as SlotDoc
       const start = s.startTime ? new Date(s.startTime).getTime() : 0
       const end = s.endTime ? new Date(s.endTime).getTime() : 0
-      return nowMs >= start && nowMs < end && s.status === 'claimed'
+      // In-window claimed slot. Status may be 'confirmed' (pre-flip) or
+      // 'offline'/'live' once the broadcast controller takes over; 'claimed' is legacy.
+      const active = s.status === 'confirmed' || s.status === 'offline' || s.status === 'live' || s.status === 'claimed'
+      return nowMs >= start && nowMs < end && active
     }) ?? null
   )
 }

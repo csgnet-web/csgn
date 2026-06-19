@@ -1150,6 +1150,7 @@ export default function Admin() {
                                 <option value="closing">closing</option>
                                 <option value="pending_deposit">pending_deposit</option>
                                 <option value="confirmed">confirmed</option>
+                                <option value="offline">offline</option>
                                 <option value="live">live</option>
                                 <option value="completed">completed</option>
                                 <option value="unfilled">unfilled</option>

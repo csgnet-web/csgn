@@ -47,6 +47,7 @@ export const handler = withHttp(async (event) => {
   const twitchUsername = cleanTwitchUsername(
     user.twitch?.username || (isAdmin ? (user.twitchUsername || user.socialLinks?.twitch || twitchUsernameFromDefaultUrl()) : ''),
   )
+  if (!twitchUsername) throw forbidden('Connect your Twitch account before claiming a slot.')
   const twitchUserId = user.twitch?.twitchUserId || (isAdmin ? `admin:${twitchUsername}` : '')
   const walletAddress = user.phantom?.walletAddress || (isAdmin ? (user.walletAddress || 'admin') : '')
   if (!isAdmin && (!user.phantom?.verified || !walletAddress || !user.twitch?.verified || !twitchUsername || !twitchUserId)) {
@@ -69,8 +70,8 @@ export const handler = withHttp(async (event) => {
   const now = new Date()
   const twitchChannelUrl = `https://www.twitch.tv/${twitchUsername}`
   await commitWrites([updateWrite(`slots/${slotId}`, {
-    status: 'claimed', isClaimable: false, sourceType: 'user_twitch', assignedUid: authUser.uid, assignedUsername: user.username || twitchUsername,
-    assignedName: user.username || twitchUsername, twitchUserId, twitchUsername, twitchChannelUrl, streamUrl: twitchChannelUrl,
+    status: 'confirmed', isClaimable: false, sourceType: 'user_twitch', assignedUid: authUser.uid, assignedUsername: user.username || twitchUsername,
+    assignedName: user.username || twitchUsername, twitchUserId, twitchUsername, twitchChannel: twitchUsername, twitchChannelUrl, streamUrl: twitchChannelUrl,
     walletAddress, claimedAt: now, updatedAt: now,
   })], transaction)
   await auditLog('claimSlot', authUser.uid, { slotId })

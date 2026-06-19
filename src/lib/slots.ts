@@ -38,9 +38,10 @@ export type SlotStatus =
   | 'open'            // accepting bids
   | 'closing'         // within 2h of airtime — bidding closed, winner notified
   | 'pending_deposit' // auction winner must confirm within 1h
-  | 'confirmed'       // confirmed or CEO-assigned
-  | 'live'            // currently airing
-  | 'completed'       // finished airing
+  | 'confirmed'       // claimed/CEO-assigned, window not started yet
+  | 'offline'         // window open, streamer offline (controller-managed)
+  | 'live'            // window open, streamer live (controller-managed)
+  | 'completed'       // window closed
   | 'unfilled'        // nobody won / deposited
 
 export type FeePaymentStatus = 'pending' | 'paid' | 'declined'
@@ -106,9 +107,10 @@ export interface Slot {
   id: string
   type: SlotType
   label: string
-  startTime: string           // ISO UTC
-  endTime: string             // ISO UTC
+  startTime: string           // ISO UTC — window opens
+  endTime: string             // ISO UTC — window closes
   status: SlotStatus
+  twitchChannel?: string      // claiming user's Twitch login (lowercase), set at claim time
   streamUrl: string           // defaults to twitch.tv/csgnet
   streamTitle: string         // display title for the stream
   assignedUid: string | null
