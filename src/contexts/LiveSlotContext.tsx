@@ -45,9 +45,10 @@ export function LiveSlotProvider({ children }: { children: React.ReactNode }) {
     return () => { mountedRef.current = false }
   }, [])
 
-  // Clock — drives current-slot derivation every 30s
+  // Clock — drives current-slot derivation. 5s keeps slot-boundary
+  // transitions near-instant (doc changes already arrive via onSnapshot).
   useEffect(() => {
-    const t = setInterval(() => { if (mountedRef.current) setNowMs(Date.now()) }, 30_000)
+    const t = setInterval(() => { if (mountedRef.current) setNowMs(Date.now()) }, 5_000)
     return () => clearInterval(t)
   }, [])
 

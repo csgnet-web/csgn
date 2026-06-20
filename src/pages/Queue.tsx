@@ -3,7 +3,7 @@ import { Clock3, Crown, ChevronLeft, ChevronRight, Radio } from 'lucide-react'
 import { useAuth } from '@/contexts/useAuth'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { fetchSlots, type Slot } from '@/lib/slots'
+import { subscribeToSlots, type Slot } from '@/lib/slots'
 import { api } from '@/lib/api'
 
 const WEEK_SPAN = 7
@@ -51,18 +51,6 @@ export default function Queue() {
   const [claimError, setClaimError] = useState('')
 
 
-  const loadSlots = useCallback(async () => {
-    const now = new Date()
-    const future = new Date(now.getTime() + 28 * 24 * 60 * 60 * 1000)
-    try {
-      const data = await fetchSlots(now, future)
-      setSlots(data)
-    } catch (err) {
-      console.warn('Failed to fetch slots:', err)
-    }
-    setLoading(false)
-  }, [])
-
   const handleClaim = useCallback(async (slot: Slot) => {
     if (!user || !profile) {
       localStorage.setItem('pendingClaimSlotId', slot.id)
@@ -73,17 +61,24 @@ export default function Queue() {
     setClaimError('')
     try {
       await api.claimSlot(slot.id)
-      await loadSlots()
+      // Live subscription reflects the claim automatically — no manual refetch.
     } catch (err) {
       setClaimError(err instanceof Error ? err.message : 'Could not claim slot.')
     } finally {
       setClaimingId(null)
     }
-  }, [loadSlots, profile, user])
+  }, [profile, user])
 
+  // Real-time slot feed so claims/releases anywhere on the site appear instantly.
   useEffect(() => {
-    loadSlots()
-  }, [loadSlots])
+    const now = new Date()
+    const future = new Date(now.getTime() + 28 * 24 * 60 * 60 * 1000)
+    const unsub = subscribeToSlots(now, future, (data) => {
+      setSlots(data)
+      setLoading(false)
+    })
+    return unsub
+  }, [])
 
   useEffect(() => {
     if (!user || !profile) return

@@ -32,7 +32,13 @@ export function redirect(location: string): HandlerResponse {
 
 export function parseJson<T = Record<string, unknown>>(event: HandlerEvent): T {
   if (!event.body) return {} as T
-  return JSON.parse(event.body) as T
+  // Cap body size and fail closed with a 400 (not a 500) on malformed input.
+  if (event.body.length > 100_000) throw new HttpError(413, 'payload_too_large', 'Request body too large')
+  try {
+    return JSON.parse(event.body) as T
+  } catch {
+    throw new HttpError(400, 'invalid_json', 'Request body must be valid JSON')
+  }
 }
 
 export function withHttp(handler: Handler): Handler {

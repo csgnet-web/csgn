@@ -1,7 +1,10 @@
 // Server-side fee calculation logic — pure functions, no browser deps.
 // Extracted from src/lib/dexscreener.ts for use in scheduled Netlify functions.
 
-export const CSGN_MINT = '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'
+// Canonical CSGN pump.fun mint — MUST match CSGN_MINT in src/lib/slots.ts.
+// The live-earnings poller queries DexScreener for this token; a mismatch
+// silently computes fees against the wrong token.
+export const CSGN_MINT = 'GFV7fphvprMr1PYpYGPJort2QP7JJLEp3J1Buu7Zpump'
 export const STREAMER_SHARE_OF_CREATOR_FEE = 0.3
 
 export interface PumpFeeTier {

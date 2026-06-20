@@ -207,7 +207,6 @@ export default function Watch() {
   // is consumed by /player (OBS capture) and then re-broadcast to this page via
   // the CSGN output stream the admin sets in the override.
   const streamerName = currentSlot?.assignedName || manualOverride?.streamerName || ''
-  const streamTitle = currentSlot?.streamTitle || currentSlot?.description || manualOverride?.title || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
 
   // Chat sidebar: only shown when the CSGN output stream is itself a Twitch channel
@@ -318,9 +317,6 @@ export default function Watch() {
             <h1 className="text-3xl sm:text-4xl font-black font-display text-white tracking-tight leading-none">
               {streamerName || <span className="text-gray-600">OFF-AIR</span>}
             </h1>
-            {streamTitle && (
-              <p className="text-sm text-primary-300 font-medium mt-0.5 italic">"{streamTitle}"</p>
-            )}
             <p className="text-sm text-gray-400 mt-1 font-mono">{slotLabel}</p>
             {canClaimCurrent && (
               <div className="mt-3 flex flex-col gap-1">
