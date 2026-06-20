@@ -1,23 +1,17 @@
 // Scheduled background function — runs every minute via cron.
-// Executes 4 DexScreener polls at 15-second intervals (t=0, 15s, 30s, 45s).
-// Writes live creatorFees to the active slot doc in Firestore.
-// Browser clients NEVER call DexScreener — they read from the single Firestore listener.
+// Polls Solscan (the token-level arbiter of truth) once per invocation and
+// writes live creatorFees to the active slot doc in Firestore.
+// Browser clients NEVER call Solscan — they read from the single Firestore listener.
 
 import { queryCollection, writeDoc, fieldFilter, order } from './_shared/firebaseAdmin'
 import {
-  fetchDexData,
+  fetchTokenData,
   resolvePumpFeeTier,
   formatTierRange,
   PUMP_FUN_FEE_TIERS,
   STREAMER_SHARE_OF_CREATOR_FEE,
-  type DexData,
+  type TokenData,
 } from './_shared/feeCalc'
-
-const POLL_INTERVAL_MS = 15_000
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 interface FeeState {
   baselineH24Usd: number
@@ -91,10 +85,10 @@ async function pollAndWrite(): Promise<void> {
       return
     }
 
-    const dexData: DexData | null = await fetchDexData()
-    if (!dexData) return
+    const tokenData: TokenData | null = await fetchTokenData()
+    if (!tokenData) return // Solscan unavailable/untrusted → freeze earnings this interval
 
-    const { volumeH1Usd, volumeH24Usd, solPriceUsd, marketCapSOL } = dexData
+    const { volumeH1Usd, volumeH24Usd, solPriceUsd, marketCapSOL } = tokenData
 
     const prevState: FeeState = slotData._feeState ?? {
       baselineH24Usd: -1,
@@ -182,11 +176,9 @@ async function pollAndWrite(): Promise<void> {
   }
 }
 
-// Netlify scheduled background function — handler runs once per cron invocation.
-// Executes 4 polls at 15s intervals within the single invocation.
+// Netlify scheduled background function — one Solscan-backed poll per cron
+// minute. Per-slot accrual state persists in the slot doc (_feeState), so
+// once-a-minute sampling is sufficient and keeps Solscan call volume minimal.
 export const handler = async () => {
-  for (let i = 0; i < 4; i++) {
-    await pollAndWrite()
-    if (i < 3) await sleep(POLL_INTERVAL_MS)
-  }
+  await pollAndWrite()
 }
