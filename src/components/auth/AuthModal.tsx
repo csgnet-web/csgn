@@ -8,6 +8,7 @@ import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { api, type TwitchProof } from '@/lib/api'
 import { clearTwitchProof, readTwitchProof } from '@/lib/twitchProof'
 import { clearRegisterDraft, readRegisterDraft, storeRegisterDraft } from '@/lib/registerDraft'
+import { TOS_VERSION } from '@/lib/tos'
 
 interface AuthModalProps { isOpen: boolean; onClose: () => void; initialMode?: 'login' | 'signup' }
 
@@ -31,6 +32,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
   const [verifiedWallet, setVerifiedWallet] = useState('')
   const [twitchProofToken, setTwitchProofToken] = useState('')
   const [twitch, setTwitch] = useState<TwitchState>(null)
+  const [acceptedTos, setAcceptedTos] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState('')
@@ -85,14 +87,14 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
   const reset = () => {
     setError(''); setEmail(''); setUsername(''); setPassword(''); setConfirmPassword('')
     setPhantomProofToken(''); setVerifiedWallet(''); setTwitchProofToken(''); setTwitch(null); setVerifying(null)
-    setReturnedFromTwitch(false)
+    setReturnedFromTwitch(false); setAcceptedTos(false)
     clearRegisterDraft()
   }
 
   const switchMode = () => {
     setError(''); setPassword(''); setConfirmPassword('')
     setPhantomProofToken(''); setVerifiedWallet(''); setTwitchProofToken(''); setTwitch(null); setVerifying(null)
-    setReturnedFromTwitch(false)
+    setReturnedFromTwitch(false); setAcceptedTos(false)
     clearRegisterDraft()
     setMode(m => m === 'login' ? 'signup' : 'login')
   }
@@ -137,7 +139,8 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
         if (password !== confirmPassword) throw new Error('Passwords do not match.')
         if (!phantomProofToken) throw new Error('Verify your Phantom wallet before creating an account.')
         if (!twitchProofToken) throw new Error('Verify your Twitch account before creating an account.')
-        await signUp(email, password, username, { phantomProofToken, twitchProofToken })
+        if (!acceptedTos) throw new Error('Please accept the Terms of Service to continue.')
+        await signUp(email, password, username, { phantomProofToken, twitchProofToken, acceptedTos })
         clearTwitchProof()
         clearRegisterDraft()
       } else {
@@ -182,6 +185,12 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                 <label className="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
                 <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="Enter password" required minLength={6} disabled={loading} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button></div>
                 {isRegister && <><label className="block text-sm font-medium text-gray-300 mb-1.5">Confirm Password</label><div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="Confirm password" required minLength={6} disabled={loading} /><button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button></div></>}
+                {isRegister && (
+                  <label className="flex items-start gap-2.5 text-sm text-gray-300 cursor-pointer select-none">
+                    <input type="checkbox" checked={acceptedTos} onChange={(e) => setAcceptedTos(e.target.checked)} required disabled={loading} className="mt-0.5 h-4 w-4 shrink-0 rounded border-white/20 bg-white/5 text-primary-500 focus:ring-primary-500/50 cursor-pointer" />
+                    <span>I agree to the{' '}<a href="/terms" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:text-primary-300 underline">Terms of Service</a>{' '}<span className="text-gray-500">(v{TOS_VERSION})</span>.</span>
+                  </label>
+                )}
                 <Button variant="primary" size="lg" className="w-full" type="submit" isLoading={loading}>{isRegister ? 'Create Account' : 'Sign In'}</Button>
                 <p className="text-sm text-center text-gray-500 mt-2">
                   {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}

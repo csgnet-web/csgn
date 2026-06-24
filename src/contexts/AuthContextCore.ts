@@ -25,6 +25,8 @@ export interface UserProfile {
   photoURL?: string | null
   role: 'user' | 'viewer' | 'streamer' | 'admin'
   status?: 'active' | 'disabled'
+  acceptedTosAt?: unknown
+  tosVersion?: string
   createdAt: unknown
   updatedAt?: unknown
   phantom?: { verified: boolean; walletAddress: string; verifiedAt: unknown }
@@ -42,7 +44,7 @@ export interface AuthContextType {
   profile: UserProfile | null
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string, username: string, proofs: { phantomProofToken: string; twitchProofToken: string }) => Promise<void>
+  signUp: (email: string, password: string, username: string, proofs: { phantomProofToken: string; twitchProofToken: string; acceptedTos: boolean }) => Promise<void>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
   resendVerification: () => Promise<void>

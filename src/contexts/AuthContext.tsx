@@ -57,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const signUp = async (email: string, password: string, username: string, proofs: { phantomProofToken: string; twitchProofToken: string }) => {
+  const signUp = async (email: string, password: string, username: string, proofs: { phantomProofToken: string; twitchProofToken: string; acceptedTos: boolean }) => {
     void logAuthEvent('signup-email-start')
     let createdUid: string | null = null
     try {

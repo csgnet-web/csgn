@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Clock3, Crown, ChevronLeft, ChevronRight, Radio } from 'lucide-react'
 import { useAuth } from '@/contexts/useAuth'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
+import { TosAcceptPrompt } from '@/components/auth/TosAcceptPrompt'
 import { subscribeToSlots, type Slot } from '@/lib/slots'
 import { api } from '@/lib/api'
 
@@ -49,14 +50,10 @@ export default function Queue() {
   const [selectedDay, setSelectedDay] = useState(0)
   const [claimingId, setClaimingId] = useState<string | null>(null)
   const [claimError, setClaimError] = useState('')
+  const [tosPromptOpen, setTosPromptOpen] = useState(false)
+  const tosPendingSlot = useRef<Slot | null>(null)
 
-
-  const handleClaim = useCallback(async (slot: Slot) => {
-    if (!user || !profile) {
-      localStorage.setItem('pendingClaimSlotId', slot.id)
-      window.dispatchEvent(new Event('csgn:openRegister'))
-      return
-    }
+  const executeClaim = useCallback(async (slot: Slot) => {
     setClaimingId(slot.id)
     setClaimError('')
     try {
@@ -67,7 +64,22 @@ export default function Queue() {
     } finally {
       setClaimingId(null)
     }
-  }, [profile, user])
+  }, [])
+
+  const handleClaim = useCallback(async (slot: Slot) => {
+    if (!user || !profile) {
+      localStorage.setItem('pendingClaimSlotId', slot.id)
+      window.dispatchEvent(new Event('csgn:openRegister'))
+      return
+    }
+    // Pre-existing accounts created before the ToS gate must accept first.
+    if (!profile.acceptedTosAt) {
+      tosPendingSlot.current = slot
+      setTosPromptOpen(true)
+      return
+    }
+    await executeClaim(slot)
+  }, [profile, user, executeClaim])
 
   // Real-time slot feed so claims/releases anywhere on the site appear instantly.
   useEffect(() => {
@@ -228,6 +240,16 @@ export default function Queue() {
           </Card>
         )}
       </div>
+      <TosAcceptPrompt
+        isOpen={tosPromptOpen}
+        onClose={() => { tosPendingSlot.current = null; setTosPromptOpen(false) }}
+        onAccepted={() => {
+          setTosPromptOpen(false)
+          const slot = tosPendingSlot.current
+          tosPendingSlot.current = null
+          if (slot) void executeClaim(slot)
+        }}
+      />
     </div>
   )
 }

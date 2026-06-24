@@ -5,6 +5,7 @@ import { formatESTRange, slotDisplayName, type Slot } from '@/lib/slots'
 import { api } from '@/lib/api'
 import { useAuth } from '@/contexts/useAuth'
 import { useLiveSlot } from '@/contexts/LiveSlotContext'
+import { TosAcceptPrompt } from '@/components/auth/TosAcceptPrompt'
  
 const FIXED_CHAT_CHANNEL = 'csgnet'
 const RESTREAM_PLAYER_SRC = 'https://player.restream.io/?token=e533c1e2dff542bf9ed97ecba6b08597'
@@ -166,6 +167,8 @@ export default function Watch() {
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [claiming, setClaiming] = useState(false)
   const [claimError, setClaimError] = useState('')
+  const [tosPromptOpen, setTosPromptOpen] = useState(false)
+  const tosPendingSlot = useRef<Slot | null>(null)
   const [pulseFee, setPulseFee] = useState(false)
   const [showWipe, setShowWipe] = useState(false)
   const prevSlotIdRef = useRef<string | null>(null)
@@ -221,12 +224,7 @@ export default function Watch() {
     currentSlot?.status === 'open' &&
     !currentSlot?.assignedUid
 
-  const handleClaimSlot = useCallback(async (slot: Slot) => {
-    if (!user || !profile) {
-      localStorage.setItem('pendingClaimSlotId', slot.id)
-      window.dispatchEvent(new Event('csgn:openRegister'))
-      return
-    }
+  const executeClaim = useCallback(async (slot: Slot) => {
     setClaiming(true)
     setClaimError('')
     try {
@@ -236,7 +234,22 @@ export default function Watch() {
     } finally {
       setClaiming(false)
     }
-  }, [profile, user])
+  }, [])
+
+  const handleClaimSlot = useCallback(async (slot: Slot) => {
+    if (!user || !profile) {
+      localStorage.setItem('pendingClaimSlotId', slot.id)
+      window.dispatchEvent(new Event('csgn:openRegister'))
+      return
+    }
+    // Pre-existing accounts created before the ToS gate must accept first.
+    if (!profile.acceptedTosAt) {
+      tosPendingSlot.current = slot
+      setTosPromptOpen(true)
+      return
+    }
+    await executeClaim(slot)
+  }, [profile, user, executeClaim])
 
   const handleClaimCurrent = useCallback(async () => {
     if (!currentSlot) return
@@ -488,6 +501,16 @@ export default function Watch() {
           )}
         </aside>
       )}
+      <TosAcceptPrompt
+        isOpen={tosPromptOpen}
+        onClose={() => { tosPendingSlot.current = null; setTosPromptOpen(false) }}
+        onAccepted={() => {
+          setTosPromptOpen(false)
+          const slot = tosPendingSlot.current
+          tosPendingSlot.current = null
+          if (slot) void executeClaim(slot)
+        }}
+      />
     </div>
   )
 }

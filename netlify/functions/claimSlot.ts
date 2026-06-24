@@ -13,6 +13,7 @@ type UserDoc = {
   username?: string
   status?: string
   role?: string
+  acceptedTosAt?: unknown
   slotLimits?: { maxConcurrentClaims?: number }
   phantom?: { walletAddress?: string; verified?: boolean }
   twitch?: { twitchUserId?: string; username?: string; verified?: boolean }
@@ -43,6 +44,7 @@ export const handler = withHttp(async (event) => {
   const isAdmin = user?.role === 'admin'
   if (!isAdmin && authUser.email_verified !== true) throw forbidden('Email verification required before claiming slots')
   if (!user || (user.status !== 'active' && !isAdmin)) throw forbidden('Active CSGN account required')
+  if (!isAdmin && !user.acceptedTosAt) throw forbidden('You must accept the Terms of Service before claiming a slot.')
 
   const twitchUsername = cleanTwitchUsername(
     user.twitch?.username || (isAdmin ? (user.twitchUsername || user.socialLinks?.twitch || twitchUsernameFromDefaultUrl()) : ''),
