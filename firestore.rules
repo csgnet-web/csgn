@@ -13,7 +13,9 @@ service cloud.firestore {
 
     match /slots/{slotId} {
       allow read: if true;
-      allow write: if isAdmin();
+      // OBS controller writes via the Admin SDK, which bypasses these rules.
+      // Lock all client writes so slot status cannot be spoofed.
+      allow write: if false;
     }
 
     match /public/currentBroadcast {
