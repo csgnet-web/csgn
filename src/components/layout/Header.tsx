@@ -7,6 +7,8 @@ import { LiveIndicator } from '@/components/ui/LiveIndicator'
 import { Logo } from '@/components/ui/Logo'
 import { AuthModal } from '@/components/auth/AuthModal'
 import { useAuth } from '@/contexts/useAuth'
+import { useLiveSlot } from '@/contexts/useLiveSlot'
+import { CSGN_MINT } from '@/lib/slots'
 
 const navLinks = [
   { href: '/watch', label: 'Watch Live', live: true },
@@ -14,6 +16,36 @@ const navLinks = [
   { href: '/queue', label: 'Queue', authOnly: true },
   { href: '/about', label: 'About' },
 ]
+
+function formatChipPrice(price: number): string {
+  if (price <= 0) return '—'
+  if (price >= 1) return `$${price.toFixed(2)}`
+  if (price >= 0.01) return `$${price.toFixed(4)}`
+  return `$${Number(price.toPrecision(3)).toFixed(Math.max(0, -Math.floor(Math.log10(price)) + 2))}`
+}
+
+/** Compact live $CSGN price chip — free to render anywhere, context is global. */
+function TokenPriceChip() {
+  const { tokenStats } = useLiveSlot()
+  if (!tokenStats) return null
+  const change = tokenStats.priceChangeH24Pct
+  const positive = change >= 0
+  return (
+    <a
+      href={tokenStats.pairUrl || `https://dexscreener.com/solana/${CSGN_MINT}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] transition-all font-mono text-xs"
+      title="$CSGN on DexScreener"
+    >
+      <span className="text-gray-400 font-bold">$CSGN</span>
+      <span className="text-white font-bold">{formatChipPrice(tokenStats.priceUsd)}</span>
+      <span className={positive ? 'text-positive' : 'text-negative'}>
+        {positive ? '+' : ''}{change.toFixed(1)}%
+      </span>
+    </a>
+  )
+}
 
 export function Header() {
   const [scrolled, setScrolled]     = useState(false)
@@ -70,8 +102,11 @@ export function Header() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 lg:h-20">
 
-            {/* Logo */}
-            <Logo showText={false} size="md" />
+            {/* Logo + live token price */}
+            <div className="flex items-center gap-3">
+              <Logo showText={false} size="md" />
+              <TokenPriceChip />
+            </div>
 
             {/* Desktop Nav */}
             <nav className="hidden lg:flex items-center gap-0.5">

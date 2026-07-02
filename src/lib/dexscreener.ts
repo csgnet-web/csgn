@@ -78,6 +78,50 @@ export function estimateCreatorFeeSOL(tradingVolumeSOL: number, marketCapSOL: nu
   return tradingVolumeSOL * getStreamerShareRateForMarketCap(marketCapSOL)
 }
 
+/** Shape of the public/tokenStats doc written server-side by feePollerBackground. */
+export interface TokenStatsSnapshot {
+  priceUsd: number
+  marketCapUsd: number
+  volumeH24Usd: number
+  priceChangeH24Pct: number
+  liquidityUsd: number
+  solPriceUsd: number
+  pairUrl: string
+  mint: string
+  updatedAt: string
+}
+
+/**
+ * One-shot client-side token stats fetch — fallback only, for when the
+ * server-written public/tokenStats doc is missing or stale. Never poll this.
+ */
+export async function fetchTokenStats(): Promise<TokenStatsSnapshot | null> {
+  try {
+    const res = await fetch(`${DS_API}/${DS_CHAIN}/${CSGN_MINT}`, { cache: 'no-store' })
+    if (!res.ok) return null
+    const pairs = (await res.json()) as Array<DexPair & { url?: string; priceChange?: { h24?: number }; liquidity?: { usd?: number } }>
+    if (!Array.isArray(pairs) || pairs.length === 0) return null
+    const best = [...pairs].sort((a, b) => (b.volume?.h24 ?? 0) - (a.volume?.h24 ?? 0))[0]
+    const priceUsd = parseFloat(best.priceUsd ?? '0')
+    const priceNative = parseFloat(best.priceNative ?? '0')
+    if (priceUsd <= 0) return null
+    const solPriceUsd = best.quoteToken?.symbol?.toUpperCase() === 'SOL' && priceNative > 0 ? priceUsd / priceNative : 150
+    return {
+      priceUsd,
+      marketCapUsd: best.marketCap ?? best.fdv ?? 0,
+      volumeH24Usd: best.volume?.h24 ?? 0,
+      priceChangeH24Pct: best.priceChange?.h24 ?? 0,
+      liquidityUsd: best.liquidity?.usd ?? 0,
+      solPriceUsd,
+      pairUrl: best.url ?? '',
+      mint: CSGN_MINT,
+      updatedAt: new Date().toISOString(),
+    }
+  } catch {
+    return null
+  }
+}
+
 let lastFetchAt = 0
 let cachedData: { volumeH1Usd: number; volumeH24Usd: number; solPriceUsd: number; marketCapSOL: number } | null = null
 

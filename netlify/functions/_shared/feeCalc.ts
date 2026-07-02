@@ -1,7 +1,9 @@
 // Server-side fee calculation logic — pure functions, no browser deps.
 // Extracted from src/lib/dexscreener.ts for use in scheduled Netlify functions.
 
-export const CSGN_MINT = '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'
+// Must stay in sync with CSGN_MINT in src/lib/slots.ts (functions and src have
+// separate build graphs — do not cross-import).
+export const CSGN_MINT = 'GFV7fphvprMr1PYpYGPJort2QP7JJLEp3J1Buu7Zpump'
 export const STREAMER_SHARE_OF_CREATOR_FEE = 0.3
 
 export interface PumpFeeTier {
@@ -60,6 +62,37 @@ export interface DexData {
   volumeH24Usd: number
   solPriceUsd: number
   marketCapSOL: number
+  priceUsd: number
+  marketCapUsd: number
+  priceChangeH24Pct: number
+  liquidityUsd: number
+  pairUrl: string
+}
+
+export interface TokenStatsDoc {
+  priceUsd: number
+  marketCapUsd: number
+  volumeH24Usd: number
+  priceChangeH24Pct: number
+  liquidityUsd: number
+  solPriceUsd: number
+  pairUrl: string
+  mint: string
+  updatedAt: string
+}
+
+export function buildTokenStatsDoc(dex: DexData): TokenStatsDoc {
+  return {
+    priceUsd: dex.priceUsd,
+    marketCapUsd: dex.marketCapUsd,
+    volumeH24Usd: dex.volumeH24Usd,
+    priceChangeH24Pct: dex.priceChangeH24Pct,
+    liquidityUsd: dex.liquidityUsd,
+    solPriceUsd: dex.solPriceUsd,
+    pairUrl: dex.pairUrl,
+    mint: CSGN_MINT,
+    updatedAt: new Date().toISOString(),
+  }
 }
 
 export async function fetchDexData(): Promise<DexData | null> {
@@ -67,9 +100,12 @@ export async function fetchDexData(): Promise<DexData | null> {
     const res = await fetch(`${DS_API}/${DS_CHAIN}/${CSGN_MINT}`, { cache: 'no-store' })
     if (!res.ok) return null
     const pairs = await res.json() as Array<{
+      url?: string
       priceNative?: string
       priceUsd?: string
       volume?: { h1?: number; h24?: number }
+      priceChange?: { h24?: number }
+      liquidity?: { usd?: number }
       marketCap?: number
       fdv?: number
       quoteToken?: { symbol?: string }
@@ -83,7 +119,17 @@ export async function fetchDexData(): Promise<DexData | null> {
       best.quoteToken?.symbol?.toUpperCase() === 'SOL' && priceNative > 0 ? priceUsd / priceNative : 150
     const marketCapUsd = best.marketCap ?? best.fdv ?? 0
     const marketCapSOL = marketCapUsd > 0 && solPriceUsd > 0 ? marketCapUsd / solPriceUsd : 0
-    return { volumeH1Usd: best.volume?.h1 ?? 0, volumeH24Usd: best.volume?.h24 ?? 0, solPriceUsd, marketCapSOL }
+    return {
+      volumeH1Usd: best.volume?.h1 ?? 0,
+      volumeH24Usd: best.volume?.h24 ?? 0,
+      solPriceUsd,
+      marketCapSOL,
+      priceUsd,
+      marketCapUsd,
+      priceChangeH24Pct: best.priceChange?.h24 ?? 0,
+      liquidityUsd: best.liquidity?.usd ?? 0,
+      pairUrl: best.url ?? '',
+    }
   } catch {
     return null
   }

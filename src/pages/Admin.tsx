@@ -18,6 +18,7 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { PUMP_FUN_FEE_TIERS, estimateCreatorFeeSOL, formatTierRange, resolvePumpFeeTier } from '@/lib/dexscreener'
+import { parseXPostId, isBroadcastUrl } from '@/lib/xembed'
 import {
   appendNextThreeDays,
   wipeAndRegenerateSlots,
@@ -705,10 +706,12 @@ export default function Admin() {
               <div className="p-4 space-y-4">
                 {/* Workflow hint */}
                 <div className="p-3 bg-white/[0.03] border border-white/[0.06] rounded-xl text-xs text-gray-500 leading-relaxed space-y-1">
-                  <p className="text-gray-400 font-medium">Setup flow</p>
+                  <p className="text-gray-400 font-medium">Setup flow (OBS → X, no Restream)</p>
                   <p>1. Open <span className="font-mono text-primary-400">/player</span> → add as OBS Window Capture source</p>
-                  <p>2. OBS streams to X / pump.fun — copy that stream's URL</p>
-                  <p>3. Paste it below → viewers on <span className="font-mono text-primary-400">/watch</span> see your CSGN output</p>
+                  <p>2. X Media Studio (studio.x.com → Producer) → create broadcast → copy RTMPS URL + key into OBS → Start Streaming</p>
+                  <p>3. Go live from Media Studio, open the broadcast's post on @CSGNet, copy the post URL</p>
+                  <p>4. Paste it below → viewers on <span className="font-mono text-primary-400">/watch</span> see the embedded broadcast</p>
+                  <p>5. Session over: stop OBS + Clear below → /watch shows the offline panel</p>
                 </div>
 
                 {currentLiveUrl && (
@@ -732,14 +735,30 @@ export default function Admin() {
                   </div>
                 )}
                 <div>
-                  <label className="block text-sm text-gray-300 mb-1">CSGN Output URL <span className="text-gray-500 text-xs">(your OBS destination stream)</span></label>
+                  <label className="block text-sm text-gray-300 mb-1">X Broadcast Post URL <span className="text-gray-500 text-xs">(paste once per OBS session)</span></label>
                   <input
                     type="text"
                     value={liveStreamUrl}
                     onChange={(e) => setLiveStreamUrl(e.target.value)}
-                    placeholder="https://x.com/i/broadcasts/... or https://twitch.tv/channel"
+                    placeholder="https://x.com/CSGNet/status/1234567890"
                     className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
                   />
+                  {liveStreamUrl.trim() && (
+                    parseXPostId(liveStreamUrl) ? (
+                      <p className="mt-1.5 text-xs text-emerald-300 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                        Valid X post — /watch will embed this broadcast
+                      </p>
+                    ) : isBroadcastUrl(liveStreamUrl) ? (
+                      <p className="mt-1.5 text-xs text-amber-300">
+                        This is a raw x.com/i/broadcasts link — it can't be embedded. Paste the URL of the X <em>post</em> containing the broadcast instead (open the post on @CSGNet, copy its link).
+                      </p>
+                    ) : (
+                      <p className="mt-1.5 text-xs text-gray-500">
+                        Not an X post URL — /watch will show the offline panel with an outbound link.
+                      </p>
+                    )
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm text-gray-300 mb-1">Streamer Name</label>

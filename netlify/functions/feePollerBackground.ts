@@ -3,8 +3,9 @@
 // Writes live creatorFees to the active slot doc in Firestore.
 // Browser clients NEVER call DexScreener — they read from the single Firestore listener.
 
-import { getDoc, queryCollection, writeDoc, fieldFilter, order } from './_shared/firebaseAdmin'
+import { queryCollection, writeDoc, fieldFilter, order } from './_shared/firebaseAdmin'
 import {
+  buildTokenStatsDoc,
   fetchDexData,
   resolvePumpFeeTier,
   formatTierRange,
@@ -67,7 +68,7 @@ async function findActiveSlot(): Promise<{ path: string; data: SlotDoc } | null>
   )
 }
 
-async function pollAndWrite(): Promise<void> {
+async function pollAndWrite(dexData: DexData): Promise<void> {
   try {
     const row = await findActiveSlot()
     if (!row) return
@@ -87,9 +88,6 @@ async function pollAndWrite(): Promise<void> {
       )
       return
     }
-
-    const dexData: DexData | null = await fetchDexData()
-    if (!dexData) return
 
     const { volumeH1Usd, volumeH24Usd, solPriceUsd, marketCapSOL } = dexData
 
@@ -180,10 +178,25 @@ async function pollAndWrite(): Promise<void> {
 }
 
 // Netlify scheduled background function — handler runs once per cron invocation.
-// Executes 4 polls at 15s intervals within the single invocation.
+// Executes 4 polls at 15s intervals within the single invocation. Each tick
+// fetches DexScreener once; the first successful tick also refreshes
+// public/tokenStats (~1 write/min) so token stats flow 24/7 even when no slot
+// is live.
 export const handler = async () => {
+  let tokenStatsWritten = false
   for (let i = 0; i < 4; i++) {
-    await pollAndWrite()
+    const dexData = await fetchDexData()
+    if (dexData) {
+      if (!tokenStatsWritten) {
+        try {
+          await writeDoc('public/tokenStats', buildTokenStatsDoc(dexData), { merge: false })
+          tokenStatsWritten = true
+        } catch (err) {
+          console.error('[feePoller] tokenStats write error:', err)
+        }
+      }
+      await pollAndWrite(dexData)
+    }
     if (i < 3) await sleep(POLL_INTERVAL_MS)
   }
 }
