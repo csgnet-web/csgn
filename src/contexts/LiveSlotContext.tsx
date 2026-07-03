@@ -1,27 +1,13 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { subscribeToSlots, type Slot } from '@/lib/slots'
-
-interface ManualOverride {
-  url: string
-  streamerName: string
-  title: string
-}
-
-interface LiveSlotContextValue {
-  currentSlot: Slot | null
-  allSlots: Slot[]
-  manualOverride: ManualOverride | null
-  nowMs: number
-}
-
-const LiveSlotContext = createContext<LiveSlotContextValue>({
-  currentSlot: null,
-  allSlots: [],
-  manualOverride: null,
-  nowMs: Date.now(),
-})
+import {
+  LiveSlotContext,
+  type LiveSlotContextValue,
+  type ManualOverride,
+  type TokenStats,
+} from './LiveSlotContextCore'
 
 function toMillis(value: unknown): number {
   if (typeof value === 'string' || value instanceof Date || typeof value === 'number') {
@@ -37,6 +23,7 @@ function toMillis(value: unknown): number {
 export function LiveSlotProvider({ children }: { children: React.ReactNode }) {
   const [allSlots, setAllSlots] = useState<Slot[]>([])
   const [manualOverride, setManualOverride] = useState<ManualOverride | null>(null)
+  const [tokenStats, setTokenStats] = useState<TokenStats | null>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
   const mountedRef = useRef(true)
 
@@ -69,6 +56,19 @@ export function LiveSlotProvider({ children }: { children: React.ReactNode }) {
     return unsub
   }, [])
 
+  // Single listener for token stats — written server-side by feePollerBackground (~1/min)
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, 'public', 'tokenStats'),
+      (snap) => {
+        if (!mountedRef.current) return
+        setTokenStats(snap.exists() ? (snap.data() as TokenStats) : null)
+      },
+      () => { if (mountedRef.current) setTokenStats(null) },
+    )
+    return unsub
+  }, [])
+
   // Single listener for all slot data — creatorFees are written server-side by feePollerBackground
   useEffect(() => {
     const from = new Date(Date.now() - 24 * 60 * 60 * 1000)
@@ -90,13 +90,9 @@ export function LiveSlotProvider({ children }: { children: React.ReactNode }) {
   }, [allSlots, nowMs])
 
   const value = useMemo<LiveSlotContextValue>(
-    () => ({ currentSlot, allSlots, manualOverride, nowMs }),
-    [currentSlot, allSlots, manualOverride, nowMs],
+    () => ({ currentSlot, allSlots, manualOverride, tokenStats, nowMs }),
+    [currentSlot, allSlots, manualOverride, tokenStats, nowMs],
   )
 
   return <LiveSlotContext.Provider value={value}>{children}</LiveSlotContext.Provider>
-}
-
-export function useLiveSlot(): LiveSlotContextValue {
-  return useContext(LiveSlotContext)
 }

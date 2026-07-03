@@ -46,6 +46,18 @@ Simplified v1 flow. Mobile full-page Twitch OAuth redirect (replaces popup, work
 - Rate limiting on all API endpoints (Firestore-backed, per-IP)
 - Security hardening: CORS locked to configured origin, hardcoded Firebase config removed, password no longer stored in sessionStorage, email verification enforced at slot claim, `auth_events` restricted to authenticated users, CSP headers added, proof token secret minimum raised to 32 characters
 
+### v1.1 — July 2026
+**X-exclusive broadcast + crypto redesign.**
+- CSGN's output stream moves exclusively to X: OBS (capturing `/player`) streams directly to X Media Studio via RTMPS — Restream removed entirely (player iframe + CSP entry)
+- `/watch` embeds the live X broadcast post (widgets.js `createTweet`, dark theme) with a branded offline panel and an ad-blocker-proof "Watch live on X" fallback; admin pastes the broadcast post URL once per OBS session (validated — raw `/i/broadcasts/` links flagged)
+- Twitch chat sidebar replaced with a live $CSGN token panel: price, 24h change, market cap, volume, liquidity, copy-CA, DexScreener/pump.fun links, "Join the chat on X"
+- New `public/tokenStats` doc written by the fee poller every minute (24/7, active slot or not); third `LiveSlotContext` listener; live price chip in the header
+- Fixed server fee poller polling the wrong token mint (now `GFV7…pump`, matching `src/lib/slots.ts`)
+- CSP rewritten: X widget domains added, Restream dropped, Google Fonts and YouTube `/player` embeds unblocked (both were latent CSP violations)
+- Footer reworked (@CSGNet, token CA strip, market links) and mounted on content pages; dead legacy pages removed (`Home`, `Tokenomics`, `Apply`)
+- Slot streamers still stream to their own Twitch channels; account system (email + Phantom + Twitch, under a minute) unchanged
+- `/player` rebuilt as Master Control: a unit-tested state machine (LIVE / STARTING_SOON / BRB / INTERMISSION / OVERRIDE) driven by Twitch embed JS-API online/offline events — BRB grace, auto-return on reconnect, admin-managed intermission VOD playlist, animated network board, brand wipes; OBS reduced to a single browser-source scene (docs/obs-setup.md)
+
 ---
 
 ## Getting Started
@@ -100,7 +112,7 @@ See [`docs/env-setup.md`](docs/env-setup.md) for Netlify-specific setup guidance
 | Route | Description |
 |---|---|
 | `/` | Live stream viewer (alias for `/watch`) |
-| `/watch` | Live stream with earnings display and today's schedule |
+| `/watch` | Embedded X broadcast, $CSGN token panel, earnings display, today's schedule |
 | `/schedule` | Full 7-day broadcast schedule |
 | `/queue` | Open slots available to claim |
 | `/about` | About CSGN, mission, vision |
@@ -123,24 +135,51 @@ SECRETS_SCAN_OMIT_KEYS=FIREBASE_PROJECT_ID,VITE_FIREBASE_PROJECT_ID
 
 ---
 
-## Architecture: Live Fee Data Flow
+## Architecture: Broadcast Flow (OBS → X, no Restream)
+
+```
+Slot streamers → their own Twitch channels
+  claimSlot → twitchChannelUrl → resolveCurrentBroadcast → public/currentBroadcast
+
+CSGN operator machine (see docs/obs-setup.md):
+  /player = MASTER CONTROL — a state machine (src/lib/masterControl.ts), not a dumb iframe:
+    LIVE            streamer's feed fullscreen, audio on (Twitch embed JS API events)
+    STARTING_SOON   slot claimed, not live yet → branded card (max 10 min)
+    BRB             feed dropped → grace card 120s; auto-cuts back on reconnect
+    INTERMISSION    admin VOD playlist (config/vodPlaylist) rotating with the animated board
+    OVERRIDE        emergency non-Twitch URL (YouTube iframe)
+    + CSGN brand wipe on every state change
+  → OBS Browser Source (1920×1080, one scene, zero OBS logic)
+  → RTMPS → X Media Studio Producer → live on @CSGNet
+
+Admin panel:
+  paste the broadcast post URL (https://x.com/CSGNet/status/…) once per OBS session
+  → config/liveStream → /watch embeds the live X post (widgets.js createTweet)
+  → Clear → /watch shows the branded offline panel
+```
+
+Note: X embeds a **post** by status ID — raw `x.com/i/broadcasts/…` links are not embeddable; the Admin field validates this. Viewers chat in the broadcast post's replies ("Join the chat on X" in the sidebar).
+
+## Architecture: Live Fee + Token Stats Data Flow
 
 ```
 Every 60 seconds (Netlify cron → feePollerBackground):
-  ├── Poll 1 (t=0s):   DexScreener API → calculate fees → write Firestore
+  ├── Poll 1 (t=0s):   DexScreener API → write public/tokenStats + calculate fees → write Firestore
   ├── Poll 2 (t=15s):  DexScreener API → calculate fees → write Firestore
   ├── Poll 3 (t=30s):  DexScreener API → calculate fees → write Firestore
   └── Poll 4 (t=45s):  DexScreener API → calculate fees → write Firestore
+  (tokenStats is written every invocation, even with no active slot — price flows 24/7)
 
 Browser (any number of concurrent users):
   LiveSlotContext (mounted once at app root)
-  ├── onSnapshot(config/liveStream)   ← 1 listener: admin override
+  ├── onSnapshot(config/liveStream)   ← 1 listener: admin override (X broadcast post URL)
+  ├── onSnapshot(public/tokenStats)   ← 1 listener: $CSGN price/mcap/volume
   └── subscribeToSlots(±24h window)  ← 1 listener: all slot data + creatorFees
 
-  Watch.tsx, Dashboard.tsx → useLiveSlot() → reads context → zero Firestore reads
+  Watch.tsx, Header, Dashboard.tsx → useLiveSlot() → reads context → zero Firestore reads
 ```
 
-**Key invariant:** DexScreener is called exactly 4 times per minute regardless of how many users are connected. A million concurrent viewers = same 4 API calls/minute as 1 viewer.
+**Key invariant:** DexScreener is called exactly 4 times per minute regardless of how many users are connected. A million concurrent viewers = same 4 API calls/minute as 1 viewer. (Exception: if `public/tokenStats` is missing or >10 min stale, TokenPanel makes a single one-shot client fetch as a fallback — never a polling loop.)
 
 ---
 

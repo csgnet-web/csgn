@@ -22,11 +22,15 @@
 
   --color-neon: #35ff8a;
 
+  --color-surface-800: #0e0e16;
+  --color-surface-850: #0a0a11;
   --color-surface-900: #08080d;
   --color-surface-950: #050507;
 
   --color-live: #35ff8a;
   --color-gold: #ffb020;
+  --color-positive: #35ff8a;
+  --color-negative: #ff4d6a;
 }
 
 /* ─── Base ─── */
@@ -56,6 +60,15 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
 
 .bg-radial-top {
   background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255, 35, 70, 0.22), transparent);
+}
+
+/* ─── Panels ─── */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 1rem;
 }
 
 /* ─── Typography ─── */
@@ -149,6 +162,7 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
 @media (max-width: 640px) {
   .watch-roll-banner {
     max-width: none;
+    overflow: hidden; /* long faces must not bleed over the LIVE/OFFLINE label */
   }
   .watch-roll-banner__face {
     justify-content: flex-end;
@@ -166,6 +180,13 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
 
 .csgn-wipe {
   animation: csgn-wipe-in 1.4s cubic-bezier(0.77, 0, 0.18, 1) forwards;
+}
+
+/* ─── Master-control intermission board panel fade ─── */
+@keyframes board-fade {
+  0% { opacity: 0; transform: translateY(14px); }
+  6%, 92% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-10px); }
 }
 
 @keyframes fee-shake {

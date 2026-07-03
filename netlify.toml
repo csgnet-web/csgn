@@ -16,7 +16,7 @@
     X-Frame-Options = "SAMEORIGIN"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.dexscreener.com https://*.firebaseapp.com https://*.googleapis.com https://*.twitch.tv wss://*.firebaseio.com; frame-src https://player.twitch.tv https://www.twitch.tv https://player.restream.io; font-src 'self' data:;"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://platform.twitter.com https://*.twimg.com https://embed.twitch.tv; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://platform.twitter.com https://*.twimg.com; img-src 'self' data: https:; media-src 'self' blob: https:; connect-src 'self' https://api.dexscreener.com https://*.firebaseapp.com https://*.googleapis.com https://*.twitch.tv wss://*.firebaseio.com https://cdn.syndication.twimg.com https://syndication.twitter.com; frame-src https://player.twitch.tv https://www.twitch.tv https://embed.twitch.tv https://www.youtube-nocookie.com https://platform.twitter.com https://syndication.twitter.com https://x.com https://twitter.com; font-src 'self' data: https://fonts.gstatic.com;"
 
 [functions.feePollerBackground]
   schedule = "* * * * *"

@@ -18,6 +18,7 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { PUMP_FUN_FEE_TIERS, estimateCreatorFeeSOL, formatTierRange, resolvePumpFeeTier } from '@/lib/dexscreener'
+import { parseXPostId, isBroadcastUrl } from '@/lib/xembed'
 import {
   appendNextThreeDays,
   wipeAndRegenerateSlots,
@@ -189,6 +190,51 @@ export default function Admin() {
     } catch (err: any) {
       setActionError('Clear failed: ' + (err?.message || 'Unknown error.'))
     }
+  }
+
+  // Intermission VOD playlist (config/vodPlaylist) — rotated by /player
+  // between animated board segments whenever no streamer is live.
+  const [vodItems, setVodItems] = useState<Array<{ url: string; title?: string }>>([])
+  const [vodUrl, setVodUrl] = useState('')
+  const [vodTitle, setVodTitle] = useState('')
+  const [savingVods, setSavingVods] = useState(false)
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, 'config', 'vodPlaylist'),
+      (snap) => {
+        const items = snap.exists() ? (snap.data().items as Array<{ url: string; title?: string }> | undefined) : undefined
+        setVodItems(Array.isArray(items) ? items : [])
+      },
+      () => {}
+    )
+    return unsub
+  }, [])
+
+  const saveVodItems = async (items: Array<{ url: string; title?: string }>) => {
+    setSavingVods(true)
+    setActionError(null)
+    try {
+      await setDoc(doc(db, 'config', 'vodPlaylist'), { items, updatedAt: new Date().toISOString() })
+    } catch (err: any) {
+      setActionError('Playlist save failed: ' + (err?.message || 'Unknown error.'))
+    }
+    setSavingVods(false)
+  }
+
+  const handleAddVod = async () => {
+    const url = vodUrl.trim()
+    if (!/^https:\/\/.+/.test(url)) {
+      setActionError('VOD URL must be a direct https:// link to an MP4/WebM file.')
+      return
+    }
+    await saveVodItems([...vodItems, { url, ...(vodTitle.trim() ? { title: vodTitle.trim() } : {}) }])
+    setVodUrl('')
+    setVodTitle('')
+  }
+
+  const handleRemoveVod = async (index: number) => {
+    await saveVodItems(vodItems.filter((_, i) => i !== index))
   }
 
   useEffect(() => {
@@ -705,10 +751,12 @@ export default function Admin() {
               <div className="p-4 space-y-4">
                 {/* Workflow hint */}
                 <div className="p-3 bg-white/[0.03] border border-white/[0.06] rounded-xl text-xs text-gray-500 leading-relaxed space-y-1">
-                  <p className="text-gray-400 font-medium">Setup flow</p>
-                  <p>1. Open <span className="font-mono text-primary-400">/player</span> → add as OBS Window Capture source</p>
-                  <p>2. OBS streams to X / pump.fun — copy that stream's URL</p>
-                  <p>3. Paste it below → viewers on <span className="font-mono text-primary-400">/watch</span> see your CSGN output</p>
+                  <p className="text-gray-400 font-medium">Setup flow (OBS → X, no Restream) — full guide: <span className="font-mono text-primary-400">docs/obs-setup.md</span></p>
+                  <p>1. Add <span className="font-mono text-primary-400">/player</span> as an OBS <span className="text-gray-300">Browser Source</span> (1920×1080) — it runs the 24/7 logic itself: live feed, BRB, intermission VODs, transitions</p>
+                  <p>2. X Media Studio (studio.x.com → Producer) → create broadcast → copy RTMPS URL + key into OBS → Start Streaming</p>
+                  <p>3. Go live from Media Studio, open the broadcast's post on @CSGNet, copy the post URL</p>
+                  <p>4. Paste it below → viewers on <span className="font-mono text-primary-400">/watch</span> see the embedded broadcast</p>
+                  <p>5. Session over: stop OBS + Clear below → /watch shows the offline panel</p>
                 </div>
 
                 {currentLiveUrl && (
@@ -732,14 +780,30 @@ export default function Admin() {
                   </div>
                 )}
                 <div>
-                  <label className="block text-sm text-gray-300 mb-1">CSGN Output URL <span className="text-gray-500 text-xs">(your OBS destination stream)</span></label>
+                  <label className="block text-sm text-gray-300 mb-1">X Broadcast Post URL <span className="text-gray-500 text-xs">(paste once per OBS session)</span></label>
                   <input
                     type="text"
                     value={liveStreamUrl}
                     onChange={(e) => setLiveStreamUrl(e.target.value)}
-                    placeholder="https://x.com/i/broadcasts/... or https://twitch.tv/channel"
+                    placeholder="https://x.com/CSGNet/status/1234567890"
                     className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
                   />
+                  {liveStreamUrl.trim() && (
+                    parseXPostId(liveStreamUrl) ? (
+                      <p className="mt-1.5 text-xs text-emerald-300 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                        Valid X post — /watch will embed this broadcast
+                      </p>
+                    ) : isBroadcastUrl(liveStreamUrl) ? (
+                      <p className="mt-1.5 text-xs text-amber-300">
+                        This is a raw x.com/i/broadcasts link — it can't be embedded. Paste the URL of the X <em>post</em> containing the broadcast instead (open the post on @CSGNet, copy its link).
+                      </p>
+                    ) : (
+                      <p className="mt-1.5 text-xs text-gray-500">
+                        Not an X post URL — /watch will show the offline panel with an outbound link.
+                      </p>
+                    )
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm text-gray-300 mb-1">Streamer Name</label>
@@ -772,6 +836,66 @@ export default function Admin() {
                 >
                   Push to /watch
                 </Button>
+              </div>
+            </Card>
+
+            {/* Intermission VOD Playlist */}
+            <Card hover={false} className="overflow-hidden">
+              <div className="p-4 border-b border-white/[0.06] flex items-center gap-2">
+                <Activity className="w-5 h-5 text-primary-400" />
+                <h3 className="font-semibold text-white">Intermission VOD Playlist</h3>
+              </div>
+              <div className="p-4 space-y-4">
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  When no streamer is live, <span className="font-mono text-primary-400">/player</span> rotates these clips with the animated network board.
+                  Empty playlist = board only. Direct https MP4/WebM links (Firebase Storage or any CDN).
+                </p>
+
+                {vodItems.length > 0 && (
+                  <div className="space-y-2">
+                    {vodItems.map((item, i) => (
+                      <div key={`${item.url}-${i}`} className="flex items-center gap-2 p-2.5 bg-white/[0.03] border border-white/[0.06] rounded-xl">
+                        <div className="min-w-0 flex-1">
+                          {item.title && <p className="text-sm text-white font-medium">{item.title}</p>}
+                          <p className="text-xs text-gray-500 font-mono truncate">{item.url}</p>
+                        </div>
+                        <button
+                          onClick={() => void handleRemoveVod(i)}
+                          disabled={savingVods}
+                          className="shrink-0 px-2 py-1 text-xs text-red-400 border border-red-500/30 rounded hover:bg-red-500/10 transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="text"
+                    value={vodUrl}
+                    onChange={(e) => setVodUrl(e.target.value)}
+                    placeholder="https://…/promo.mp4"
+                    className="flex-1 px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                  />
+                  <input
+                    type="text"
+                    value={vodTitle}
+                    onChange={(e) => setVodTitle(e.target.value)}
+                    placeholder="Title (optional)"
+                    className="sm:w-48 px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                  />
+                  <Button
+                    variant="secondary"
+                    size="md"
+                    disabled={!vodUrl.trim()}
+                    isLoading={savingVods}
+                    onClick={handleAddVod}
+                  >
+                    Add
+                  </Button>
+                </div>
               </div>
             </Card>
 

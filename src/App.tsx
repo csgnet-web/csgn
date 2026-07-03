@@ -3,6 +3,7 @@ import { AnimatePresence } from 'framer-motion'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { LiveSlotProvider } from '@/contexts/LiveSlotContext'
 import { Header } from '@/components/layout/Header'
+import { Footer } from '@/components/layout/Footer'
 import { CSGNMark } from '@/components/ui/Logo'
 import { lazy, Suspense } from 'react'
 
@@ -31,6 +32,9 @@ function Loading() {
 function AppContent() {
   const location = useLocation()
   const isPlayerPage = location.pathname === '/player'
+  // Watch is a full-viewport app shell; /player is a chrome-free OBS capture.
+  const isWatchPage = location.pathname === '/' || location.pathname === '/watch'
+  const showFooter = !isPlayerPage && !isWatchPage
 
   return (
     <div className={`min-h-screen bg-[#050507]${isPlayerPage ? '' : ' csgn-bg'}`}>
@@ -55,6 +59,8 @@ function AppContent() {
           </Routes>
         </AnimatePresence>
       </Suspense>
+
+      {showFooter && <Footer />}
     </div>
   )
 }

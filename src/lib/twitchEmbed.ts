@@ -1,0 +1,65 @@
+/**
+ * Singleton loader for Twitch's embed player JS API (embed.twitch.tv).
+ * Unlike the bare player.twitch.tv iframe, the JS API fires real-time
+ * ONLINE / OFFLINE / ENDED events — the signal Master Control uses to know
+ * a streamer dropped or came back. Loaded once; concurrent callers share
+ * one promise; rejects on script failure so callers can fall back.
+ */
+
+export interface TwitchPlayer {
+  addEventListener: (event: string, cb: () => void) => void
+  removeEventListener: (event: string, cb: () => void) => void
+  setChannel: (channel: string) => void
+  getChannel: () => string
+  setMuted: (muted: boolean) => void
+  setVolume: (volume: number) => void
+  play: () => void
+}
+
+export interface TwitchPlayerCtor {
+  new (el: string | HTMLElement, options: Record<string, unknown>): TwitchPlayer
+  ONLINE: string
+  OFFLINE: string
+  ENDED: string
+  READY: string
+}
+
+declare global {
+  interface Window {
+    Twitch?: { Player: TwitchPlayerCtor }
+  }
+}
+
+const EMBED_SRC = 'https://embed.twitch.tv/embed/v1.js'
+
+let loaderPromise: Promise<TwitchPlayerCtor> | null = null
+
+export function loadTwitchPlayer(): Promise<TwitchPlayerCtor> {
+  if (loaderPromise) return loaderPromise
+
+  loaderPromise = new Promise<TwitchPlayerCtor>((resolve, reject) => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      reject(new Error('twitch embed: no DOM'))
+      return
+    }
+    if (window.Twitch?.Player) {
+      resolve(window.Twitch.Player)
+      return
+    }
+
+    const script = document.createElement('script')
+    script.src = EMBED_SRC
+    script.async = true
+    script.onload = () => {
+      if (window.Twitch?.Player) resolve(window.Twitch.Player)
+      else reject(new Error('twitch embed: script loaded but Twitch.Player missing'))
+    }
+    script.onerror = () => {
+      loaderPromise = null // allow retry on a later mount
+      reject(new Error('twitch embed: script failed to load'))
+    }
+    document.head.appendChild(script)
+  })
+
+  return loaderPromise
+}
