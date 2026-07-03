@@ -58,6 +58,16 @@ Simplified v1 flow. Mobile full-page Twitch OAuth redirect (replaces popup, work
 - Slot streamers still stream to their own Twitch channels; account system (email + Phantom + Twitch, under a minute) unchanged
 - `/player` rebuilt as Master Control: a unit-tested state machine (LIVE / STARTING_SOON / BRB / INTERMISSION / OVERRIDE) driven by Twitch embed JS-API online/offline events — BRB grace, auto-return on reconnect, admin-managed intermission VOD playlist, animated network board, brand wipes; OBS reduced to a single browser-source scene (docs/obs-setup.md)
 
+### v1.2 — July 2026
+**Slot-schema sync + `/player` auto-switching.**
+- `/player` now derives its broadcast live from the shared slot data + emergency override instead of a server-written `currentBroadcast` doc — an admin changing a slot's stream URL/status (or the clock rolling into a new slot) switches the player automatically, no round-trip
+- Unified the slot status vocabulary end-to-end: server claim now writes `confirmed` (was `claimed`); `resolveCurrentBroadcast` and the fee poller read `confirmed`/`live` + `streamUrl` (were `claimed` + `twitchChannelUrl`, which never matched — the root cause of `/player` not reacting)
+- Fee poller (runs every minute) now also advances slot lifecycle: `confirmed → live` when the slot's start arrives, `→ completed` once it ends — so admin, `/schedule`, `/queue` and `/player` always agree
+- Slot schema cleanup: removed the `description` field entirely; `/watch` title reads the slot's display name/stream title; the OFFLINE→LIVE flip now tracks the current slot becoming `confirmed`/`live`
+- `/schedule` Today column shows only what's left today (live slot on top, highlighted); `/watch` on mobile moves Today's Schedule above the $CSGN panel and shrinks the rotating banner so it no longer overlaps the LIVE/OFFLINE label
+- $CSGN panel replaces "updating…" with a freshness dot + "Last Updated: Nm ago" (green ≤5 min, yellow beyond); "Play Starting 5" is now a Coming-Soon button like Squares
+- Admin panel realigned with the live app: Applications removed, Overview stats reworked (live/confirmed now, slots loaded), assign modal edits Stream Title, Auth Events retained
+
 ---
 
 ## Getting Started

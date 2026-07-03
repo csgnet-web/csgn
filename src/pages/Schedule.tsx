@@ -76,6 +76,13 @@ function etMiddayFromOffset(offset: number): Date {
 export default function Schedule() {
   useAuth()
   const [allSlots, setAllSlots] = useState<Slot[]>([])
+  const [nowMs, setNowMs] = useState(() => Date.now())
+
+  // Tick so the Today column drops slots as they finish.
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 30_000)
+    return () => clearInterval(t)
+  }, [])
   const days = useMemo(() => {
     const labels: string[] = []
     for (let i = 0; i < WEEK_SPAN; i++) {
@@ -116,9 +123,15 @@ export default function Schedule() {
   const typeLabel = (slot: Slot) => (slot.status === 'open' && !slot.assignedName ? 'Empty Slot' : (slot.assignedName || 'CEO Creator'))
 
   const slotsByDay = useMemo(() => days.map((_, i) => {
-  const key = etDayKey(etMiddayFromOffset(i))
-  return allSlots.filter((slot) => etDayKey(toDate(slot.startTime)) === key).sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
-}), [allSlots, days])
+    const key = etDayKey(etMiddayFromOffset(i))
+    const dayed = allSlots
+      .filter((slot) => etDayKey(toDate(slot.startTime)) === key)
+      .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
+    // The Today column shows only what's left today (the live slot + upcoming),
+    // with the current slot on top — even if that leaves blank space below.
+    if (i === 0) return dayed.filter((slot) => toMillis(slot.endTime) > nowMs)
+    return dayed
+  }), [allSlots, days, nowMs])
 
   return (
     <div className="min-h-screen pt-20 lg:pt-24 pb-24">

@@ -5,7 +5,6 @@ import { fetchTokenStats, type TokenStatsSnapshot } from '@/lib/dexscreener'
 import { CSGN_MINT } from '@/lib/slots'
 import { X_HANDLE, X_PROFILE_URL } from '@/lib/social'
 
-const STALE_MS = 3 * 60 * 1000
 const VERY_STALE_MS = 10 * 60 * 1000
 
 function formatPrice(price: number): string {
@@ -42,7 +41,6 @@ export default function TokenPanel({ broadcastUrl }: { broadcastUrl: string | nu
   const [copied, setCopied] = useState(false)
 
   const serverAgeMs = tokenStats ? nowMs - Date.parse(tokenStats.updatedAt) : Infinity
-  const isStale = serverAgeMs > STALE_MS
   const isVeryStale = serverAgeMs > VERY_STALE_MS
 
   useEffect(() => {
@@ -52,6 +50,12 @@ export default function TokenPanel({ broadcastUrl }: { broadcastUrl: string | nu
   }, [isVeryStale])
 
   const stats = !isVeryStale && tokenStats ? tokenStats : (fallbackStats ?? tokenStats)
+
+  // "Last Updated" freshness dot — green within 5 min, yellow beyond.
+  const lastUpdatedMs = stats?.updatedAt ? Date.parse(stats.updatedAt) : NaN
+  const ageMinutes = Number.isFinite(lastUpdatedMs) ? Math.max(0, Math.floor((nowMs - lastUpdatedMs) / 60000)) : null
+  const isFresh = ageMinutes !== null && ageMinutes < 5
+
   const change = stats?.priceChangeH24Pct ?? 0
   const changePositive = change >= 0
   const chatUrl = broadcastUrl ?? X_PROFILE_URL
@@ -83,8 +87,13 @@ export default function TokenPanel({ broadcastUrl }: { broadcastUrl: string | nu
             </span>
           )}
         </div>
-        {isStale && stats && (
-          <p className="text-[10px] text-gray-600 mt-2 uppercase tracking-wider animate-live-pulse">updating…</p>
+        {stats && ageMinutes !== null && (
+          <div className="flex items-center gap-1.5 mt-2">
+            <span className={`w-1.5 h-1.5 rounded-full ${isFresh ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+            <span className="text-[10px] text-gray-500 tracking-wider">
+              Last Updated: {ageMinutes}m ago
+            </span>
+          </div>
         )}
       </div>
 

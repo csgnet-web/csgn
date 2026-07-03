@@ -3,14 +3,14 @@ import { useState, useEffect, useCallback } from 'react'
 import { Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
-  Shield, Users, FileText, Radio, Clock, Check, X, Eye,
-  Search, BarChart3, TrendingUp, Plus, Gavel, Crown,
+  Shield, Users, Radio, Clock, X,
+  BarChart3, Plus, Gavel, Crown,
   Trash2, UserCheck, AlertTriangle, Tv, DollarSign,
   Wallet, CheckCircle2, XCircle, RefreshCw, Link as LinkIcon, ExternalLink, Monitor, Activity,
 } from 'lucide-react'
 import {
-  collection, query, getDocs, doc, updateDoc, setDoc, onSnapshot, orderBy,
-  where, limit,
+  collection, query, getDocs, doc, setDoc, onSnapshot, orderBy,
+  limit,
 } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { useAuth } from '@/contexts/useAuth'
@@ -41,14 +41,13 @@ import {
   getMinimumBid,
   formatESTRange,
   DEFAULT_STREAM_URL,
-  migrateShroodSlotsToCsgnet,
   type Slot,
   type SlotType,
   type SlotStatus,
   type CreatorFees,
 } from '@/lib/slots'
 
-type Tab = 'overview' | 'applications' | 'streamers' | 'schedule' | 'fees' | 'auth'
+type Tab = 'overview' | 'streamers' | 'schedule' | 'fees' | 'auth'
 
 interface AuthEventData {
   id: string
@@ -58,19 +57,6 @@ interface AuthEventData {
   twitchUsername: string | null
   errorMessage: string | null
   ua: string | null
-}
-
-interface AppData {
-  id: string
-  displayName: string
-  email: string
-  contentType: string
-  experience: string
-  whyCSGN: string
-  twitterHandle: string
-  sampleContent: string
-  status: string
-  createdAt: any
 }
 
 interface UserData {
@@ -85,11 +71,7 @@ interface UserData {
 export default function Admin() {
   const { profile, loading } = useAuth()
   const [activeTab, setActiveTab] = useState<Tab>('overview')
-  const [applications, setApplications] = useState<AppData[]>([])
   const [users, setUsers] = useState<UserData[]>([])
-  const [selectedApp, setSelectedApp] = useState<AppData | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
 
   // Schedule state
   const [slots, setSlots] = useState<Slot[]>([])
@@ -99,7 +81,7 @@ export default function Admin() {
   const [assignModal, setAssignModal] = useState<Slot | null>(null)
   const [assignUid, setAssignUid] = useState('')
   const [assignName, setAssignName] = useState('')
-  const [assignDesc, setAssignDesc] = useState('')
+  const [assignStreamTitle, setAssignStreamTitle] = useState('')
   const [assignStreamUrl, setAssignStreamUrl] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -123,7 +105,6 @@ export default function Admin() {
   const [confirmWipe, setConfirmWipe] = useState(false)
   const [syncingWeek, setSyncingWeek] = useState(false)
   const [syncingYear, setSyncingYear] = useState(false)
-  const [migratingLegacyUrls, setMigratingLegacyUrls] = useState(false)
   const [syncStartDate, setSyncStartDate] = useState(() => new Date().toISOString().slice(0, 10))
 
   // Auth events tab state
@@ -240,11 +221,6 @@ export default function Admin() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const appsSnap = await getDocs(query(collection(db, 'applications'), orderBy('createdAt', 'desc')))
-        setApplications(appsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as AppData)))
-      } catch {}
-
-      try {
         const usersSnap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc')))
         setUsers(usersSnap.docs.map((d) => ({ ...d.data() } as UserData)))
       } catch {}
@@ -321,45 +297,10 @@ export default function Admin() {
   }, [])
 
   useEffect(() => {
-    if (activeTab === 'schedule') loadSlots()
+    if (activeTab === 'overview' || activeTab === 'schedule') loadSlots()
     if (activeTab === 'fees') loadFeeSlots()
     if (activeTab === 'auth') loadAuthEvents()
   }, [activeTab, loadSlots, loadFeeSlots, loadAuthEvents])
-
-  const handleAppStatus = async (appId: string, status: 'approved' | 'rejected') => {
-    await updateDoc(doc(db, 'applications', appId), { status })
-    setApplications((prev) => prev.map((a) => (a.id === appId ? { ...a, status } : a)))
-    if (status === 'approved') {
-      const app = applications.find((a) => a.id === appId)
-      if (app) {
-        const usersQ = query(collection(db, 'users'), where('email', '==', app.email))
-        const usersSnap = await getDocs(usersQ)
-        if (!usersSnap.empty) {
-          await updateDoc(doc(db, 'users', usersSnap.docs[0].id), { role: 'streamer' })
-        }
-      }
-    }
-    setSelectedApp(null)
-  }
-
-
-  const handleMigrateLegacyStreamUrls = async () => {
-    setMigratingLegacyUrls(true)
-    setActionError(null)
-    try {
-      const { updated } = await migrateShroodSlotsToCsgnet()
-      await loadSlots()
-      if (updated === 0) {
-        setActionError('No slots were using https://twitch.tv/shrood.')
-      } else {
-        alert(`Updated ${updated} slot URL${updated === 1 ? '' : 's'} to https://twitch.tv/csgnet.`)
-      }
-    } catch (err: any) {
-      setActionError(err?.message || 'Failed to migrate legacy stream URLs.')
-    } finally {
-      setMigratingLegacyUrls(false)
-    }
-  }
 
   const handleGenerateThreeDays = async () => {
     setGenerating(true)
@@ -448,14 +389,14 @@ export default function Admin() {
     setActionError(null)
     try {
       if (assignModal.type === 'ceo') {
-        await assignCEOSlot(assignModal.id, assignUid, assignName, assignStreamUrl || DEFAULT_STREAM_URL, assignDesc)
+        await assignCEOSlot(assignModal.id, assignUid, assignName, assignStreamUrl || DEFAULT_STREAM_URL, assignStreamTitle)
       } else {
-        await assignSlot(assignModal.id, assignUid, assignName, assignStreamUrl || DEFAULT_STREAM_URL, assignDesc)
+        await assignSlot(assignModal.id, assignUid, assignName, assignStreamUrl || DEFAULT_STREAM_URL, assignStreamTitle)
       }
       setAssignModal(null)
       setAssignUid('')
       setAssignName('')
-      setAssignDesc('')
+      setAssignStreamTitle('')
       setAssignStreamUrl('')
       await loadSlots()
     } catch (err: any) {
@@ -596,14 +537,6 @@ export default function Admin() {
     setFeeActionLoading(null)
   }
 
-  const filteredApps = applications.filter((app) => {
-    const matchesSearch =
-      app.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      app.email?.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesStatus = statusFilter === 'all' || app.status === statusFilter
-    return matchesSearch && matchesStatus
-  })
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -616,12 +549,14 @@ export default function Admin() {
     return <Navigate to="/" replace />
   }
 
-  const pendingCount = applications.filter((a) => a.status === 'pending').length
   const streamerCount = users.filter((u) => u.role === 'streamer').length
+  const liveNowCount = slots.filter((s) => {
+    const t = Date.now()
+    return t >= new Date(s.startTime).getTime() && t < new Date(s.endTime).getTime() && (s.status === 'confirmed' || s.status === 'live')
+  }).length
 
   const tabs = [
     { id: 'overview' as Tab, label: 'Overview', icon: BarChart3 },
-    { id: 'applications' as Tab, label: `Applications${pendingCount ? ` (${pendingCount})` : ''}`, icon: FileText },
     { id: 'streamers' as Tab, label: 'Streamers', icon: Users },
     { id: 'schedule' as Tab, label: 'Schedule', icon: Clock },
     { id: 'fees' as Tab, label: 'Creator Fees', icon: DollarSign },
@@ -717,8 +652,8 @@ export default function Admin() {
               {[
                 { label: 'Total Users', value: users.length, icon: Users, color: 'text-primary-400' },
                 { label: 'Active Streamers', value: streamerCount, icon: Radio, color: 'text-emerald-400' },
-                { label: 'Pending Apps', value: pendingCount, icon: FileText, color: 'text-amber-400' },
-                { label: 'Total Apps', value: applications.length, icon: TrendingUp, color: 'text-accent-400' },
+                { label: 'Live / Confirmed Now', value: liveNowCount, icon: Tv, color: 'text-red-400' },
+                { label: 'Slots Loaded', value: slots.length, icon: Clock, color: 'text-accent-400' },
               ].map((stat) => (
                 <Card key={stat.label} hover={false} className="p-5">
                   <div className="flex items-center justify-between mb-3">
@@ -899,152 +834,6 @@ export default function Admin() {
               </div>
             </Card>
 
-            <Card hover={false} className="overflow-hidden">
-              <div className="p-4 border-b border-white/[0.06]">
-                <h3 className="font-semibold text-white">Recent Applications</h3>
-              </div>
-              <div className="divide-y divide-white/[0.04]">
-                {applications.slice(0, 5).map((app) => (
-                  <div key={app.id} className="flex items-center justify-between px-4 py-3">
-                    <div>
-                      <span className="text-sm font-medium text-white">{app.displayName}</span>
-                      <span className="text-xs text-gray-500 block">{app.email}</span>
-                    </div>
-                    <Badge variant={app.status === 'approved' ? 'green' : app.status === 'rejected' ? 'red' : 'gold'}>
-                      {app.status}
-                    </Badge>
-                  </div>
-                ))}
-                {applications.length === 0 && (
-                  <div className="text-center py-8 text-gray-500 text-sm">No applications yet</div>
-                )}
-              </div>
-            </Card>
-          </div>
-        )}
-
-        {/* ── Applications Tab ── */}
-        {activeTab === 'applications' && (
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search by name or email..."
-                  className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
-                />
-              </div>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50 appearance-none cursor-pointer"
-              >
-                <option value="all">All Status</option>
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-              </select>
-            </div>
-
-            <Card hover={false} className="overflow-hidden">
-              <div className="divide-y divide-white/[0.04]">
-                {filteredApps.map((app) => (
-                  <div key={app.id} className="flex items-center gap-4 px-4 sm:px-6 py-4 hover:bg-white/[0.02] transition-colors">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500/20 to-accent-600/20 flex items-center justify-center text-sm font-bold text-primary-400 shrink-0">
-                      {(app.displayName || '?')[0].toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-white truncate">{app.displayName}</span>
-                        <Badge variant={app.status === 'approved' ? 'green' : app.status === 'rejected' ? 'red' : 'gold'}>
-                          {app.status}
-                        </Badge>
-                      </div>
-                      <span className="text-xs text-gray-500">{app.email} &middot; {app.contentType}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm" onClick={() => setSelectedApp(app)}>
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                      {app.status === 'pending' && (
-                        <>
-                          <Button variant="ghost" size="sm" className="text-emerald-400 hover:text-emerald-300" onClick={() => handleAppStatus(app.id, 'approved')}>
-                            <Check className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-300" onClick={() => handleAppStatus(app.id, 'rejected')}>
-                            <X className="w-4 h-4" />
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {filteredApps.length === 0 && (
-                  <div className="text-center py-12 text-gray-500 text-sm">No applications found</div>
-                )}
-              </div>
-            </Card>
-
-            {/* App Detail Modal */}
-            {selectedApp && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setSelectedApp(null)} />
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="relative w-full max-w-lg bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden max-h-[80vh] overflow-y-auto"
-                >
-                  <div className="p-6 border-b border-white/[0.06] flex items-center justify-between sticky top-0 bg-[#0c0c1a]">
-                    <h3 className="font-bold text-white">Application Details</h3>
-                    <button onClick={() => setSelectedApp(null)} className="p-1 text-gray-400 hover:text-white cursor-pointer">
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
-                  <div className="p-6 space-y-4">
-                    {[
-                      ['Name', selectedApp.displayName],
-                      ['Email', selectedApp.email],
-                      ['Content Type', selectedApp.contentType],
-                      ['Twitter', selectedApp.twitterHandle || 'N/A'],
-                    ].map(([label, value]) => (
-                      <div key={label}>
-                        <span className="text-xs text-gray-500 uppercase tracking-wider">{label}</span>
-                        <p className="text-white">{value}</p>
-                      </div>
-                    ))}
-                    <div>
-                      <span className="text-xs text-gray-500 uppercase tracking-wider">Experience</span>
-                      <p className="text-gray-300 text-sm">{selectedApp.experience}</p>
-                    </div>
-                    <div>
-                      <span className="text-xs text-gray-500 uppercase tracking-wider">Why CSGN</span>
-                      <p className="text-gray-300 text-sm">{selectedApp.whyCSGN}</p>
-                    </div>
-                    {selectedApp.sampleContent && (
-                      <div>
-                        <span className="text-xs text-gray-500 uppercase tracking-wider">Sample Content</span>
-                        <a href={selectedApp.sampleContent} target="_blank" rel="noopener noreferrer" className="text-primary-400 text-sm block hover:underline">
-                          {selectedApp.sampleContent}
-                        </a>
-                      </div>
-                    )}
-                    {selectedApp.status === 'pending' && (
-                      <div className="flex gap-3 pt-4 border-t border-white/[0.06]">
-                        <Button variant="primary" size="md" className="flex-1" leftIcon={<Check className="w-4 h-4" />} onClick={() => handleAppStatus(selectedApp.id, 'approved')}>
-                          Approve
-                        </Button>
-                        <Button variant="danger" size="md" className="flex-1" leftIcon={<X className="w-4 h-4" />} onClick={() => handleAppStatus(selectedApp.id, 'rejected')}>
-                          Reject
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              </div>
-            )}
           </div>
         )}
 
@@ -1053,37 +842,7 @@ export default function Admin() {
           <Card hover={false} className="overflow-hidden">
             <div className="p-4 border-b border-white/[0.06] flex items-center justify-between gap-3">
               <h3 className="font-semibold text-white">Active Streamers</h3>
-              <Button
-                variant="secondary"
-                size="sm"
-                leftIcon={<UserCheck className="w-4 h-4" />}
-                onClick={async () => {
-                  setActionError(null)
-                  try {
-                    const approvedApps = applications.filter((a) => a.status === 'approved')
-                    let synced = 0
-                    for (const app of approvedApps) {
-                      const q = query(collection(db, 'users'), where('email', '==', app.email))
-                      const snap = await getDocs(q)
-                      if (!snap.empty) {
-                        const userDoc = snap.docs[0]
-                        if (userDoc.data().role !== 'streamer' && userDoc.data().role !== 'admin') {
-                          await updateDoc(doc(db, 'users', userDoc.id), { role: 'streamer' })
-                          synced++
-                        }
-                      }
-                    }
-                    const usersSnap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc')))
-                    setUsers(usersSnap.docs.map((d) => ({ ...d.data() } as UserData)))
-                    setActionError(synced > 0 ? null : 'All approved applicants are already Active Streamers.')
-                    if (synced > 0) alert(`Synced ${synced} user(s) to Active Streamer status.`)
-                  } catch (err: any) {
-                    setActionError(err?.message || 'Sync failed.')
-                  }
-                }}
-              >
-                Sync Approved → Streamer
-              </Button>
+              <Badge variant="green">{streamerCount} active</Badge>
             </div>
             <div className="divide-y divide-white/[0.04]">
               {users.filter((u) => u.role === 'streamer').map((user) => (
@@ -1158,15 +917,6 @@ export default function Admin() {
                   Reseed 365 Days (CEO)
                 </Button>
 
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  leftIcon={<LinkIcon className="w-4 h-4" />}
-                  isLoading={migratingLegacyUrls}
-                  onClick={handleMigrateLegacyStreamUrls}
-                >
-                  Migrate shrood → csgnet
-                </Button>
                 {!confirmWipe ? (
                   <Button
                     variant="ghost"
@@ -1320,7 +1070,7 @@ export default function Admin() {
                               setAssignStreamUrl(slot.streamUrl || '')
                               setAssignName(slot.assignedName || '')
                               setAssignUid(slot.assignedUid || '')
-                              setAssignDesc(slot.description || '')
+                              setAssignStreamTitle(slot.streamTitle || '')
                             }}>
                               <UserCheck className="w-3 h-3" />
                             </Button>
@@ -1401,11 +1151,11 @@ export default function Admin() {
                     </div>
 
                     <div>
-                      <label className="block text-sm text-gray-300 mb-1">Description</label>
+                      <label className="block text-sm text-gray-300 mb-1">Stream Title <span className="text-gray-500 text-xs">(shown on /watch)</span></label>
                       <input
                         type="text"
-                        value={assignDesc}
-                        onChange={(e) => setAssignDesc(e.target.value)}
+                        value={assignStreamTitle}
+                        onChange={(e) => setAssignStreamTitle(e.target.value)}
                         className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50"
                         placeholder="e.g. Crypto Drama Roundup"
                       />

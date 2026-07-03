@@ -63,9 +63,48 @@ async function findActiveSlot(): Promise<{ path: string; data: SlotDoc } | null>
       const s = r.data as SlotDoc
       const start = s.startTime ? new Date(s.startTime).getTime() : 0
       const end = s.endTime ? new Date(s.endTime).getTime() : 0
-      return nowMs >= start && nowMs < end && s.status === 'claimed'
+      return nowMs >= start && nowMs < end && (s.status === 'confirmed' || s.status === 'live')
     }) ?? null
   )
+}
+
+/**
+ * Advance assigned slots through their clock-driven lifecycle so every surface
+ * (admin, /schedule, /queue, /player) sees the same status:
+ *   confirmed → live       (once the slot's start time arrives)
+ *   confirmed/live → completed (once the slot's end time passes)
+ * Runs every minute alongside the fee poll.
+ */
+async function advanceSlotLifecycles(): Promise<void> {
+  try {
+    const now = new Date()
+    const fromISO = new Date(now.getTime() - 6 * 60 * 60 * 1000).toISOString()
+    const toISO = new Date(now.getTime() + 60 * 1000).toISOString()
+    const rows = await queryCollection(
+      'slots',
+      [fieldFilter('startTime', 'GREATER_THAN_OR_EQUAL', fromISO), fieldFilter('startTime', 'LESS_THAN_OR_EQUAL', toISO)],
+      [order('startTime', 'ASCENDING')],
+      20,
+    )
+    const nowMs = Date.now()
+    for (const row of rows) {
+      const s = row.data as SlotDoc
+      const start = s.startTime ? new Date(s.startTime).getTime() : NaN
+      const end = s.endTime ? new Date(s.endTime).getTime() : NaN
+      if (!Number.isFinite(start) || !Number.isFinite(end)) continue
+      let next: string | null = null
+      if (s.status === 'confirmed' || s.status === 'live') {
+        if (nowMs >= end) next = 'completed'
+        else if (nowMs >= start && s.status === 'confirmed') next = 'live'
+      }
+      if (next) {
+        const slotId = row.path.split('/').pop()!
+        await writeDoc(`slots/${slotId}`, { status: next, updatedAt: now.toISOString() }, { merge: true })
+      }
+    }
+  } catch (err) {
+    console.error('[feePoller] advanceSlotLifecycles error:', err)
+  }
 }
 
 async function pollAndWrite(dexData: DexData): Promise<void> {
@@ -183,6 +222,10 @@ async function pollAndWrite(dexData: DexData): Promise<void> {
 // public/tokenStats (~1 write/min) so token stats flow 24/7 even when no slot
 // is live.
 export const handler = async () => {
+  // Advance clock-driven slot statuses first so /player, admin, /schedule and
+  // /queue all agree on which slot is confirmed / live / completed right now.
+  await advanceSlotLifecycles()
+
   let tokenStatsWritten = false
   for (let i = 0; i < 4; i++) {
     const dexData = await fetchDexData()

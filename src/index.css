@@ -162,11 +162,13 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
 @media (max-width: 640px) {
   .watch-roll-banner {
     max-width: none;
+    height: 1.1rem;
     overflow: hidden; /* long faces must not bleed over the LIVE/OFFLINE label */
   }
   .watch-roll-banner__face {
     justify-content: flex-end;
-    font-size: clamp(0.56rem, 2.8vw, 0.74rem);
+    font-size: clamp(0.44rem, 2vw, 0.58rem);
+    letter-spacing: 0.04em;
   }
 }
 
