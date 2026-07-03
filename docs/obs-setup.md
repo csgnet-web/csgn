@@ -48,8 +48,14 @@ Canvas: Settings → Video → Base and Output resolution both `1920×1080`.
 - **Inside OBS**, the browser source autoplays *with sound* and there is never a
   user click, so audio is forced on programmatically and stays on (re-asserted
   every few seconds). Going LIVE no longer depends on Twitch's flaky `ONLINE`
-  event — the page also treats a real `PLAYING` event as "the channel is live,"
-  which is what fixes the old *stuck-on "Starting Soon"* symptom in OBS.
+  event. LIVE is now reached three independent ways: the embed's `ONLINE` event,
+  a real `PLAYING` event (playback started ⇒ the channel is live), **and** the
+  server's Twitch Helix check (`feePollerBackground` verifies the slot's channel
+  every minute and records `streamActivity.lastLive` on the slot doc `/player`
+  reads). The Helix path is the important one: Twitch's `ONLINE` event only fires
+  on an offline→online *transition*, so a channel that is *already live when the
+  page loads* never fires it — that's the old *stuck-on "Starting Soon"* bug, and
+  the server signal fixes it regardless of the embed.
 - **In a normal browser tab**, the browser's autoplay policy forbids un-muting
   without a gesture, so the feed starts muted and a **🔊 Tap for sound** button
   (or any click/keypress) unlocks audio. This is a hard browser rule — there is
@@ -64,9 +70,10 @@ Source has **Page permissions: Read and write to OBS** so the OBS detection work
 Open `https://csgn.fun/player?debug=1` in the OBS source (right-click → Interact,
 or just point a throwaway source at it). A small debug panel shows in the
 top-left with `env` (should read `OBS <version>`), the current `mode`, the armed
-`channel`, `audioBlocked`, and a live event log. When a streamer is live you
-should see `→ LIVE (playing)` or `→ LIVE (online)` and `mode: LIVE`. Remove the
-`?debug=1` for the real broadcast source.
+`channel`, `audioBlocked`, `server live` (the server's Helix check), and a live
+event log. When a streamer is live you should see `→ LIVE (playing)` /
+`→ LIVE (online)` (or `server live: yes …` driving `mode: LIVE` if the embed
+event never fired). Remove the `?debug=1` for the real broadcast source.
 
 ## 2. Your master-control monitor (monitor 4)
 
@@ -124,7 +131,8 @@ workflow and gain OS-notification risk — treat it as a temporary fallback only
 | Symptom | Fix |
 |---|---|
 | No audio on stream | Browser source is missing ✅ "Control audio via OBS", or fader down. Open `?debug=1` — if `env` reads `browser` (not `OBS`), set the source's **Page permissions → Read and write to OBS** and reload |
-| Stuck on "Starting Soon" though streamer is live | Fixed in-app: LIVE now also triggers on the `PLAYING` event. If it still sticks, open `?debug=1` and read the event log — no `READY` means the Twitch embed script is blocked (check hardware accel / reload); `PLAYBACK_BLOCKED` looping means autoplay is denied (confirm the source isn't muted and Page permissions are set) |
+| Stuck on "Starting Soon" though streamer is live | Fixed in-app: LIVE triggers on `ONLINE`, `PLAYING`, *or* the server Helix check. Open `?debug=1`: if `server live` stays `false`/`—` while the streamer is live, the fee poller (`feePollerBackground`) isn't running or `TWITCH_CLIENT_ID/SECRET` are unset — fix that and it self-heals within a minute. No `READY` in the log means the Twitch embed script is blocked (check hardware accel / reload) |
+| Coin stats blank on the site | The home page reads `public/tokenStats` (written by `feePollerBackground`) and now also falls back to a direct DexScreener fetch client-side. If both are empty, check the browser console for a blocked `api.dexscreener.com` request (CSP `connect-src`) and that the fee poller is deployed |
 | Black browser source | Toggle Settings → Advanced → browser hardware acceleration, or right-click source → Interact → reload |
 | Stuck on BRB/board though streamer is live | Right-click source → Interact → hard-reload `/player`; check the slot's `twitchChannelUrl` in Admin |
 | Stream drops repeatedly | Check Automatically Reconnect is on; verify RTMPS key still valid in Media Studio |

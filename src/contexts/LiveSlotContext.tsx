@@ -2,12 +2,23 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { subscribeToSlots, type Slot } from '@/lib/slots'
+import { fetchTokenStats } from '@/lib/dexscreener'
 import {
   LiveSlotContext,
   type LiveSlotContextValue,
   type ManualOverride,
   type TokenStats,
 } from './LiveSlotContextCore'
+
+/** Treat the server-written token doc as stale after this long and fall back to
+ *  a direct client fetch, so the coin readout survives a stalled fee poller. */
+const TOKEN_STATS_STALE_MS = 3 * 60_000
+
+function tokenStatsFresh(stats: TokenStats | null): boolean {
+  if (!stats) return false
+  const t = Date.parse(stats.updatedAt)
+  return Number.isFinite(t) && Date.now() - t < TOKEN_STATS_STALE_MS
+}
 
 function toMillis(value: unknown): number {
   if (typeof value === 'string' || value instanceof Date || typeof value === 'number') {
@@ -57,16 +68,37 @@ export function LiveSlotProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   // Single listener for token stats — written server-side by feePollerBackground (~1/min)
+  const tokenStatsRef = useRef<TokenStats | null>(null)
+  useEffect(() => { tokenStatsRef.current = tokenStats }, [tokenStats])
   useEffect(() => {
     const unsub = onSnapshot(
       doc(db, 'public', 'tokenStats'),
       (snap) => {
         if (!mountedRef.current) return
-        setTokenStats(snap.exists() ? (snap.data() as TokenStats) : null)
+        // Only accept the server doc when it's actually fresher than what we
+        // already hold, so a stale/missing doc can't stomp a good client fetch.
+        const next = snap.exists() ? (snap.data() as TokenStats) : null
+        if (next || !tokenStatsFresh(tokenStatsRef.current)) setTokenStats(next)
       },
-      () => { if (mountedRef.current) setTokenStats(null) },
+      () => { if (mountedRef.current && !tokenStatsFresh(tokenStatsRef.current)) setTokenStats(null) },
     )
     return unsub
+  }, [])
+
+  // Client-side fallback: whenever the server doc is missing or stale, fetch
+  // token stats straight from DexScreener (once a minute — well within rate
+  // limits). Keeps the coin readout populated even if the fee poller is down.
+  useEffect(() => {
+    let cancelled = false
+    const ensureFresh = async () => {
+      if (tokenStatsFresh(tokenStatsRef.current)) return
+      const snap = await fetchTokenStats()
+      if (cancelled || !mountedRef.current || !snap) return
+      if (!tokenStatsFresh(tokenStatsRef.current)) setTokenStats(snap)
+    }
+    ensureFresh()
+    const t = setInterval(ensureFresh, 60_000)
+    return () => { cancelled = true; clearInterval(t) }
   }, [])
 
   // Single listener for all slot data — creatorFees are written server-side by feePollerBackground

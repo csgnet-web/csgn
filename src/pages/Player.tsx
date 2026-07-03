@@ -165,6 +165,26 @@ export default function Player() {
 
   // ── Twitch player lifecycle: one instance, retuned per channel ──
   const channel = 'channel' in state ? state.channel : null
+
+  // ── Authoritative live signal (server Helix check). feePollerBackground hits
+  //    the Twitch API every minute and records streamActivity.lastLive on the
+  //    slot doc we already subscribe to. The embed's ONLINE event only fires on
+  //    an offline→online *transition*, so a channel that's already live when
+  //    /player loads never triggers it and the page hangs on STARTING_SOON.
+  //    This rescues exactly that case — but only from a pre-live state; once
+  //    we're LIVE, the embed's real-time OFFLINE/BRB handling stays in charge
+  //    so a genuine drop still shows the BRB card instead of a black feed. ──
+  const activity = currentSlot?.streamActivity
+  useEffect(() => {
+    if (!channel) return
+    if (state.mode !== 'STARTING_SOON' && state.mode !== 'INTERMISSION') return
+    if (!activity?.lastLive) return
+    if (activity.channel && activity.channel.toLowerCase() !== channel.toLowerCase()) return
+    const checkedMs = activity.lastCheckedAt ? new Date(activity.lastCheckedAt).getTime() : 0
+    if (!checkedMs || Date.now() - checkedMs > 3 * 60_000) return // stale check ⇒ don't trust it
+    // (the debug overlay's "server live" + "mode" rows record this transition)
+    dispatch({ type: 'PLAYER_ONLINE' })
+  }, [channel, activity, state.mode])
   useEffect(() => {
     if (!channel) return
     let cancelled = false
@@ -350,18 +370,28 @@ export default function Player() {
         </button>
       )}
 
-      {debug && <DebugOverlay obs={obs} mode={state.mode} channel={channel} audioBlocked={audioBlocked} log={eventLog} />}
+      {debug && (
+        <DebugOverlay
+          obs={obs}
+          mode={state.mode}
+          channel={channel}
+          audioBlocked={audioBlocked}
+          serverLive={activity?.lastLive ? `yes @ ${activity.lastCheckedAt ?? '?'}` : String(activity?.lastLive ?? '—')}
+          log={eventLog}
+        />
+      )}
     </div>
   )
 }
 
 function DebugOverlay({
-  obs, mode, channel, audioBlocked, log,
+  obs, mode, channel, audioBlocked, serverLive, log,
 }: {
   obs: boolean
   mode: MasterState['mode']
   channel: string | null
   audioBlocked: boolean
+  serverLive: string
   log: string[]
 }) {
   const row = 'flex justify-between gap-4'
@@ -372,6 +402,7 @@ function DebugOverlay({
       <div className={row}><span>mode</span><span className="text-white">{mode}</span></div>
       <div className={row}><span>channel</span><span>{channel ?? '—'}</span></div>
       <div className={row}><span>audioBlocked</span><span>{String(audioBlocked)}</span></div>
+      <div className={row}><span>server live</span><span className="truncate max-w-[10rem]">{serverLive}</span></div>
       <div className="mt-2 border-t border-white/15 pt-1 text-white/60">events</div>
       {log.length === 0 ? <div className="text-white/40">(none yet)</div>
         : log.map((e, i) => <div key={i} className="truncate">{e}</div>)}
