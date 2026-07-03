@@ -83,6 +83,21 @@ export interface CreatorFees {
   updatedAt: string
 }
 
+/**
+ * Per-slot Twitch live-activity log, written by the server fee poller once a
+ * minute while a slot is confirmed/live. Lets admins verify the streamer was
+ * actually broadcasting (not just "technically claimed" while intermission ran).
+ */
+export interface StreamActivity {
+  channel?: string          // twitch login the poller checked
+  lastCheckedAt?: string    // ISO of the most recent Helix check
+  lastLive?: boolean        // whether the channel was live on that check
+  firstLiveAt?: string      // ISO of the first time it was seen live this slot
+  lastLiveAt?: string       // ISO of the most recent time it was seen live
+  liveCheckCount?: number   // number of live samples (~minutes, 1 check/min)
+  checkpoints?: string[]    // ISO timestamps sampled while the channel was live
+}
+
 export interface SlotRequest {
   id: string
   uid: string
@@ -117,6 +132,7 @@ export interface Slot {
   lotteryEntrants: string[]   // legacy field, kept for DB compat
   requests: SlotRequest[]     // slot request queue
   creatorFees?: CreatorFees   // populated after slot completes
+  streamActivity?: StreamActivity // server-logged Twitch live samples
   createdAt: unknown
 }
 

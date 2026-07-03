@@ -68,6 +68,14 @@ Simplified v1 flow. Mobile full-page Twitch OAuth redirect (replaces popup, work
 - $CSGN panel replaces "updating…" with a freshness dot + "Last Updated: Nm ago" (green ≤5 min, yellow beyond); "Play Starting 5" is now a Coming-Soon button like Squares
 - Admin panel realigned with the live app: Applications removed, Overview stats reworked (live/confirmed now, slots loaded), assign modal edits Stream Title, Auth Events retained
 
+### v1.3 — July 2026
+**Playback reliability + verifiable slot activity.**
+- `/player` always keeps the Twitch feed playing (calls `play()` on state change and on ONLINE) and unmutes at full volume in LIVE — OBS never captures a paused/silent frame
+- $CSGN price is now driven purely by the server-written `public/tokenStats` doc + the single LiveSlotContext listener; removed the per-client DexScreener fallback so no client wastes API quota, and the "Last Updated" dot honestly reflects the server doc's age
+- Fee poller now samples Twitch Helix once a minute for the active slot's channel and logs live timestamps to a new per-slot `streamActivity` field (channel, first/last live, live-minute count, per-minute checkpoints) — admins can confirm a slot was really streaming vs. "technically claimed" during intermission (uses the existing `TWITCH_CLIENT_ID`/`TWITCH_CLIENT_SECRET`)
+- Admin Creator Fees shows each slot's live-activity log; `/account` Creator Fee History is paginated 10-per-page (newest first, back-arrow to older) and surfaces the same live-minute summary
+- Rotating `/watch` banner gains right padding so lines like "SQUARES COMING SOON" are no longer clipped; `/queue` "CEO Creator Slots" renamed to "Open Slots"
+
 ---
 
 ## Getting Started

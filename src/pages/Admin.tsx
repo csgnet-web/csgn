@@ -1415,6 +1415,43 @@ export default function Admin() {
                             ) : (
                               <p className="text-xs text-gray-600 mt-1">No fee record — click "Enter Fees" to add.</p>
                             )}
+
+                            {/* Twitch live-activity log — proves the slot was actually streaming */}
+                            {(() => {
+                              const activity = slot.streamActivity
+                              const liveMinutes = activity?.liveCheckCount ?? 0
+                              return (
+                                <div className={`mt-2 p-3 rounded-lg border text-xs space-y-1 ${liveMinutes > 0 ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-white/[0.02] border-white/[0.06]'}`}>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-gray-400 flex items-center gap-1"><Activity className="w-3 h-3" /> Twitch Live Activity</span>
+                                    <span className={liveMinutes > 0 ? 'text-emerald-400 font-mono' : 'text-gray-500 font-mono'}>
+                                      {activity ? `~${liveMinutes} min live` : 'not logged'}
+                                    </span>
+                                  </div>
+                                  {activity?.channel && (
+                                    <p className="text-gray-500">Channel: <span className="font-mono text-gray-400">{activity.channel}</span></p>
+                                  )}
+                                  {activity?.firstLiveAt && (
+                                    <p className="text-gray-500">
+                                      First live {new Date(activity.firstLiveAt).toLocaleTimeString()} · last live {activity.lastLiveAt ? new Date(activity.lastLiveAt).toLocaleTimeString() : '—'}
+                                    </p>
+                                  )}
+                                  {activity && liveMinutes === 0 && (
+                                    <p className="text-amber-400">No live samples captured — channel appeared offline (possible intermission-only slot).</p>
+                                  )}
+                                  {activity?.checkpoints && activity.checkpoints.length > 0 && (
+                                    <details>
+                                      <summary className="text-gray-500 cursor-pointer">{activity.checkpoints.length} live timestamps</summary>
+                                      <div className="mt-1 max-h-24 overflow-auto space-y-0.5 pr-1">
+                                        {activity.checkpoints.map((ts, idx) => (
+                                          <p key={`${slot.id}-cp-${idx}`} className="text-[11px] text-gray-500 font-mono">{new Date(ts).toLocaleString()}</p>
+                                        ))}
+                                      </div>
+                                    </details>
+                                  )}
+                                </div>
+                              )
+                            })()}
                           </div>
 
                           <div className="flex flex-col gap-2 shrink-0">

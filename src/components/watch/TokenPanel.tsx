@@ -1,11 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { Check, Copy, ExternalLink, MessageCircle, TrendingDown, TrendingUp } from 'lucide-react'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
-import { fetchTokenStats, type TokenStatsSnapshot } from '@/lib/dexscreener'
 import { CSGN_MINT } from '@/lib/slots'
 import { X_HANDLE, X_PROFILE_URL } from '@/lib/social'
-
-const VERY_STALE_MS = 10 * 60 * 1000
 
 function formatPrice(price: number): string {
   if (price <= 0) return '—'
@@ -31,25 +28,14 @@ function StatTile({ label, value, accent }: { label: string; value: React.ReactN
 
 /**
  * Live $CSGN token panel — replaces the old Twitch chat sidebar.
- * Reads public/tokenStats (server-written every ~60s); falls back to a single
- * client-side DexScreener fetch only if the doc is missing or very stale.
+ * Reads public/tokenStats, written server-side every ~60s by the fee poller and
+ * fanned out through the single LiveSlotContext listener. No client ever calls
+ * DexScreener directly, so price stays fresh without wasting API quota; the
+ * "Last Updated" dot honestly reflects the server doc's age.
  */
 export default function TokenPanel({ broadcastUrl }: { broadcastUrl: string | null }) {
-  const { tokenStats, nowMs } = useLiveSlot()
-  const [fallbackStats, setFallbackStats] = useState<TokenStatsSnapshot | null>(null)
-  const fallbackTriedRef = useRef(false)
+  const { tokenStats: stats, nowMs } = useLiveSlot()
   const [copied, setCopied] = useState(false)
-
-  const serverAgeMs = tokenStats ? nowMs - Date.parse(tokenStats.updatedAt) : Infinity
-  const isVeryStale = serverAgeMs > VERY_STALE_MS
-
-  useEffect(() => {
-    if (!isVeryStale || fallbackTriedRef.current) return
-    fallbackTriedRef.current = true
-    void fetchTokenStats().then((snap) => { if (snap) setFallbackStats(snap) })
-  }, [isVeryStale])
-
-  const stats = !isVeryStale && tokenStats ? tokenStats : (fallbackStats ?? tokenStats)
 
   // "Last Updated" freshness dot — green within 5 min, yellow beyond.
   const lastUpdatedMs = stats?.updatedAt ? Date.parse(stats.updatedAt) : NaN

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   User, Mail, Wallet, Trophy, Lock,
   CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Crown, Twitch, X as XIcon, Info,
+  ChevronLeft, ChevronRight, Radio,
 } from 'lucide-react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
@@ -26,6 +27,7 @@ export default function Dashboard() {
   const [liveEstimateUSD, setLiveEstimateUSD] = useState(0)
   const [liveVolumeSOL, setLiveVolumeSOL] = useState(0)
   const [slotInfo, setSlotInfo] = useState<Slot | null>(null)
+  const [feePage, setFeePage] = useState(0)
   const bids = useMemo(() => user ? queueStore.getBids().filter((bid) => bid.uid === user.uid) : [], [user])
   const assigned = useMemo(() => user ? queueStore.getAssignedSlots().filter((slot) => slot.uid === user.uid) : [], [user])
 
@@ -41,6 +43,17 @@ export default function Dashboard() {
     () => slotHistory.find((s) => Date.now() >= new Date(s.startTime).getTime() && Date.now() < new Date(s.endTime).getTime()) ?? null,
     [slotHistory],
   )
+
+  // Creator Fee History — newest first, paginated 10 at a time so the page
+  // stays clean; the back arrow walks toward older history.
+  const FEE_PAGE_SIZE = 10
+  const feeHistory = useMemo(
+    () => slotHistory.slice().sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()),
+    [slotHistory],
+  )
+  const feePageCount = Math.max(1, Math.ceil(feeHistory.length / FEE_PAGE_SIZE))
+  const safeFeePage = Math.min(feePage, feePageCount - 1)
+  const pagedFees = feeHistory.slice(safeFeePage * FEE_PAGE_SIZE, safeFeePage * FEE_PAGE_SIZE + FEE_PAGE_SIZE)
 
 
   useEffect(() => {
@@ -223,20 +236,51 @@ Use your email/username and password to access your account.
         </Card>
 
         <Card hover={false} className="p-5">
-          <h3 className="text-white font-semibold">Creator Fee History (per slot)</h3>
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-white font-semibold">Creator Fee History (per slot)</h3>
+            {feeHistory.length > FEE_PAGE_SIZE && (
+              <div className="flex items-center gap-2 text-xs text-gray-400">
+                <button
+                  onClick={() => setFeePage((p) => Math.min(feePageCount - 1, p + 1))}
+                  disabled={safeFeePage >= feePageCount - 1}
+                  className="p-1 rounded border border-white/10 hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                  title="Older"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="font-mono">Page {safeFeePage + 1} / {feePageCount}</span>
+                <button
+                  onClick={() => setFeePage((p) => Math.max(0, p - 1))}
+                  disabled={safeFeePage <= 0}
+                  className="p-1 rounded border border-white/10 hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                  title="Newer"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
           <div className="mt-3 space-y-2">
-            {slotHistory.length === 0 ? (
+            {feeHistory.length === 0 ? (
               <p className="text-sm text-gray-500">No assigned slot history yet.</p>
             ) : (
-              slotHistory
-                .slice()
-                .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
-                .map((slot) => (
+              pagedFees.map((slot) => {
+                const activity = slot.streamActivity
+                const liveMinutes = activity?.liveCheckCount ?? 0
+                return (
                   <div key={slot.id} className="border border-white/10 rounded-lg p-3 text-sm">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-white">{slot.label}</p>
                         <p className="text-xs text-gray-500">{new Date(slot.startTime).toLocaleString()} - {new Date(slot.endTime).toLocaleString()}</p>
+                        {activity && (
+                          <p className={`text-[11px] mt-1 inline-flex items-center gap-1 ${liveMinutes > 0 ? 'text-emerald-400' : 'text-gray-500'}`}>
+                            <Radio className="w-3 h-3" />
+                            {liveMinutes > 0
+                              ? `Streamed ~${liveMinutes} min live${activity.lastLiveAt ? ` (last ${new Date(activity.lastLiveAt).toLocaleTimeString()})` : ''}`
+                              : 'No live activity detected'}
+                          </p>
+                        )}
                       </div>
                       <div className="text-right">
                         <p className="font-mono text-cyan-300">{(slot.creatorFees?.feeOwedSOL || 0).toFixed(6)} SOL</p>
@@ -250,7 +294,8 @@ Use your email/username and password to access your account.
                       </div>
                     </div>
                   </div>
-                ))
+                )
+              })
             )}
           </div>
         </Card>

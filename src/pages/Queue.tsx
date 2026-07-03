@@ -183,7 +183,7 @@ export default function Queue() {
         ) : (
           <Card hover={false} className="p-5 space-y-4">
             <h2 className="text-white font-semibold flex items-center gap-2">
-              <Crown className="w-4 h-4 text-yellow-400" /> CEO Creator Slots
+              <Crown className="w-4 h-4 text-yellow-400" /> Open Slots
               <span className="text-xs text-gray-500 font-normal">12 per day</span>
             </h2>
             {selectedDaySlots.length === 0 ? (

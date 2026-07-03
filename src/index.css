@@ -145,7 +145,10 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
   color: rgba(255, 255, 255, 0.9);
   white-space: nowrap;
   overflow: visible;
+  /* Right padding keeps the last word (e.g. "…COMING SOON") off the clipping
+     edge so it reads in full instead of looking cut off. */
   padding-left: 0.4rem;
+  padding-right: 0.75rem;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }

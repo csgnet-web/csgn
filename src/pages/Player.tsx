@@ -148,6 +148,9 @@ export default function Player() {
           })
           player.addEventListener(PlayerCtor.ONLINE, () => {
             if (mountTimeoutRef.current) clearTimeout(mountTimeoutRef.current)
+            // Keep the feed rolling the instant it comes online (OBS browser
+            // sources autoplay with sound; this also recovers if Twitch paused).
+            try { player.play() } catch { /* play() is best-effort */ }
             dispatch({ type: 'PLAYER_ONLINE' })
           })
           player.addEventListener(PlayerCtor.OFFLINE, () => dispatch({ type: 'PLAYER_OFFLINE', nowMs: Date.now() }))
@@ -164,10 +167,12 @@ export default function Player() {
     }
   }, [channel, hostname])
 
-  // ── Audio: the feed is audible only when LIVE ──
+  // ── Playback + audio: the feed always autoplays; audible only when LIVE ──
   useEffect(() => {
     const player = playerRef.current
     if (!player) return
+    // Always keep the stream playing so OBS never captures a paused frame.
+    try { player.play() } catch { /* play() is best-effort */ }
     if (state.mode === 'LIVE') {
       player.setMuted(false)
       player.setVolume(1)
