@@ -32,12 +32,41 @@ Create exactly one scene: **`CSGN MASTER`**, containing exactly one source:
 - ✅ **Control audio via OBS**
 - ❌ Shutdown source when not visible
 - ❌ Refresh browser when scene becomes active
+- **Page permissions:** *Read and write to OBS* (this exposes `window.obsstudio`,
+  which `/player` uses to detect it's running inside OBS and force audio on)
 
 In the Audio Mixer: browser source fader at **0 dB**, monitoring **Monitor Off** (the stream
 gets the audio; you don't need it playing on the workstation). If you ever need to click inside
 the page, right-click the source → **Interact**.
 
 Canvas: Settings → Video → Base and Output resolution both `1920×1080`.
+
+### Why `/player` behaves differently in OBS vs a normal tab
+
+`/player` detects its environment (`window.obsstudio`) and adapts:
+
+- **Inside OBS**, the browser source autoplays *with sound* and there is never a
+  user click, so audio is forced on programmatically and stays on (re-asserted
+  every few seconds). Going LIVE no longer depends on Twitch's flaky `ONLINE`
+  event — the page also treats a real `PLAYING` event as "the channel is live,"
+  which is what fixes the old *stuck-on "Starting Soon"* symptom in OBS.
+- **In a normal browser tab**, the browser's autoplay policy forbids un-muting
+  without a gesture, so the feed starts muted and a **🔊 Tap for sound** button
+  (or any click/keypress) unlocks audio. This is a hard browser rule — there is
+  no way to force gesture-less sound in a regular tab, and it does not affect the
+  OBS encode.
+
+**Nothing to configure for this** — it's automatic. Just make sure the Browser
+Source has **Page permissions: Read and write to OBS** so the OBS detection works.
+
+### Verifying the encode (do this once before going live)
+
+Open `https://csgn.fun/player?debug=1` in the OBS source (right-click → Interact,
+or just point a throwaway source at it). A small debug panel shows in the
+top-left with `env` (should read `OBS <version>`), the current `mode`, the armed
+`channel`, `audioBlocked`, and a live event log. When a streamer is live you
+should see `→ LIVE (playing)` or `→ LIVE (online)` and `mode: LIVE`. Remove the
+`?debug=1` for the real broadcast source.
 
 ## 2. Your master-control monitor (monitor 4)
 
@@ -94,11 +123,42 @@ workflow and gain OS-notification risk — treat it as a temporary fallback only
 
 | Symptom | Fix |
 |---|---|
-| No audio on stream | Browser source is missing ✅ "Control audio via OBS", or fader down |
+| No audio on stream | Browser source is missing ✅ "Control audio via OBS", or fader down. Open `?debug=1` — if `env` reads `browser` (not `OBS`), set the source's **Page permissions → Read and write to OBS** and reload |
+| Stuck on "Starting Soon" though streamer is live | Fixed in-app: LIVE now also triggers on the `PLAYING` event. If it still sticks, open `?debug=1` and read the event log — no `READY` means the Twitch embed script is blocked (check hardware accel / reload); `PLAYBACK_BLOCKED` looping means autoplay is denied (confirm the source isn't muted and Page permissions are set) |
 | Black browser source | Toggle Settings → Advanced → browser hardware acceleration, or right-click source → Interact → reload |
 | Stuck on BRB/board though streamer is live | Right-click source → Interact → hard-reload `/player`; check the slot's `twitchChannelUrl` in Admin |
 | Stream drops repeatedly | Check Automatically Reconnect is on; verify RTMPS key still valid in Media Studio |
 | `/watch` embed not showing | Broadcast post URL not pushed in Admin, or it's a raw `/i/broadcasts/` link (not embeddable — paste the *post* URL) |
 
 **State previews:** open `/player?preview=board`, `?preview=brb`, `?preview=starting`, or
-`?preview=wipe` to check each look inside OBS without touching live state.
+`?preview=wipe` to check each look inside OBS without touching live state. Add
+`?debug=1` to any `/player` URL for the live diagnostic panel (env, mode, channel,
+audio state, event log).
+
+## 8. Optional: OBS control script (`csgn-master.lua`)
+
+`/player` already handles all *network* logic, so an OBS script is **not
+required**. But a tiny watchdog script makes a 24/7 encoder self-healing.
+`docs/obs/csgn-master.lua` (in this repo) does three things:
+
+1. **Periodic refresh watchdog** — hard-reloads the browser source every N hours
+   (default 6) to clear memory creep from a CEF process that never restarts.
+   Because `/player` reloads straight back into the correct network state, this
+   is invisible on stream beyond a ~1 s reload.
+2. **Nightly refresh** — an optional single scheduled hard-reload at a quiet hour
+   (default 05:00 local), for operators who'd rather refresh once a day than on a
+   rolling interval.
+3. **Hotkeys** — bindable actions (Settings → Hotkeys) to hard-reload the source
+   on demand and to toggle the `?debug=1` diagnostic panel on/off, so you can
+   check state on-air without retyping the URL.
+
+Install: OBS → **Tools → Scripts → +** → select `csgn-master.lua`. Set
+*Browser source name* to match your source (e.g. `CSGN MASTER SOURCE`), pick the
+base `/player` URL, and tune the intervals. The script never switches scenes and
+never changes the URL's state — it only *reloads* the one source — so the brand
+wipe stinger and every state transition still run entirely inside the page. There
+is no hard cut to design around.
+
+> The script deliberately does **not** try to detect the page's mode
+> (LIVE/BRB/etc.): an OBS browser source is a one-way bridge (the page can call
+> OBS, OBS can't read the page), so mode-aware logic lives in `/player`, not here.
