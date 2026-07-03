@@ -12,16 +12,25 @@ export interface TwitchPlayer {
   setChannel: (channel: string) => void
   getChannel: () => string
   setMuted: (muted: boolean) => void
+  getMuted: () => boolean
   setVolume: (volume: number) => void
+  getVolume: () => number
   play: () => void
+  pause: () => void
 }
 
 export interface TwitchPlayerCtor {
   new (el: string | HTMLElement, options: Record<string, unknown>): TwitchPlayer
+  READY: string
   ONLINE: string
   OFFLINE: string
   ENDED: string
-  READY: string
+  /** Playback actually started — a reliable "the channel is live" proxy for
+   *  environments (notably OBS's CEF) where ONLINE fires late or not at all. */
+  PLAYING: string
+  /** Autoplay-with-sound was blocked by the browser — retry muted, unmute on
+   *  the next user gesture. */
+  PLAYBACK_BLOCKED: string
 }
 
 declare global {

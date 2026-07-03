@@ -1,11 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import {
   reduce,
+  serverLiveSignal,
+  isServerLive,
   INITIAL_STATE,
   BRB_GRACE_MS,
   STARTING_SOON_MAX_MS,
+  SERVER_FRESH_MS,
+  SERVER_OFFLINE_CONFIRM_MS,
   type MasterState,
   type MasterEvent,
+  type StreamActivitySample,
 } from './masterControl'
 
 const T0 = 1_000_000
@@ -113,5 +118,94 @@ describe('masterControl reducer', () => {
     const live: MasterState = { mode: 'LIVE', channel: 'streamer_one' }
     const s = reduce(live, slotBroadcast('streamer_two'))
     expect(s).toEqual({ mode: 'STARTING_SOON', channel: 'streamer_two', deadlineMs: T0 + STARTING_SOON_MAX_MS })
+  })
+})
+
+describe('serverLiveSignal (Helix ground truth)', () => {
+  const NOW = 2_000_000
+  const fresh = new Date(NOW - 10_000).toISOString() // checked 10s ago
+  const live = (over: Partial<StreamActivitySample> = {}): StreamActivitySample => ({
+    channel: 'streamer_one',
+    lastCheckedAt: fresh,
+    lastLive: true,
+    lastLiveAt: fresh,
+    ...over,
+  })
+
+  it('rescues an already-live channel out of STARTING_SOON (the ONLINE-never-fires case)', () => {
+    expect(serverLiveSignal('STARTING_SOON', 'streamer_one', live(), NOW)).toBe('GO_LIVE')
+  })
+
+  it('rescues an armed INTERMISSION channel to LIVE', () => {
+    expect(serverLiveSignal('INTERMISSION', 'streamer_one', live(), NOW)).toBe('GO_LIVE')
+  })
+
+  it('does nothing when already LIVE and still live', () => {
+    expect(serverLiveSignal('LIVE', 'streamer_one', live(), NOW)).toBeNull()
+  })
+
+  it('rescues from BRB when the server confirms live (the stuck-in-BRB bug)', () => {
+    expect(serverLiveSignal('BRB', 'streamer_one', live(), NOW)).toBe('GO_LIVE')
+  })
+
+  it('ignores a stale sample (poller down) so it cannot act on old data', () => {
+    const stale = new Date(NOW - (SERVER_FRESH_MS + 1)).toISOString()
+    expect(serverLiveSignal('STARTING_SOON', 'streamer_one', live({ lastCheckedAt: stale }), NOW)).toBeNull()
+  })
+
+  it('ignores a sample for a different channel', () => {
+    expect(serverLiveSignal('STARTING_SOON', 'streamer_one', live({ channel: 'someone_else' }), NOW)).toBeNull()
+  })
+
+  it('drops LIVE→BRB only after a sustained server-confirmed offline', () => {
+    const activity = live({
+      lastLive: false,
+      lastLiveAt: new Date(NOW - (SERVER_OFFLINE_CONFIRM_MS + 1)).toISOString(),
+    })
+    expect(serverLiveSignal('LIVE', 'streamer_one', activity, NOW)).toBe('GO_OFFLINE')
+  })
+
+  it('does NOT drop LIVE on a single fresh offline blip (recently seen live)', () => {
+    const activity = live({ lastLive: false, lastLiveAt: new Date(NOW - 20_000).toISOString() })
+    expect(serverLiveSignal('LIVE', 'streamer_one', activity, NOW)).toBeNull()
+  })
+
+  it('does NOT drop LIVE the server has never seen live (no lastLiveAt)', () => {
+    const activity = live({ lastLive: false, lastLiveAt: undefined })
+    expect(serverLiveSignal('LIVE', 'streamer_one', activity, NOW)).toBeNull()
+  })
+
+  it('does nothing without a channel or activity', () => {
+    expect(serverLiveSignal('STARTING_SOON', null, live(), NOW)).toBeNull()
+    expect(serverLiveSignal('STARTING_SOON', 'streamer_one', undefined, NOW)).toBeNull()
+  })
+})
+
+describe('isServerLive (embed-drop override gate)', () => {
+  const NOW = 2_000_000
+  const base: StreamActivitySample = {
+    channel: 'streamer_one',
+    lastCheckedAt: new Date(NOW - 10_000).toISOString(),
+    lastLive: true,
+    lastLiveAt: new Date(NOW - 10_000).toISOString(),
+  }
+
+  it('is true for a fresh, matching, live sample — so a flaky embed drop is ignored', () => {
+    expect(isServerLive('streamer_one', base, NOW)).toBe(true)
+    expect(isServerLive('STREAMER_ONE', base, NOW)).toBe(true) // case-insensitive
+  })
+
+  it('is false when the sample says not live', () => {
+    expect(isServerLive('streamer_one', { ...base, lastLive: false }, NOW)).toBe(false)
+  })
+
+  it('is false when the sample is stale (poller down) — the embed drop is honoured', () => {
+    expect(isServerLive('streamer_one', { ...base, lastCheckedAt: new Date(NOW - (SERVER_FRESH_MS + 1)).toISOString() }, NOW)).toBe(false)
+  })
+
+  it('is false for a different channel, or with no channel/activity', () => {
+    expect(isServerLive('streamer_one', { ...base, channel: 'other' }, NOW)).toBe(false)
+    expect(isServerLive(null, base, NOW)).toBe(false)
+    expect(isServerLive('streamer_one', undefined, NOW)).toBe(false)
   })
 })
