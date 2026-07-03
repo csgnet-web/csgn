@@ -4,6 +4,7 @@ import { db } from '@/config/firebase'
 import { detectStream } from '@/lib/player'
 import {
   reduce,
+  serverLiveSignal,
   INITIAL_STATE,
   MOUNT_TIMEOUT_MS,
   type BroadcastDoc,
@@ -167,24 +168,40 @@ export default function Player() {
   const channel = 'channel' in state ? state.channel : null
 
   // ── Authoritative live signal (server Helix check). feePollerBackground hits
-  //    the Twitch API every minute and records streamActivity.lastLive on the
-  //    slot doc we already subscribe to. The embed's ONLINE event only fires on
-  //    an offline→online *transition*, so a channel that's already live when
-  //    /player loads never triggers it and the page hangs on STARTING_SOON.
-  //    This rescues exactly that case — but only from a pre-live state; once
-  //    we're LIVE, the embed's real-time OFFLINE/BRB handling stays in charge
-  //    so a genuine drop still shows the BRB card instead of a black feed. ──
+  //    the Twitch API every minute and records streamActivity on the slot doc we
+  //    already subscribe to, giving us ground truth that's independent of the
+  //    embed's flaky events:
+  //
+  //      lastLive=true  → leave any pre-live card (STARTING_SOON / INTERMISSION).
+  //         The embed's ONLINE event only fires on an offline→online *transition*,
+  //         so a channel that's already live when /player loads never triggers it
+  //         and the page would otherwise hang on STARTING_SOON.
+  //      lastLive=false → backstop drop detection: only from LIVE, and only once
+  //         the channel hasn't been seen live for SERVER_OFFLINE_CONFIRM_MS, so a
+  //         one-off Helix hiccup can't yank a healthy stream to BRB.
+  //
+  //    We deliberately do NOT rescue *from* BRB here: BRB is only ever entered by
+  //    the embed's own real-time OFFLINE/ENDED (a true playback drop), and the
+  //    embed's ONLINE/PLAYING re-fire returns from it. Overriding that with a
+  //    up-to-60s-stale server sample would show Twitch's offline screen instead
+  //    of our BRB card during a genuine drop. ──
   const activity = currentSlot?.streamActivity
   useEffect(() => {
-    if (!channel) return
-    if (state.mode !== 'STARTING_SOON' && state.mode !== 'INTERMISSION') return
-    if (!activity?.lastLive) return
-    if (activity.channel && activity.channel.toLowerCase() !== channel.toLowerCase()) return
-    const checkedMs = activity.lastCheckedAt ? new Date(activity.lastCheckedAt).getTime() : 0
-    if (!checkedMs || Date.now() - checkedMs > 3 * 60_000) return // stale check ⇒ don't trust it
-    // (the debug overlay's "server live" + "mode" rows record this transition)
-    dispatch({ type: 'PLAYER_ONLINE' })
+    const signal = serverLiveSignal(state.mode, channel, activity, Date.now())
+    if (signal === 'GO_LIVE') dispatch({ type: 'PLAYER_ONLINE' })
+    else if (signal === 'GO_OFFLINE') dispatch({ type: 'PLAYER_OFFLINE', nowMs: Date.now() })
   }, [channel, activity, state.mode])
+
+  // Reaching LIVE by ANY path (embed ONLINE/PLAYING or the server signal above)
+  // means the channel is up — cancel the mount-timeout so it can't later fire a
+  // spurious PLAYER_OFFLINE and bounce a healthy stream into BRB. This is the
+  // fix for a false "We'll be right back" ~15s after an already-live load.
+  useEffect(() => {
+    if (state.mode === 'LIVE' && mountTimeoutRef.current) {
+      clearTimeout(mountTimeoutRef.current)
+      mountTimeoutRef.current = null
+    }
+  }, [state.mode])
   useEffect(() => {
     if (!channel) return
     let cancelled = false
