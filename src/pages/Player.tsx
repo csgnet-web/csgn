@@ -15,7 +15,9 @@ import { WipeOverlay } from '@/components/ui/WipeOverlay'
 import IntermissionBoard from '@/components/player/IntermissionBoard'
 import StatusCard from '@/components/player/StatusCard'
 import VodRotator, { type VodItem } from '@/components/player/VodRotator'
-import { formatESTRange } from '@/lib/slots'
+import { formatESTRange, DEFAULT_STREAM_URL } from '@/lib/slots'
+
+interface EmergencyOverride { enabled?: boolean; streamUrl?: string }
 
 const TICK_MS = 5_000
 
@@ -44,6 +46,7 @@ export default function Player() {
   const { currentSlot } = useLiveSlot()
   const [state, dispatch] = useReducer(reduce, INITIAL_STATE)
   const [vodItems, setVodItems] = useState<VodItem[]>([])
+  const [emergency, setEmergency] = useState<EmergencyOverride | null>(null)
   const [showWipe, setShowWipe] = useState(false)
 
   const playerRef = useRef<TwitchPlayer | null>(null)
@@ -64,21 +67,37 @@ export default function Player() {
     return () => clearTimeout(t)
   }, [showWipe])
 
-  // ── Firestore: broadcast doc drives the state machine ──
+  // ── Firestore: admin emergency override (non-slot takeover URL) ──
   useEffect(() => {
     const unsub = onSnapshot(
-      doc(db, 'public', 'currentBroadcast'),
-      (snap) => {
-        dispatch({
-          type: 'BROADCAST_CHANGED',
-          broadcast: snap.exists() ? (snap.data() as BroadcastDoc) : null,
-          nowMs: Date.now(),
-        })
-      },
-      () => dispatch({ type: 'BROADCAST_CHANGED', broadcast: null, nowMs: Date.now() }),
+      doc(db, 'config', 'emergencyOverride'),
+      (snap) => setEmergency(snap.exists() ? (snap.data() as EmergencyOverride) : null),
+      () => setEmergency(null),
     )
     return unsub
   }, [])
+
+  // ── Broadcast source is derived live from the shared slot data + override,
+  //    so an admin changing a slot's stream URL or status (or the clock rolling
+  //    into a new slot) switches /player automatically — no server round-trip. ──
+  const broadcast = useMemo<BroadcastDoc>(() => {
+    if (emergency?.enabled && emergency.streamUrl) {
+      return { streamUrl: emergency.streamUrl, source: 'emergency_override', slotId: null }
+    }
+    if (currentSlot) {
+      const assigned = Boolean(currentSlot.assignedUid) || currentSlot.status === 'confirmed' || currentSlot.status === 'live'
+      return {
+        streamUrl: currentSlot.streamUrl || DEFAULT_STREAM_URL,
+        source: assigned ? 'slot' : 'default',
+        slotId: currentSlot.id,
+      }
+    }
+    return { streamUrl: DEFAULT_STREAM_URL, source: 'default', slotId: null }
+  }, [emergency, currentSlot])
+
+  useEffect(() => {
+    dispatch({ type: 'BROADCAST_CHANGED', broadcast, nowMs: Date.now() })
+  }, [broadcast])
 
   // ── Firestore: admin-managed intermission VOD playlist ──
   useEffect(() => {
@@ -129,6 +148,9 @@ export default function Player() {
           })
           player.addEventListener(PlayerCtor.ONLINE, () => {
             if (mountTimeoutRef.current) clearTimeout(mountTimeoutRef.current)
+            // Keep the feed rolling the instant it comes online (OBS browser
+            // sources autoplay with sound; this also recovers if Twitch paused).
+            try { player.play() } catch { /* play() is best-effort */ }
             dispatch({ type: 'PLAYER_ONLINE' })
           })
           player.addEventListener(PlayerCtor.OFFLINE, () => dispatch({ type: 'PLAYER_OFFLINE', nowMs: Date.now() }))
@@ -145,10 +167,12 @@ export default function Player() {
     }
   }, [channel, hostname])
 
-  // ── Audio: the feed is audible only when LIVE ──
+  // ── Playback + audio: the feed always autoplays; audible only when LIVE ──
   useEffect(() => {
     const player = playerRef.current
     if (!player) return
+    // Always keep the stream playing so OBS never captures a paused frame.
+    try { player.play() } catch { /* play() is best-effort */ }
     if (state.mode === 'LIVE') {
       player.setMuted(false)
       player.setVolume(1)

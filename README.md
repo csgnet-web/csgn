@@ -58,6 +58,24 @@ Simplified v1 flow. Mobile full-page Twitch OAuth redirect (replaces popup, work
 - Slot streamers still stream to their own Twitch channels; account system (email + Phantom + Twitch, under a minute) unchanged
 - `/player` rebuilt as Master Control: a unit-tested state machine (LIVE / STARTING_SOON / BRB / INTERMISSION / OVERRIDE) driven by Twitch embed JS-API online/offline events — BRB grace, auto-return on reconnect, admin-managed intermission VOD playlist, animated network board, brand wipes; OBS reduced to a single browser-source scene (docs/obs-setup.md)
 
+### v1.2 — July 2026
+**Slot-schema sync + `/player` auto-switching.**
+- `/player` now derives its broadcast live from the shared slot data + emergency override instead of a server-written `currentBroadcast` doc — an admin changing a slot's stream URL/status (or the clock rolling into a new slot) switches the player automatically, no round-trip
+- Unified the slot status vocabulary end-to-end: server claim now writes `confirmed` (was `claimed`); `resolveCurrentBroadcast` and the fee poller read `confirmed`/`live` + `streamUrl` (were `claimed` + `twitchChannelUrl`, which never matched — the root cause of `/player` not reacting)
+- Fee poller (runs every minute) now also advances slot lifecycle: `confirmed → live` when the slot's start arrives, `→ completed` once it ends — so admin, `/schedule`, `/queue` and `/player` always agree
+- Slot schema cleanup: removed the `description` field entirely; `/watch` title reads the slot's display name/stream title; the OFFLINE→LIVE flip now tracks the current slot becoming `confirmed`/`live`
+- `/schedule` Today column shows only what's left today (live slot on top, highlighted); `/watch` on mobile moves Today's Schedule above the $CSGN panel and shrinks the rotating banner so it no longer overlaps the LIVE/OFFLINE label
+- $CSGN panel replaces "updating…" with a freshness dot + "Last Updated: Nm ago" (green ≤5 min, yellow beyond); "Play Starting 5" is now a Coming-Soon button like Squares
+- Admin panel realigned with the live app: Applications removed, Overview stats reworked (live/confirmed now, slots loaded), assign modal edits Stream Title, Auth Events retained
+
+### v1.3 — July 2026
+**Playback reliability + verifiable slot activity.**
+- `/player` always keeps the Twitch feed playing (calls `play()` on state change and on ONLINE) and unmutes at full volume in LIVE — OBS never captures a paused/silent frame
+- $CSGN price is now driven purely by the server-written `public/tokenStats` doc + the single LiveSlotContext listener; removed the per-client DexScreener fallback so no client wastes API quota, and the "Last Updated" dot honestly reflects the server doc's age
+- Fee poller now samples Twitch Helix once a minute for the active slot's channel and logs live timestamps to a new per-slot `streamActivity` field (channel, first/last live, live-minute count, per-minute checkpoints) — admins can confirm a slot was really streaming vs. "technically claimed" during intermission (uses the existing `TWITCH_CLIENT_ID`/`TWITCH_CLIENT_SECRET`)
+- Admin Creator Fees shows each slot's live-activity log; `/account` Creator Fee History is paginated 10-per-page (newest first, back-arrow to older) and surfaces the same live-minute summary
+- Rotating `/watch` banner gains right padding so lines like "SQUARES COMING SOON" are no longer clipped; `/queue` "CEO Creator Slots" renamed to "Open Slots"
+
 ---
 
 ## Getting Started

@@ -35,14 +35,110 @@ interface CreatorFees {
   declineReason?: string
 }
 
+interface StreamActivity {
+  channel?: string
+  lastCheckedAt?: string
+  lastLive?: boolean
+  firstLiveAt?: string
+  lastLiveAt?: string
+  liveCheckCount?: number
+  checkpoints?: string[]
+}
+
 interface SlotDoc {
   id?: string
   status?: string
   startTime?: string
   endTime?: string
+  streamUrl?: string
   walletAddress?: string
   creatorFees?: CreatorFees
+  streamActivity?: StreamActivity
   _feeState?: FeeState
+}
+
+/* ─── Twitch Helix: verify the slot's channel is actually live ─── */
+
+let cachedTwitchToken: { token: string; exp: number } | null = null
+
+async function twitchAppToken(): Promise<string | null> {
+  const clientId = process.env.TWITCH_CLIENT_ID
+  const clientSecret = process.env.TWITCH_CLIENT_SECRET
+  if (!clientId || !clientSecret) return null
+  const now = Date.now()
+  if (cachedTwitchToken && cachedTwitchToken.exp > now + 60_000) return cachedTwitchToken.token
+  try {
+    const res = await fetch('https://id.twitch.tv/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, grant_type: 'client_credentials' }),
+    })
+    if (!res.ok) return null
+    const data = (await res.json()) as { access_token?: string; expires_in?: number }
+    if (!data.access_token) return null
+    cachedTwitchToken = { token: data.access_token, exp: now + (data.expires_in ?? 3600) * 1000 }
+    return cachedTwitchToken.token
+  } catch {
+    return null
+  }
+}
+
+function twitchLoginFromUrl(url?: string): string | null {
+  if (!url) return null
+  const match = String(url).match(/twitch\.tv\/([^/?#]+)/i)
+  return match ? match[1].replace(/^@/, '').toLowerCase() : null
+}
+
+async function isTwitchChannelLive(login: string, token: string): Promise<boolean> {
+  try {
+    const res = await fetch(`https://api.twitch.tv/helix/streams?user_login=${encodeURIComponent(login)}`, {
+      headers: { 'Client-Id': process.env.TWITCH_CLIENT_ID || '', Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return false
+    const data = (await res.json()) as { data?: unknown[] }
+    return Array.isArray(data.data) && data.data.length > 0
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Once a minute, sample whether the active slot's Twitch channel is actually
+ * broadcasting and append a timestamp to the slot's streamActivity log. Kept in
+ * a separate top-level field so the fee-poll writes never clobber it.
+ */
+async function logSlotActivity(): Promise<void> {
+  try {
+    const row = await findActiveSlot()
+    if (!row) return
+    const slot = row.data as SlotDoc
+    const login = twitchLoginFromUrl(slot.streamUrl)
+    if (!login) return
+    const token = await twitchAppToken()
+    if (!token) return
+
+    const live = await isTwitchChannelLive(login, token)
+    const nowISO = new Date().toISOString()
+    const prev = slot.streamActivity ?? {}
+    const prevCheckpoints = Array.isArray(prev.checkpoints) ? prev.checkpoints : []
+    // Keep the last ~4h of per-minute samples (well within a 2h slot + buffer).
+    const checkpoints = live ? [...prevCheckpoints, nowISO].slice(-240) : prevCheckpoints
+
+    const streamActivity: StreamActivity = {
+      channel: login,
+      lastCheckedAt: nowISO,
+      lastLive: live,
+      firstLiveAt: prev.firstLiveAt ?? (live ? nowISO : undefined),
+      lastLiveAt: live ? nowISO : prev.lastLiveAt,
+      liveCheckCount: (prev.liveCheckCount ?? 0) + (live ? 1 : 0),
+      checkpoints,
+    }
+
+    const slotId = row.path.split('/').pop()!
+    await writeDoc(`slots/${slotId}`, { streamActivity }, { merge: true })
+  } catch (err) {
+    console.error('[feePoller] logSlotActivity error:', err)
+  }
 }
 
 async function findActiveSlot(): Promise<{ path: string; data: SlotDoc } | null> {
@@ -63,9 +159,48 @@ async function findActiveSlot(): Promise<{ path: string; data: SlotDoc } | null>
       const s = r.data as SlotDoc
       const start = s.startTime ? new Date(s.startTime).getTime() : 0
       const end = s.endTime ? new Date(s.endTime).getTime() : 0
-      return nowMs >= start && nowMs < end && s.status === 'claimed'
+      return nowMs >= start && nowMs < end && (s.status === 'confirmed' || s.status === 'live')
     }) ?? null
   )
+}
+
+/**
+ * Advance assigned slots through their clock-driven lifecycle so every surface
+ * (admin, /schedule, /queue, /player) sees the same status:
+ *   confirmed → live       (once the slot's start time arrives)
+ *   confirmed/live → completed (once the slot's end time passes)
+ * Runs every minute alongside the fee poll.
+ */
+async function advanceSlotLifecycles(): Promise<void> {
+  try {
+    const now = new Date()
+    const fromISO = new Date(now.getTime() - 6 * 60 * 60 * 1000).toISOString()
+    const toISO = new Date(now.getTime() + 60 * 1000).toISOString()
+    const rows = await queryCollection(
+      'slots',
+      [fieldFilter('startTime', 'GREATER_THAN_OR_EQUAL', fromISO), fieldFilter('startTime', 'LESS_THAN_OR_EQUAL', toISO)],
+      [order('startTime', 'ASCENDING')],
+      20,
+    )
+    const nowMs = Date.now()
+    for (const row of rows) {
+      const s = row.data as SlotDoc
+      const start = s.startTime ? new Date(s.startTime).getTime() : NaN
+      const end = s.endTime ? new Date(s.endTime).getTime() : NaN
+      if (!Number.isFinite(start) || !Number.isFinite(end)) continue
+      let next: string | null = null
+      if (s.status === 'confirmed' || s.status === 'live') {
+        if (nowMs >= end) next = 'completed'
+        else if (nowMs >= start && s.status === 'confirmed') next = 'live'
+      }
+      if (next) {
+        const slotId = row.path.split('/').pop()!
+        await writeDoc(`slots/${slotId}`, { status: next, updatedAt: now.toISOString() }, { merge: true })
+      }
+    }
+  } catch (err) {
+    console.error('[feePoller] advanceSlotLifecycles error:', err)
+  }
 }
 
 async function pollAndWrite(dexData: DexData): Promise<void> {
@@ -183,6 +318,14 @@ async function pollAndWrite(dexData: DexData): Promise<void> {
 // public/tokenStats (~1 write/min) so token stats flow 24/7 even when no slot
 // is live.
 export const handler = async () => {
+  // Advance clock-driven slot statuses first so /player, admin, /schedule and
+  // /queue all agree on which slot is confirmed / live / completed right now.
+  await advanceSlotLifecycles()
+
+  // Sample real Twitch activity for the active slot (1 Helix call/min) so the
+  // Creator Fees log can prove the streamer was actually live, not intermission.
+  await logSlotActivity()
+
   let tokenStatsWritten = false
   for (let i = 0; i < 4; i++) {
     const dexData = await fetchDexData()

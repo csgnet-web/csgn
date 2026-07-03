@@ -145,7 +145,10 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
   color: rgba(255, 255, 255, 0.9);
   white-space: nowrap;
   overflow: visible;
+  /* Right padding keeps the last word (e.g. "…COMING SOON") off the clipping
+     edge so it reads in full instead of looking cut off. */
   padding-left: 0.4rem;
+  padding-right: 0.75rem;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
@@ -162,11 +165,13 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
 @media (max-width: 640px) {
   .watch-roll-banner {
     max-width: none;
+    height: 1.1rem;
     overflow: hidden; /* long faces must not bleed over the LIVE/OFFLINE label */
   }
   .watch-roll-banner__face {
     justify-content: flex-end;
-    font-size: clamp(0.56rem, 2.8vw, 0.74rem);
+    font-size: clamp(0.44rem, 2vw, 0.58rem);
+    letter-spacing: 0.04em;
   }
 }
 

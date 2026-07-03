@@ -69,7 +69,7 @@ export const handler = withHttp(async (event) => {
   const now = new Date()
   const twitchChannelUrl = `https://www.twitch.tv/${twitchUsername}`
   await commitWrites([updateWrite(`slots/${slotId}`, {
-    status: 'claimed', isClaimable: false, sourceType: 'user_twitch', assignedUid: authUser.uid, assignedUsername: user.username || twitchUsername,
+    status: 'confirmed', isClaimable: false, sourceType: 'user_twitch', assignedUid: authUser.uid, assignedUsername: user.username || twitchUsername,
     assignedName: user.username || twitchUsername, twitchUserId, twitchUsername, twitchChannelUrl, streamUrl: twitchChannelUrl,
     walletAddress, claimedAt: now, updatedAt: now,
   })], transaction)

@@ -14,7 +14,7 @@ import StreamInfoBar from '@/components/watch/StreamInfoBar'
 import { WipeOverlay } from '@/components/ui/WipeOverlay'
 
 const bannerItems = [
-  'STARTING 5: IMMINENT',
+  'STARTING 5: COMING SOON',
   'SQUARES COMING SOON',
   "CSGN: Crypto's Entertainment Flagship",
   'Connect Your Twitch and Go Live on CSGN',
@@ -63,9 +63,15 @@ export default function Watch() {
   const broadcastPostId = useMemo(() => (manualOverride?.url ? parseXPostId(manualOverride.url) : null), [manualOverride?.url])
   const broadcastUrl = manualOverride?.url && manualOverride.url.trim() ? manualOverride.url.trim() : null
 
-  const streamerName = manualOverride?.streamerName || currentSlot?.assignedName || ''
-  const streamTitle = manualOverride?.title || currentSlot?.streamTitle || currentSlot?.description || ''
+  // The current slot's assigned streamer is the source of truth for the name/
+  // title; a manual X-broadcast override only fills in when the slot is unnamed.
+  const streamerName = currentSlot?.assignedName || manualOverride?.streamerName || ''
+  const streamTitle = currentSlot?.streamTitle || manualOverride?.title || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
+
+  // Live once the current slot is confirmed or live (or an X broadcast is up),
+  // so the OFFLINE→LIVE flip tracks the slot status automatically.
+  const slotLive = Boolean(currentSlot && (currentSlot.status === 'confirmed' || currentSlot.status === 'live'))
 
   const canClaimCurrent =
     Boolean(currentSlot) &&
@@ -104,7 +110,7 @@ export default function Watch() {
     void handleClaimSlot(slot)
   }, [user, profile, allSlots, claiming, handleClaimSlot])
 
-  const isLive = Boolean(broadcastPostId)
+  const isLive = Boolean(broadcastPostId) || slotLive
 
   return (
     <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
@@ -125,7 +131,7 @@ export default function Watch() {
             <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-white animate-pulse' : 'bg-gray-500'}`} />
             <span className="text-white font-black tracking-[0.25em] text-sm uppercase">{isLive ? 'LIVE' : 'OFFLINE'}</span>
           </div>
-          <div className="watch-roll-banner flex-1 min-w-[180px] sm:min-w-[240px] lg:flex-none lg:w-[520px] lg:ml-auto" aria-label="Live game updates">
+          <div className="watch-roll-banner flex-1 min-w-0 sm:min-w-[240px] lg:flex-none lg:w-[520px] lg:ml-auto" aria-label="Live game updates">
             <div className="watch-roll-banner__inner">
               {bannerItems.map((item, index) => (
                 <span
@@ -170,20 +176,21 @@ export default function Watch() {
           onClaimCurrent={() => void handleClaimCurrent()}
         />
 
+        {/* Today's schedule — on mobile this sits above the $CSGN panel; on
+            desktop the token panel lives in the sidebar so order is moot here. */}
+        <ScheduleStrip claiming={claiming} onClaimSlot={(slot) => void handleClaimSlot(slot)} />
+
         {/* Mobile token panel */}
         <div className="lg:hidden shrink-0 px-5 py-5 border-b border-white/[0.06]">
           <TokenPanel broadcastUrl={broadcastUrl} />
         </div>
 
-        {/* Today's schedule */}
-        <ScheduleStrip claiming={claiming} onClaimSlot={(slot) => void handleClaimSlot(slot)} />
-
         {/* Game buttons */}
         <div className="shrink-0 grid grid-cols-2 gap-3 px-5 py-5">
-          <button className="relative overflow-hidden flex flex-col items-center justify-center gap-1.5 py-2.5 sm:py-5 px-3 bg-red-600 hover:bg-red-500 active:scale-[0.98] rounded-xl font-black font-display text-white text-sm sm:text-base uppercase tracking-wider transition-all shadow-lg shadow-red-900/40 cursor-pointer">
+          <button disabled className="relative overflow-hidden flex flex-col items-center justify-center gap-1.5 py-2.5 sm:py-5 px-3 bg-gray-700/60 rounded-xl font-black font-display text-white/70 text-sm sm:text-base uppercase tracking-wider transition-all shadow-lg cursor-not-allowed">
             <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
             <Gamepad2 className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
-            <span className="text-center leading-tight">Play Starting 5<br /><span className="font-normal text-xs text-white/80">for free!</span></span>
+            <span className="text-center leading-tight">Starting 5<br /><span className="font-normal text-xs text-white/70">Coming Soon</span></span>
           </button>
           <button disabled className="relative overflow-hidden flex flex-col items-center justify-center gap-1.5 py-2.5 sm:py-5 px-3 bg-gray-700/60 rounded-xl font-black font-display text-white/70 text-sm sm:text-base uppercase tracking-wider transition-all shadow-lg cursor-not-allowed">
             <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />

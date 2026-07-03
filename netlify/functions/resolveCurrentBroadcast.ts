@@ -14,9 +14,12 @@ export async function resolveBroadcast() {
     source = 'emergency_override'; streamUrl = emergency.streamUrl
   } else {
     const now = new Date().toISOString()
-    const slots = await queryCollection('slots', [fieldFilter('status', 'IN', ['claimed', 'live']), fieldFilter('startTime', 'LESS_THAN_OR_EQUAL', now)], [order('startTime', 'DESCENDING')], 10)
-    const current = slots.find((s) => typeof s.data.endTime === 'string' && String(s.data.endTime) > now && typeof s.data.twitchChannelUrl === 'string')
-    if (current) { source = 'slot'; streamUrl = String(current.data.twitchChannelUrl); slotId = current.path.split('/').pop() || null }
+    const slots = await queryCollection('slots', [fieldFilter('status', 'IN', ['confirmed', 'live']), fieldFilter('startTime', 'LESS_THAN_OR_EQUAL', now)], [order('startTime', 'DESCENDING')], 10)
+    const current = slots.find((s) => {
+      const url = s.data.streamUrl ?? s.data.twitchChannelUrl
+      return typeof s.data.endTime === 'string' && String(s.data.endTime) > now && typeof url === 'string' && Boolean(url)
+    })
+    if (current) { source = 'slot'; streamUrl = String(current.data.streamUrl ?? current.data.twitchChannelUrl); slotId = current.path.split('/').pop() || null }
     else if (fallbackUrl) { source = 'fallback'; streamUrl = fallbackUrl }
   }
   const doc = { streamUrl, source, slotId, resolvedAt: new Date(), updatedAt: new Date() }

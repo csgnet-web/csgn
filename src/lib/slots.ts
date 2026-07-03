@@ -83,6 +83,21 @@ export interface CreatorFees {
   updatedAt: string
 }
 
+/**
+ * Per-slot Twitch live-activity log, written by the server fee poller once a
+ * minute while a slot is confirmed/live. Lets admins verify the streamer was
+ * actually broadcasting (not just "technically claimed" while intermission ran).
+ */
+export interface StreamActivity {
+  channel?: string          // twitch login the poller checked
+  lastCheckedAt?: string    // ISO of the most recent Helix check
+  lastLive?: boolean        // whether the channel was live on that check
+  firstLiveAt?: string      // ISO of the first time it was seen live this slot
+  lastLiveAt?: string       // ISO of the most recent time it was seen live
+  liveCheckCount?: number   // number of live samples (~minutes, 1 check/min)
+  checkpoints?: string[]    // ISO timestamps sampled while the channel was live
+}
+
 export interface SlotRequest {
   id: string
   uid: string
@@ -113,11 +128,11 @@ export interface Slot {
   streamTitle: string         // display title for the stream
   assignedUid: string | null
   assignedName: string | null
-  description: string
   bids: SlotBid[]             // auction only
   lotteryEntrants: string[]   // legacy field, kept for DB compat
   requests: SlotRequest[]     // slot request queue
   creatorFees?: CreatorFees   // populated after slot completes
+  streamActivity?: StreamActivity // server-logged Twitch live samples
   createdAt: unknown
 }
 
@@ -331,7 +346,6 @@ export async function syncSlotsForDate(targetDate: Date): Promise<SyncScheduleRe
         streamTitle: '',
         assignedUid: null,
         assignedName: null,
-        description: '',
         bids: [],
         lotteryEntrants: [],
         requests: [],
@@ -435,7 +449,6 @@ export async function reseedNextDaysAsCEO(startDate: Date, dayCount: number): Pr
           streamTitle: '',
           assignedUid: null,
           assignedName: null,
-          description: '',
           bids: [],
           lotteryEntrants: [],
           requests: [],
@@ -579,24 +592,6 @@ export async function migratePhaseSlotsToCEO(): Promise<{ updated: number }> {
   return { updated }
 }
 
-
-/**
- * One-time migration: replace legacy shrood Twitch URLs with csgnet.
- * Updates any slot whose streamUrl points to twitch.tv/shrood (with or without www).
- */
-export async function migrateShroodSlotsToCsgnet(): Promise<{ updated: number }> {
-  const allSnap = await getDocs(collection(db, SLOTS_COLLECTION))
-  let updated = 0
-  for (const slotDoc of allSnap.docs) {
-    const data = slotDoc.data() as Slot
-    const current = (data.streamUrl || '').trim().toLowerCase()
-    if (current === 'https://twitch.tv/shrood' || current === 'https://www.twitch.tv/shrood') {
-      await updateDoc(slotDoc.ref, { streamUrl: DEFAULT_STREAM_URL })
-      updated++
-    }
-  }
-  return { updated }
-}
 
 /** Fetch all slots for a date range. */
 export async function fetchSlots(from: Date, to: Date): Promise<Slot[]> {
@@ -783,14 +778,14 @@ export async function assignSlot(
   uid: string,
   displayName: string,
   streamUrl: string,
-  description: string,
+  streamTitle: string,
 ): Promise<void> {
   const ref = doc(db, SLOTS_COLLECTION, slotId)
   await updateDoc(ref, {
     assignedUid: uid,
     assignedName: displayName,
     streamUrl: streamUrl || DEFAULT_STREAM_URL,
-    description,
+    streamTitle,
     status: 'confirmed',
   })
 }
@@ -807,14 +802,14 @@ export async function assignCEOSlot(
   uid: string,
   displayName: string,
   streamUrl: string,
-  description: string,
+  streamTitle: string,
 ): Promise<void> {
   const ref = doc(db, SLOTS_COLLECTION, slotId)
   await updateDoc(ref, {
     assignedUid: uid,
     assignedName: displayName,
     streamUrl: streamUrl || DEFAULT_STREAM_URL,
-    description,
+    streamTitle,
     status: 'confirmed',
   })
 
@@ -836,7 +831,6 @@ export async function updateSlotStatus(slotId: string, status: SlotStatus): Prom
       assignedName: null,
       streamUrl: DEFAULT_STREAM_URL,
       streamTitle: '',
-      description: '',
     })
     return
   }
