@@ -5,6 +5,7 @@ import { detectStream } from '@/lib/player'
 import {
   reduce,
   serverLiveSignal,
+  isServerLive,
   INITIAL_STATE,
   MOUNT_TIMEOUT_MS,
   type BroadcastDoc,
@@ -180,12 +181,17 @@ export default function Player() {
   //         the channel hasn't been seen live for SERVER_OFFLINE_CONFIRM_MS, so a
   //         one-off Helix hiccup can't yank a healthy stream to BRB.
   //
-  //    We deliberately do NOT rescue *from* BRB here: BRB is only ever entered by
-  //    the embed's own real-time OFFLINE/ENDED (a true playback drop), and the
-  //    embed's ONLINE/PLAYING re-fire returns from it. Overriding that with a
-  //    up-to-60s-stale server sample would show Twitch's offline screen instead
-  //    of our BRB card during a genuine drop. ──
+  //    Paired with the embed OFFLINE/ENDED override below (which ignores flaky
+  //    drops while server-live), this keeps /player pinned to the feed whenever
+  //    the streamer is genuinely broadcasting — including rescuing a BRB we only
+  //    entered from a race. ──
   const activity = currentSlot?.streamActivity
+  // Mirrors for use inside the embed event callbacks, which are attached once
+  // and otherwise close over stale values.
+  const channelRef = useRef(channel)
+  useEffect(() => { channelRef.current = channel }, [channel])
+  const activityRef = useRef(activity)
+  useEffect(() => { activityRef.current = activity }, [activity])
   useEffect(() => {
     const signal = serverLiveSignal(state.mode, channel, activity, Date.now())
     if (signal === 'GO_LIVE') dispatch({ type: 'PLAYER_ONLINE' })
@@ -246,8 +252,18 @@ export default function Player() {
           }
         })
       }
-      player.addEventListener(PlayerCtor.OFFLINE, () => { logEvent('OFFLINE'); dispatch({ type: 'PLAYER_OFFLINE', nowMs: Date.now() }) })
-      player.addEventListener(PlayerCtor.ENDED, () => { logEvent('ENDED'); dispatch({ type: 'PLAYER_OFFLINE', nowMs: Date.now() }) })
+      // Embed OFFLINE/ENDED are unreliable: they fire when a live channel is
+      // merely paused, mid-reload, or briefly reconnecting. Honour them ONLY
+      // when the server's Helix check doesn't currently confirm the channel is
+      // live — otherwise a healthy (often paused) feed gets bounced to BRB and,
+      // because the drop keeps re-firing, never comes back. Server-live wins.
+      const onEmbedDrop = (label: string) => {
+        const serverLive = isServerLive(channelRef.current, activityRef.current, Date.now())
+        logEvent(`${label}${serverLive ? ' (ignored: server live)' : ''}`)
+        if (!serverLive) dispatch({ type: 'PLAYER_OFFLINE', nowMs: Date.now() })
+      }
+      player.addEventListener(PlayerCtor.OFFLINE, () => onEmbedDrop('OFFLINE'))
+      player.addEventListener(PlayerCtor.ENDED, () => onEmbedDrop('ENDED'))
     }
 
     if (playerRef.current) {

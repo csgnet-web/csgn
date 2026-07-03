@@ -63,17 +63,33 @@ export interface StreamActivitySample {
 }
 
 /**
+ * Is the channel server-confirmed live *right now*? True only for a fresh Helix
+ * sample (poller isn't down), matching this channel, that saw it broadcasting.
+ * This is authoritative ground truth used to override the embed's flaky events.
+ */
+export function isServerLive(
+  channel: string | null,
+  activity: StreamActivitySample | undefined,
+  nowMs: number,
+): boolean {
+  if (!channel || !activity?.lastLive) return false
+  if (activity.channel && activity.channel.toLowerCase() !== channel.toLowerCase()) return false
+  const checkedMs = activity.lastCheckedAt ? new Date(activity.lastCheckedAt).getTime() : 0
+  return checkedMs > 0 && nowMs - checkedMs < SERVER_FRESH_MS
+}
+
+/**
  * Decide what the server's Twitch Helix sample tells us to do, independent of
  * the (flaky) embed events. Pure so every situation is unit-testable.
  *
- *   'GO_LIVE'    leave a pre-live card — the channel is already broadcasting and
- *                the embed's ONLINE event (transition-only) may never fire.
+ *   'GO_LIVE'    the channel is server-confirmed live but we're on a non-live
+ *                card (STARTING_SOON / INTERMISSION / a BRB we shouldn't be in) —
+ *                cut to the feed. The embed's ONLINE event is transition-only, so
+ *                an already-live channel may never fire it; and a flaky embed
+ *                OFFLINE can drop us into BRB while the streamer is really up.
  *   'GO_OFFLINE' backstop drop detection from LIVE when the embed's OFFLINE never
  *                fired, gated so a lone Helix hiccup can't false-trigger a BRB.
  *   null         no action — trust the embed's real-time events.
- *
- * Never rescues *from* BRB: that state is only entered by a real embed drop and
- * a stale server sample would show Twitch's offline screen over our BRB card.
  */
 export function serverLiveSignal(
   mode: MasterState['mode'],
@@ -83,15 +99,18 @@ export function serverLiveSignal(
 ): 'GO_LIVE' | 'GO_OFFLINE' | null {
   if (!channel) return null
   if (activity?.channel && activity.channel.toLowerCase() !== channel.toLowerCase()) return null
+
+  // Server confirms live → we belong on the feed. Rescue from BRB too: with the
+  // embed's drop events overridden while server-live, a BRB here is only ever a
+  // brief race, and staying stuck on it is exactly the bug we're killing.
+  if (isServerLive(channel, activity, nowMs)) {
+    return mode === 'STARTING_SOON' || mode === 'INTERMISSION' || mode === 'BRB' ? 'GO_LIVE' : null
+  }
+
   const checkedMs = activity?.lastCheckedAt ? new Date(activity.lastCheckedAt).getTime() : 0
   const fresh = checkedMs > 0 && nowMs - checkedMs < SERVER_FRESH_MS
-  if (!fresh) return null
-
-  if (activity?.lastLive) {
-    return mode === 'STARTING_SOON' || mode === 'INTERMISSION' ? 'GO_LIVE' : null
-  }
-  if (mode === 'LIVE') {
-    const lastLiveMs = activity?.lastLiveAt ? new Date(activity.lastLiveAt).getTime() : 0
+  if (fresh && mode === 'LIVE' && activity && !activity.lastLive) {
+    const lastLiveMs = activity.lastLiveAt ? new Date(activity.lastLiveAt).getTime() : 0
     // Require a prior confirmed-live sample so we only drop a stream the server
     // actually watched go offline — never one it simply hasn't sampled yet.
     if (lastLiveMs > 0 && nowMs - lastLiveMs > SERVER_OFFLINE_CONFIRM_MS) return 'GO_OFFLINE'
