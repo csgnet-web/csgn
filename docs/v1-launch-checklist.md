@@ -55,6 +55,16 @@
 - [ ] `/player` renders the active Twitch stream fullscreen with no Firestore writes from the browser.
 - [ ] Emergency override appears in `/player`, and clearing it returns to the active slot/fallback stream.
 
+## Master-control test checklist (/player 24/7 logic — see docs/obs-setup.md)
+- [ ] With no claimed slot, `/player` shows the animated intermission board (panels cycle every ~12s).
+- [ ] Claim a slot without going live on Twitch → "Starting soon" card with the streamer's name; after 10 minutes → intermission.
+- [ ] Streamer goes live → brand wipe → fullscreen feed with audio.
+- [ ] Kill the streamer's OBS → "We'll be right back" card within seconds; after 120s → intermission; streamer returns → wipe back to LIVE automatically. **This is the money path — test end-to-end before launch.**
+- [ ] Add an MP4 URL in Admin → Intermission VOD Playlist → intermission rotates board ↔ video without a reload; removing it reverts to board-only.
+- [ ] YouTube emergency override renders as a plain iframe; clearing it returns to normal flow.
+- [ ] Only one audio source at a time: feed audible only when LIVE, VOD audio only during intermission, cards silent.
+- [ ] Inside OBS: Browser Source at 1920×1080 renders the board crisply, audio meters move on LIVE and VOD playback.
+
 ## X broadcast test checklist (OBS → X, no Restream)
 - [ ] The CSGN X account (@CSGNet) has Media Studio Producer access; RTMPS URL + stream key are configured in OBS (Settings → Stream → Custom).
 - [ ] Start OBS (capturing `/player`), go live from Media Studio, and confirm the broadcast post appears on @CSGNet.

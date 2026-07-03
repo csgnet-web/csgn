@@ -56,6 +56,7 @@ Simplified v1 flow. Mobile full-page Twitch OAuth redirect (replaces popup, work
 - CSP rewritten: X widget domains added, Restream dropped, Google Fonts and YouTube `/player` embeds unblocked (both were latent CSP violations)
 - Footer reworked (@CSGNet, token CA strip, market links) and mounted on content pages; dead legacy pages removed (`Home`, `Tokenomics`, `Apply`)
 - Slot streamers still stream to their own Twitch channels; account system (email + Phantom + Twitch, under a minute) unchanged
+- `/player` rebuilt as Master Control: a unit-tested state machine (LIVE / STARTING_SOON / BRB / INTERMISSION / OVERRIDE) driven by Twitch embed JS-API online/offline events — BRB grace, auto-return on reconnect, admin-managed intermission VOD playlist, animated network board, brand wipes; OBS reduced to a single browser-source scene (docs/obs-setup.md)
 
 ---
 
@@ -140,9 +141,16 @@ SECRETS_SCAN_OMIT_KEYS=FIREBASE_PROJECT_ID,VITE_FIREBASE_PROJECT_ID
 Slot streamers → their own Twitch channels
   claimSlot → twitchChannelUrl → resolveCurrentBroadcast → public/currentBroadcast
 
-CSGN operator machine:
-  /player (auto-follows public/currentBroadcast, embeds the claimed Twitch channel)
-  → OBS Window Capture → RTMPS → X Media Studio Producer → live on @CSGNet
+CSGN operator machine (see docs/obs-setup.md):
+  /player = MASTER CONTROL — a state machine (src/lib/masterControl.ts), not a dumb iframe:
+    LIVE            streamer's feed fullscreen, audio on (Twitch embed JS API events)
+    STARTING_SOON   slot claimed, not live yet → branded card (max 10 min)
+    BRB             feed dropped → grace card 120s; auto-cuts back on reconnect
+    INTERMISSION    admin VOD playlist (config/vodPlaylist) rotating with the animated board
+    OVERRIDE        emergency non-Twitch URL (YouTube iframe)
+    + CSGN brand wipe on every state change
+  → OBS Browser Source (1920×1080, one scene, zero OBS logic)
+  → RTMPS → X Media Studio Producer → live on @CSGNet
 
 Admin panel:
   paste the broadcast post URL (https://x.com/CSGNet/status/…) once per OBS session
