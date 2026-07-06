@@ -6,6 +6,13 @@
  * one promise; rejects on script failure so callers can fall back.
  */
 
+/** One entry from Twitch's quality list. `group` is the stable id passed to
+ *  setQuality ('chunked' = source/highest); `name` is the human label. */
+export interface TwitchQuality {
+  group: string
+  name?: string
+}
+
 export interface TwitchPlayer {
   addEventListener: (event: string, cb: () => void) => void
   removeEventListener: (event: string, cb: () => void) => void
@@ -17,6 +24,11 @@ export interface TwitchPlayer {
   getVolume: () => number
   play: () => void
   pause: () => void
+  /** Pin the stream to a fixed quality. 'chunked' is Twitch's source feed. */
+  setQuality: (group: string) => void
+  /** Best→worst list; empty until playback has started. */
+  getQualities?: () => TwitchQuality[]
+  getQuality?: () => string
 }
 
 export interface TwitchPlayerCtor {
