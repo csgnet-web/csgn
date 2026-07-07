@@ -2,13 +2,17 @@
   CSGN MASTER — OBS control script for the 24/7 encoder.
 
   /player is the brain: it decides LIVE / STARTING_SOON / BRB / INTERMISSION /
-  OVERRIDE, plays the brand wipe between states, forces audio on inside OBS, and
-  reloads straight back into the correct state after any refresh. So this script
-  is intentionally tiny. It only makes a machine that runs for weeks self-healing:
+  OVERRIDE, plays the brand wipe between states, pins Twitch source quality,
+  forces audio on inside OBS, and holds a branded cover over the feed until it
+  settles — so the Twitch startup reveal (play button, preroll, channel chrome)
+  is never seen, on first load OR after a reload. This script is intentionally
+  tiny. It only makes a machine that runs for weeks self-healing:
 
     1. Periodic refresh watchdog  — reload the browser source every N hours to
-       clear CEF memory creep. Invisible on stream (~1s reload, page restores
-       the exact network state).
+       clear CEF memory creep. Kept infrequent on purpose (default 12h): each
+       reload is seamless because /player restores the exact network state and
+       masks the reload with its branded cover, but fewer reloads still means
+       fewer re-buffers, so we only reload as often as memory creep demands.
     2. Nightly refresh            — optional single reload at a fixed local hour.
     3. Hotkeys                    — reload-now, and toggle the ?debug=1 panel,
        bindable in Settings -> Hotkeys.
@@ -25,7 +29,7 @@ local obs = obslua
 local source_name        = "CSGN MASTER SOURCE"
 local base_url           = "https://csgn.fun/player"
 local watchdog_enabled   = true
-local watchdog_hours     = 6           -- reload every N hours
+local watchdog_hours     = 12          -- reload every N hours (fewer = fewer re-buffers)
 local nightly_enabled    = false
 local nightly_hour       = 5           -- 0-23, local time
 local debug_on           = false       -- current ?debug=1 toggle state

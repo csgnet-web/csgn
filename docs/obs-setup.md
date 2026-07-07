@@ -28,7 +28,10 @@ Create exactly one scene: **`CSGN MASTER`**, containing exactly one source:
 **Browser Source** —
 - URL: `https://csgn.fun/player`
 - Width `1920`, Height `1080`
-- FPS: *Use custom frame rate* unchecked (matches canvas)
+- FPS: ✅ **Use custom frame rate** = **30** (match your stream output). Leaving CEF
+  at 60 while the output is 30 makes the browser render twice the frames OBS
+  keeps — a common cause of ~50% *skipped* frames. Set it to 60 only if you are
+  actually outputting 60.
 - ✅ **Control audio via OBS**
 - ❌ Shutdown source when not visible
 - ❌ Refresh browser when scene becomes active
@@ -46,8 +49,14 @@ Canvas: Settings → Video → Base and Output resolution both `1920×1080`.
 `/player` detects its environment (`window.obsstudio`) and adapts:
 
 - **Inside OBS**, the browser source autoplays *with sound* and there is never a
-  user click, so audio is forced on programmatically and stays on (re-asserted
-  every few seconds). Going LIVE no longer depends on Twitch's flaky `ONLINE`
+  user click, so audio is forced on programmatically and stays on (gently
+  re-checked every 15s — and only nudged if it has actually drifted to muted, so
+  a healthy feed is never disturbed). The feed is also pinned to Twitch's
+  **source** quality (`chunked`) so the encode never drops to auto/360p, and a
+  **branded cover is held over the feed until it settles** — so the Twitch
+  startup reveal (play-button poster, preroll, channel/Follow chrome) is never
+  seen on-stream, on first load *or* after a watchdog reload. Going LIVE no
+  longer depends on Twitch's flaky `ONLINE`
   event. LIVE is now reached three independent ways: the embed's `ONLINE` event,
   a real `PLAYING` event (playback started ⇒ the channel is live), **and** the
   server's Twitch Helix check (`feePollerBackground` verifies the slot's channel
@@ -136,6 +145,10 @@ workflow and gain OS-notification risk — treat it as a temporary fallback only
 | Black browser source | Toggle Settings → Advanced → browser hardware acceleration, or right-click source → Interact → reload |
 | "We'll be right back" / reconnecting though streamer is live | Fixed in-app: this was the mount-timeout firing a false drop after an already-live load, and reaching LIVE by any path now cancels it. LIVE also self-heals from the server Helix check. If it persists, open `?debug=1` — `server live: yes` with `mode: BRB` means a real embed `OFFLINE` event; hard-reload the source and check the slot's channel URL in Admin |
 | Stream drops repeatedly | Check Automatically Reconnect is on; verify RTMPS key still valid in Media Studio |
+| **High dropped frames** (OBS Stats shows a large % of dropped/skipped frames) | Two different failures share the name. **Dropped frames (network)** = the upload can't keep up → lower the OBS bitrate (try 4500–6000 Kbps CBR) and check the wired connection. **Skipped/lagged frames (rendering/encoding)** = the machine can't render+encode fast enough → (1) set the Browser Source to *Use custom frame rate* = **30** so CEF doesn't render at 60 for a 30 fps output (a common ~50% waste), (2) OBS → Settings → Advanced → enable **Browser source hardware acceleration**, (3) NVENC (not x264) if you have an NVIDIA GPU. `/player` already pins source quality; if the box can't render 1080p60, step the OBS **output** down to 1080p30 rather than lowering the feed quality |
+| **Audio runs ahead of the video** | Almost always a *symptom* of dropped/skipped frames — the video falls behind while audio keeps going, so fix frame drops first (row above). To trim any residual drift, add a positive **audio sync offset** on the browser source: OBS → Audio Mixer → the source's ⚙ → **Advanced Audio Properties** → *Sync Offset* → start around **+250 ms** and adjust. `/player` no longer spams `play()`/unmute (the old 15s-ago behaviour), which was itself a re-buffer/drift source |
+| **Feed looks low quality / soft** | `/player` pins Twitch **source** (`chunked`) automatically on going live and retries as the quality list populates. If it still looks soft, the upstream streamer may not be broadcasting a source-quality tier, or the OBS **output** resolution is below the canvas — set both Base and Output to 1920×1080 (Settings → Video) |
+| Twitch play-button / small ad / channel chrome flashes on-stream | Fixed in-app: a branded cover masks the whole startup reveal until the feed settles (~3.5s hold), on first load and every reload. If you still catch a flash, the cover hold may need lengthening — it lives in `REVEAL_HOLD_MS` in `src/pages/Player.tsx` |
 | `/watch` embed not showing | Broadcast post URL not pushed in Admin, or it's a raw `/i/broadcasts/` link (not embeddable — paste the *post* URL) |
 
 **State previews:** open `/player?preview=board`, `?preview=brb`, `?preview=starting`, or
@@ -150,9 +163,11 @@ required**. But a tiny watchdog script makes a 24/7 encoder self-healing.
 `docs/obs/csgn-master.lua` (in this repo) does three things:
 
 1. **Periodic refresh watchdog** — hard-reloads the browser source every N hours
-   (default 6) to clear memory creep from a CEF process that never restarts.
-   Because `/player` reloads straight back into the correct network state, this
-   is invisible on stream beyond a ~1 s reload.
+   (default 12) to clear memory creep from a CEF process that never restarts.
+   Because `/player` reloads straight back into the correct network state *and*
+   masks the reload with its branded cover until the feed settles, this is
+   invisible on stream. The default is deliberately infrequent — each reload is a
+   brief re-buffer, so reload only as often as memory creep demands.
 2. **Nightly refresh** — an optional single scheduled hard-reload at a quiet hour
    (default 05:00 local), for operators who'd rather refresh once a day than on a
    rolling interval.

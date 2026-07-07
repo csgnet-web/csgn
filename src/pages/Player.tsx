@@ -18,14 +18,25 @@ import { WipeOverlay } from '@/components/ui/WipeOverlay'
 import IntermissionBoard from '@/components/player/IntermissionBoard'
 import StatusCard from '@/components/player/StatusCard'
 import VodRotator, { type VodItem } from '@/components/player/VodRotator'
+import FeedCover from '@/components/player/FeedCover'
 import { formatESTRange, DEFAULT_STREAM_URL } from '@/lib/slots'
 
 interface EmergencyOverride { enabled?: boolean; streamUrl?: string }
 
 const TICK_MS = 5_000
-/** While LIVE, re-assert audio on this cadence so the feed can never silently
- *  drift back to muted (belt-and-suspenders, mainly for OBS's CEF). */
-const AUDIO_KEEPALIVE_MS = 8_000
+/** While LIVE, re-check audio on this cadence and unmute ONLY if it has drifted
+ *  back to muted. Deliberately gentle: we never call play() or re-set volume on
+ *  a healthy feed, because those re-trigger Twitch's overlay chrome and can
+ *  rebuffer — the flashing-UI + stutter the old 8s keepalive caused on-stream. */
+const AUDIO_ASSERT_MS = 15_000
+/** Twitch's source (highest) quality group. Pinned so the encode never drops to
+ *  auto/360p — the operator wants max quality out to X. */
+const SOURCE_QUALITY = 'chunked'
+/** Hold the branded cover this long after the feed goes LIVE before revealing,
+ *  so the play-button poster / preroll / channel chrome flash is fully masked.
+ *  LIVE is only ever declared once playback/online/server-live is confirmed, so
+ *  a fixed hold is enough — no need to gate on a separate playback event. */
+const REVEAL_HOLD_MS = 3_500
 
 function buildYouTubeOverrideSrc(url: string): string | null {
   const stream = detectStream(url)
@@ -59,6 +70,10 @@ export default function Player() {
   const [vodItems, setVodItems] = useState<VodItem[]>([])
   const [emergency, setEmergency] = useState<EmergencyOverride | null>(null)
   const [showWipe, setShowWipe] = useState(false)
+  // The branded cover stays over the LIVE feed until playback is confirmed
+  // flowing — masks the Twitch startup reveal (poster, preroll, chrome flash)
+  // on both first load and every OBS watchdog reload.
+  const [feedReady, setFeedReady] = useState(false)
   // The browser blocked autoplay-with-sound (normal tabs only) — surface a
   // one-tap "enable sound" affordance. Never happens inside OBS.
   const [audioBlocked, setAudioBlocked] = useState(false)
@@ -100,12 +115,46 @@ export default function Player() {
     } catch { /* best-effort */ }
   }, [])
 
+  // Gentle mid-broadcast audio check: only touch the player if it has actually
+  // drifted back to muted. Unlike syncAudio it never calls play() or re-sets
+  // volume on a healthy feed — those redundant calls flashed Twitch's overlay
+  // chrome and could rebuffer, which is what made the old 8s keepalive visible
+  // on-stream. Silent no-op in the common (already-audible) case.
+  const assertAudio = useCallback(() => {
+    const player = playerRef.current
+    if (!player || modeRef.current !== 'LIVE') return
+    try {
+      if (player.getMuted()) {
+        player.setMuted(false)
+        player.setVolume(1)
+      }
+    } catch { /* best-effort */ }
+  }, [])
+
+  // Pin the highest-quality feed. Twitch's list is empty until playback starts,
+  // so this is best-effort and retried; 'chunked' is source, else the top entry.
+  const forceQuality = useCallback(() => {
+    const player = playerRef.current
+    if (!player) return
+    try {
+      const qualities = player.getQualities?.() ?? []
+      if (qualities.length === 0) {
+        player.setQuality(SOURCE_QUALITY) // list not ready yet — ask for source anyway
+        return
+      }
+      const source = qualities.find((q) => q.group === SOURCE_QUALITY)
+      player.setQuality(source ? SOURCE_QUALITY : qualities[0].group) // list is best→worst
+    } catch { /* best-effort */ }
+  }, [])
+
   // Brand wipe on every state change (not initial load) — state adjustment
   // during render, then a timeout effect clears it after the 1.4s stinger.
   const [prevMode, setPrevMode] = useState<MasterState['mode'] | null>(null)
   if (prevMode !== state.mode) {
     setPrevMode(state.mode)
     if (prevMode !== null) setShowWipe(true)
+    // Re-cover on every mode change; the reveal effect lifts it after the hold.
+    setFeedReady(false)
   }
 
   useEffect(() => {
@@ -113,6 +162,16 @@ export default function Player() {
     const t = setTimeout(() => setShowWipe(false), 1400)
     return () => clearTimeout(t)
   }, [showWipe])
+
+  // ── Feed reveal: the cover is reset to hidden-feed on every mode change (the
+  //    render-phase block above). Once LIVE, hold it a beat so the Twitch startup
+  //    reveal (poster, preroll, chrome flash) is fully masked, then lift it. This
+  //    re-arms on first load, reconnect, and each OBS watchdog reload. ──
+  useEffect(() => {
+    if (state.mode !== 'LIVE') return
+    const t = setTimeout(() => setFeedReady(true), REVEAL_HOLD_MS)
+    return () => clearTimeout(t)
+  }, [state.mode])
 
   // ── Firestore: admin emergency override (non-slot takeover URL) ──
   useEffect(() => {
@@ -230,12 +289,17 @@ export default function Player() {
       try { player.play() } catch { /* play() is best-effort */ }
       dispatch({ type: 'PLAYER_ONLINE' })
       syncAudio()
+      // Pin source quality once playback is up. The quality list populates a
+      // beat after PLAYING, so retry across the reveal-hold window (all covered).
+      forceQuality()
+      setTimeout(forceQuality, 1_500)
+      setTimeout(forceQuality, 3_000)
     }
 
     let player: TwitchPlayer
 
     const attach = (PlayerCtor: TwitchPlayerCtor) => {
-      player.addEventListener(PlayerCtor.READY, () => { logEvent('READY'); syncAudio() })
+      player.addEventListener(PlayerCtor.READY, () => { logEvent('READY'); syncAudio(); forceQuality() })
       player.addEventListener(PlayerCtor.ONLINE, () => goLive('online'))
       if (PlayerCtor.PLAYING) player.addEventListener(PlayerCtor.PLAYING, () => goLive('playing'))
       if (PlayerCtor.PLAYBACK_BLOCKED) {
@@ -280,6 +344,7 @@ export default function Player() {
             height: '100%',
             autoplay: true,
             muted: true,
+            quality: SOURCE_QUALITY, // request source from first frame (best-effort hint)
           })
           attach(PlayerCtor)
           playerRef.current = player
@@ -292,18 +357,19 @@ export default function Player() {
       cancelled = true
       if (mountTimeoutRef.current) clearTimeout(mountTimeoutRef.current)
     }
-  }, [channel, hostname, obs, logEvent, syncAudio])
+  }, [channel, hostname, obs, logEvent, syncAudio, forceQuality])
 
   // ── Playback + audio: the feed always autoplays; audible only when LIVE ──
   useEffect(() => { syncAudio() }, [state.mode, syncAudio])
 
-  // While LIVE, keep re-asserting audio so the feed can't silently drift muted
-  // (guards against Twitch/CEF quietly re-muting mid-broadcast).
+  // While LIVE, gently re-check audio so the feed can't silently drift muted
+  // (guards against Twitch/CEF quietly re-muting mid-broadcast). assertAudio is
+  // a no-op unless actually muted, so it never disturbs a healthy feed.
   useEffect(() => {
     if (state.mode !== 'LIVE') return
-    const t = setInterval(syncAudio, AUDIO_KEEPALIVE_MS)
+    const t = setInterval(assertAudio, AUDIO_ASSERT_MS)
     return () => clearInterval(t)
-  }, [state.mode, syncAudio])
+  }, [state.mode, assertAudio])
 
   // ── Browser-only: unlock audio on the first user gesture. Browsers refuse a
   //    programmatic unmute until the viewer interacts; OBS needs none of this. ──
@@ -357,6 +423,11 @@ export default function Player() {
         className="absolute inset-0"
         style={{ visibility: state.mode === 'LIVE' ? 'visible' : 'hidden' }}
       />
+
+      {/* Branded curtain over the LIVE feed until it settles — masks the Twitch
+          play-button poster / preroll / channel-chrome reveal on first load and
+          on every OBS watchdog reload. */}
+      {state.mode === 'LIVE' && !feedReady && <FeedCover label="Now Live" />}
 
       {state.mode === 'OVERRIDE' && (
         overrideSrc ? (

@@ -3,7 +3,8 @@
 // Writes live creatorFees to the active slot doc in Firestore.
 // Browser clients NEVER call DexScreener — they read from the single Firestore listener.
 
-import { queryCollection, writeDoc, fieldFilter, order } from './_shared/firebaseAdmin'
+import { queryCollection, writeDoc, commitWrites, createWrite, fieldFilter, order } from './_shared/firebaseAdmin'
+import { buildExpectedSlotsForDate, buildSlotDoc } from './_shared/schedule'
 import {
   buildTokenStatsDoc,
   fetchDexData,
@@ -138,6 +139,70 @@ async function logSlotActivity(): Promise<void> {
     await writeDoc(`slots/${slotId}`, { streamActivity }, { merge: true })
   } catch (err) {
     console.error('[feePoller] logSlotActivity error:', err)
+  }
+}
+
+/* ─── Schedule top-up: keep the next week of slots always seeded ─── */
+
+const DEFAULT_STREAM_URL = 'https://twitch.tv/csgnet'
+/** Refill when the farthest-out slot is closer than this. */
+const MIN_HORIZON_DAYS = 5
+/** Refill out to this many days ahead. */
+const TARGET_HORIZON_DAYS = 7
+
+/**
+ * The schedule used to empty out after a few days because slot creation was a
+ * manual admin action. This runs every minute but is engineered to cost almost
+ * nothing: one 1-doc query checks how far out the schedule extends, and only
+ * when the horizon drops under MIN_HORIZON_DAYS (i.e. ~once a day) does it do
+ * a real fill out to TARGET_HORIZON_DAYS.
+ *
+ * The fill is strictly CREATE-ONLY (Firestore create preconditions): existing
+ * slots — including any the admin retyped, assigned, or hand-edited — are
+ * never patched or deleted here. Deterministic doc IDs make the fill
+ * idempotent, so a racing admin reseed at worst fails one commit and the next
+ * minute's run picks it back up.
+ */
+async function topUpSchedule(): Promise<void> {
+  try {
+    const nowMs = Date.now()
+
+    const latest = await queryCollection('slots', [], [order('startTime', 'DESCENDING')], 1)
+    const latestStartMs = latest.length ? new Date(String(latest[0].data.startTime ?? 0)).getTime() : 0
+    if (latestStartMs >= nowMs + MIN_HORIZON_DAYS * 24 * 60 * 60 * 1000) return
+
+    // Expected slots for every ET day from today out to the target horizon.
+    const expected = new Map<string, ReturnType<typeof buildExpectedSlotsForDate>[number]>()
+    for (let i = 0; i <= TARGET_HORIZON_DAYS; i++) {
+      const day = new Date(nowMs + i * 24 * 60 * 60 * 1000)
+      for (const slot of buildExpectedSlotsForDate(day)) {
+        // Skip slots already fully in the past — no point seeding history.
+        if (new Date(slot.endTime).getTime() > nowMs) expected.set(slot.id, slot)
+      }
+    }
+    if (expected.size === 0) return
+
+    // One ranged query over the fill window tells us which already exist.
+    const starts = [...expected.values()].map((s) => new Date(s.startTime).getTime())
+    const fromISO = new Date(Math.min(...starts)).toISOString()
+    const toISO = new Date(Math.max(...starts)).toISOString()
+    const existing = await queryCollection(
+      'slots',
+      [fieldFilter('startTime', 'GREATER_THAN_OR_EQUAL', fromISO), fieldFilter('startTime', 'LESS_THAN_OR_EQUAL', toISO)],
+      [order('startTime', 'ASCENDING')],
+      (TARGET_HORIZON_DAYS + 2) * 12 + 10,
+    )
+    const existingIds = new Set(existing.map((r) => r.path.split('/').pop()!))
+
+    const writes = [...expected.values()]
+      .filter((slot) => !existingIds.has(slot.id))
+      .map((slot) => createWrite(`slots/${slot.id}`, buildSlotDoc(slot, DEFAULT_STREAM_URL)))
+    if (writes.length === 0) return
+
+    await commitWrites(writes)
+    console.log(`[feePoller] topUpSchedule created ${writes.length} slots (horizon was ${((latestStartMs - nowMs) / 86_400_000).toFixed(1)}d)`)
+  } catch (err) {
+    console.error('[feePoller] topUpSchedule error:', err)
   }
 }
 
@@ -318,6 +383,10 @@ async function pollAndWrite(dexData: DexData): Promise<void> {
 // public/tokenStats (~1 write/min) so token stats flow 24/7 even when no slot
 // is live.
 export const handler = async () => {
+  // Keep the schedule seeded ~a week out so it never runs empty. Cheap check
+  // every minute; real work only when the horizon actually shrinks (~daily).
+  await topUpSchedule()
+
   // Advance clock-driven slot statuses first so /player, admin, /schedule and
   // /queue all agree on which slot is confirmed / live / completed right now.
   await advanceSlotLifecycles()
