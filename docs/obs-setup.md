@@ -44,6 +44,32 @@ the page, right-click the source → **Interact**.
 
 Canvas: Settings → Video → Base and Output resolution both `1920×1080`.
 
+### Custom scenes (tickers / background bars): sizing the `/player` source
+
+If your scene reserves part of the canvas for other sources (e.g. sports/crypto
+tickers along the bottom with a branded background filling the rest), size the
+`/player` Browser Source to the **exact pixels it will occupy** and keep it
+**16:9** so the live Twitch feed fills it edge-to-edge with no internal black bars:
+
+- Height = canvas height − everything you've reserved (e.g. `1080 − 108` ticker = `972`).
+- Width = height × 16 ⁄ 9 (e.g. `972 × 16/9 = 1728`), centered horizontally —
+  your background bars own the leftover side gutters.
+- Don't set the source to one size and scale/stretch it in the transform — CEF
+  renders sharpest at its native size, and the page's broadcast layout is
+  fixed-pixel 1080p-class design: **keep the source at least ~1600 px wide**
+  (an 800×600 source clips the intermission board's headline and cards).
+
+### On-air network promo (automatic)
+
+While a streamer is LIVE, `/player` slides a FOX/ESPN-style lower-third in from
+the bottom-left **at most once every five minutes** (first one ~90s after going
+live), holds it ~9 seconds, and slides it out. It rotates four cards: who's live
+now (name + slot time), what CSGN is (decentralized 24/7 network, claim a slot at
+csgn.fun), who's up next, and $CSGN stats. It's purely visual — it never touches
+the feed or its audio — and needs no configuration. Preview it with
+`/player?preview=promo`; cadence constants live in
+`src/components/player/OnAirPromo.tsx`.
+
 ### Why `/player` behaves differently in OBS vs a normal tab
 
 `/player` detects its environment (`window.obsstudio`) and adapts:
@@ -151,8 +177,9 @@ workflow and gain OS-notification risk — treat it as a temporary fallback only
 | Twitch play-button / small ad / channel chrome flashes on-stream | Fixed in-app: a branded cover masks the whole startup reveal until the feed settles (~3.5s hold), on first load and every reload. If you still catch a flash, the cover hold may need lengthening — it lives in `REVEAL_HOLD_MS` in `src/pages/Player.tsx` |
 | `/watch` embed not showing | Broadcast post URL not pushed in Admin, or it's a raw `/i/broadcasts/` link (not embeddable — paste the *post* URL) |
 
-**State previews:** open `/player?preview=board`, `?preview=brb`, `?preview=starting`, or
-`?preview=wipe` to check each look inside OBS without touching live state. Add
+**State previews:** open `/player?preview=board`, `?preview=brb`, `?preview=starting`,
+`?preview=wipe`, or `?preview=promo` (the on-air lower-third, cycling all its cards
+every few seconds) to check each look inside OBS without touching live state. Add
 `?debug=1` to any `/player` URL for the live diagnostic panel (env, mode, channel,
 audio state, event log).
 

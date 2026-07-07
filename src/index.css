@@ -194,6 +194,14 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
   100% { opacity: 0; transform: translateY(-10px); }
 }
 
+/* ─── On-air promo lower-third (LIVE mode, /player) — slide in, hold, slide
+       out over the whole visible window; percentages assume a ~9s duration ─── */
+@keyframes promo-life {
+  0%       { opacity: 0; transform: translateX(-28px); }
+  5%, 93%  { opacity: 1; transform: translateX(0); }
+  100%     { opacity: 0; transform: translateX(-28px); }
+}
+
 @keyframes fee-shake {
   0%,100% { transform: translateX(0); }
   25% { transform: translateX(-1px); }

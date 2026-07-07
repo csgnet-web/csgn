@@ -19,6 +19,7 @@ import IntermissionBoard from '@/components/player/IntermissionBoard'
 import StatusCard from '@/components/player/StatusCard'
 import VodRotator, { type VodItem } from '@/components/player/VodRotator'
 import FeedCover from '@/components/player/FeedCover'
+import OnAirPromo from '@/components/player/OnAirPromo'
 import { formatESTRange, DEFAULT_STREAM_URL } from '@/lib/slots'
 
 interface EmergencyOverride { enabled?: boolean; streamUrl?: string }
@@ -397,7 +398,7 @@ export default function Player() {
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
   const overrideSrc = state.mode === 'OVERRIDE' ? buildYouTubeOverrideSrc(state.url) : null
 
-  // Operator preview: /player?preview=board|brb|starting|wipe forces a state
+  // Operator preview: /player?preview=board|brb|starting|wipe|promo forces a state
   // so each look can be checked inside OBS before going live.
   const preview = useMemo(
     () => (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('preview') : null),
@@ -410,6 +411,7 @@ export default function Player() {
         {preview === 'brb' && <StatusCard variant="brb" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
         {preview === 'starting' && <StatusCard variant="starting-soon" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
         {preview === 'wipe' && <WipeOverlay visible label="Now Live" />}
+        {preview === 'promo' && <OnAirPromo preview />}
       </div>
     )
   }
@@ -428,6 +430,11 @@ export default function Player() {
           play-button poster / preroll / channel-chrome reveal on first load and
           on every OBS watchdog reload. */}
       {state.mode === 'LIVE' && !feedReady && <FeedCover label="Now Live" />}
+
+      {/* Network-style promo lower-third over the live feed — who's on, who's
+          next, what CSGN is — at most once every five minutes, ~9s at a time.
+          Mounted only after the reveal so its clock starts with a settled feed. */}
+      {state.mode === 'LIVE' && feedReady && <OnAirPromo />}
 
       {state.mode === 'OVERRIDE' && (
         overrideSrc ? (
