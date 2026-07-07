@@ -33,6 +33,7 @@ function toMillis(value: unknown): number {
 
 export function LiveSlotProvider({ children }: { children: React.ReactNode }) {
   const [allSlots, setAllSlots] = useState<Slot[]>([])
+  const [slotsReady, setSlotsReady] = useState(false)
   const [manualOverride, setManualOverride] = useState<ManualOverride | null>(null)
   const [tokenStats, setTokenStats] = useState<TokenStats | null>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
@@ -107,13 +108,19 @@ export function LiveSlotProvider({ children }: { children: React.ReactNode }) {
     const to = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000)
     const unsub = subscribeToSlots(from, to, (slots) => {
       if (!mountedRef.current) return
+      setSlotsReady(true)
       setAllSlots(
         slots
           .filter((s) => toMillis(s.startTime) > 0 && toMillis(s.endTime) > 0)
           .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime)),
       )
     })
-    return unsub
+    // Backstop: if Firestore can't deliver a first snapshot (rules/network),
+    // declare readiness anyway after a generous window so consumers with a
+    // "wait for slot data" gate (/player) can still fall back to defaults
+    // rather than waiting forever.
+    const readyBackstop = setTimeout(() => { if (mountedRef.current) setSlotsReady(true) }, 20_000)
+    return () => { clearTimeout(readyBackstop); unsub() }
   }, [])
 
   // Derive current slot from shared slots list
@@ -122,8 +129,8 @@ export function LiveSlotProvider({ children }: { children: React.ReactNode }) {
   }, [allSlots, nowMs])
 
   const value = useMemo<LiveSlotContextValue>(
-    () => ({ currentSlot, allSlots, manualOverride, tokenStats, nowMs }),
-    [currentSlot, allSlots, manualOverride, tokenStats, nowMs],
+    () => ({ currentSlot, allSlots, manualOverride, tokenStats, nowMs, slotsReady }),
+    [currentSlot, allSlots, manualOverride, tokenStats, nowMs, slotsReady],
   )
 
   return <LiveSlotContext.Provider value={value}>{children}</LiveSlotContext.Provider>

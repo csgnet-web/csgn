@@ -33,11 +33,26 @@ const AUDIO_ASSERT_MS = 15_000
 /** Twitch's source (highest) quality group. Pinned so the encode never drops to
  *  auto/360p — the operator wants max quality out to X. */
 const SOURCE_QUALITY = 'chunked'
-/** Hold the branded cover this long after the feed goes LIVE before revealing,
- *  so the play-button poster / preroll / channel chrome flash is fully masked.
- *  LIVE is only ever declared once playback/online/server-live is confirmed, so
- *  a fixed hold is enough — no need to gate on a separate playback event. */
+/** Hold the branded cover this long after playback is confirmed before
+ *  revealing, so the play-button poster / preroll / channel chrome flash is
+ *  fully masked. The cover no longer lifts on a timer alone: the embed must
+ *  actually be PLAYING the armed channel first, so a LIVE reached via the
+ *  server signal while the embed is still tuning/buffering (or mistuned) can
+ *  never expose Twitch's offline page or chrome on-stream. */
 const REVEAL_HOLD_MS = 3_500
+/** Cadence of the embed watchdog: verify the iframe is tuned to the armed
+ *  channel (Twitch silently drops setChannel calls issued before READY) and
+ *  that a LIVE feed is actually flowing. */
+const TUNE_ASSERT_MS = 5_000
+/** LIVE this long with no confirmed playback ⇒ the embed is stuck — rebuild it. */
+const STALL_REBUILD_MS = 20_000
+/** Never rebuild the embed more often than this (each rebuild re-buffers). */
+const EMBED_REBUILD_MIN_MS = 30_000
+/** Only play the brand wipe when leaving a mode we actually settled in.
+ *  Rapid-fire transitions (boot settling into the real network state, a brief
+ *  event race) would otherwise stack/restart the stinger — the "wipe ran
+ *  twice" glitch an operator can see on-stream. */
+const WIPE_MIN_DWELL_MS = 5_000
 
 function buildYouTubeOverrideSrc(url: string): string | null {
   const stream = detectStream(url)
@@ -66,7 +81,7 @@ function buildYouTubeOverrideSrc(url: string): string | null {
 export default function Player() {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
   const obs = useMemo(() => isOBS(), [])
-  const { currentSlot } = useLiveSlot()
+  const { currentSlot, slotsReady } = useLiveSlot()
   const [state, dispatch] = useReducer(reduce, INITIAL_STATE)
   const [vodItems, setVodItems] = useState<VodItem[]>([])
   const [emergency, setEmergency] = useState<EmergencyOverride | null>(null)
@@ -75,6 +90,17 @@ export default function Player() {
   // flowing — masks the Twitch startup reveal (poster, preroll, chrome flash)
   // on both first load and every OBS watchdog reload.
   const [feedReady, setFeedReady] = useState(false)
+  // The embed has confirmed playback (ONLINE/PLAYING) for the armed channel
+  // and no drop has been seen since. This — not a timer — is what allows the
+  // branded cover to lift, so Twitch's offline page / startup chrome can never
+  // reach the encode even when LIVE was declared by the server signal.
+  const [playbackOk, setPlaybackOk] = useState(false)
+  const playbackOkRef = useRef(false)
+  useEffect(() => { playbackOkRef.current = playbackOk }, [playbackOk])
+  // Bumped to tear down and recreate the Twitch embed when the watchdog finds
+  // it wedged (tuned to the wrong channel and ignoring setChannel, or LIVE
+  // with no playback for too long).
+  const [rebuildNonce, setRebuildNonce] = useState(0)
   // The browser blocked autoplay-with-sound (normal tabs only) — surface a
   // one-tap "enable sound" affordance. Never happens inside OBS.
   const [audioBlocked, setAudioBlocked] = useState(false)
@@ -82,6 +108,7 @@ export default function Player() {
   const playerRef = useRef<TwitchPlayer | null>(null)
   const playerContainerRef = useRef<HTMLDivElement>(null)
   const mountTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastRebuildAtRef = useRef(0)
 
   // Latest mode, readable from event/gesture callbacks without re-subscribing.
   const modeRef = useRef<MasterState['mode']>(state.mode)
@@ -97,6 +124,38 @@ export default function Player() {
   const logEvent = useCallback((name: string) => {
     setEventLog((prev) => [...prev.slice(-9), `${new Date().toLocaleTimeString()}  ${name}`])
   }, [])
+
+  // Drop playback confidence and re-cover the feed. Deferred one tick so it's
+  // safe to call synchronously inside effects (react-hooks/set-state-in-effect);
+  // 0ms is imperceptible next to the 1.4s wipe and 3.5s reveal hold.
+  const coverFeed = useCallback(() => {
+    setTimeout(() => {
+      setPlaybackOk(false)
+      setFeedReady(false)
+    }, 0)
+  }, [])
+
+  // The feed is (or may be) down: re-cover it so nothing raw shows, and tell
+  // the state machine. Every offline signal funnels through here.
+  const feedDown = useCallback(() => {
+    coverFeed()
+    dispatch({ type: 'PLAYER_OFFLINE', nowMs: Date.now() })
+  }, [coverFeed])
+
+  // Tear the embed down and recreate it (the channel-lifecycle effect re-runs
+  // via rebuildNonce and finds playerRef empty). Rate-limited: each rebuild is
+  // a re-buffer, so it's a last resort after retunes have failed.
+  const rebuildPlayer = useCallback(() => {
+    const now = Date.now()
+    if (now - lastRebuildAtRef.current < EMBED_REBUILD_MIN_MS) return
+    lastRebuildAtRef.current = now
+    logEvent('embed rebuild')
+    if (playerContainerRef.current) playerContainerRef.current.innerHTML = ''
+    playerRef.current = null
+    setPlaybackOk(false)
+    setFeedReady(false)
+    setRebuildNonce((n) => n + 1)
+  }, [logEvent])
 
   // ── Audio: keep the feed playing always; make it audible only when LIVE.
   //    setMuted(false) is honoured inside OBS (autoplay-with-sound allowed) and
@@ -148,15 +207,27 @@ export default function Player() {
     } catch { /* best-effort */ }
   }, [])
 
-  // Brand wipe on every state change (not initial load) — state adjustment
-  // during render, then a timeout effect clears it after the 1.4s stinger.
+  // Re-cover the feed the instant the mode changes — render-phase adjustment
+  // so not even one frame of the new state leaks out unrevealed.
   const [prevMode, setPrevMode] = useState<MasterState['mode'] | null>(null)
   if (prevMode !== state.mode) {
     setPrevMode(state.mode)
-    if (prevMode !== null) setShowWipe(true)
-    // Re-cover on every mode change; the reveal effect lifts it after the hold.
     setFeedReady(false)
   }
+
+  // Brand wipe on state changes, gated on dwell time: only a transition out of
+  // a mode we actually settled in gets the stinger, so the boot sequence
+  // (INTERMISSION → STARTING_SOON → LIVE inside a couple of seconds) and brief
+  // event races can't fire overlapping/back-to-back wipes.
+  const modeChangedAtRef = useRef<number | null>(null)
+  useEffect(() => {
+    const now = Date.now()
+    const last = modeChangedAtRef.current
+    modeChangedAtRef.current = now
+    if (last === null || now - last < WIPE_MIN_DWELL_MS) return
+    const t = setTimeout(() => setShowWipe(true), 0)
+    return () => clearTimeout(t)
+  }, [state.mode])
 
   useEffect(() => {
     if (!showWipe) return
@@ -165,14 +236,17 @@ export default function Player() {
   }, [showWipe])
 
   // ── Feed reveal: the cover is reset to hidden-feed on every mode change (the
-  //    render-phase block above). Once LIVE, hold it a beat so the Twitch startup
-  //    reveal (poster, preroll, chrome flash) is fully masked, then lift it. This
-  //    re-arms on first load, reconnect, and each OBS watchdog reload. ──
+  //    render-phase block above) and whenever playback confidence is lost. It
+  //    lifts ONLY once the embed has confirmed playback of the armed channel
+  //    (playbackOk) plus a short hold to mask the startup chrome — never on a
+  //    timer alone. Re-arms on first load, reconnect, retune, and each OBS
+  //    watchdog reload; if the embed never actually plays, the branded cover
+  //    simply stays up and the watchdog rebuilds behind it. ──
   useEffect(() => {
-    if (state.mode !== 'LIVE') return
+    if (state.mode !== 'LIVE' || !playbackOk) return
     const t = setTimeout(() => setFeedReady(true), REVEAL_HOLD_MS)
     return () => clearTimeout(t)
-  }, [state.mode])
+  }, [state.mode, playbackOk])
 
   // ── Firestore: admin emergency override (non-slot takeover URL) ──
   useEffect(() => {
@@ -199,8 +273,13 @@ export default function Player() {
         slotId: currentSlot.id,
       }
     }
+    // Slots not loaded yet: hold intermission with NO channel armed. Arming the
+    // default channel here starts the embed on it, and a slot streamer arriving
+    // a beat later then depends on a retune the Twitch iframe can silently drop
+    // mid-bootstrap — how a mistuned offline page ended up on-stream.
+    if (!slotsReady) return { streamUrl: '', source: 'loading', slotId: null }
     return { streamUrl: DEFAULT_STREAM_URL, source: 'default', slotId: null }
-  }, [emergency, currentSlot])
+  }, [emergency, currentSlot, slotsReady])
 
   useEffect(() => {
     dispatch({ type: 'BROADCAST_CHANGED', broadcast, nowMs: Date.now() })
@@ -255,8 +334,8 @@ export default function Player() {
   useEffect(() => {
     const signal = serverLiveSignal(state.mode, channel, activity, Date.now())
     if (signal === 'GO_LIVE') dispatch({ type: 'PLAYER_ONLINE' })
-    else if (signal === 'GO_OFFLINE') dispatch({ type: 'PLAYER_OFFLINE', nowMs: Date.now() })
-  }, [channel, activity, state.mode])
+    else if (signal === 'GO_OFFLINE') feedDown()
+  }, [channel, activity, state.mode, feedDown])
 
   // Reaching LIVE by ANY path (embed ONLINE/PLAYING or the server signal above)
   // means the channel is up — cancel the mount-timeout so it can't later fire a
@@ -272,11 +351,19 @@ export default function Player() {
     if (!channel) return
     let cancelled = false
 
+    // What channel is the embed's iframe actually on? null = unknown (iframe
+    // still bootstrapping) — callers treat unknown as "don't judge yet".
+    const tunedChannel = (p: TwitchPlayer): string | null => {
+      try { return p.getChannel()?.toLowerCase() || null } catch { return null }
+    }
+
     const armMountTimeout = () => {
       if (mountTimeoutRef.current) clearTimeout(mountTimeoutRef.current)
-      mountTimeoutRef.current = setTimeout(() => {
-        dispatch({ type: 'PLAYER_OFFLINE', nowMs: Date.now() })
-      }, MOUNT_TIMEOUT_MS)
+      // Already LIVE (server-confirmed or prior event) — a "no ONLINE event
+      // after mount" timer is only meaningful pre-live, and firing it here
+      // would bounce a healthy rebuild/retune into BRB.
+      if (modeRef.current === 'LIVE') return
+      mountTimeoutRef.current = setTimeout(feedDown, MOUNT_TIMEOUT_MS)
     }
 
     // Any signal that the channel is live cuts us to LIVE. We deliberately do
@@ -284,10 +371,22 @@ export default function Player() {
     // the page would sit on "Starting Soon" forever, so a real PLAYING event
     // (playback actually began ⇒ the channel must be online) counts too.
     const goLive = (via: string) => {
+      // Guard: the event must be about the channel we ARMED. The iframe can
+      // lag a retune (Twitch drops setChannel calls issued mid-bootstrap), and
+      // whatever the stale channel does must not flip us LIVE or lift the
+      // cover — fix the tuning instead and let the real events follow.
+      const desired = channelRef.current?.toLowerCase() ?? null
+      const tuned = tunedChannel(player)
+      if (desired && tuned && tuned !== desired) {
+        logEvent(`${via} ignored: tuned ${tuned} ≠ ${desired}`)
+        try { player.setChannel(desired) } catch { /* watchdog rebuilds if this keeps failing */ }
+        return
+      }
       logEvent(`→ LIVE (${via})`)
       if (mountTimeoutRef.current) clearTimeout(mountTimeoutRef.current)
       setAudioBlocked(false) // fresh live feed — clear any stale block flag
       try { player.play() } catch { /* play() is best-effort */ }
+      setPlaybackOk(true) // unlocks the cover reveal (after the hold)
       dispatch({ type: 'PLAYER_ONLINE' })
       syncAudio()
       // Pin source quality once playback is up. The quality list populates a
@@ -300,7 +399,20 @@ export default function Player() {
     let player: TwitchPlayer
 
     const attach = (PlayerCtor: TwitchPlayerCtor) => {
-      player.addEventListener(PlayerCtor.READY, () => { logEvent('READY'); syncAudio(); forceQuality() })
+      player.addEventListener(PlayerCtor.READY, () => {
+        logEvent('READY')
+        // Re-assert the armed channel: a setChannel issued while the iframe
+        // was still bootstrapping is silently dropped — this is where the old
+        // "stuck on the default channel's offline page" failure came from.
+        const desired = channelRef.current
+        const tuned = tunedChannel(player)
+        if (desired && tuned && tuned !== desired.toLowerCase()) {
+          logEvent(`READY mistuned (${tuned}) — retuning`)
+          try { player.setChannel(desired) } catch { /* watchdog rebuilds */ }
+        }
+        syncAudio()
+        forceQuality()
+      })
       player.addEventListener(PlayerCtor.ONLINE, () => goLive('online'))
       if (PlayerCtor.PLAYING) player.addEventListener(PlayerCtor.PLAYING, () => goLive('playing'))
       if (PlayerCtor.PLAYBACK_BLOCKED) {
@@ -322,9 +434,14 @@ export default function Player() {
       // when the server's Helix check doesn't currently confirm the channel is
       // live — otherwise a healthy (often paused) feed gets bounced to BRB and,
       // because the drop keeps re-firing, never comes back. Server-live wins.
+      // Either way, playback is no longer confirmed — re-cover the feed so the
+      // encode shows the branded curtain, never Twitch's offline chrome; a
+      // spurious drop re-fires PLAYING moments later and the cover lifts again.
       const onEmbedDrop = (label: string) => {
         const serverLive = isServerLive(channelRef.current, activityRef.current, Date.now())
         logEvent(`${label}${serverLive ? ' (ignored: server live)' : ''}`)
+        setPlaybackOk(false)
+        setFeedReady(false)
         if (!serverLive) dispatch({ type: 'PLAYER_OFFLINE', nowMs: Date.now() })
       }
       player.addEventListener(PlayerCtor.OFFLINE, () => onEmbedDrop('OFFLINE'))
@@ -332,7 +449,14 @@ export default function Player() {
     }
 
     if (playerRef.current) {
-      playerRef.current.setChannel(channel)
+      const existing = playerRef.current
+      // Only reset playback confidence on a REAL channel change — this effect
+      // also re-runs for rebuilds and callback identity changes, and resetting
+      // then would needlessly re-cover a healthy feed.
+      if (tunedChannel(existing) !== channel) {
+        coverFeed()
+        try { existing.setChannel(channel) } catch { /* watchdog rebuilds */ }
+      }
       armMountTimeout()
     } else {
       loadTwitchPlayer()
@@ -351,14 +475,57 @@ export default function Player() {
           playerRef.current = player
           armMountTimeout()
         })
-        .catch(() => { logEvent('embed load failed'); dispatch({ type: 'PLAYER_OFFLINE', nowMs: Date.now() }) })
+        .catch(() => { logEvent('embed load failed'); feedDown() })
     }
 
     return () => {
       cancelled = true
       if (mountTimeoutRef.current) clearTimeout(mountTimeoutRef.current)
     }
-  }, [channel, hostname, obs, logEvent, syncAudio, forceQuality])
+  }, [channel, rebuildNonce, hostname, obs, logEvent, syncAudio, forceQuality, feedDown, coverFeed])
+
+  // ── Embed watchdog: the self-heal loop that keeps the iframe honest. Every
+  //    5s it (1) verifies the iframe is tuned to the armed channel and retunes
+  //    it if not (Twitch silently drops setChannel calls issued while the
+  //    iframe bootstraps — the "stuck on the default channel's offline page"
+  //    on-air failure); (2) if retuning doesn't stick, or we've been LIVE with
+  //    no confirmed playback for 20s (embed wedged while the server says the
+  //    streamer is up), rebuilds the embed from scratch. The branded cover
+  //    stays up throughout, so healing is invisible on-stream. ──
+  useEffect(() => {
+    if (!channel) return
+    let mistuneTicks = 0
+    let stallTicks = 0
+    const t = setInterval(() => {
+      const player = playerRef.current
+      if (!player) return
+      let tuned: string | null = null
+      try { tuned = player.getChannel()?.toLowerCase() || null } catch { tuned = null }
+      if (tuned && tuned !== channel) {
+        mistuneTicks += 1
+        logEvent(`watchdog: tuned ${tuned} ≠ ${channel} (${mistuneTicks})`)
+        if (mistuneTicks >= 2) {
+          mistuneTicks = 0
+          rebuildPlayer() // setChannel isn't sticking — rebuild on the right channel
+        } else {
+          try { player.setChannel(channel) } catch { /* rebuild next tick */ }
+        }
+      } else if (tuned) {
+        mistuneTicks = 0
+      }
+      if (modeRef.current === 'LIVE' && !playbackOkRef.current) {
+        stallTicks += 1
+        if (stallTicks * TUNE_ASSERT_MS >= STALL_REBUILD_MS) {
+          stallTicks = 0
+          logEvent('watchdog: LIVE but no playback — rebuilding')
+          rebuildPlayer()
+        }
+      } else {
+        stallTicks = 0
+      }
+    }, TUNE_ASSERT_MS)
+    return () => clearInterval(t)
+  }, [channel, rebuildPlayer, logEvent])
 
   // ── Playback + audio: the feed always autoplays; audible only when LIVE ──
   useEffect(() => { syncAudio() }, [state.mode, syncAudio])
@@ -486,6 +653,7 @@ export default function Player() {
           obs={obs}
           mode={state.mode}
           channel={channel}
+          playback={playbackOk ? (feedReady ? 'playing (revealed)' : 'playing (covered)') : 'not confirmed'}
           audioBlocked={audioBlocked}
           serverLive={activity?.lastLive ? `yes @ ${activity.lastCheckedAt ?? '?'}` : String(activity?.lastLive ?? '—')}
           log={eventLog}
@@ -496,11 +664,12 @@ export default function Player() {
 }
 
 function DebugOverlay({
-  obs, mode, channel, audioBlocked, serverLive, log,
+  obs, mode, channel, playback, audioBlocked, serverLive, log,
 }: {
   obs: boolean
   mode: MasterState['mode']
   channel: string | null
+  playback: string
   audioBlocked: boolean
   serverLive: string
   log: string[]
@@ -512,6 +681,7 @@ function DebugOverlay({
       <div className={row}><span>env</span><span>{obs ? `OBS ${obsVersion() ?? ''}`.trim() : 'browser'}</span></div>
       <div className={row}><span>mode</span><span className="text-white">{mode}</span></div>
       <div className={row}><span>channel</span><span>{channel ?? '—'}</span></div>
+      <div className={row}><span>playback</span><span>{playback}</span></div>
       <div className={row}><span>audioBlocked</span><span>{String(audioBlocked)}</span></div>
       <div className={row}><span>server live</span><span className="truncate max-w-[10rem]">{serverLive}</span></div>
       <div className="mt-2 border-t border-white/15 pt-1 text-white/60">events</div>

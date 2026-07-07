@@ -124,13 +124,20 @@ export default function OnAirPromo({ preview = false }: { preview?: boolean }) {
   }
 
   return (
-    // key remounts per appearance so the in-hold-out animation replays each time.
+    // Anchored flush to the bottom edge: the browser source sits directly on
+    // top of the scene's ticker bar, so the card reads as rising OUT of the
+    // ticker and sinking back into it — and never covers any of it.
+    // key remounts per appearance so the rise-hold-sink animation replays.
+    // The page root (fixed inset-0 overflow-hidden) clips the sunk position,
+    // so the card genuinely disappears "into" the bottom edge.
     <div
       key={appearance}
-      className="pointer-events-none absolute bottom-10 left-12 z-10"
-      style={{ animation: `promo-life ${PROMO_VISIBLE_MS}ms cubic-bezier(0.22, 1, 0.36, 1) both` }}
+      className="pointer-events-none absolute bottom-0 left-12 z-10"
     >
-      <div className="flex items-stretch overflow-hidden rounded-xl border border-white/10 bg-black/75 shadow-2xl backdrop-blur-md">
+      <div
+        className="flex items-stretch overflow-hidden rounded-t-2xl border border-b-0 border-white/10 bg-black/80 shadow-2xl backdrop-blur-md"
+        style={{ animation: `promo-rise ${PROMO_VISIBLE_MS}ms cubic-bezier(0.22, 1, 0.36, 1) both` }}
+      >
         {/* Network cap — the constant CSGN brand block */}
         <div className="flex flex-col items-center justify-center gap-1 bg-primary-500 px-5">
           <span className="text-xl font-black tracking-widest text-white">CSGN</span>
