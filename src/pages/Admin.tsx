@@ -31,6 +31,7 @@ import {
   assignSlot,
   updateSlotStreamUrl,
   updateSlotStatus,
+  updateSlot,
   resolveAuction,
   deleteSlot,
   acceptSlotRequest,
@@ -95,8 +96,6 @@ export default function Admin() {
 
   // Live stream push state
   const [liveStreamUrl, setLiveStreamUrl] = useState('')
-  const [liveStreamerName, setLiveStreamerName] = useState('')
-  const [liveStreamTitle, setLiveStreamTitle] = useState('')
   const [currentLiveUrl, setCurrentLiveUrl] = useState('')
   const [currentLiveStreamer, setCurrentLiveStreamer] = useState('')
   const [currentLiveTitle, setCurrentLiveTitle] = useState('')
@@ -144,15 +143,15 @@ export default function Admin() {
     setPushingStream(true)
     setActionError(null)
     try {
-      await setDoc(doc(db, 'config', 'liveStream'), {
-        url: liveStreamUrl.trim(),
-        streamerName: liveStreamerName.trim() || 'CSGN',
-        title: liveStreamTitle.trim(),
-        updatedAt: new Date().toISOString(),
-      })
+      // Merge-write ONLY the URL: the stream title / streamer name shown on
+      // /watch come from the slot data, and pushing a new broadcast link must
+      // never overwrite them.
+      await setDoc(
+        doc(db, 'config', 'liveStream'),
+        { url: liveStreamUrl.trim(), updatedAt: new Date().toISOString() },
+        { merge: true },
+      )
       setLiveStreamUrl('')
-      setLiveStreamerName('')
-      setLiveStreamTitle('')
     } catch (err: any) {
       setActionError('Push Stream failed: ' + (err?.message || 'Unknown error. Check Firestore rules for config/liveStream.'))
     }
@@ -740,26 +739,11 @@ export default function Admin() {
                     )
                   )}
                 </div>
-                <div>
-                  <label className="block text-sm text-gray-300 mb-1">Streamer Name</label>
-                  <input
-                    type="text"
-                    value={liveStreamerName}
-                    onChange={(e) => setLiveStreamerName(e.target.value)}
-                    placeholder="e.g. CSGN"
-                    className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-300 mb-1">Stream Title <span className="text-gray-500 text-xs">(shown on /watch)</span></label>
-                  <input
-                    type="text"
-                    value={liveStreamTitle}
-                    onChange={(e) => setLiveStreamTitle(e.target.value)}
-                    placeholder="e.g. Late Night Crypto Talk"
-                    className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
-                  />
-                </div>
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  Streamer name and stream title on /watch come from the slot itself
+                  (assign a streamer / set the title on the slot) — pushing a broadcast
+                  link never changes them.
+                </p>
                 <Button
                   variant="primary"
                   size="md"
@@ -1004,9 +988,22 @@ export default function Admin() {
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="text-sm font-medium text-white">{formatESTRange(slot)}</span>
                               {isActive && <Badge variant="red">● LIVE NOW</Badge>}
-                              <Badge variant={slot.type === 'ceo' ? 'gold' : 'blue'}>
-                                {slot.type === 'auction' ? 'Auction' : 'CEO'}
-                              </Badge>
+                              {/* Inline type selector — 'ceo' is the DB value behind "Open Slot" */}
+                              <select
+                                value={slot.type}
+                                onChange={async (e) => {
+                                  try {
+                                    await updateSlot(slot.id, { type: e.target.value as SlotType })
+                                    await loadSlots()
+                                  } catch (err: any) {
+                                    setActionError(err?.message || 'Failed to update slot type.')
+                                  }
+                                }}
+                                className={`px-2 py-0.5 bg-white/5 border border-white/10 rounded text-xs focus:outline-none focus:border-primary-500/50 cursor-pointer appearance-none ${slot.type === 'ceo' ? 'text-gold' : 'text-blue-300'}`}
+                              >
+                                <option value="ceo">Open Slot</option>
+                                <option value="auction">Auction</option>
+                              </select>
                               {/* Inline status selector */}
                               <select
                                 value={slot.status}
@@ -1097,7 +1094,7 @@ export default function Admin() {
                 >
                   <div className="p-6 border-b border-white/[0.06] flex items-center justify-between">
                     <h3 className="font-bold text-white">
-                      {assignModal.type === 'ceo' ? 'Assign CEO Schedule Slot' : 'Switch Slot Assignment'}
+                      {assignModal.type === 'ceo' ? 'Assign Open Slot' : 'Switch Slot Assignment'}
                     </h3>
                     <button onClick={() => setAssignModal(null)} className="p-1 text-gray-400 hover:text-white cursor-pointer">
                       <X className="w-5 h-5" />

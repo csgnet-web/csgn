@@ -151,7 +151,7 @@ export default function Watch() {
         <div className="shrink-0 px-4 sm:px-5 pt-4 sm:pt-5 pb-2">
           <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)] max-w-[1280px] mx-auto">
             <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(255,0,90,0.28),transparent_42%),radial-gradient(circle_at_85%_10%,rgba(80,0,255,0.26),transparent_35%)]" />
-            <div className="relative w-full min-h-[420px] flex items-center justify-center px-4 py-6">
+            <div className="relative w-full min-h-[260px] sm:min-h-[340px] flex items-center justify-center px-4 py-4 sm:py-5">
               {broadcastPostId && broadcastUrl ? (
                 <XBroadcastEmbed postId={broadcastPostId} postUrl={broadcastUrl} />
               ) : (

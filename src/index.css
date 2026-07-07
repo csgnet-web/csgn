@@ -201,3 +201,52 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
   75% { transform: translateX(-1px); }
 }
 .animate-fee-shake { animation: fee-shake 0.5s ease-in-out; }
+
+/* ─── Open-stage claim CTA (broadcast billboard on /player) ─── */
+
+/* Diagonal sheen sweeping across the CTA pill every few seconds — the
+   "professional broadcast graphic" glint. */
+@keyframes stage-cta-shine {
+  0%, 55% { transform: translateX(-160%) skewX(-18deg); }
+  75%, 100% { transform: translateX(260%) skewX(-18deg); }
+}
+.stage-cta-shine::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  animation: stage-cta-shine 3.4s ease-in-out infinite;
+}
+
+/* Expanding radar rings behind the CTA — draws the eye without strobing. */
+@keyframes stage-ring {
+  0% { transform: scale(1); opacity: 0.5; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+.stage-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(255, 35, 70, 0.6);
+  animation: stage-ring 2.6s ease-out infinite;
+}
+
+/* Slow breathing glow on the featured slot card. */
+@keyframes stage-card-breathe {
+  0%, 100% { box-shadow: 0 0 40px -12px rgba(255, 35, 70, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.12); }
+  50% { box-shadow: 0 0 70px -8px rgba(255, 35, 70, 0.7), inset 0 0 0 1px rgba(255, 255, 255, 0.2); }
+}
+.stage-card-breathe { animation: stage-card-breathe 4s ease-in-out infinite; }
+
+/* Marching gradient border sweep around the featured card. */
+@keyframes stage-border-sweep {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+.stage-border-sweep {
+  background: linear-gradient(100deg, rgba(255,35,70,0.75), rgba(255,255,255,0.25), rgba(80,0,255,0.6), rgba(255,35,70,0.75));
+  background-size: 200% 100%;
+  animation: stage-border-sweep 6s linear infinite;
+}

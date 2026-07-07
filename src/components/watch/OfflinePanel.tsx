@@ -49,7 +49,7 @@ export default function OfflinePanel() {
           {upNow ? (
             <>On the schedule now: <span className="text-gray-300 font-bold">{upNow}</span></>
           ) : nextSlot ? (
-            <>Up next: <span className="text-gray-300 font-bold">{nextSlot.assignedName || (nextSlot.type === 'auction' ? 'Open Bid' : 'CEO Schedule')}</span>{' '}<span className="font-mono normal-case">{formatESTRange(nextSlot)}</span></>
+            <>Up next: <span className="text-gray-300 font-bold">{nextSlot.assignedName || (nextSlot.type === 'auction' ? 'Open Bid' : 'Open Slot')}</span>{' '}<span className="font-mono normal-case">{formatESTRange(nextSlot)}</span></>
           ) : null}
         </div>
       )}

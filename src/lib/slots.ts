@@ -693,7 +693,7 @@ export async function requestSlot(slotId: string, request: Omit<SlotRequest, 'id
   if (!snap.exists()) throw new Error('Slot not found')
 
   const slot = snap.data() as Slot
-  if (slot.type !== 'ceo') throw new Error('Requests are only for CEO schedule slots')
+  if (slot.type !== 'ceo') throw new Error('Requests are only for Open Slots on the network schedule')
   if (slot.status !== 'open') throw new Error('This slot is no longer accepting requests')
 
   // Prevent duplicate requests
@@ -818,7 +818,7 @@ export async function assignCEOSlot(
     slotId,
     slotLabel: '',
     slotStart: '',
-    message: `You have been assigned a CEO Schedule slot! Check your schedule for details.`,
+    message: `You have been assigned an Open Slot! Check your schedule for details.`,
   })
 }
 
