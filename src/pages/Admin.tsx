@@ -41,6 +41,7 @@ import {
   declineFeesPayment,
   getMinimumBid,
   formatESTRange,
+  isCeoCreator,
   DEFAULT_STREAM_URL,
   type Slot,
   type SlotType,
@@ -562,14 +563,15 @@ export default function Admin() {
     { id: 'auth' as Tab, label: 'Auth Events', icon: Activity },
   ]
 
-  const typeIcon = (type: SlotType) => {
-    if (type === 'auction') return <Gavel className="w-4 h-4" />
-    return <Crown className="w-4 h-4" />
+  // Crown only for slots with CEO Creator branding ON (purely cosmetic toggle).
+  const typeIcon = (slot: Slot) => {
+    if (slot.type === 'auction') return <Gavel className="w-4 h-4" />
+    return isCeoCreator(slot) ? <Crown className="w-4 h-4" /> : <Radio className="w-4 h-4" />
   }
 
-  const typeColor = (type: SlotType) => {
-    if (type === 'auction') return 'text-cyan-400'
-    return 'text-gold'
+  const typeColor = (slot: Slot) => {
+    if (slot.type === 'auction') return 'text-cyan-400'
+    return isCeoCreator(slot) ? 'text-gold' : 'text-gray-400'
   }
 
   const scheduleDays = ['Today', 'Tomorrow', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7']
@@ -980,8 +982,8 @@ export default function Admin() {
                     return (
                       <div key={slot.id} className={`px-4 sm:px-6 py-4 transition-colors ${isActive ? 'bg-red-500/5 border-l-2 border-red-500' : 'hover:bg-white/[0.02]'}`}>
                         <div className="flex items-center gap-4">
-                          <div className={`w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 ${typeColor(slot.type)}`}>
-                            {typeIcon(slot.type)}
+                          <div className={`w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 ${typeColor(slot)}`}>
+                            {typeIcon(slot)}
                           </div>
 
                           <div className="flex-1 min-w-0">
@@ -1049,6 +1051,27 @@ export default function Admin() {
                             {pendingRequests.length > 0 && (
                               <Button variant="secondary" size="sm" onClick={() => setRequestModal(slot)}>
                                 Requests ({pendingRequests.length})
+                              </Button>
+                            )}
+                            {/* CEO Creator branding toggle — cosmetic only:
+                                gold crown = ON, gray = OFF (no crown shown
+                                anywhere for this slot). No other logic reads it. */}
+                            {slot.type === 'ceo' && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className={isCeoCreator(slot) ? 'text-gold hover:text-yellow-300' : 'text-gray-500 hover:text-gray-300'}
+                                title={isCeoCreator(slot) ? 'CEO Creator branding ON — click to remove the crown' : 'CEO Creator branding OFF — click to restore the crown'}
+                                onClick={async () => {
+                                  try {
+                                    await updateSlot(slot.id, { ceoCreator: !isCeoCreator(slot) })
+                                    await loadSlots()
+                                  } catch (err: any) {
+                                    setActionError(err?.message || 'Failed to toggle CEO Creator branding.')
+                                  }
+                                }}
+                              >
+                                <Crown className="w-3 h-3" />
                               </Button>
                             )}
                             <Button

@@ -59,19 +59,12 @@ tickers along the bottom with a branded background filling the rest), size the
   fixed-pixel 1080p-class design: **keep the source at least ~1600 px wide**
   (an 800×600 source clips the intermission board's headline and cards).
 
-### On-air network promo (automatic)
+### On-air promos
 
-While a streamer is LIVE, `/player` shows a FOX/ESPN-style lower-third **at most
-once every five minutes** (first one ~90s after going live): it rises out of the
-bottom edge of the page, holds ~9 seconds, and sinks back down. Because the
-browser source sits directly on top of the scene's ticker bar, the card reads as
-rising out of the ticker itself — and it can never cover the ticker, since it
-lives entirely inside the source. It rotates four cards: who's live now (name +
-slot time), what CSGN is (decentralized 24/7 network, claim a slot at csgn.fun),
-who's up next, and $CSGN stats. It's purely visual — it never touches the feed
-or its audio — and needs no configuration. Preview it with
-`/player?preview=promo`; cadence constants live in
-`src/components/player/OnAirPromo.tsx`.
+`/player` renders **no overlays over a LIVE feed** — the page's only job while
+a streamer is up is clean, uninterrupted video. Network promos (who's on,
+who's next, $CSGN, branding) are OBS-native elements, built and layered in the
+scene alongside the tickers, so they can never interfere with playback.
 
 ### Why `/player` behaves differently in OBS vs a normal tab
 
@@ -178,13 +171,13 @@ workflow and gain OS-notification risk — treat it as a temporary fallback only
 | **Audio runs ahead of the video** | Almost always a *symptom* of dropped/skipped frames — the video falls behind while audio keeps going, so fix frame drops first (row above). To trim any residual drift, add a positive **audio sync offset** on the browser source: OBS → Audio Mixer → the source's ⚙ → **Advanced Audio Properties** → *Sync Offset* → start around **+250 ms** and adjust. `/player` no longer spams `play()`/unmute (the old 15s-ago behaviour), which was itself a re-buffer/drift source |
 | **Feed looks low quality / soft** | `/player` pins Twitch **source** (`chunked`) automatically on going live and retries as the quality list populates. If it still looks soft, the upstream streamer may not be broadcasting a source-quality tier, or the OBS **output** resolution is below the canvas — set both Base and Output to 1920×1080 (Settings → Video) |
 | Twitch play-button / small ad / channel chrome flashes on-stream | Fixed in-app: a branded cover masks the startup reveal, and it now lifts **only after the embed confirms playback** of the armed channel (plus a ~3.5s hold) — never on a timer alone. If the feed can't start, the cover simply stays up. Hold length lives in `REVEAL_HOLD_MS` in `src/pages/Player.tsx` |
-| **Stream shows a Twitch "channel is offline" page while the slot streamer is live** | Fixed in-app: this was the embed stuck on the default channel — Twitch silently drops `setChannel()` calls made while its iframe is still bootstrapping, and the old reveal timer then exposed the mistuned player. `/player` now (1) never arms the default channel before slot data has loaded, (2) re-asserts the armed channel on the embed's READY event, and (3) runs a 5s watchdog that retunes a mistuned iframe and rebuilds a wedged one (LIVE with no playback for 20s), all behind the branded cover. Open `?debug=1` and check the `playback` row + event log (`watchdog: …` entries) if you suspect it |
+| **Stream shows a Twitch "channel is offline" page while the slot streamer is live** | Fixed in-app: this was the embed stuck on the default channel — Twitch silently drops `setChannel()` calls made while its iframe is still bootstrapping, and the old reveal timer then exposed the mistuned player. `/player` now (1) never arms the default channel before slot data has loaded, and (2) never calls `setChannel()` at all: every channel change tears the embed down and rebuilds it tuned from its constructor, so the iframe is on the right channel from birth. A watchdog rebuilds a wedged embed (LIVE with no playback for 20s) behind the branded cover. Open `?debug=1` and check the `playback` row + event log (`channel change → rebuild` / `watchdog: …` entries) if you suspect it |
+| **Video stuck unplayed after a slot change** | Fixed in-app: same root cause and fix as the row above — the old retune path (`setChannel` + `getChannel` verification) could wedge playback in a restart loop on a slot handoff. Channel changes now rebuild the embed deterministically; nothing retunes a running player |
 | Brand wipe stutters or plays twice in a row | Fixed in-app: the wipe is now one continuous sweep (in left → out right), and it only plays when leaving a state `/player` actually settled in for ≥5s — boot-time state shuffling and brief event races no longer fire it |
 | `/watch` embed not showing | Broadcast post URL not pushed in Admin, or it's a raw `/i/broadcasts/` link (not embeddable — paste the *post* URL) |
 
-**State previews:** open `/player?preview=board`, `?preview=brb`, `?preview=starting`,
-`?preview=wipe`, or `?preview=promo` (the on-air lower-third, cycling all its cards
-every few seconds) to check each look inside OBS without touching live state. Add
+**State previews:** open `/player?preview=board`, `?preview=brb`, `?preview=starting`, or
+`?preview=wipe` to check each look inside OBS without touching live state. Add
 `?debug=1` to any `/player` URL for the live diagnostic panel (env, mode, channel,
 audio state, event log).
 

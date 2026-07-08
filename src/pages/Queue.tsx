@@ -3,7 +3,7 @@ import { Clock3, Crown, ChevronLeft, ChevronRight, Radio } from 'lucide-react'
 import { useAuth } from '@/contexts/useAuth'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { fetchSlots, type Slot } from '@/lib/slots'
+import { fetchSlots, isCeoCreator, type Slot } from '@/lib/slots'
 import { api } from '@/lib/api'
 
 const WEEK_SPAN = 7
@@ -220,8 +220,10 @@ export default function Queue() {
                           )}
                           {isOpen ? (
                             <Badge variant="default">Open</Badge>
-                          ) : (
+                          ) : isCeoCreator(slot) ? (
                             <Badge variant="gold">CEO Creator</Badge>
+                          ) : (
+                            <Badge variant="default">Claimed</Badge>
                           )}
                         </div>
                       </div>

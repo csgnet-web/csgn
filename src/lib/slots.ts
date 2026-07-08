@@ -133,7 +133,17 @@ export interface Slot {
   requests: SlotRequest[]     // slot request queue
   creatorFees?: CreatorFees   // populated after slot completes
   streamActivity?: StreamActivity // server-logged Twitch live samples
+  /** "CEO Creator" branding (the gold crown/badge) for this slot. Purely
+   *  cosmetic — no scheduling/claim logic reads it. Absent = ON, so existing
+   *  slots keep their crown until an admin toggles it off. */
+  ceoCreator?: boolean
   createdAt: unknown
+}
+
+/** Does this slot carry the gold "CEO Creator" crown branding? Default ON —
+ *  only an explicit admin toggle-off (ceoCreator: false) hides it. */
+export function isCeoCreator(slot: Pick<Slot, 'ceoCreator'>): boolean {
+  return slot.ceoCreator !== false
 }
 
 /* ─── CSGN Quadratic bid pricing ─── */

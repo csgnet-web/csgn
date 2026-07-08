@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { Radio, Info } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { subscribeToSlots, type Slot } from '@/lib/slots'
+import { subscribeToSlots, isCeoCreator, type Slot } from '@/lib/slots'
 import { useAuth } from '@/contexts/useAuth'
 const WEEK_SPAN = 7
 
@@ -120,7 +120,9 @@ export default function Schedule() {
     return unsub
   }, [])
 
-  const typeLabel = (slot: Slot) => (slot.status === 'open' && !slot.assignedName ? 'Empty Slot' : (slot.assignedName || 'CEO Creator'))
+  // Unnamed claimed slots fall back to the "CEO Creator" billing only when the
+  // slot still carries the crown branding (admin-toggleable, cosmetic only).
+  const typeLabel = (slot: Slot) => (slot.status === 'open' && !slot.assignedName ? 'Empty Slot' : (slot.assignedName || (isCeoCreator(slot) ? 'CEO Creator' : 'Creator')))
 
   const slotsByDay = useMemo(() => days.map((_, i) => {
     const key = etDayKey(etMiddayFromOffset(i))

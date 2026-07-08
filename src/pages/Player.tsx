@@ -19,7 +19,6 @@ import IntermissionBoard from '@/components/player/IntermissionBoard'
 import StatusCard from '@/components/player/StatusCard'
 import VodRotator, { type VodItem } from '@/components/player/VodRotator'
 import FeedCover from '@/components/player/FeedCover'
-import OnAirPromo from '@/components/player/OnAirPromo'
 import { formatESTRange, DEFAULT_STREAM_URL } from '@/lib/slots'
 
 interface EmergencyOverride { enabled?: boolean; streamUrl?: string }
@@ -40,10 +39,8 @@ const SOURCE_QUALITY = 'chunked'
  *  server signal while the embed is still tuning/buffering (or mistuned) can
  *  never expose Twitch's offline page or chrome on-stream. */
 const REVEAL_HOLD_MS = 3_500
-/** Cadence of the embed watchdog: verify the iframe is tuned to the armed
- *  channel (Twitch silently drops setChannel calls issued before READY) and
- *  that a LIVE feed is actually flowing. */
-const TUNE_ASSERT_MS = 5_000
+/** Cadence of the embed watchdog (checks that a LIVE feed is actually flowing). */
+const WATCHDOG_TICK_MS = 5_000
 /** LIVE this long with no confirmed playback ⇒ the embed is stuck — rebuild it. */
 const STALL_REBUILD_MS = 20_000
 /** Never rebuild the embed more often than this (each rebuild re-buffers). */
@@ -106,6 +103,14 @@ export default function Player() {
   const [audioBlocked, setAudioBlocked] = useState(false)
 
   const playerRef = useRef<TwitchPlayer | null>(null)
+  // The channel the CURRENT embed instance was constructed for. The embed is
+  // only ever tuned via its constructor — a channel change tears it down and
+  // rebuilds it — so this ref is definitionally what the iframe is playing.
+  // (setChannel/getChannel are deliberately never used: Twitch silently drops
+  // setChannel mid-bootstrap, getChannel lags behind a retune, and acting on
+  // either wedged real broadcasts — the mistuned-offline-page and
+  // stuck-unplayed-after-slot-change failures.)
+  const armedChannelRef = useRef<string | null>(null)
   const playerContainerRef = useRef<HTMLDivElement>(null)
   const mountTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastRebuildAtRef = useRef(0)
@@ -121,8 +126,11 @@ export default function Player() {
     [],
   )
   const [eventLog, setEventLog] = useState<string[]>([])
+  // Deferred one tick so it's safe to call from anywhere, including
+  // synchronously inside effects; the timestamp is captured at call time.
   const logEvent = useCallback((name: string) => {
-    setEventLog((prev) => [...prev.slice(-9), `${new Date().toLocaleTimeString()}  ${name}`])
+    const stamp = new Date().toLocaleTimeString()
+    setTimeout(() => setEventLog((prev) => [...prev.slice(-9), `${stamp}  ${name}`]), 0)
   }, [])
 
   // Drop playback confidence and re-cover the feed. Deferred one tick so it's
@@ -152,6 +160,7 @@ export default function Player() {
     logEvent('embed rebuild')
     if (playerContainerRef.current) playerContainerRef.current.innerHTML = ''
     playerRef.current = null
+    armedChannelRef.current = null
     setPlaybackOk(false)
     setFeedReady(false)
     setRebuildNonce((n) => n + 1)
@@ -351,12 +360,6 @@ export default function Player() {
     if (!channel) return
     let cancelled = false
 
-    // What channel is the embed's iframe actually on? null = unknown (iframe
-    // still bootstrapping) — callers treat unknown as "don't judge yet".
-    const tunedChannel = (p: TwitchPlayer): string | null => {
-      try { return p.getChannel()?.toLowerCase() || null } catch { return null }
-    }
-
     const armMountTimeout = () => {
       if (mountTimeoutRef.current) clearTimeout(mountTimeoutRef.current)
       // Already LIVE (server-confirmed or prior event) — a "no ONLINE event
@@ -371,15 +374,12 @@ export default function Player() {
     // the page would sit on "Starting Soon" forever, so a real PLAYING event
     // (playback actually began ⇒ the channel must be online) counts too.
     const goLive = (via: string) => {
-      // Guard: the event must be about the channel we ARMED. The iframe can
-      // lag a retune (Twitch drops setChannel calls issued mid-bootstrap), and
-      // whatever the stale channel does must not flip us LIVE or lift the
-      // cover — fix the tuning instead and let the real events follow.
-      const desired = channelRef.current?.toLowerCase() ?? null
-      const tuned = tunedChannel(player)
-      if (desired && tuned && tuned !== desired) {
-        logEvent(`${via} ignored: tuned ${tuned} ≠ ${desired}`)
-        try { player.setChannel(desired) } catch { /* watchdog rebuilds if this keeps failing */ }
+      // Guard: only events from an embed armed on the CURRENT channel count.
+      // A channel change tears the embed down and rebuilds it, but an event
+      // from the outgoing iframe can still land during the swap — it must not
+      // flip us LIVE or lift the cover for the wrong stream.
+      if (armedChannelRef.current !== channelRef.current) {
+        logEvent(`${via} ignored: stale embed (${armedChannelRef.current ?? '—'})`)
         return
       }
       logEvent(`→ LIVE (${via})`)
@@ -399,20 +399,7 @@ export default function Player() {
     let player: TwitchPlayer
 
     const attach = (PlayerCtor: TwitchPlayerCtor) => {
-      player.addEventListener(PlayerCtor.READY, () => {
-        logEvent('READY')
-        // Re-assert the armed channel: a setChannel issued while the iframe
-        // was still bootstrapping is silently dropped — this is where the old
-        // "stuck on the default channel's offline page" failure came from.
-        const desired = channelRef.current
-        const tuned = tunedChannel(player)
-        if (desired && tuned && tuned !== desired.toLowerCase()) {
-          logEvent(`READY mistuned (${tuned}) — retuning`)
-          try { player.setChannel(desired) } catch { /* watchdog rebuilds */ }
-        }
-        syncAudio()
-        forceQuality()
-      })
+      player.addEventListener(PlayerCtor.READY, () => { logEvent('READY'); syncAudio(); forceQuality() })
       player.addEventListener(PlayerCtor.ONLINE, () => goLive('online'))
       if (PlayerCtor.PLAYING) player.addEventListener(PlayerCtor.PLAYING, () => goLive('playing'))
       if (PlayerCtor.PLAYBACK_BLOCKED) {
@@ -448,16 +435,22 @@ export default function Player() {
       player.addEventListener(PlayerCtor.ENDED, () => onEmbedDrop('ENDED'))
     }
 
+    // A different channel is armed: tear the old embed down completely and
+    // rebuild tuned from the constructor. setChannel() is deliberately never
+    // used for this — Twitch silently drops it mid-bootstrap (the mistuned
+    // offline-page incident) and retuning can wedge playback in a restart
+    // loop (video stuck unplayed after a slot change). A constructor-tuned
+    // iframe is deterministic: it is on the right channel from birth.
+    if (playerRef.current && armedChannelRef.current !== channel) {
+      logEvent(`channel change → rebuild (${armedChannelRef.current ?? '—'} → ${channel})`)
+      if (playerContainerRef.current) playerContainerRef.current.innerHTML = ''
+      playerRef.current = null
+      armedChannelRef.current = null
+      coverFeed()
+    }
+
     if (playerRef.current) {
-      const existing = playerRef.current
-      // Only reset playback confidence on a REAL channel change — this effect
-      // also re-runs for rebuilds and callback identity changes, and resetting
-      // then would needlessly re-cover a healthy feed.
-      if (tunedChannel(existing) !== channel) {
-        coverFeed()
-        try { existing.setChannel(channel) } catch { /* watchdog rebuilds */ }
-      }
-      armMountTimeout()
+      armMountTimeout() // same channel — effect re-ran for another reason
     } else {
       loadTwitchPlayer()
         .then((PlayerCtor) => {
@@ -473,6 +466,7 @@ export default function Player() {
           })
           attach(PlayerCtor)
           playerRef.current = player
+          armedChannelRef.current = channel
           armMountTimeout()
         })
         .catch(() => { logEvent('embed load failed'); feedDown() })
@@ -484,38 +478,18 @@ export default function Player() {
     }
   }, [channel, rebuildNonce, hostname, obs, logEvent, syncAudio, forceQuality, feedDown, coverFeed])
 
-  // ── Embed watchdog: the self-heal loop that keeps the iframe honest. Every
-  //    5s it (1) verifies the iframe is tuned to the armed channel and retunes
-  //    it if not (Twitch silently drops setChannel calls issued while the
-  //    iframe bootstraps — the "stuck on the default channel's offline page"
-  //    on-air failure); (2) if retuning doesn't stick, or we've been LIVE with
-  //    no confirmed playback for 20s (embed wedged while the server says the
-  //    streamer is up), rebuilds the embed from scratch. The branded cover
-  //    stays up throughout, so healing is invisible on-stream. ──
+  // ── Embed watchdog: if we're LIVE (the server or a prior event says the
+  //    streamer is up) but the embed hasn't confirmed playback for 20s, it's
+  //    wedged — rebuild it from scratch, tuned from its constructor, behind
+  //    the branded cover. Rate-limited inside rebuildPlayer (30s min). ──
   useEffect(() => {
     if (!channel) return
-    let mistuneTicks = 0
     let stallTicks = 0
     const t = setInterval(() => {
-      const player = playerRef.current
-      if (!player) return
-      let tuned: string | null = null
-      try { tuned = player.getChannel()?.toLowerCase() || null } catch { tuned = null }
-      if (tuned && tuned !== channel) {
-        mistuneTicks += 1
-        logEvent(`watchdog: tuned ${tuned} ≠ ${channel} (${mistuneTicks})`)
-        if (mistuneTicks >= 2) {
-          mistuneTicks = 0
-          rebuildPlayer() // setChannel isn't sticking — rebuild on the right channel
-        } else {
-          try { player.setChannel(channel) } catch { /* rebuild next tick */ }
-        }
-      } else if (tuned) {
-        mistuneTicks = 0
-      }
+      if (!playerRef.current) return
       if (modeRef.current === 'LIVE' && !playbackOkRef.current) {
         stallTicks += 1
-        if (stallTicks * TUNE_ASSERT_MS >= STALL_REBUILD_MS) {
+        if (stallTicks * WATCHDOG_TICK_MS >= STALL_REBUILD_MS) {
           stallTicks = 0
           logEvent('watchdog: LIVE but no playback — rebuilding')
           rebuildPlayer()
@@ -523,7 +497,7 @@ export default function Player() {
       } else {
         stallTicks = 0
       }
-    }, TUNE_ASSERT_MS)
+    }, WATCHDOG_TICK_MS)
     return () => clearInterval(t)
   }, [channel, rebuildPlayer, logEvent])
 
@@ -565,7 +539,7 @@ export default function Player() {
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
   const overrideSrc = state.mode === 'OVERRIDE' ? buildYouTubeOverrideSrc(state.url) : null
 
-  // Operator preview: /player?preview=board|brb|starting|wipe|promo forces a state
+  // Operator preview: /player?preview=board|brb|starting|wipe forces a state
   // so each look can be checked inside OBS before going live.
   const preview = useMemo(
     () => (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('preview') : null),
@@ -578,7 +552,6 @@ export default function Player() {
         {preview === 'brb' && <StatusCard variant="brb" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
         {preview === 'starting' && <StatusCard variant="starting-soon" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
         {preview === 'wipe' && <WipeOverlay visible label="Now Live" />}
-        {preview === 'promo' && <OnAirPromo preview />}
       </div>
     )
   }
@@ -597,11 +570,6 @@ export default function Player() {
           play-button poster / preroll / channel-chrome reveal on first load and
           on every OBS watchdog reload. */}
       {state.mode === 'LIVE' && !feedReady && <FeedCover label="Now Live" />}
-
-      {/* Network-style promo lower-third over the live feed — who's on, who's
-          next, what CSGN is — at most once every five minutes, ~9s at a time.
-          Mounted only after the reveal so its clock starts with a settled feed. */}
-      {state.mode === 'LIVE' && feedReady && <OnAirPromo />}
 
       {state.mode === 'OVERRIDE' && (
         overrideSrc ? (
