@@ -46,8 +46,10 @@ export default function XBroadcastEmbed({ postId, postUrl }: { postId: string; p
           conversation: 'none',
           dnt: true,
           // Upper bound only — widgets.js clamps to the container, and the
-          // container's max-w classes are what actually set the size.
-          width: 500,
+          // container's max-w classes are what actually set the size. X embeds
+          // derive their height from the rendered width, so a narrower column
+          // is also what keeps the embed short.
+          width: 420,
         }),
       )
       .then((el) => {
@@ -73,8 +75,8 @@ export default function XBroadcastEmbed({ postId, postUrl }: { postId: string; p
   return (
     <div className="w-full flex flex-col items-center">
       {state === 'loading' && (
-        <div className="w-full max-w-[380px] sm:max-w-[500px] rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden">
-          <div className="h-[200px] sm:h-[260px] animate-shimmer" />
+        <div className="w-full max-w-[340px] sm:max-w-[420px] rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden">
+          <div className="h-[180px] sm:h-[220px] animate-shimmer" />
           <div className="px-4 py-3 text-center text-[11px] uppercase tracking-[0.2em] text-gray-500">
             Loading live broadcast…
           </div>
@@ -82,7 +84,7 @@ export default function XBroadcastEmbed({ postId, postUrl }: { postId: string; p
       )}
 
       {state === 'failed' && (
-        <div className="w-full max-w-[380px] sm:max-w-[500px] rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-10 flex flex-col items-center gap-4 text-center">
+        <div className="w-full max-w-[340px] sm:max-w-[420px] rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-10 flex flex-col items-center gap-4 text-center">
           <p className="text-sm text-gray-300">
             The embedded player couldn't load — the broadcast is still live on X.
           </p>
@@ -98,9 +100,14 @@ export default function XBroadcastEmbed({ postId, postUrl }: { postId: string; p
       )}
 
       {/* Kept laid out (not display:none) while loading so widgets.js can measure width.
-          X embeds size their height from the column width, so these caps are what keep
-          the player box from towering — tighter on mobile, slightly reduced on desktop. */}
-      <div ref={containerRef} className={`w-full max-w-[380px] sm:max-w-[500px] ${state === 'ready' ? '' : 'h-0 overflow-hidden'}`} />
+          X embeds size their height from the column width, so the narrow max-w caps are
+          the first line of defense against a towering player box; the max-h clamp is the
+          hard ceiling — no matter what the post contains (long text, stacked media), the
+          embed can never grow taller than this, it scrolls inside instead. */}
+      <div
+        ref={containerRef}
+        className={`w-full max-w-[340px] sm:max-w-[420px] ${state === 'ready' ? 'max-h-[55vh] sm:max-h-[480px] overflow-y-auto' : 'h-0 overflow-hidden'}`}
+      />
     </div>
   )
 }

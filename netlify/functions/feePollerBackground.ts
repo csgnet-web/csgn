@@ -149,13 +149,23 @@ const DEFAULT_STREAM_URL = 'https://twitch.tv/csgnet'
 const MIN_HORIZON_DAYS = 5
 /** Refill out to this many days ahead. */
 const TARGET_HORIZON_DAYS = 7
+/** Even with a healthy horizon, sweep the whole week for missing slots this
+ *  often — the horizon check only sees the schedule's tail, so a slot deleted
+ *  or lost mid-week would otherwise stay missing forever. */
+const FULL_SWEEP_INTERVAL_MS = 15 * 60_000
+
+/** Warm-container timestamp of the last full-window sweep. Resets on cold
+ *  start, which just makes the next sweep run sooner — harmless. */
+let lastFullSweepAtMs = 0
 
 /**
  * The schedule used to empty out after a few days because slot creation was a
  * manual admin action. This runs every minute but is engineered to cost almost
  * nothing: one 1-doc query checks how far out the schedule extends, and only
- * when the horizon drops under MIN_HORIZON_DAYS (i.e. ~once a day) does it do
- * a real fill out to TARGET_HORIZON_DAYS.
+ * when the horizon drops under MIN_HORIZON_DAYS (~once a day) — or on the
+ * periodic full sweep — does it do a real fill out to TARGET_HORIZON_DAYS.
+ * The fill covers EVERY missing template slot in the window, not just the
+ * tail, so each of the next 7 days always carries its full 12 slots.
  *
  * The fill is strictly CREATE-ONLY (Firestore create preconditions): existing
  * slots — including any the admin retyped, assigned, or hand-edited — are
@@ -169,7 +179,10 @@ async function topUpSchedule(): Promise<void> {
 
     const latest = await queryCollection('slots', [], [order('startTime', 'DESCENDING')], 1)
     const latestStartMs = latest.length ? new Date(String(latest[0].data.startTime ?? 0)).getTime() : 0
-    if (latestStartMs >= nowMs + MIN_HORIZON_DAYS * 24 * 60 * 60 * 1000) return
+    const horizonShort = latestStartMs < nowMs + MIN_HORIZON_DAYS * 24 * 60 * 60 * 1000
+    const sweepDue = nowMs - lastFullSweepAtMs >= FULL_SWEEP_INTERVAL_MS
+    if (!horizonShort && !sweepDue) return
+    lastFullSweepAtMs = nowMs
 
     // Expected slots for every ET day from today out to the target horizon.
     const expected = new Map<string, ReturnType<typeof buildExpectedSlotsForDate>[number]>()

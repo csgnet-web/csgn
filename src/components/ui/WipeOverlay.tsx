@@ -8,7 +8,17 @@
  * old approach transitioned back out the way it came in, which read as the
  * stinger stuttering or running twice on-stream.
  */
-export function WipeOverlay({ visible, label = 'Now Live' }: { visible: boolean; label?: string }) {
+export function WipeOverlay({
+  visible,
+  label = 'Now Live',
+  streamerName,
+  slotLabel,
+}: {
+  visible: boolean
+  label?: string
+  streamerName?: string
+  slotLabel?: string
+}) {
   if (!visible) return null
   return (
     <div
@@ -27,6 +37,14 @@ export function WipeOverlay({ visible, label = 'Now Live' }: { visible: boolean;
             <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
             <span className="text-white/80 text-sm font-bold tracking-[0.2em] uppercase">{label}</span>
           </div>
+          {streamerName && (
+            <span className="text-white text-2xl font-black font-display tracking-tight text-center max-w-[80vw] truncate">
+              {streamerName}
+            </span>
+          )}
+          {slotLabel && (
+            <span className="text-white/70 text-xs font-mono tracking-wider">{slotLabel}</span>
+          )}
         </div>
       </div>
     </div>
