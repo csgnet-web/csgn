@@ -73,14 +73,25 @@ scene alongside the tickers, so they can never interfere with playback.
 - **Inside OBS**, the browser source autoplays *with sound* and there is never a
   user click, so audio is forced on programmatically and stays on (gently
   re-checked every 15s — and only nudged if it has actually drifted to muted, so
-  a healthy feed is never disturbed). The feed is also pinned to Twitch's
-  **source** quality (`chunked`) so the encode never drops to auto/360p, and a
-  **branded cover is held over the feed until it settles** — so the Twitch
-  startup reveal (play-button poster, preroll, channel/Follow chrome) is never
-  seen on-stream, on first load *or* after a watchdog reload. Going LIVE no
+  a healthy feed is never disturbed). What reaches the encode is governed by
+  **FeedGate** (`src/lib/feedGate.ts`): `/player` samples the embed's playback
+  position every second, and a **branded cover is held over the feed** — with
+  audio muted — until frames are proven to be advancing *and* a fixed
+  **preroll-ad mask** (33s from first frames, longer than Twitch's ≤30s ad
+  break) has elapsed. Twitch stitches preroll ads server-side and offers no API
+  to detect them, so the deterministic mask is what guarantees the ad video,
+  its countdown text, and all startup chrome (play-button poster, channel/
+  Follow UI) are never seen on-stream — on first load, retunes, *and* every
+  watchdog rebuild. Only after the mask does `/player` pin Twitch's **source**
+  quality (`chunked`, so the encode never drops to auto/360p), let the feed
+  settle ~2s more, then unmute and reveal. Between constructing the embed and
+  that confirmation the player is deliberately never touched — no `play()`,
+  no quality request, no unmute — because poking it mid-ad is what used to
+  freeze the feed on the first ad frame. Going LIVE no
   longer depends on Twitch's flaky `ONLINE`
-  event. LIVE is now reached three independent ways: the embed's `ONLINE` event,
-  a real `PLAYING` event (playback started ⇒ the channel is live), **and** the
+  event. LIVE is now reached four independent ways: the embed's `ONLINE` event,
+  a real `PLAYING` event (playback started ⇒ the channel is live), FeedGate
+  confirming frames of the armed channel, **and** the
   server's Twitch Helix check (`feePollerBackground` verifies the slot's channel
   every minute and records `streamActivity.lastLive` on the slot doc `/player`
   reads). The Helix path is the important one: Twitch's `ONLINE` event only fires
@@ -101,10 +112,15 @@ Source has **Page permissions: Read and write to OBS** so the OBS detection work
 Open `https://csgn.fun/player?debug=1` in the OBS source (right-click → Interact,
 or just point a throwaway source at it). A small debug panel shows in the
 top-left with `env` (should read `OBS <version>`), the current `mode`, the armed
-`channel`, `audioBlocked`, `server live` (the server's Helix check), and a live
-event log. When a streamer is live you should see `→ LIVE (playing)` /
-`→ LIVE (online)` (or `server live: yes …` driving `mode: LIVE` if the embed
-event never fired). Remove the `?debug=1` for the real broadcast source.
+`channel`, `playback` (FeedGate confirmation + whether the cover has lifted),
+`gate` (live FeedGate readout: phase — `boot` / `ad-mask` / `settling` /
+`on-air` / `stalled` — plus seconds of preroll mask remaining and seconds since
+frames last advanced), `audioBlocked`, `server live` (the server's Helix
+check), and a live event log. When a streamer is live you should see
+`→ LIVE (playing)` / `→ LIVE (online)` (or `server live: yes …` driving
+`mode: LIVE` if the embed event never fired), then `quality pinned (chunked)`
+and `gate: content confirmed` as the cover lifts. Remove the `?debug=1` for the
+real broadcast source.
 
 ## 2. Your master-control monitor (monitor 4)
 
@@ -169,9 +185,10 @@ workflow and gain OS-notification risk — treat it as a temporary fallback only
 | Stream drops repeatedly | Check Automatically Reconnect is on; verify RTMPS key still valid in Media Studio |
 | **High dropped frames** (OBS Stats shows a large % of dropped/skipped frames) | Two different failures share the name. **Dropped frames (network)** = the upload can't keep up → lower the OBS bitrate (try 4500–6000 Kbps CBR) and check the wired connection. **Skipped/lagged frames (rendering/encoding)** = the machine can't render+encode fast enough → (1) set the Browser Source to *Use custom frame rate* = **30** so CEF doesn't render at 60 for a 30 fps output (a common ~50% waste), (2) OBS → Settings → Advanced → enable **Browser source hardware acceleration**, (3) NVENC (not x264) if you have an NVIDIA GPU. `/player` already pins source quality; if the box can't render 1080p60, step the OBS **output** down to 1080p30 rather than lowering the feed quality |
 | **Audio runs ahead of the video** | Almost always a *symptom* of dropped/skipped frames — the video falls behind while audio keeps going, so fix frame drops first (row above). To trim any residual drift, add a positive **audio sync offset** on the browser source: OBS → Audio Mixer → the source's ⚙ → **Advanced Audio Properties** → *Sync Offset* → start around **+250 ms** and adjust. `/player` no longer spams `play()`/unmute (the old 15s-ago behaviour), which was itself a re-buffer/drift source |
-| **Feed looks low quality / soft** | `/player` pins Twitch **source** (`chunked`) automatically on going live and retries as the quality list populates. If it still looks soft, the upstream streamer may not be broadcasting a source-quality tier, or the OBS **output** resolution is below the canvas — set both Base and Output to 1920×1080 (Settings → Video) |
-| Twitch play-button / small ad / channel chrome flashes on-stream | Fixed in-app: a branded cover masks the startup reveal, and it now lifts **only after the embed confirms playback** of the armed channel (plus a ~3.5s hold) — never on a timer alone. If the feed can't start, the cover simply stays up. Hold length lives in `REVEAL_HOLD_MS` in `src/pages/Player.tsx` |
-| **Stream shows a Twitch "channel is offline" page while the slot streamer is live** | Fixed in-app: this was the embed stuck on the default channel — Twitch silently drops `setChannel()` calls made while its iframe is still bootstrapping, and the old reveal timer then exposed the mistuned player. `/player` now (1) never arms the default channel before slot data has loaded, and (2) never calls `setChannel()` at all: every channel change tears the embed down and rebuilds it tuned from its constructor, so the iframe is on the right channel from birth. A watchdog rebuilds a wedged embed (LIVE with no playback for 20s) behind the branded cover. Open `?debug=1` and check the `playback` row + event log (`channel change → rebuild` / `watchdog: …` entries) if you suspect it |
+| **Feed looks low quality / soft** | `/player` pins Twitch **source** (`chunked`) automatically: once per playback session, right after the preroll mask, from Twitch's populated quality list (`quality pinned (…)` in the `?debug=1` log). If it still looks soft, the upstream streamer may not be broadcasting a source-quality tier, or the OBS **output** resolution is below the canvas — set both Base and Output to 1920×1080 (Settings → Video) |
+| **Frozen at the start of the :15 preroll ad** (picture stuck on the first ad frame, player claiming it's playing) | Fixed in-app, two ways. (1) Root cause: the old page poked the embed the moment Twitch's `READY`/`PLAYING` events fired — but those fire while the *server-side-stitched ad* is playing, and `setQuality()`/`play()`/unmute calls mid-ad wedged the player. `/player` now runs a **quiet bootstrap**: the embed is constructed autoplay+muted and never touched again until FeedGate confirms real frames post-mask. (2) Backstop: FeedGate watches the playback position itself, so a feed that stops advancing for 20s while LIVE is torn down and rebuilt behind the branded cover — a wedged embed can no longer sit frozen on-stream. Timings live in `src/lib/feedGate.ts` |
+| Twitch play-button / **preroll ad (video or countdown text)** / channel chrome flashes on-stream | Fixed in-app: a branded cover masks the LIVE feed until FeedGate confirms it — frames advancing **and** the 33s preroll mask elapsed (Twitch ad breaks cap at 30s and are unstitchable/undetectable client-side, so the mask is deterministic), plus quality pinned and ~2s settle. Audio stays muted behind the cover, so ad audio can't leak either. If the feed can't start, the cover simply stays up while the gate rebuilds behind it. Mask/settle constants live in `src/lib/feedGate.ts` (`PREROLL_MASK_MS` etc.) |
+| **Stream shows a Twitch "channel is offline" page while the slot streamer is live** | Fixed in-app: this was the embed stuck on the default channel — Twitch silently drops `setChannel()` calls made while its iframe is still bootstrapping, and the old reveal timer then exposed the mistuned player. `/player` now (1) never arms the default channel before slot data has loaded, and (2) never calls `setChannel()` at all: every channel change tears the embed down and rebuilds it tuned from its constructor, so the iframe is on the right channel from birth. FeedGate rebuilds a wedged embed (LIVE with no frames advancing for 20s) behind the branded cover. Open `?debug=1` and check the `playback`/`gate` rows + event log (`channel change → rebuild` / `gate: …` entries) if you suspect it |
 | **Video stuck unplayed after a slot change** | Fixed in-app: same root cause and fix as the row above — the old retune path (`setChannel` + `getChannel` verification) could wedge playback in a restart loop on a slot handoff. Channel changes now rebuild the embed deterministically; nothing retunes a running player |
 | Brand wipe stutters or plays twice in a row | Fixed in-app: the wipe is now one continuous sweep (in left → out right), and it only plays when leaving a state `/player` actually settled in for ≥5s — boot-time state shuffling and brief event races no longer fire it |
 | `/watch` embed not showing | Broadcast post URL not pushed in Admin, or it's a raw `/i/broadcasts/` link (not embeddable — paste the *post* URL) |
@@ -179,7 +196,10 @@ workflow and gain OS-notification risk — treat it as a temporary fallback only
 **State previews:** open `/player?preview=board`, `?preview=brb`, `?preview=starting`, or
 `?preview=wipe` to check each look inside OBS without touching live state. Add
 `?debug=1` to any `/player` URL for the live diagnostic panel (env, mode, channel,
-audio state, event log).
+playback/gate state, audio state, event log). To rehearse against a specific
+public channel without touching slot data, use `/player?channel=<name>` (the
+admin emergency override still wins over it) — handy for verifying the whole
+startup sequence, ad mask included, before a slot goes live.
 
 ## 8. Optional: OBS control script (`csgn-master.lua`)
 

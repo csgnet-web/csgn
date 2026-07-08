@@ -6,11 +6,13 @@ import {
   reduce,
   serverLiveSignal,
   isServerLive,
+  isServerConfirmedOffline,
   INITIAL_STATE,
   MOUNT_TIMEOUT_MS,
   type BroadcastDoc,
   type MasterState,
 } from '@/lib/masterControl'
+import { createFeedGate, PROGRESS_TICK_MS, type FeedGate, type GateDecision } from '@/lib/feedGate'
 import { loadTwitchPlayer, type TwitchPlayer, type TwitchPlayerCtor } from '@/lib/twitchEmbed'
 import { isOBS, obsVersion } from '@/lib/environment'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
@@ -29,20 +31,17 @@ const TICK_MS = 5_000
  *  a healthy feed, because those re-trigger Twitch's overlay chrome and can
  *  rebuffer — the flashing-UI + stutter the old 8s keepalive caused on-stream. */
 const AUDIO_ASSERT_MS = 15_000
-/** Twitch's source (highest) quality group. Pinned so the encode never drops to
- *  auto/360p — the operator wants max quality out to X. */
+/** Twitch's source (highest) quality group. Pinned once per playback session,
+ *  after the preroll mask, from a populated quality list — the operator wants
+ *  max quality out to X. Never requested during bootstrap: setQuality() while
+ *  Twitch is stitching the preroll is what froze the feed on the first ad
+ *  frame (player chrome stuck showing "playing", no frames ever advancing). */
 const SOURCE_QUALITY = 'chunked'
-/** Hold the branded cover this long after playback is confirmed before
- *  revealing, so the play-button poster / preroll / channel chrome flash is
- *  fully masked. The cover no longer lifts on a timer alone: the embed must
- *  actually be PLAYING the armed channel first, so a LIVE reached via the
- *  server signal while the embed is still tuning/buffering (or mistuned) can
- *  never expose Twitch's offline page or chrome on-stream. */
-const REVEAL_HOLD_MS = 3_500
-/** Cadence of the embed watchdog (checks that a LIVE feed is actually flowing). */
-const WATCHDOG_TICK_MS = 5_000
-/** LIVE this long with no confirmed playback ⇒ the embed is stuck — rebuild it. */
-const STALL_REBUILD_MS = 20_000
+/** Short beat between FeedGate confirming content and the cover lifting, so
+ *  the reveal lands on a feed that has already proven stable. The heavy
+ *  lifting (preroll mask, pin settle, stability) happens inside FeedGate —
+ *  this is just a debounce, not the protection itself. */
+const REVEAL_HOLD_MS = 1_200
 /** Never rebuild the embed more often than this (each rebuild re-buffers). */
 const EMBED_REBUILD_MIN_MS = 30_000
 /** Only play the brand wipe when leaving a mode we actually settled in.
@@ -71,9 +70,19 @@ function buildYouTubeOverrideSrc(url: string): string | null {
  * The Twitch player (embed JS API) stays mounted and muted through every
  * non-LIVE state — an ONLINE *or* PLAYING event wipes back to the feed (PLAYING
  * is the fallback for OBS's CEF, where ONLINE is unreliable and the page would
- * otherwise sit on STARTING_SOON forever). Audio is forced on when LIVE; in a
- * normal browser tab, where the autoplay policy blocks a gesture-less unmute,
- * a one-tap affordance unlocks sound.
+ * otherwise sit on STARTING_SOON forever).
+ *
+ * Playback handling is "quiet bootstrap": between constructing the embed
+ * (autoplay, muted) and FeedGate confirming that broadcast content is actually
+ * flowing, the player is never touched — no play(), no setQuality(), no
+ * unmute. Twitch stitches preroll ads server-side into the live session, its
+ * READY/PLAYING events fire while the *ad* runs, and poking the player inside
+ * that window wedged it frozen on the first ad frame. The branded cover stays
+ * up (and audio stays muted) through the whole gate window, so neither the ad
+ * video, Twitch's ad countdown, nor any startup chrome can reach the encode —
+ * only settled broadcast video is ever revealed. Audio is forced on when the
+ * gate confirms; in a normal browser tab, where the autoplay policy blocks a
+ * gesture-less unmute, a one-tap affordance unlocks sound.
  */
 export default function Player() {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
@@ -84,19 +93,19 @@ export default function Player() {
   const [emergency, setEmergency] = useState<EmergencyOverride | null>(null)
   const [showWipe, setShowWipe] = useState(false)
   // The branded cover stays over the LIVE feed until playback is confirmed
-  // flowing — masks the Twitch startup reveal (poster, preroll, chrome flash)
-  // on both first load and every OBS watchdog reload.
+  // flowing — masks the Twitch startup reveal (poster, preroll ad + countdown,
+  // chrome flash) on both first load and every rebuild.
   const [feedReady, setFeedReady] = useState(false)
-  // The embed has confirmed playback (ONLINE/PLAYING) for the armed channel
-  // and no drop has been seen since. This — not a timer — is what allows the
-  // branded cover to lift, so Twitch's offline page / startup chrome can never
-  // reach the encode even when LIVE was declared by the server signal.
+  // FeedGate has confirmed the armed channel's broadcast content is flowing
+  // (frames advancing, preroll mask elapsed, quality pinned and settled). This
+  // — never an embed event or a bare timer — is what allows the cover to lift
+  // and audio to come on, so an ad or a wedged/mistuned embed can never reach
+  // the encode.
   const [playbackOk, setPlaybackOk] = useState(false)
   const playbackOkRef = useRef(false)
   useEffect(() => { playbackOkRef.current = playbackOk }, [playbackOk])
-  // Bumped to tear down and recreate the Twitch embed when the watchdog finds
-  // it wedged (tuned to the wrong channel and ignoring setChannel, or LIVE
-  // with no playback for too long).
+  // Bumped to tear down and recreate the Twitch embed when FeedGate finds it
+  // wedged (LIVE with no frames advancing — e.g. frozen on a preroll).
   const [rebuildNonce, setRebuildNonce] = useState(0)
   // The browser blocked autoplay-with-sound (normal tabs only) — surface a
   // one-tap "enable sound" affordance. Never happens inside OBS.
@@ -111,6 +120,9 @@ export default function Player() {
   // either wedged real broadcasts — the mistuned-offline-page and
   // stuck-unplayed-after-slot-change failures.)
   const armedChannelRef = useRef<string | null>(null)
+  // One FeedGate per embed instance — recreated with the embed so a rebuild or
+  // retune always starts from a clean "nothing observed yet" state.
+  const gateRef = useRef<FeedGate | null>(null)
   const playerContainerRef = useRef<HTMLDivElement>(null)
   const mountTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastRebuildAtRef = useRef(0)
@@ -126,6 +138,7 @@ export default function Player() {
     [],
   )
   const [eventLog, setEventLog] = useState<string[]>([])
+  const [gateInfo, setGateInfo] = useState('—')
   // Deferred one tick so it's safe to call from anywhere, including
   // synchronously inside effects; the timestamp is captured at call time.
   const logEvent = useCallback((name: string) => {
@@ -135,7 +148,7 @@ export default function Player() {
 
   // Drop playback confidence and re-cover the feed. Deferred one tick so it's
   // safe to call synchronously inside effects (react-hooks/set-state-in-effect);
-  // 0ms is imperceptible next to the 1.4s wipe and 3.5s reveal hold.
+  // 0ms is imperceptible next to the 1.4s wipe and the gate's confirm window.
   const coverFeed = useCallback(() => {
     setTimeout(() => {
       setPlaybackOk(false)
@@ -152,7 +165,7 @@ export default function Player() {
 
   // Tear the embed down and recreate it (the channel-lifecycle effect re-runs
   // via rebuildNonce and finds playerRef empty). Rate-limited: each rebuild is
-  // a re-buffer, so it's a last resort after retunes have failed.
+  // a re-buffer, so it's a last resort; FeedGate re-signals until it lands.
   const rebuildPlayer = useCallback(() => {
     const now = Date.now()
     if (now - lastRebuildAtRef.current < EMBED_REBUILD_MIN_MS) return
@@ -161,21 +174,24 @@ export default function Player() {
     if (playerContainerRef.current) playerContainerRef.current.innerHTML = ''
     playerRef.current = null
     armedChannelRef.current = null
+    gateRef.current = null
     setPlaybackOk(false)
     setFeedReady(false)
     setRebuildNonce((n) => n + 1)
   }, [logEvent])
 
-  // ── Audio: keep the feed playing always; make it audible only when LIVE.
-  //    setMuted(false) is honoured inside OBS (autoplay-with-sound allowed) and
-  //    in browser tabs where the viewer has already interacted; otherwise the
-  //    Twitch player fires PLAYBACK_BLOCKED and we fall back to a tap-to-unmute. ──
+  // ── Audio policy: muted until FeedGate confirms broadcast content while
+  //    LIVE, then audible. Never unmutes during the bootstrap/preroll window —
+  //    that both leaked ad audio to the encode and (in normal tabs, where a
+  //    gesture-less unmute is blocked) knocked the bootstrapping player over.
+  //    setMuted(false) is honoured inside OBS (autoplay-with-sound allowed)
+  //    and in tabs where the viewer has already interacted; otherwise the
+  //    player fires PLAYBACK_BLOCKED and we fall back to tap-to-unmute. ──
   const syncAudio = useCallback(() => {
     const player = playerRef.current
     if (!player) return
     try {
-      player.play() // never let OBS capture a paused frame
-      if (modeRef.current === 'LIVE') {
+      if (modeRef.current === 'LIVE' && playbackOkRef.current) {
         player.setMuted(false)
         player.setVolume(1)
       } else {
@@ -185,13 +201,13 @@ export default function Player() {
   }, [])
 
   // Gentle mid-broadcast audio check: only touch the player if it has actually
-  // drifted back to muted. Unlike syncAudio it never calls play() or re-sets
-  // volume on a healthy feed — those redundant calls flashed Twitch's overlay
-  // chrome and could rebuffer, which is what made the old 8s keepalive visible
-  // on-stream. Silent no-op in the common (already-audible) case.
+  // drifted back to muted. Unlike syncAudio it never re-sets volume on a
+  // healthy feed — redundant calls flashed Twitch's overlay chrome and could
+  // rebuffer, which is what made the old 8s keepalive visible on-stream.
+  // Silent no-op in the common (already-audible) case.
   const assertAudio = useCallback(() => {
     const player = playerRef.current
-    if (!player || modeRef.current !== 'LIVE') return
+    if (!player || modeRef.current !== 'LIVE' || !playbackOkRef.current) return
     try {
       if (player.getMuted()) {
         player.setMuted(false)
@@ -200,21 +216,21 @@ export default function Player() {
     } catch { /* best-effort */ }
   }, [])
 
-  // Pin the highest-quality feed. Twitch's list is empty until playback starts,
-  // so this is best-effort and retried; 'chunked' is source, else the top entry.
-  const forceQuality = useCallback(() => {
+  // Pin the highest-quality feed — source ('chunked') when present, else the
+  // top of Twitch's best→worst list. Called ONLY when FeedGate says the mask
+  // is over and the list is populated; a blind setQuality on an empty list
+  // mid-bootstrap is exactly the poke that froze prerolls.
+  const pinSourceQuality = useCallback(() => {
     const player = playerRef.current
     if (!player) return
     try {
       const qualities = player.getQualities?.() ?? []
-      if (qualities.length === 0) {
-        player.setQuality(SOURCE_QUALITY) // list not ready yet — ask for source anyway
-        return
-      }
+      if (qualities.length === 0) return
       const source = qualities.find((q) => q.group === SOURCE_QUALITY)
-      player.setQuality(source ? SOURCE_QUALITY : qualities[0].group) // list is best→worst
+      player.setQuality(source ? SOURCE_QUALITY : qualities[0].group)
+      logEvent(`quality pinned (${source ? SOURCE_QUALITY : qualities[0].group})`)
     } catch { /* best-effort */ }
-  }, [])
+  }, [logEvent])
 
   // Re-cover the feed the instant the mode changes — render-phase adjustment
   // so not even one frame of the new state leaks out unrevealed.
@@ -246,11 +262,10 @@ export default function Player() {
 
   // ── Feed reveal: the cover is reset to hidden-feed on every mode change (the
   //    render-phase block above) and whenever playback confidence is lost. It
-  //    lifts ONLY once the embed has confirmed playback of the armed channel
-  //    (playbackOk) plus a short hold to mask the startup chrome — never on a
-  //    timer alone. Re-arms on first load, reconnect, retune, and each OBS
-  //    watchdog reload; if the embed never actually plays, the branded cover
-  //    simply stays up and the watchdog rebuilds behind it. ──
+  //    lifts ONLY once FeedGate has confirmed broadcast content (playbackOk)
+  //    plus a short debounce — never on a timer or an embed event alone. If
+  //    the embed never actually plays, the branded cover simply stays up and
+  //    the gate rebuilds the embed behind it. ──
   useEffect(() => {
     if (state.mode !== 'LIVE' || !playbackOk) return
     const t = setTimeout(() => setFeedReady(true), REVEAL_HOLD_MS)
@@ -267,12 +282,27 @@ export default function Player() {
     return unsub
   }, [])
 
+  // Operator hook (?channel=name): force /player onto a specific public Twitch
+  // channel, bypassing slot data — for checking a channel inside OBS before
+  // its slot starts, and for driving deterministic end-to-end tests. The
+  // admin emergency override still wins.
+  const forcedChannel = useMemo(() => {
+    if (typeof window === 'undefined') return null
+    const raw = new URLSearchParams(window.location.search).get('channel')
+    if (!raw) return null
+    const cleaned = raw.trim().toLowerCase().replace(/[^a-z0-9_]/g, '')
+    return cleaned || null
+  }, [])
+
   // ── Broadcast source is derived live from the shared slot data + override,
   //    so an admin changing a slot's stream URL or status (or the clock rolling
   //    into a new slot) switches /player automatically — no server round-trip. ──
   const broadcast = useMemo<BroadcastDoc>(() => {
     if (emergency?.enabled && emergency.streamUrl) {
       return { streamUrl: emergency.streamUrl, source: 'emergency_override', slotId: null }
+    }
+    if (forcedChannel) {
+      return { streamUrl: `https://www.twitch.tv/${forcedChannel}`, source: 'slot', slotId: null }
     }
     if (currentSlot) {
       const assigned = Boolean(currentSlot.assignedUid) || currentSlot.status === 'confirmed' || currentSlot.status === 'live'
@@ -288,7 +318,7 @@ export default function Player() {
     // mid-bootstrap — how a mistuned offline page ended up on-stream.
     if (!slotsReady) return { streamUrl: '', source: 'loading', slotId: null }
     return { streamUrl: DEFAULT_STREAM_URL, source: 'default', slotId: null }
-  }, [emergency, currentSlot, slotsReady])
+  }, [emergency, forcedChannel, currentSlot, slotsReady])
 
   useEffect(() => {
     dispatch({ type: 'BROADCAST_CHANGED', broadcast, nowMs: Date.now() })
@@ -313,7 +343,7 @@ export default function Player() {
     return () => clearInterval(t)
   }, [])
 
-  // ── Twitch player lifecycle: one instance, retuned per channel ──
+  // ── Twitch player lifecycle: one instance, rebuilt per channel ──
   const channel = 'channel' in state ? state.channel : null
 
   // ── Authoritative live signal (server Helix check). feePollerBackground hits
@@ -346,10 +376,11 @@ export default function Player() {
     else if (signal === 'GO_OFFLINE') feedDown()
   }, [channel, activity, state.mode, feedDown])
 
-  // Reaching LIVE by ANY path (embed ONLINE/PLAYING or the server signal above)
-  // means the channel is up — cancel the mount-timeout so it can't later fire a
-  // spurious PLAYER_OFFLINE and bounce a healthy stream into BRB. This is the
-  // fix for a false "We'll be right back" ~15s after an already-live load.
+  // Reaching LIVE by ANY path (embed ONLINE/PLAYING, the server signal above,
+  // or FeedGate confirming frames) means the channel is up — cancel the
+  // mount-timeout so it can't later fire a spurious PLAYER_OFFLINE and bounce
+  // a healthy stream into BRB. This is the fix for a false "We'll be right
+  // back" ~15s after an already-live load.
   useEffect(() => {
     if (state.mode === 'LIVE' && mountTimeoutRef.current) {
       clearTimeout(mountTimeoutRef.current)
@@ -369,10 +400,13 @@ export default function Player() {
       mountTimeoutRef.current = setTimeout(feedDown, MOUNT_TIMEOUT_MS)
     }
 
-    // Any signal that the channel is live cuts us to LIVE. We deliberately do
-    // NOT rely on ONLINE alone: inside OBS's CEF that event is unreliable and
-    // the page would sit on "Starting Soon" forever, so a real PLAYING event
-    // (playback actually began ⇒ the channel must be online) counts too.
+    // Any signal that the channel is live cuts the state machine to LIVE. We
+    // deliberately do NOT rely on ONLINE alone: inside OBS's CEF that event is
+    // unreliable and the page would sit on "Starting Soon" forever, so a real
+    // PLAYING event (playback began ⇒ the channel must be online) counts too.
+    // Note this ONLY moves the state machine — the cover lift, audio, and
+    // quality pin all wait for FeedGate, because PLAYING fires while Twitch's
+    // stitched preroll ad is playing and acting on the player then wedged it.
     const goLive = (via: string) => {
       // Guard: only events from an embed armed on the CURRENT channel count.
       // A channel change tears the embed down and rebuilds it, but an event
@@ -385,21 +419,14 @@ export default function Player() {
       logEvent(`→ LIVE (${via})`)
       if (mountTimeoutRef.current) clearTimeout(mountTimeoutRef.current)
       setAudioBlocked(false) // fresh live feed — clear any stale block flag
-      try { player.play() } catch { /* play() is best-effort */ }
-      setPlaybackOk(true) // unlocks the cover reveal (after the hold)
+      gateRef.current?.notePlaying() // fallback truth if getCurrentTime is unavailable
       dispatch({ type: 'PLAYER_ONLINE' })
-      syncAudio()
-      // Pin source quality once playback is up. The quality list populates a
-      // beat after PLAYING, so retry across the reveal-hold window (all covered).
-      forceQuality()
-      setTimeout(forceQuality, 1_500)
-      setTimeout(forceQuality, 3_000)
     }
 
     let player: TwitchPlayer
 
     const attach = (PlayerCtor: TwitchPlayerCtor) => {
-      player.addEventListener(PlayerCtor.READY, () => { logEvent('READY'); syncAudio(); forceQuality() })
+      player.addEventListener(PlayerCtor.READY, () => logEvent('READY'))
       player.addEventListener(PlayerCtor.ONLINE, () => goLive('online'))
       if (PlayerCtor.PLAYING) player.addEventListener(PlayerCtor.PLAYING, () => goLive('playing'))
       if (PlayerCtor.PLAYBACK_BLOCKED) {
@@ -423,7 +450,8 @@ export default function Player() {
       // because the drop keeps re-firing, never comes back. Server-live wins.
       // Either way, playback is no longer confirmed — re-cover the feed so the
       // encode shows the branded curtain, never Twitch's offline chrome; a
-      // spurious drop re-fires PLAYING moments later and the cover lifts again.
+      // spurious drop keeps frames advancing and FeedGate re-confirms moments
+      // later, so the cover lifts again on its own.
       const onEmbedDrop = (label: string) => {
         const serverLive = isServerLive(channelRef.current, activityRef.current, Date.now())
         logEvent(`${label}${serverLive ? ' (ignored: server live)' : ''}`)
@@ -446,6 +474,7 @@ export default function Player() {
       if (playerContainerRef.current) playerContainerRef.current.innerHTML = ''
       playerRef.current = null
       armedChannelRef.current = null
+      gateRef.current = null
       coverFeed()
     }
 
@@ -455,6 +484,10 @@ export default function Player() {
       loadTwitchPlayer()
         .then((PlayerCtor) => {
           if (cancelled || !playerContainerRef.current || playerRef.current) return
+          // Quiet bootstrap: autoplay muted with stock options and then hands
+          // off. No quality request here — the pin waits for FeedGate, because
+          // any rendition demand while Twitch stitches the preroll can wedge
+          // playback on the first ad frame.
           player = new PlayerCtor(playerContainerRef.current, {
             channel,
             parent: [hostname],
@@ -462,11 +495,11 @@ export default function Player() {
             height: '100%',
             autoplay: true,
             muted: true,
-            quality: SOURCE_QUALITY, // request source from first frame (best-effort hint)
           })
           attach(PlayerCtor)
           playerRef.current = player
           armedChannelRef.current = channel
+          gateRef.current = createFeedGate(Date.now())
           armMountTimeout()
         })
         .catch(() => { logEvent('embed load failed'); feedDown() })
@@ -476,52 +509,99 @@ export default function Player() {
       cancelled = true
       if (mountTimeoutRef.current) clearTimeout(mountTimeoutRef.current)
     }
-  }, [channel, rebuildNonce, hostname, obs, logEvent, syncAudio, forceQuality, feedDown, coverFeed])
+  }, [channel, rebuildNonce, hostname, obs, logEvent, syncAudio, feedDown, coverFeed])
 
-  // ── Embed watchdog: if we're LIVE (the server or a prior event says the
-  //    streamer is up) but the embed hasn't confirmed playback for 20s, it's
-  //    wedged — rebuild it from scratch, tuned from its constructor, behind
-  //    the branded cover. Rate-limited inside rebuildPlayer (30s min). ──
+  // ── FeedGate sampling: once a second, read what the embed is *actually*
+  //    doing (frames advancing? quality list up?) and act on the gate's
+  //    decisions. This loop — not Twitch's events — owns the cover, the
+  //    audio unlock, the quality pin, and wedge recovery:
+  //
+  //      confirmed   broadcast content flowing post-mask → playbackOk (reveal
+  //                  + unmute); also cuts the state machine to LIVE, which
+  //                  covers OBS's CEF when ONLINE/PLAYING never fire.
+  //      pinQuality  safe moment to pin source quality (list populated).
+  //      nudge       frames stopped on a previously-flowing feed → one gentle
+  //                  play() behind the cover.
+  //      rebuild     LIVE but no frames for 20s (e.g. frozen on a preroll —
+  //                  the player chrome still claims "playing") → tear down and
+  //                  reconstruct the embed behind the cover. ──
   useEffect(() => {
     if (!channel) return
-    let stallTicks = 0
     const t = setInterval(() => {
-      if (!playerRef.current) return
-      if (modeRef.current === 'LIVE' && !playbackOkRef.current) {
-        stallTicks += 1
-        if (stallTicks * WATCHDOG_TICK_MS >= STALL_REBUILD_MS) {
-          stallTicks = 0
-          logEvent('watchdog: LIVE but no playback — rebuilding')
-          rebuildPlayer()
-        }
-      } else {
-        stallTicks = 0
+      const player = playerRef.current
+      const gate = gateRef.current
+      if (!player || !gate) return
+      let currentTimeS: number | null = null
+      let qualityCount = 0
+      try {
+        const ct = player.getCurrentTime?.()
+        if (typeof ct === 'number' && Number.isFinite(ct)) currentTimeS = ct
+        qualityCount = player.getQualities?.()?.length ?? 0
+      } catch { /* sampled best-effort — nulls mean "unknown" */ }
+
+      const d: GateDecision = gate.sample({
+        nowMs: Date.now(),
+        currentTimeS,
+        qualityCount,
+        live: modeRef.current === 'LIVE',
+      })
+
+      if (d.pinQuality) pinSourceQuality()
+      if (d.nudge) {
+        logEvent('stall: nudging play()')
+        try { player.play() } catch { /* best-effort */ }
       }
-    }, WATCHDOG_TICK_MS)
+      if (d.rebuild) {
+        logEvent('gate: no frames while LIVE — rebuilding')
+        rebuildPlayer()
+      }
+      if (d.confirmed !== playbackOkRef.current) {
+        logEvent(d.confirmed ? 'gate: content confirmed' : `gate: feed lost (${d.phase})`)
+        setPlaybackOk(d.confirmed)
+        if (!d.confirmed) setFeedReady(false)
+      }
+      // Frames of broadcast content are flowing ⇒ the channel is live, even if
+      // every Twitch event went missing (OBS CEF) — bring the state machine.
+      // Defer to the server when it has WATCHED the channel go offline, so
+      // this inference can't fight a Helix-driven BRB into a LIVE↔BRB flap;
+      // real-time embed events (ONLINE/PLAYING) still win over a stale sample.
+      if (
+        d.confirmed &&
+        modeRef.current !== 'LIVE' &&
+        !isServerConfirmedOffline(channelRef.current, activityRef.current, Date.now())
+      ) {
+        dispatch({ type: 'PLAYER_ONLINE' })
+      }
+
+      if (debug) {
+        setGateInfo(`${d.phase} · mask ${(d.maskRemainingMs / 1000).toFixed(0)}s · idle ${(d.sinceProgressMs / 1000).toFixed(0)}s · q${qualityCount}`)
+      }
+    }, PROGRESS_TICK_MS)
     return () => clearInterval(t)
-  }, [channel, rebuildPlayer, logEvent])
+  }, [channel, rebuildNonce, debug, pinSourceQuality, rebuildPlayer, logEvent])
 
-  // ── Playback + audio: the feed always autoplays; audible only when LIVE ──
-  useEffect(() => { syncAudio() }, [state.mode, syncAudio])
+  // ── Audio follows mode + gate: audible only when LIVE with confirmed
+  //    content; muted through every mask/bootstrap/stall window. ──
+  useEffect(() => { syncAudio() }, [state.mode, playbackOk, syncAudio])
 
-  // While LIVE, gently re-check audio so the feed can't silently drift muted
+  // While on-air, gently re-check audio so the feed can't silently drift muted
   // (guards against Twitch/CEF quietly re-muting mid-broadcast). assertAudio is
   // a no-op unless actually muted, so it never disturbs a healthy feed.
   useEffect(() => {
-    if (state.mode !== 'LIVE') return
+    if (state.mode !== 'LIVE' || !playbackOk) return
     const t = setInterval(assertAudio, AUDIO_ASSERT_MS)
     return () => clearInterval(t)
-  }, [state.mode, assertAudio])
+  }, [state.mode, playbackOk, assertAudio])
 
   // ── Browser-only: unlock audio on the first user gesture. Browsers refuse a
-  //    programmatic unmute until the viewer interacts; OBS needs none of this. ──
+  //    programmatic unmute until the viewer interacts; OBS needs none of this.
+  //    The gesture just clears the block and re-applies the audio policy —
+  //    audio still waits for FeedGate, so a tap during the ad mask can't leak
+  //    ad sound from behind the cover. ──
   useEffect(() => {
     if (obs) return
     const unlock = () => {
-      const player = playerRef.current
-      if (player && modeRef.current === 'LIVE') {
-        try { player.setMuted(false); player.setVolume(1); player.play() } catch { /* best-effort */ }
-      }
+      syncAudio()
       setAudioBlocked(false)
     }
     const opts: AddEventListenerOptions = { passive: true }
@@ -533,7 +613,7 @@ export default function Player() {
       window.removeEventListener('keydown', unlock)
       window.removeEventListener('touchstart', unlock)
     }
-  }, [obs])
+  }, [obs, syncAudio])
 
   const streamerName = currentSlot?.assignedName || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
@@ -559,16 +639,21 @@ export default function Player() {
   return (
     <div className="fixed inset-0 bg-black overflow-hidden">
       {/* Twitch player — always mounted while a channel is armed; hidden+muted
-          unless LIVE so its ONLINE event can cut back at any moment. */}
+          unless LIVE so playback can be confirmed and cut back at any moment.
+          pointer-events off: no click or hover may ever reach the iframe, so
+          Twitch's control bar / pause / channel chrome can't be summoned onto
+          the encode (or by a stray viewer click) — /player has its own
+          tap-for-sound affordance outside the iframe. */}
       <div
         ref={playerContainerRef}
         className="absolute inset-0"
-        style={{ visibility: state.mode === 'LIVE' ? 'visible' : 'hidden' }}
+        style={{ visibility: state.mode === 'LIVE' ? 'visible' : 'hidden', pointerEvents: 'none' }}
       />
 
-      {/* Branded curtain over the LIVE feed until it settles — masks the Twitch
-          play-button poster / preroll / channel-chrome reveal on first load and
-          on every OBS watchdog reload. */}
+      {/* Branded curtain over the LIVE feed until FeedGate confirms settled
+          broadcast content — masks the play-button poster, the entire preroll
+          ad window (video, countdown text, "commercial break" chrome), and
+          every startup/rebuild reveal. */}
       {state.mode === 'LIVE' && !feedReady && <FeedCover label="Now Live" />}
 
       {state.mode === 'OVERRIDE' && (
@@ -604,10 +689,7 @@ export default function Player() {
         <button
           type="button"
           onClick={() => {
-            const player = playerRef.current
-            if (player) {
-              try { player.setMuted(false); player.setVolume(1); player.play() } catch { /* best-effort */ }
-            }
+            syncAudio()
             setAudioBlocked(false)
           }}
           className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-full bg-white/90 px-5 py-2.5 text-sm font-semibold text-black shadow-lg backdrop-blur transition hover:bg-white"
@@ -621,7 +703,8 @@ export default function Player() {
           obs={obs}
           mode={state.mode}
           channel={channel}
-          playback={playbackOk ? (feedReady ? 'playing (revealed)' : 'playing (covered)') : 'not confirmed'}
+          playback={playbackOk ? (feedReady ? 'confirmed (revealed)' : 'confirmed (covered)') : 'not confirmed'}
+          gate={gateInfo}
           audioBlocked={audioBlocked}
           serverLive={activity?.lastLive ? `yes @ ${activity.lastCheckedAt ?? '?'}` : String(activity?.lastLive ?? '—')}
           log={eventLog}
@@ -632,12 +715,13 @@ export default function Player() {
 }
 
 function DebugOverlay({
-  obs, mode, channel, playback, audioBlocked, serverLive, log,
+  obs, mode, channel, playback, gate, audioBlocked, serverLive, log,
 }: {
   obs: boolean
   mode: MasterState['mode']
   channel: string | null
   playback: string
+  gate: string
   audioBlocked: boolean
   serverLive: string
   log: string[]
@@ -650,6 +734,7 @@ function DebugOverlay({
       <div className={row}><span>mode</span><span className="text-white">{mode}</span></div>
       <div className={row}><span>channel</span><span>{channel ?? '—'}</span></div>
       <div className={row}><span>playback</span><span>{playback}</span></div>
+      <div className={row}><span>gate</span><span className="truncate max-w-[12rem]">{gate}</span></div>
       <div className={row}><span>audioBlocked</span><span>{String(audioBlocked)}</span></div>
       <div className={row}><span>server live</span><span className="truncate max-w-[10rem]">{serverLive}</span></div>
       <div className="mt-2 border-t border-white/15 pt-1 text-white/60">events</div>
