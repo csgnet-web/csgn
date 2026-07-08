@@ -25,6 +25,10 @@ export interface LiveSlotContextValue {
   manualOverride: ManualOverride | null
   tokenStats: TokenStats | null
   nowMs: number
+  /** True once the first slots snapshot has arrived. Until then currentSlot
+   *  is null because the data hasn't loaded — NOT because no slot is claimed —
+   *  and consumers like /player must not fall back to the default channel. */
+  slotsReady: boolean
 }
 
 export const LiveSlotContext = createContext<LiveSlotContextValue>({
@@ -33,4 +37,5 @@ export const LiveSlotContext = createContext<LiveSlotContextValue>({
   manualOverride: null,
   tokenStats: null,
   nowMs: Date.now(),
+  slotsReady: false,
 })

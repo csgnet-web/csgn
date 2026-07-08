@@ -1,13 +1,18 @@
 /**
  * CSGN brand wipe — the network's transition stinger. Shared by /watch
  * (slot changes) and /player (master-control state changes).
+ *
+ * One continuous sweep: in from the left, hold center, out to the RIGHT
+ * (the `csgn-wipe` keyframes, 1.4s — matching the callers' hide timeout).
+ * It mounts fresh per wipe so the animation always starts from the top; the
+ * old approach transitioned back out the way it came in, which read as the
+ * stinger stuttering or running twice on-stream.
  */
 export function WipeOverlay({ visible, label = 'Now Live' }: { visible: boolean; label?: string }) {
+  if (!visible) return null
   return (
     <div
-      className={`absolute inset-0 z-20 pointer-events-none transition-all duration-700 ease-in-out ${
-        visible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-full'
-      }`}
+      className="csgn-wipe absolute inset-0 z-20 pointer-events-none"
       style={{
         background: 'linear-gradient(135deg, #ff2346 0%, #0a0a14 60%)',
       }}
