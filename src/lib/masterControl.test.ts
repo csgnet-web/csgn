@@ -3,6 +3,7 @@ import {
   reduce,
   serverLiveSignal,
   isServerLive,
+  isServerConfirmedOffline,
   INITIAL_STATE,
   BRB_GRACE_MS,
   STARTING_SOON_MAX_MS,
@@ -207,5 +208,33 @@ describe('isServerLive (embed-drop override gate)', () => {
     expect(isServerLive('streamer_one', { ...base, channel: 'other' }, NOW)).toBe(false)
     expect(isServerLive(null, base, NOW)).toBe(false)
     expect(isServerLive('streamer_one', undefined, NOW)).toBe(false)
+  })
+})
+
+describe('isServerConfirmedOffline (client live-inference override)', () => {
+  const NOW = 2_000_000
+  const watchedEnd: StreamActivitySample = {
+    channel: 'streamer_one',
+    lastCheckedAt: new Date(NOW - 10_000).toISOString(),
+    lastLive: false,
+    lastLiveAt: new Date(NOW - (SERVER_OFFLINE_CONFIRM_MS + 1)).toISOString(),
+  }
+
+  it('is true only when a fresh sample watched the broadcast end', () => {
+    expect(isServerConfirmedOffline('streamer_one', watchedEnd, NOW)).toBe(true)
+    expect(isServerConfirmedOffline('STREAMER_ONE', watchedEnd, NOW)).toBe(true) // case-insensitive
+  })
+
+  it('is false while the server still reports live, or the drop is recent', () => {
+    expect(isServerConfirmedOffline('streamer_one', { ...watchedEnd, lastLive: true }, NOW)).toBe(false)
+    expect(isServerConfirmedOffline('streamer_one', { ...watchedEnd, lastLiveAt: new Date(NOW - 20_000).toISOString() }, NOW)).toBe(false)
+  })
+
+  it('is false for a stale sample, an unseen channel, or missing data — playback inference wins', () => {
+    expect(isServerConfirmedOffline('streamer_one', { ...watchedEnd, lastCheckedAt: new Date(NOW - (SERVER_FRESH_MS + 1)).toISOString() }, NOW)).toBe(false)
+    expect(isServerConfirmedOffline('streamer_one', { ...watchedEnd, lastLiveAt: undefined }, NOW)).toBe(false)
+    expect(isServerConfirmedOffline('streamer_one', { ...watchedEnd, channel: 'other' }, NOW)).toBe(false)
+    expect(isServerConfirmedOffline(null, watchedEnd, NOW)).toBe(false)
+    expect(isServerConfirmedOffline('streamer_one', undefined, NOW)).toBe(false)
   })
 })

@@ -79,6 +79,31 @@ export function isServerLive(
 }
 
 /**
+ * Has the server *watched this channel go offline*? True only for a fresh
+ * Helix sample, matching this channel, that reports not-live AND has a prior
+ * confirmed-live timestamp older than the confirm window — i.e. the poller
+ * saw the broadcast end, not merely "hasn't sampled it yet". Used to stop
+ * client-side live inference (frames flowing in the embed) from re-declaring
+ * LIVE against the operator's server truth, which would flap BRB↔LIVE.
+ */
+export function isServerConfirmedOffline(
+  channel: string | null,
+  activity: StreamActivitySample | undefined,
+  nowMs: number,
+): boolean {
+  if (!channel || !activity || activity.lastLive) return false
+  if (activity.channel && activity.channel.toLowerCase() !== channel.toLowerCase()) return false
+  const checkedMs = activity.lastCheckedAt ? new Date(activity.lastCheckedAt).getTime() : 0
+  const fresh = checkedMs > 0 && nowMs - checkedMs < SERVER_FRESH_MS
+  if (!fresh) return false
+  const lastLiveMs = activity.lastLiveAt ? new Date(activity.lastLiveAt).getTime() : 0
+  // Require a prior confirmed-live sample so we only treat a stream as ended
+  // when the server actually watched it go offline — never one it simply
+  // hasn't sampled yet.
+  return lastLiveMs > 0 && nowMs - lastLiveMs > SERVER_OFFLINE_CONFIRM_MS
+}
+
+/**
  * Decide what the server's Twitch Helix sample tells us to do, independent of
  * the (flaky) embed events. Pure so every situation is unit-testable.
  *
@@ -107,14 +132,7 @@ export function serverLiveSignal(
     return mode === 'STARTING_SOON' || mode === 'INTERMISSION' || mode === 'BRB' ? 'GO_LIVE' : null
   }
 
-  const checkedMs = activity?.lastCheckedAt ? new Date(activity.lastCheckedAt).getTime() : 0
-  const fresh = checkedMs > 0 && nowMs - checkedMs < SERVER_FRESH_MS
-  if (fresh && mode === 'LIVE' && activity && !activity.lastLive) {
-    const lastLiveMs = activity.lastLiveAt ? new Date(activity.lastLiveAt).getTime() : 0
-    // Require a prior confirmed-live sample so we only drop a stream the server
-    // actually watched go offline — never one it simply hasn't sampled yet.
-    if (lastLiveMs > 0 && nowMs - lastLiveMs > SERVER_OFFLINE_CONFIRM_MS) return 'GO_OFFLINE'
-  }
+  if (mode === 'LIVE' && isServerConfirmedOffline(channel, activity, nowMs)) return 'GO_OFFLINE'
   return null
 }
 

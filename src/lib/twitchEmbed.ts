@@ -29,6 +29,11 @@ export interface TwitchPlayer {
   /** Best→worst list; empty until playback has started. */
   getQualities?: () => TwitchQuality[]
   getQuality?: () => string
+  /** Seconds of playback position. For live channels this tracks the video
+   *  element, so it advancing is proof that frames are actually rendering —
+   *  the ground-truth signal FeedGate uses to tell a playing feed from a
+   *  wedged one (Twitch's events keep reporting "playing" on a frozen feed). */
+  getCurrentTime?: () => number
 }
 
 export interface TwitchPlayerCtor {
