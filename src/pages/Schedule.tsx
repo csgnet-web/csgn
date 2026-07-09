@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Radio, Info } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { subscribeToSlots, isCeoCreator, type Slot } from '@/lib/slots'
+import { isCeoCreator, type Slot } from '@/lib/slots'
 import { useAuth } from '@/contexts/useAuth'
+import { useLiveSlot } from '@/contexts/useLiveSlot'
 const WEEK_SPAN = 7
 
 function toMillis(value: unknown): number {
@@ -75,14 +76,10 @@ function etMiddayFromOffset(offset: number): Date {
 
 export default function Schedule() {
   useAuth()
-  const [allSlots, setAllSlots] = useState<Slot[]>([])
-  const [nowMs, setNowMs] = useState(() => Date.now())
-
-  // Tick so the Today column drops slots as they finish.
-  useEffect(() => {
-    const t = setInterval(() => setNowMs(Date.now()), 30_000)
-    return () => clearInterval(t)
-  }, [])
+  // Shared app-wide slots listener — already normalized, sorted, and ticking
+  // nowMs every 30s. Opening a second Firestore listener here would double
+  // every visitor's slot reads.
+  const { allSlots, nowMs } = useLiveSlot()
   const days = useMemo(() => {
     const labels: string[] = []
     for (let i = 0; i < WEEK_SPAN; i++) {
@@ -106,18 +103,6 @@ export default function Schedule() {
       )
     }
     return labels
-  }, [])
-
-  useEffect(() => {
-    const fromDate = etMiddayFromOffset(-1)
-    const toDate = etMiddayFromOffset(8)
-    const unsub = subscribeToSlots(fromDate, toDate, (slots) => {
-      const normalized = slots
-        .filter((slot) => toMillis(slot.startTime) > 0 && toMillis(slot.endTime) > 0)
-        .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
-      setAllSlots(normalized)
-    })
-    return unsub
   }, [])
 
   // Unnamed claimed slots fall back to the "CEO Creator" billing only when the

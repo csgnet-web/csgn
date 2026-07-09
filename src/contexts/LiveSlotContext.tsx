@@ -102,9 +102,12 @@ export function LiveSlotProvider({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; clearInterval(t) }
   }, [])
 
-  // Single listener for all slot data — creatorFees are written server-side by feePollerBackground
+  // Single listener for all slot data — creatorFees are written server-side by
+  // feePollerBackground. Window: -3h catches the in-progress slot (2h max) and
+  // +8d covers the /schedule page's 7 ET days incl. the trailing 1 AM slot; no
+  // consumer renders already-finished slots, so deeper history is never read.
   useEffect(() => {
-    const from = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    const from = new Date(Date.now() - 3 * 60 * 60 * 1000)
     const to = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000)
     const unsub = subscribeToSlots(from, to, (slots) => {
       if (!mountedRef.current) return
@@ -114,7 +117,7 @@ export function LiveSlotProvider({ children }: { children: React.ReactNode }) {
           .filter((s) => toMillis(s.startTime) > 0 && toMillis(s.endTime) > 0)
           .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime)),
       )
-    })
+    }, 120)
     // Backstop: if Firestore can't deliver a first snapshot (rules/network),
     // declare readiness anyway after a generous window so consumers with a
     // "wait for slot data" gate (/player) can still fall back to defaults

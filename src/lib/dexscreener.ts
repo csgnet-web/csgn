@@ -1,19 +1,13 @@
 /**
- * Live fee tracking via DexScreener token-pairs endpoint.
- *
- * Polls every 15s, captures h24 USD-volume delta during an active slot,
- * converts to SOL, and applies creator fee rate based on market-cap tiers.
+ * Pump.fun creator-fee tier tables and the one-shot client-side token stats
+ * fallback. Live fee tracking runs server-side in
+ * netlify/functions/feePollerBackground.ts — browsers only read Firestore.
  */
 
-import { doc, getDoc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore'
-import { db } from '@/config/firebase'
-import { CSGN_MINT, type CreatorFees } from '@/lib/slots'
+import { CSGN_MINT } from '@/lib/slots'
 
 const DS_API = 'https://api.dexscreener.com/token-pairs/v1'
 const DS_CHAIN = 'solana'
-const POLL_INTERVAL_MS = 15_000
-const MIN_API_CALL_INTERVAL_MS = 1_500 // <= 40 calls/minute per client
-const CACHE_TTL_MS = 2_000
 const STREAMER_SHARE_OF_CREATOR_FEE = 0.3
 
 interface DexPair {
@@ -24,8 +18,6 @@ interface DexPair {
   fdv?: number
   quoteToken?: { symbol?: string }
 }
-
-type DexResponse = DexPair[]
 
 export interface PumpFeeTier {
   minMarketCapSOL: number
@@ -120,220 +112,4 @@ export async function fetchTokenStats(): Promise<TokenStatsSnapshot | null> {
   } catch {
     return null
   }
-}
-
-let lastFetchAt = 0
-let cachedData: { volumeH1Usd: number; volumeH24Usd: number; solPriceUsd: number; marketCapSOL: number } | null = null
-
-/** Fetch best pair and return h24 volume + SOL conversion inputs. */
-async function fetchCsgnData(): Promise<{ volumeH1Usd: number; volumeH24Usd: number; solPriceUsd: number; marketCapSOL: number } | null> {
-  try {
-    const now = Date.now()
-    if (cachedData && now - lastFetchAt < CACHE_TTL_MS) return cachedData
-    if (now - lastFetchAt < MIN_API_CALL_INTERVAL_MS) return cachedData
-    lastFetchAt = now
-
-    const res = await fetch(`${DS_API}/${DS_CHAIN}/${CSGN_MINT}`, { cache: 'no-store' })
-    if (!res.ok) return null
-    const pairs: DexResponse = await res.json()
-
-    if (!Array.isArray(pairs) || pairs.length === 0) return null
-
-    const best = [...pairs].sort((a, b) => (b.volume?.h24 ?? 0) - (a.volume?.h24 ?? 0))[0]
-    const priceUsd = parseFloat(best.priceUsd ?? '0')
-    const priceNative = parseFloat(best.priceNative ?? '0')
-    if (priceUsd <= 0) return null
-
-    const solPriceUsd = best.quoteToken?.symbol?.toUpperCase() === 'SOL' && priceNative > 0 ? priceUsd / priceNative : 150
-    const marketCapUsd = best.marketCap ?? best.fdv ?? 0
-    const marketCapSOL = marketCapUsd > 0 && solPriceUsd > 0 ? marketCapUsd / solPriceUsd : 0
-
-    cachedData = {
-      volumeH1Usd: best.volume?.h1 ?? 0,
-      volumeH24Usd: best.volume?.h24 ?? 0,
-      solPriceUsd,
-      marketCapSOL,
-    }
-    return cachedData
-  } catch {
-    return null
-  }
-}
-
-interface SlotFeeContext {
-  exists: boolean
-  existing: CreatorFees | undefined
-}
-
-async function saveFeeToFirestore(
-  slotId: string,
-  tradingVolumeSOL: number,
-  feeOwedSOL: number,
-  tradingVolumeUSD: number,
-  feeOwedUSD: number,
-  marketCapSOL: number,
-  checkpoints: NonNullable<CreatorFees['marketCapCheckpoints']>,
-  tierVolumeMap: Map<string, number>,
-  context: SlotFeeContext,
-): Promise<void> {
-  try {
-    if (!context.exists) return
-
-    const slotRef = doc(db, 'slots', slotId)
-    const existing = context.existing
-    if (existing?.paymentStatus === 'paid' || existing?.paymentStatus === 'declined') return
-
-    const activeTier = resolvePumpFeeTier(marketCapSOL)
-    const tierFeeBreakdown = Array.from(tierVolumeMap.entries())
-      .filter(([, volumeSOL]) => volumeSOL > 0)
-      .map(([key, volumeSOL]) => {
-        const [minStr] = key.split(':')
-        const tier = PUMP_FUN_FEE_TIERS.find((t) => t.minMarketCapSOL === Number(minStr)) ?? PUMP_FUN_FEE_TIERS[0]
-        const creatorFeeSOL = volumeSOL * tier.creatorFeeRate
-        const streamerFeeSOL = creatorFeeSOL * STREAMER_SHARE_OF_CREATOR_FEE
-        return {
-          tierLabel: `${formatTierRange(tier)} (${(tier.creatorFeeRate * 100).toFixed(3)}%)`,
-          marketCapRange: formatTierRange(tier),
-          creatorFeeRate: tier.creatorFeeRate,
-          streamerShareRate: tier.creatorFeeRate * STREAMER_SHARE_OF_CREATOR_FEE,
-          volumeSOL,
-          creatorFeeSOL,
-          streamerFeeSOL,
-        }
-      })
-      .sort((a, b) => b.volumeSOL - a.volumeSOL)
-
-    const fees: CreatorFees = {
-      tradingVolumeSOL,
-      tradingVolumeUSD,
-      feeOwedSOL,
-      feeOwedUSD,
-      marketCapSOL,
-      creatorFeeRate: activeTier.creatorFeeRate,
-      streamerShareRate: activeTier.creatorFeeRate * STREAMER_SHARE_OF_CREATOR_FEE,
-      marketCapTierLabel: `${formatTierRange(activeTier)} (${(activeTier.creatorFeeRate * 100).toFixed(3)}%)`,
-      marketCapTierRange: formatTierRange(activeTier),
-      tierFeeBreakdown,
-      marketCapCheckpoints: checkpoints,
-      paymentStatus: existing?.paymentStatus ?? 'pending',
-      streamerWalletAddress: existing?.streamerWalletAddress ?? '',
-      updatedAt: new Date().toISOString(),
-      ...(existing?.paidAt ? { paidAt: existing.paidAt } : {}),
-      ...(existing?.declineReason ? { declineReason: existing.declineReason } : {}),
-    }
-
-    await updateDoc(slotRef, { creatorFees: fees })
-  } catch {
-    // ignore background failures
-  }
-}
-
-async function lockFeeSnapshot(slotId: string): Promise<void> {
-  try {
-    const slotRef = doc(db, 'slots', slotId)
-    const snap = await getDoc(slotRef)
-    if (!snap.exists()) return
-    const existing = snap.data()?.creatorFees as CreatorFees | undefined
-    if (!existing || existing.snapshotLockedAt) return
-    await updateDoc(slotRef, { 'creatorFees.snapshotLockedAt': serverTimestamp(), 'creatorFees.updatedAt': new Date().toISOString() })
-  } catch {
-    // keep existing retry behavior (none)
-  }
-}
-
-export interface FeeTrackerOptions {
-  slotId: string
-  slotStartTime?: string
-  slotEndTime: string
-  onUpdate: (feeSOL: number, volumeSOL: number, feeUSD: number, volumeUSD: number) => void
-}
-
-export function startFeeTracker(options: FeeTrackerOptions): () => void {
-  const { slotId, slotStartTime, slotEndTime, onUpdate } = options
-
-  let baselineH24Usd: number | null = null
-  let intervalId: ReturnType<typeof setInterval> | null = null
-  let stopped = false
-  let previousEstimatedVolumeSOL = 0
-  const tierVolumeMap = new Map<string, number>()
-  let marketCapCheckpoints: NonNullable<CreatorFees['marketCapCheckpoints']> = []
-
-  // Subscribe once to the slot doc so per-poll writes can read paymentStatus
-  // and other fee metadata from a local closure instead of paying for a
-  // fresh getDoc on every 15s tick.
-  const slotContext: SlotFeeContext = { exists: false, existing: undefined }
-  const unsubSlot = onSnapshot(
-    doc(db, 'slots', slotId),
-    (snap) => {
-      slotContext.exists = snap.exists()
-      slotContext.existing = snap.data()?.creatorFees as CreatorFees | undefined
-    },
-    () => {
-      // ignore listener errors; saveFeeToFirestore will simply skip writes
-      slotContext.exists = false
-    },
-  )
-
-  const poll = async () => {
-    if (stopped) return
-
-    if (Date.now() > new Date(slotEndTime).getTime()) {
-      await lockFeeSnapshot(slotId)
-      stop()
-      return
-    }
-
-    const data = await fetchCsgnData()
-    if (!data) return
-
-    const { volumeH1Usd, volumeH24Usd, solPriceUsd, marketCapSOL } = data
-
-    if (baselineH24Usd === null) baselineH24Usd = volumeH24Usd
-
-    const deltaVolumeUsd = Math.max(0, volumeH24Usd - baselineH24Usd)
-    const slotElapsedMs = slotStartTime ? Math.max(0, Date.now() - new Date(slotStartTime).getTime()) : 0
-    const useH1Fallback = slotElapsedMs <= 2 * 60 * 60 * 1000
-    const estimatedSlotVolumeUsd = useH1Fallback ? Math.max(deltaVolumeUsd, volumeH1Usd) : deltaVolumeUsd
-    const deltaVolumeSOL = solPriceUsd > 0 ? estimatedSlotVolumeUsd / solPriceUsd : 0
-
-    const tier = resolvePumpFeeTier(marketCapSOL)
-    const tierMapKey = `${tier.minMarketCapSOL}:${tier.maxMarketCapSOL ?? 'max'}`
-    const incrementalVolumeSOL = Math.max(0, deltaVolumeSOL - previousEstimatedVolumeSOL)
-    previousEstimatedVolumeSOL = Math.max(previousEstimatedVolumeSOL, deltaVolumeSOL)
-    tierVolumeMap.set(tierMapKey, (tierVolumeMap.get(tierMapKey) ?? 0) + incrementalVolumeSOL)
-
-    marketCapCheckpoints = [
-      ...marketCapCheckpoints.slice(-23),
-      {
-        capturedAt: new Date().toISOString(),
-        marketCapSOL,
-        tierLabel: `${formatTierRange(tier)} (${(tier.creatorFeeRate * 100).toFixed(3)}%)`,
-        creatorFeeRate: tier.creatorFeeRate,
-      },
-    ]
-
-    const feeSOL = Array.from(tierVolumeMap.entries()).reduce((sum, [key, volumeSOL]) => {
-      const [minStr] = key.split(':')
-      const mapTier = PUMP_FUN_FEE_TIERS.find((t) => t.minMarketCapSOL === Number(minStr)) ?? PUMP_FUN_FEE_TIERS[0]
-      return sum + (volumeSOL * mapTier.creatorFeeRate * STREAMER_SHARE_OF_CREATOR_FEE)
-    }, 0)
-    const feeUSD = feeSOL * solPriceUsd
-
-    onUpdate(feeSOL, deltaVolumeSOL, feeUSD, estimatedSlotVolumeUsd)
-    await saveFeeToFirestore(slotId, deltaVolumeSOL, feeSOL, estimatedSlotVolumeUsd, feeUSD, marketCapSOL, marketCapCheckpoints, tierVolumeMap, slotContext)
-  }
-
-  const stop = () => {
-    stopped = true
-    unsubSlot()
-    if (intervalId !== null) {
-      clearInterval(intervalId)
-      intervalId = null
-    }
-  }
-
-  poll()
-  intervalId = setInterval(poll, POLL_INTERVAL_MS)
-
-  return stop
 }

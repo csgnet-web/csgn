@@ -334,7 +334,7 @@ export async function syncSlotsForDate(targetDate: Date): Promise<SyncScheduleRe
 
   const minStart = Math.min(...expected.map((s) => new Date(s.startTime).getTime()))
   const maxEnd = Math.max(...expected.map((s) => new Date(s.endTime).getTime()))
-  const existing = await fetchSlots(new Date(minStart - 60 * 60 * 1000), new Date(maxEnd + 60 * 60 * 1000))
+  const existing = await fetchSlots(new Date(minStart - 60 * 60 * 1000), new Date(maxEnd + 60 * 60 * 1000), 50)
 
   const existingById = new Map(existing.map((slot) => [slot.id, slot]))
   let created = 0
@@ -442,7 +442,7 @@ export async function reseedNextDaysAsCEO(startDate: Date, dayCount: number): Pr
 
     const minStart = Math.min(...expected.map((s) => new Date(s.startTime).getTime()))
     const maxEnd = Math.max(...expected.map((s) => new Date(s.endTime).getTime()))
-    const existing = await fetchSlots(new Date(minStart - 60 * 60 * 1000), new Date(maxEnd + 60 * 60 * 1000))
+    const existing = await fetchSlots(new Date(minStart - 60 * 60 * 1000), new Date(maxEnd + 60 * 60 * 1000), 50)
     const existingById = new Map(existing.map((slot) => [slot.id, slot]))
 
     for (const exp of expected) {
@@ -516,7 +516,7 @@ export async function generateSlotsForDate(targetDate: Date): Promise<Slot[]> {
   const createdIds = new Set(expected.map((s) => s.id))
   const from = new Date(Math.min(...expected.map((s) => new Date(s.startTime).getTime())) - 60 * 60 * 1000)
   const to = new Date(Math.max(...expected.map((s) => new Date(s.endTime).getTime())) + 60 * 60 * 1000)
-  const slots = await fetchSlots(from, to)
+  const slots = await fetchSlots(from, to, 50)
   return slots.filter((slot) => createdIds.has(slot.id) && slot.status === 'open')
 }
 
@@ -567,7 +567,8 @@ export async function appendNextThreeDays(): Promise<{ generated: number; dates:
  * Generates slots for today + next 2 days.
  */
 export async function wipeAndRegenerateSlots(startDate: Date): Promise<{ generated: number }> {
-  // Delete all existing slots
+  // Delete all existing slots. Intentionally unbounded: admin-only and rare,
+  // and firestore.rules only allows unlimited slots lists for admins.
   const allSnap = await getDocs(collection(db, SLOTS_COLLECTION))
   const deletes = allSnap.docs.map((d) => deleteDoc(d.ref))
   await Promise.all(deletes)
@@ -591,7 +592,7 @@ export async function wipeAndRegenerateSlots(startDate: Date): Promise<{ generat
 export async function migratePhaseSlotsToCEO(): Promise<{ updated: number }> {
   const from = new Date('2026-04-01T00:00:00.000Z')
   const to = new Date(PHASE_2_END_UTC)
-  const slots = await fetchSlots(from, to)
+  const slots = await fetchSlots(from, to, 200)
   let updated = 0
   for (const slot of slots) {
     if (slot.type !== 'ceo') {
@@ -603,75 +604,50 @@ export async function migratePhaseSlotsToCEO(): Promise<{ updated: number }> {
 }
 
 
-/** Fetch all slots for a date range. */
-export async function fetchSlots(from: Date, to: Date): Promise<Slot[]> {
+/**
+ * Fetch all slots for a date range. `max` is required so every call site
+ * declares an explicit read bound — firestore.rules rejects non-admin slots
+ * queries without a limit.
+ */
+export async function fetchSlots(from: Date, to: Date, max: number): Promise<Slot[]> {
   const q = query(
     collection(db, SLOTS_COLLECTION),
     where('startTime', '>=', from.toISOString()),
     where('startTime', '<=', to.toISOString()),
     orderBy('startTime', 'asc'),
+    limit(max),
   )
   const snap = await getDocs(q)
   return snap.docs.map((d) => d.data() as Slot)
 }
 
-/** Subscribe to slots changes in real time. */
-export function subscribeToSlots(from: Date, to: Date, callback: (slots: Slot[]) => void): Unsubscribe {
+/** Subscribe to slots changes in real time. `max` is required — see fetchSlots. */
+export function subscribeToSlots(from: Date, to: Date, callback: (slots: Slot[]) => void, max: number): Unsubscribe {
   const q = query(
     collection(db, SLOTS_COLLECTION),
     where('startTime', '>=', from.toISOString()),
     where('startTime', '<=', to.toISOString()),
     orderBy('startTime', 'asc'),
+    limit(max),
   )
   return onSnapshot(q, (snap) => {
     callback(snap.docs.map((d) => d.data() as Slot))
   })
 }
 
-/** Get the currently active slot based on current time. */
-export function subscribeToCurrentSlot(callback: (slot: Slot | null) => void): Unsubscribe {
-  const now = new Date()
-  const from = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000)
-  const to = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000)
-
+/**
+ * Slots assigned to a user, newest first. Reads only the user's own docs via
+ * the composite index (assignedUid ASC, startTime DESC) — see firestore.indexes.json.
+ */
+export async function fetchSlotsByAssignee(uid: string, max = 50): Promise<Slot[]> {
   const q = query(
     collection(db, SLOTS_COLLECTION),
-    where('startTime', '>=', from.toISOString()),
-    where('startTime', '<=', to.toISOString()),
-    orderBy('startTime', 'asc'),
+    where('assignedUid', '==', uid),
+    orderBy('startTime', 'desc'),
+    limit(max),
   )
-
-  let slots: Slot[] = []
-  let lastSlotId: string | null = null
-
-  const emitCurrentSlot = () => {
-    const currentTime = Date.now()
-    const current = slots.find((s) => {
-      const start = new Date(s.startTime).getTime()
-      const end = new Date(s.endTime).getTime()
-      return currentTime >= start && currentTime < end
-    }) ?? null
-
-    const nextId = current?.id ?? null
-    if (nextId !== lastSlotId) {
-      lastSlotId = nextId
-      callback(current)
-    }
-  }
-
-  const unsub = onSnapshot(q, (snap) => {
-    slots = snap.docs.map((d) => d.data() as Slot)
-    emitCurrentSlot()
-  })
-
-  const tick = setInterval(() => {
-    emitCurrentSlot()
-  }, 15_000)
-
-  return () => {
-    clearInterval(tick)
-    unsub()
-  }
+  const snap = await getDocs(q)
+  return snap.docs.map((d) => d.data() as Slot)
 }
 
 /** Place a bid on an auction slot using CSGN tokens. */

@@ -192,7 +192,7 @@ Browser (any number of concurrent users):
   LiveSlotContext (mounted once at app root)
   ├── onSnapshot(config/liveStream)   ← 1 listener: admin override (X broadcast post URL)
   ├── onSnapshot(public/tokenStats)   ← 1 listener: $CSGN price/mcap/volume
-  └── subscribeToSlots(±24h window)  ← 1 listener: all slot data + creatorFees
+  └── subscribeToSlots(-3h..+8d, limit 120)  ← 1 listener: all slot data + creatorFees (shared by /schedule too)
 
   Watch.tsx, Header, Dashboard.tsx → useLiveSlot() → reads context → zero Firestore reads
 ```
@@ -208,20 +208,24 @@ Browser (any number of concurrent users):
 | Subscription | Mounted by | Lifetime | Type |
 |---|---|---|---|
 | `onSnapshot(config/liveStream)` | LiveSlotContext | App lifetime | Persistent |
-| `subscribeToSlots(±24h)` | LiveSlotContext | App lifetime | Persistent |
-| `onSnapshot(public/currentBroadcast)` | `/player` page | Page lifetime | Persistent |
+| `subscribeToSlots(-3h..+8d, limit 120)` | LiveSlotContext | App lifetime | Persistent (shared by `/schedule`) |
 | `getDoc(users/{uid})` | AuthContext | On login | One-time |
-| `subscribeToSlots(7d window)` | Schedule page | Page lifetime | Persistent |
-| `fetchSlots(2020, +2d)` | Dashboard | On mount | One-time |
-| `getDoc/writeDoc` per API call | Rate limiter | Per request | Server-side |
+| `fetchSlotsByAssignee(uid, 50)` | Dashboard | On mount | One-time, indexed |
+| `fetchSlots(visible week, limit 120)` | Queue | On mount / week flip | One-time |
+| `getDoc/writeDoc` per API call | Rate limiter | Per request | Server-side (in-memory pre-filter blocks floods before Firestore I/O) |
+
+All client `slots` queries carry a required `limit` (enforced by the
+`fetchSlots`/`subscribeToSlots` signatures **and** by `firestore.rules`, which
+denies anonymous list queries without `limit <= 150`). Operational rollout and
+monitoring live in [`docs/ops-cost-security-runbook.md`](docs/ops-cost-security-runbook.md).
 
 ### v1.1 Efficiency Roadmap
 
-1. **Dashboard pagination** — `fetchSlots()` currently queries all slots since 2020. Add `limit(50)` + cursor-based pagination for scale.
+1. ~~**Dashboard pagination**~~ — done: indexed `fetchSlotsByAssignee(uid, 50)` query (composite index in `firestore.indexes.json`).
 2. **Admin N+1** — Admin panel makes sequential `getDocs()` calls. Batch with `Promise.all()` for parallel fetches.
 3. **Firestore offline persistence** — Enable in `firebase.ts` (`enableIndexedDbPersistence`) to eliminate re-reads on reconnect and serve cached data on cold start.
-4. **Schedule subscription dedup** — If a user has Watch and Schedule open simultaneously, two `subscribeToSlots()` listeners open. Merge into one wider time window in `LiveSlotContext`.
-5. **Rate limiter upgrade** — Replace Firestore-based counters with Upstash Redis for lower latency and lower cost at high API call volume.
+4. ~~**Schedule subscription dedup**~~ — done: `/schedule` renders from the shared `LiveSlotContext` listener; no second subscription.
+5. **Rate limiter upgrade** — Replace Firestore-based counters with Upstash Redis for lower latency and lower cost at high API call volume. (Interim: per-container in-memory pre-filter stops blocked floods from billing Firestore ops.)
 6. **`_feeState` transaction safety** — `feePollerBackground` writes `_feeState` optimistically. Use Firestore transactions (`beginTransaction/commitWrites`) for atomic read-modify-write to prevent rare race conditions between overlapping cron invocations.
 
 ---
@@ -237,17 +241,18 @@ Browser (any number of concurrent users):
 | API Security | 80/100 | Rate limiting on all endpoints; CORS locked to configured origin |
 | Data Protection | 75/100 | Password not in sessionStorage; no hardcoded Firebase config |
 | Input Validation | 77/100 | Regex validators on all inputs; proof token secret ≥ 32 chars |
-| Monitoring | 48/100 | CSP headers active; no alerting or TTL policies yet |
+| Monitoring | 48/100 | CSP headers active; budget alerts + App Check rollout documented in `docs/ops-cost-security-runbook.md` |
 
 ### Remaining Items (v1.1)
 
 | Priority | Item | Action |
 |---|---|---|
-| High | Firestore TTL policies | Enable TTL in Firebase Console on `phantomChallenges`, `oauthStates`, `twitchOAuthResults`, `auth_events` |
+| High | Firestore TTL policies | Code ships `expiresAt` everywhere; run the one-time gcloud commands in `docs/ops-cost-security-runbook.md` |
+| High | App Check enforcement | Register app + set `VITE_FIREBASE_APPCHECK_SITE_KEY`, monitor ~1 week, then enforce (runbook) |
+| High | Billing budget alerts | GCP Budgets & alerts at 50/90/100% (runbook) |
 | Medium | Password reset flow | Implement Firebase `sendPasswordResetEmail` |
 | Medium | Failed auth alerting | Log and alert on N consecutive 401s from a single IP |
 | Low | Upstash Redis rate limiter | Replace Firestore-based counters for lower latency |
-| Low | Dashboard slot pagination | `limit(50)` + cursor on `fetchSlots()` |
 
 ### Notes on Current Design Decisions
 
@@ -274,10 +279,14 @@ Browser (any number of concurrent users):
 - [x] Content-Security-Policy header on all responses
 - [x] Login ↔ Register seamless modal switching
 - [x] Proof token secret minimum: 32 characters
-- [ ] Firestore TTL policies — requires Firebase Console configuration (documented above)
+- [x] All client slot queries bounded (`limit` required by API signature + firestore.rules query cap)
+- [x] Dashboard slot pagination — indexed `fetchSlotsByAssignee(uid, 50)`
+- [x] `expiresAt` written on all ephemeral docs (rate limits, auth events, challenges, OAuth states)
+- [ ] Firestore TTL policies — one-time gcloud commands (see `docs/ops-cost-security-runbook.md`)
+- [ ] App Check enforcement — console rollout after monitor period (runbook)
+- [ ] Billing budget alerts — GCP console (runbook)
 - [ ] Password reset flow — v1.1
 - [ ] Upstash Redis rate limiting — v1.1
-- [ ] Dashboard slot pagination — v1.1
 
 ---
 
