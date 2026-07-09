@@ -1,5 +1,12 @@
 # CSGN OBS Workstation Setup — the 24/7 Encoder
 
+> **Zero-hosting alternative:** this document describes the original
+> `/player`-based pipeline (OBS renders the hosted page). If the goal is to
+> take Netlify out of the loop entirely — OBS loads `player.twitch.tv`
+> directly, with covers/guards/slot-following done OBS-side — see
+> **`docs/obs-twitch-direct.md`** and its companions in `docs/obs/`
+> (`csgn-twitch-direct.lua`, `twitch-embed.css`, `cover.html`).
+
 ## The architecture in one paragraph
 
 **OBS does not handle any network logic.** It is a dumb, always-on encoder: one scene, one

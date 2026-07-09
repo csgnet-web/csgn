@@ -1,0 +1,158 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   CSGN — Custom CSS for the direct-Twitch OBS Browser Source
+   Paste this whole file into the Browser Source's "Custom CSS" box for the
+   source pointing at  https://player.twitch.tv/?channel=…&parent=…
+
+   What it does (in-page layer of the covering strategy — see
+   docs/obs-twitch-direct.md for the full architecture):
+
+     1. Repaints every "bad state" Twitch can render — ad break (preroll AND
+        midroll), loading spinner, offline screen, mature/content gates,
+        error overlays — as the CSGN brand slate (same gradient + wordmark
+        as /player's FeedCover), so raw Twitch chrome never reaches the
+        encode even when the OBS-side cover is down.
+     2. Hides the stray pills Twitch may draw over a healthy feed
+        (unmute nag, consent banner, stream display ads).
+
+   What it deliberately does NOT do:
+     - It does not hide the normal control bar. Those controls are
+       hover-gated and OBS never hovers, so they never render on-stream —
+       and leaving them alone keeps right-click → Interact fully usable
+       (quality gear, mature "Start Watching", login).
+     - It cannot mute anything. Ad AUDIO is handled by the Lua script's
+       guard/panic muting and, completely, by an ad-free (Turbo/subbed)
+       login — see the setup doc.
+
+   Selector maintenance: Twitch's DOM drifts. Every state selector below is
+   tagged [verify]. They match Twitch's player DOM as cross-checked against
+   community ad-tooling in July 2026; if a state ever shows through, re-derive
+   the selector in 2 minutes with remote debugging (setup doc §"Inspecting the
+   live player"). The deterministic Lua guard does NOT depend on any of this.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* CSGN wordmark, inlined so the slate needs zero network. */
+  --csgn-slate-mark: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='420'%20height='150'%20viewBox='0%200%20420%20150'%3E%3Ctext%20x='210'%20y='86'%20text-anchor='middle'%20font-family='system-ui,sans-serif'%20font-weight='900'%20font-size='86'%20letter-spacing='8'%20fill='white'%3ECSGN%3C/text%3E%3Ctext%20x='210'%20y='128'%20text-anchor='middle'%20font-family='system-ui,sans-serif'%20font-weight='700'%20font-size='17'%20letter-spacing='10'%20fill='rgba(255,255,255,0.72)'%3ENETWORK%2024/7%3C/text%3E%3C/svg%3E");
+}
+
+/* OBS injects its own default body rule; this replaces it. Solid brand-dark
+   backdrop: if anything is ever hidden underneath, the gap reads as CSGN
+   dark, not checkerboard/black. */
+body {
+  background-color: #0a0a14 !important;
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+/* ── Always-hidden chrome (safe to nuke outright: none of these are ever
+      wanted on an encode, and none are needed in Interact) ──────────────── */
+[data-a-target="player-unmute-button"],      /* "Click to unmute" pill  [verify] */
+#onetrust-consent-sdk,                       /* cookie/consent banner   [verify] */
+.consent-banner,
+.stream-display-ad,                          /* corner display ads      [verify] */
+[data-test-selector="ad-banner-default-text"] ~ .stream-display-ad {
+  display: none !important;
+}
+
+/* ═══ PRIMARY COVER — brand slate over the whole viewport ═══════════════════
+   One fixed overlay on <body>, revealed by :has() whenever a marker element
+   that ONLY exists in a bad state is present in the DOM. Keying on
+   only-exists-in-bad-state markers (never on generic containers) is what
+   makes false positives impossible: no marker, no slate. */
+
+body::after {
+  content: "";
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 2147483647;
+  pointer-events: none;               /* Interact clicks pass through */
+  background-color: #0a0a14;
+  background-image: var(--csgn-slate-mark),
+                    linear-gradient(135deg, #ff2346 0%, #0a0a14 60%);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 420px auto, cover;
+  opacity: 0;
+  /* Default reveal is lazily delayed (.45s) so a 300ms rebuffer blip never
+     flashes the slate; the ad/gate rules below zero the delay because an ad
+     must be covered on its very first frame. */
+  transition: opacity 0.2s ease 0.45s;
+}
+
+/* Ad break running — preroll or midroll. Twitch stitches ads server-side, so
+   the ad IS the video; these DOM pills are the only client-side tell.
+   [verify: data-a-target="video-ad-label" / "video-ad-countdown",
+            data-test-selector="ad-banner-default-text",
+            data-test-selector="sad-overlay" (purple "commercial break" card)] */
+body:has([data-a-target="video-ad-label"])::after,
+body:has([data-a-target="video-ad-countdown"])::after,
+body:has([data-test-selector="ad-banner-default-text"])::after,
+body:has([data-test-selector="sad-overlay"])::after,
+/* Content gates: mature-audience "Start Watching", offline/error overlays.
+   The gate family shares a content-overlay-gate class stem.  [verify] */
+body:has([class*="content-overlay-gate"])::after {
+  opacity: 1;
+  transition-delay: 0s;
+}
+
+/* Buffering/booting spinner — keeps the .45s grace delay on purpose.  [verify] */
+body:has([class*="loading-spinner"])::after,
+body:has(.tw-loading-spinner)::after {
+  opacity: 1;
+}
+
+/* Insurance while an ad break runs: blank the video element itself, so even
+   if a future Twitch layer out-stacks the slate, ad frames render as brand
+   dark, never as ad content. */
+body:has([data-a-target="video-ad-label"]) video,
+body:has([data-a-target="video-ad-countdown"]) video,
+body:has([data-test-selector="ad-banner-default-text"]) video {
+  visibility: hidden !important;
+}
+
+/* ═══ FALLBACK COVER — for CEF builds without :has() ════════════════════════
+   Older OBS browsers (pre-Chromium-105) ignore every :has() rule above. This
+   second, independent mechanism needs no :has(): the marker element ITSELF is
+   blown up into the full-viewport slate. On modern OBS both mechanisms fire
+   and stack identically — harmless. (Known limit: if Twitch ever wraps a
+   marker in a CSS-transformed ancestor, position:fixed pins to that ancestor
+   instead of the viewport; the :has() path above is immune, which is why it
+   is the primary.) */
+[data-a-target="video-ad-label"],
+[data-a-target="video-ad-countdown"],
+[data-test-selector="sad-overlay"],
+[class*="content-overlay-gate"] {
+  position: fixed !important;
+  top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  transform: none !important;
+  z-index: 2147483646 !important;
+  background-color: #0a0a14 !important;
+  background-image: var(--csgn-slate-mark),
+                    linear-gradient(135deg, #ff2346 0%, #0a0a14 60%) !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  background-size: 420px auto, cover !important;
+  color: transparent !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
+}
+/* …and erase their inner text/icons (countdown digits, gate copy, buttons —
+   EXCEPT the gate's "Start Watching" button, which must stay clickable for
+   the one-time Interact acceptance on mature channels; it is invisible
+   against the slate but keeps its hitbox). */
+[data-a-target="video-ad-label"] > *,
+[data-a-target="video-ad-countdown"] > *,
+[data-test-selector="sad-overlay"] > * {
+  display: none !important;
+}
+[class*="content-overlay-gate"] * {
+  color: transparent !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  fill: transparent !important;
+}

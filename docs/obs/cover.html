@@ -1,0 +1,137 @@
+<!doctype html>
+<!--
+  CSGN TRANSITION COVER — local-file OBS browser source (zero hosting).
+
+  This is the OBS-side twin of /player's FeedCover: the opaque, on-brand
+  curtain the csgn-twitch-direct.lua script raises over the Twitch feed during
+  every vulnerable window (boot, retune, preroll-ad mask, BRB, panic).
+
+  Usage: add a Browser Source named "CSGN COVER" pointing at this file
+  ("Local file" checked), 1920x1080, ABOVE the feed source, scene item hidden
+  by default. Leave "Shutdown source when not visible" OFF so the page is
+  always warm — toggling the scene item is then instant (a cover that takes
+  even 200ms to boot would leak raw Twitch frames underneath).
+
+  Optional query params (set them in the source URL if wanted):
+    ?label=Starting%20Soon   headline under the wordmark (default: CSGN 24/7)
+    &name=StreamerName       large billing line
+    &slot=9%3A00%20PM%20%E2%80%93%2011%3A00%20PM%20ET   small mono sub-line
+
+  No network requests, no webfonts — this page must render even when the
+  internet is down, because that is exactly when it will be on screen.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CSGN Transition Cover</title>
+<style>
+  html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #0a0a14;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .stage {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #ff2346 0%, #0a0a14 60%);
+  }
+  /* Slow drifting highlight so the cover reads as "alive", never as a hang.
+     Deliberately faint and slow — broadcast-safe, no strobing. */
+  .stage::before {
+    content: "";
+    position: absolute;
+    inset: -30%;
+    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.10), transparent 55%);
+    animation: drift 16s ease-in-out infinite alternate;
+    pointer-events: none;
+  }
+  @keyframes drift {
+    from { transform: translate(-4%, -4%); }
+    to   { transform: translate(6%, 6%); }
+  }
+  .card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.2vh;
+    text-align: center;
+  }
+  .wordmark {
+    color: #fff;
+    opacity: 0.95;
+    font-weight: 900;
+    font-size: 7.2vh;
+    letter-spacing: 0.09em;
+    line-height: 1;
+  }
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 0.9vh;
+  }
+  .dot {
+    width: 1.1vh;
+    height: 1.1vh;
+    border-radius: 50%;
+    background: #fff;
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.35; }
+  }
+  .label {
+    color: rgba(255,255,255,0.8);
+    font-size: 1.9vh;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+  .name {
+    color: #fff;
+    font-size: 4.6vh;
+    font-weight: 900;
+    letter-spacing: -0.01em;
+    max-width: 80vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .slot {
+    color: rgba(255,255,255,0.7);
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 1.9vh;
+    letter-spacing: 0.12em;
+  }
+  .name:empty, .slot:empty { display: none; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="card">
+      <div class="wordmark">CSGN</div>
+      <div class="status">
+        <span class="dot"></span>
+        <span class="label" id="label">CSGN 24/7</span>
+      </div>
+      <div class="name" id="name"></div>
+      <div class="slot" id="slot"></div>
+    </div>
+  </div>
+  <script>
+    // textContent only — query params must never become markup.
+    var q = new URLSearchParams(location.search);
+    if (q.get('label')) document.getElementById('label').textContent = q.get('label');
+    if (q.get('name'))  document.getElementById('name').textContent  = q.get('name');
+    if (q.get('slot'))  document.getElementById('slot').textContent  = q.get('slot');
+  </script>
+</body>
+</html>
