@@ -65,8 +65,15 @@ export default function Watch() {
 
   // The current slot's assigned streamer is the source of truth for the name/
   // title; a manual X-broadcast override only fills in when the slot is unnamed.
-  const streamerName = currentSlot?.assignedName || manualOverride?.streamerName || ''
-  const streamTitle = currentSlot?.streamTitle || manualOverride?.title || ''
+  // The billing must always read as programming — the streamer's name or
+  // "Open Slot" — so any network self-branding ("CSGN", "csgnet", "CSGN 24/7")
+  // that leaks in from a slot default or a manual override is treated as empty.
+  const notNetworkBrand = (value?: string | null) => {
+    const v = (value ?? '').trim()
+    return v && !/^csgn/i.test(v) ? v : ''
+  }
+  const streamerName = notNetworkBrand(currentSlot?.assignedName) || notNetworkBrand(manualOverride?.streamerName) || 'Open Slot'
+  const streamTitle = notNetworkBrand(currentSlot?.streamTitle) || notNetworkBrand(manualOverride?.title) || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
 
   // Live once the current slot is confirmed or live (or an X broadcast is up),
@@ -151,7 +158,7 @@ export default function Watch() {
         <div className="shrink-0 px-4 sm:px-5 pt-4 sm:pt-5 pb-2">
           <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)] max-w-[1280px] mx-auto">
             <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(255,0,90,0.28),transparent_42%),radial-gradient(circle_at_85%_10%,rgba(80,0,255,0.26),transparent_35%)]" />
-            <div className="relative w-full min-h-[260px] sm:min-h-[340px] flex items-center justify-center px-4 py-4 sm:py-5">
+            <div className="relative w-full min-h-[220px] sm:min-h-[280px] flex items-center justify-center px-4 py-4 sm:py-5">
               {broadcastPostId && broadcastUrl ? (
                 <XBroadcastEmbed postId={broadcastPostId} postUrl={broadcastUrl} />
               ) : (

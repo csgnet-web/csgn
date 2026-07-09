@@ -259,7 +259,7 @@ describe('/player with a healthy Twitch preroll (OBS encoder)', () => {
 })
 
 describe('/player when the embed freezes on the first preroll frame (the reported bug)', () => {
-  it('keeps the cover up, rebuilds the wedged embed, and ends up playing', async () => {
+  it('keeps the cover up, rebuilds the wedged embed, and reveals by the deadline', async () => {
     await mountPlayer()
     expect(FakeTwitchPlayer.instances).toHaveLength(1)
     const first = FakeTwitchPlayer.instances[0]
@@ -301,16 +301,60 @@ describe('/player when the embed freezes on the first preroll frame (the reporte
     expect(unmutes(first)).toHaveLength(0)
     expect(callsOf(first, 'play').length).toBeLessThanOrEqual(1)
 
-    // Nothing was exposed until the SECOND embed cleared its own full mask.
+    // The cover held through the frozen embed and the rebuild's own bootstrap,
+    // but never past the hard reveal deadline: the feed must be on-screen by
+    // ~45s LIVE no matter what, even if the second embed's mask isn't done.
     const second = FakeTwitchPlayer.instances[1]
     expect(exposures.length).toBeGreaterThan(0)
-    expect(Math.min(...exposures)).toBeGreaterThanOrEqual(rebuildBirthSec! + 35)
+    expect(Math.min(...exposures)).toBeGreaterThanOrEqual(40)
+    expect(Math.min(...exposures)).toBeLessThanOrEqual(48)
 
-    // And the page ended up actually playing: revealed, pinned, audible.
+    // And the page ended up actually playing: revealed, pinned, audible. The
+    // quality pin still lands on the gate's clean post-mask moment.
     expect(coverUp()).toBe(false)
     expect(callsOf(second, 'setQuality')).toHaveLength(1)
     expect(second.muted).toBe(false)
     // The stall never bounced a live broadcast to BRB.
+    expect(document.querySelector('[data-testid="card-brb"]')).toBeNull()
+  })
+})
+
+describe('/player when the gate can never observe playback (blind getCurrentTime)', () => {
+  it('force-reveals and unmutes at the deadline instead of holding Now Live forever', async () => {
+    await mountPlayer()
+    const exposures: number[] = []
+    const announced = new Set<FakeTwitchPlayer>()
+
+    await passSeconds(
+      65,
+      () => {
+        // Every instance: PLAYING fires once (so the state machine goes LIVE)
+        // but currentTime is pinned at 0 and the quality list never populates —
+        // the gate sees no frames, ever, on the original embed or any rebuild.
+        const latest = FakeTwitchPlayer.instances.at(-1)!
+        if (!announced.has(latest)) {
+          announced.add(latest)
+          latest.fire(FakeTwitchPlayer.READY)
+          latest.fire(FakeTwitchPlayer.PLAYING)
+        }
+      },
+      (sec) => {
+        const latest = FakeTwitchPlayer.instances.at(-1)!
+        if (embedVisible(latest) && !coverUp()) exposures.push(sec)
+      },
+    )
+
+    // The old behavior: covered rebuild loop forever ("stuck on Now Live").
+    // Now the deadline lifts the curtain and turns audio on regardless.
+    expect(exposures.length).toBeGreaterThan(0)
+    expect(Math.min(...exposures)).toBeGreaterThanOrEqual(40)
+    expect(Math.min(...exposures)).toBeLessThanOrEqual(48)
+    expect(coverUp()).toBe(false)
+    expect(FakeTwitchPlayer.instances.at(-1)!.muted).toBe(false)
+
+    // After the forced reveal the gate loses teardown power — the on-screen
+    // feed is never rebuilt out from under the viewer again.
+    expect(FakeTwitchPlayer.instances.length).toBeLessThanOrEqual(2)
     expect(document.querySelector('[data-testid="card-brb"]')).toBeNull()
   })
 })

@@ -49,6 +49,15 @@ const EMBED_REBUILD_MIN_MS = 30_000
  *  event race) would otherwise stack/restart the stinger — the "wipe ran
  *  twice" glitch an operator can see on-stream. */
 const WIPE_MIN_DWELL_MS = 5_000
+/** Hard ceiling on how long the "Now Live" curtain may hold while the state
+ *  machine says LIVE. FeedGate's confirm normally lifts the cover well before
+ *  this (mask + pin + hold ≈ 37s); if it never can — getCurrentTime blind in
+ *  OBS's CEF, an embed wedged in a rebuild loop, any failure we haven't met
+ *  yet — the feed is revealed and unmuted anyway. A visible Twitch stream
+ *  always beats a perfect transition: fail OPEN, never hold the curtain
+ *  indefinitely. Once the deadline reveals, the gate may no longer re-cover
+ *  or tear the embed down; the OBS operator owns any remaining cleanup. */
+const LIVE_REVEAL_DEADLINE_MS = 45_000
 
 function buildYouTubeOverrideSrc(url: string): string | null {
   const stream = detectStream(url)
@@ -104,6 +113,13 @@ export default function Player() {
   const [playbackOk, setPlaybackOk] = useState(false)
   const playbackOkRef = useRef(false)
   useEffect(() => { playbackOkRef.current = playbackOk }, [playbackOk])
+  // The reveal deadline fired: the gate couldn't confirm in time, so the feed
+  // was force-revealed. While set, the gate's observations are treated as
+  // untrustworthy — it may not re-cover the feed or rebuild the embed, since
+  // either would fight a stream that may be playing fine beyond its sight.
+  const [forceReveal, setForceReveal] = useState(false)
+  const forceRevealRef = useRef(false)
+  useEffect(() => { forceRevealRef.current = forceReveal }, [forceReveal])
   // Bumped to tear down and recreate the Twitch embed when FeedGate finds it
   // wedged (LIVE with no frames advancing — e.g. frozen on a preroll).
   const [rebuildNonce, setRebuildNonce] = useState(0)
@@ -238,6 +254,7 @@ export default function Player() {
   if (prevMode !== state.mode) {
     setPrevMode(state.mode)
     setFeedReady(false)
+    setForceReveal(false)
   }
 
   // Brand wipe on state changes, gated on dwell time: only a transition out of
@@ -271,6 +288,23 @@ export default function Player() {
     const t = setTimeout(() => setFeedReady(true), REVEAL_HOLD_MS)
     return () => clearTimeout(t)
   }, [state.mode, playbackOk])
+
+  // ── Reveal deadline (fail-open): the cover may NEVER hold longer than
+  //    LIVE_REVEAL_DEADLINE_MS while LIVE. The gate lifting the cover clears
+  //    this timer; if the gate can't, the video is shown and unmuted anyway
+  //    and the gate loses its power to re-cover or rebuild (forceReveal).
+  //    Re-arms whenever the cover comes back, so cover time stays bounded on
+  //    every path — the page can never sit on "Now Live" indefinitely. ──
+  useEffect(() => {
+    if (state.mode !== 'LIVE' || feedReady) return
+    const t = setTimeout(() => {
+      logEvent('reveal deadline — forcing feed visible')
+      setForceReveal(true)
+      setPlaybackOk(true)
+      setFeedReady(true)
+    }, LIVE_REVEAL_DEADLINE_MS)
+    return () => clearTimeout(t)
+  }, [state.mode, feedReady, logEvent])
 
   // ── Firestore: admin emergency override (non-slot takeover URL) ──
   useEffect(() => {
@@ -551,11 +585,14 @@ export default function Player() {
         logEvent('stall: nudging play()')
         try { player.play() } catch { /* best-effort */ }
       }
-      if (d.rebuild) {
+      // After a deadline reveal the gate is blind or wrong — a rebuild would
+      // tear down (and a demotion would re-cover) a feed that may be playing
+      // fine beyond its sight. Only the clean confirm path stays active.
+      if (d.rebuild && !forceRevealRef.current) {
         logEvent('gate: no frames while LIVE — rebuilding')
         rebuildPlayer()
       }
-      if (d.confirmed !== playbackOkRef.current) {
+      if (d.confirmed !== playbackOkRef.current && (d.confirmed || !forceRevealRef.current)) {
         logEvent(d.confirmed ? 'gate: content confirmed' : `gate: feed lost (${d.phase})`)
         setPlaybackOk(d.confirmed)
         if (!d.confirmed) setFeedReady(false)
@@ -631,7 +668,7 @@ export default function Player() {
         {preview === 'board' && <IntermissionBoard />}
         {preview === 'brb' && <StatusCard variant="brb" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
         {preview === 'starting' && <StatusCard variant="starting-soon" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
-        {preview === 'wipe' && <WipeOverlay visible label="Now Live" />}
+        {preview === 'wipe' && <WipeOverlay visible label="Now Live" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
       </div>
     )
   }
@@ -654,7 +691,9 @@ export default function Player() {
           broadcast content — masks the play-button poster, the entire preroll
           ad window (video, countdown text, "commercial break" chrome), and
           every startup/rebuild reveal. */}
-      {state.mode === 'LIVE' && !feedReady && <FeedCover label="Now Live" />}
+      {state.mode === 'LIVE' && !feedReady && (
+        <FeedCover label="Now Live" streamerName={streamerName} slotLabel={slotLabel} />
+      )}
 
       {state.mode === 'OVERRIDE' && (
         overrideSrc ? (
@@ -681,7 +720,12 @@ export default function Player() {
 
       {state.mode === 'INTERMISSION' && <VodRotator items={vodItems} />}
 
-      <WipeOverlay visible={showWipe} label={state.mode === 'LIVE' ? 'Now Live' : 'CSGN 24/7'} />
+      <WipeOverlay
+        visible={showWipe}
+        label={state.mode === 'LIVE' ? 'Now Live' : 'CSGN 24/7'}
+        streamerName={state.mode === 'LIVE' ? streamerName : undefined}
+        slotLabel={state.mode === 'LIVE' ? slotLabel : undefined}
+      />
 
       {/* Browser tabs only: the viewer's browser muted the feed until they
           interact. One tap (anywhere, or this button) unlocks sound. */}

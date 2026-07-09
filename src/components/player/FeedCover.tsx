@@ -8,8 +8,19 @@
  * raw Twitch reveal is most visible on-stream. This static cover fills that gap:
  * /player renders it over the LIVE feed until playback has been confirmed
  * flowing for a short hold, so the transition fully masks the reveal.
+ *
+ * When the caller knows who is going live, the card also bills the streamer
+ * and their slot window, so the transition reads as programming, not a stall.
  */
-export default function FeedCover({ label = 'CSGN 24/7' }: { label?: string }) {
+export default function FeedCover({
+  label = 'CSGN 24/7',
+  streamerName,
+  slotLabel,
+}: {
+  label?: string
+  streamerName?: string
+  slotLabel?: string
+}) {
   return (
     <div
       className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden"
@@ -23,6 +34,14 @@ export default function FeedCover({ label = 'CSGN 24/7' }: { label?: string }) {
           <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
           <span className="text-white/80 text-sm font-bold tracking-[0.2em] uppercase">{label}</span>
         </div>
+        {streamerName && (
+          <span className="text-white text-3xl font-black font-display tracking-tight text-center max-w-[80vw] truncate">
+            {streamerName}
+          </span>
+        )}
+        {slotLabel && (
+          <span className="text-white/70 text-sm font-mono tracking-wider">{slotLabel}</span>
+        )}
       </div>
     </div>
   )
