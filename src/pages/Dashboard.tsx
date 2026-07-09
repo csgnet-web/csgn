@@ -10,7 +10,7 @@ import { db } from '@/config/firebase'
 import { useAuth } from '@/contexts/useAuth'
 import type { UserNotification } from '@/contexts/AuthContext'
 import { queueStore } from '@/lib/queue'
-import { fetchSlots, type Slot } from '@/lib/slots'
+import { fetchSlotsByAssignee, type Slot } from '@/lib/slots'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -59,11 +59,13 @@ export default function Dashboard() {
   useEffect(() => {
     if (!user) return
     ;(async () => {
-      const from = new Date('2020-01-01T00:00:00.000Z')
-      const to = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
       try {
-        const slots = await fetchSlots(from, to)
-        setSlotHistory(slots.filter((s) => s.assignedUid === user.uid))
+        // Indexed query for just this user's slots (was: scan every slot
+        // since 2020 and filter client-side). Newest 50 is plenty for the
+        // 10-per-page fee history; keep the old "history + next 2 days" cap.
+        const slots = await fetchSlotsByAssignee(user.uid, 50)
+        const cutoff = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString()
+        setSlotHistory(slots.filter((s) => s.startTime <= cutoff))
       } catch {
         setSlotHistory([])
       }

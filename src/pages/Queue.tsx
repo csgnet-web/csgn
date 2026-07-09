@@ -52,16 +52,22 @@ export default function Queue() {
 
 
   const loadSlots = useCallback(async () => {
-    const now = new Date()
-    const future = new Date(now.getTime() + 28 * 24 * 60 * 60 * 1000)
+    // Fetch only the displayed week (~90 docs, was a fixed 28-day scan);
+    // changing weekOffset re-creates this callback and refetches. `from`
+    // never reaches back before now, matching the old future-only behavior.
+    setLoading(true)
+    const weekStart = etMiddayFromOffset(weekOffset * WEEK_SPAN)
+    const windowStart = new Date(weekStart.getTime() - 24 * 60 * 60 * 1000)
+    const from = windowStart.getTime() > Date.now() ? windowStart : new Date()
+    const to = etMiddayFromOffset(weekOffset * WEEK_SPAN + WEEK_SPAN)
     try {
-      const data = await fetchSlots(now, future)
+      const data = await fetchSlots(from, to, 120)
       setSlots(data)
     } catch (err) {
       console.warn('Failed to fetch slots:', err)
     }
     setLoading(false)
-  }, [])
+  }, [weekOffset])
 
   const handleClaim = useCallback(async (slot: Slot) => {
     if (!user || !profile) {

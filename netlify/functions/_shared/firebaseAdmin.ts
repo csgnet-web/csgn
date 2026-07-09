@@ -132,6 +132,21 @@ export async function queryCollection(collectionId: string, where: unknown[], or
   return rows.filter((r) => r.document).map((r) => ({ path: r.document!.name.split('/documents/')[1], data: decodeFields(r.document!.fields || {}) }))
 }
 
+/** COUNT aggregation — bills ~1 read per 1000 index entries instead of one read per document. */
+export async function countCollection(collectionId: string, where: unknown[]): Promise<number> {
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId()}/databases/(default)/documents:runAggregationQuery`
+  const body = {
+    structuredAggregationQuery: {
+      structuredQuery: { from: [{ collectionId }], where: where.length ? { compositeFilter: { op: 'AND', filters: where } } : undefined },
+      aggregations: [{ alias: 'n', count: {} }],
+    },
+  }
+  const res = await authedFetch(url, { method: 'POST', body: JSON.stringify(body) })
+  if (!res.ok) throw new Error(`Firestore count failed: ${res.status} ${await res.text()}`)
+  const rows = await res.json() as Array<{ result?: { aggregateFields?: { n?: { integerValue?: string } } } }>
+  return Number(rows[0]?.result?.aggregateFields?.n?.integerValue ?? 0)
+}
+
 export const fieldFilter = (fieldPath: string, op: string, value: unknown) => ({ fieldFilter: { field: { fieldPath }, op, value: encodeValue(value) } })
 export const order = (fieldPath: string, direction = 'ASCENDING') => ({ field: { fieldPath }, direction })
 

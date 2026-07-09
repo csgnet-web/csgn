@@ -3,7 +3,7 @@
 // Writes live creatorFees to the active slot doc in Firestore.
 // Browser clients NEVER call DexScreener — they read from the single Firestore listener.
 
-import { queryCollection, writeDoc, commitWrites, createWrite, fieldFilter, order } from './_shared/firebaseAdmin'
+import { queryCollection, countCollection, getDoc, writeDoc, commitWrites, createWrite, fieldFilter, order } from './_shared/firebaseAdmin'
 import { buildExpectedSlotsForDate, buildSlotDoc } from './_shared/schedule'
 import {
   buildTokenStatsDoc,
@@ -58,6 +58,11 @@ interface SlotDoc {
   _feeState?: FeeState
 }
 
+interface SlotRow {
+  path: string
+  data: SlotDoc
+}
+
 /* ─── Twitch Helix: verify the slot's channel is actually live ─── */
 
 let cachedTwitchToken: { token: string; exp: number } | null = null
@@ -108,11 +113,10 @@ async function isTwitchChannelLive(login: string, token: string): Promise<boolea
  * broadcasting and append a timestamp to the slot's streamActivity log. Kept in
  * a separate top-level field so the fee-poll writes never clobber it.
  */
-async function logSlotActivity(): Promise<void> {
+async function logSlotActivity(row: SlotRow | null): Promise<void> {
   try {
-    const row = await findActiveSlot()
     if (!row) return
-    const slot = row.data as SlotDoc
+    const slot = row.data
     const login = twitchLoginFromUrl(slot.streamUrl)
     if (!login) return
     const token = await twitchAppToken()
@@ -154,9 +158,13 @@ const TARGET_HORIZON_DAYS = 7
  *  or lost mid-week would otherwise stay missing forever. */
 const FULL_SWEEP_INTERVAL_MS = 15 * 60_000
 
-/** Warm-container timestamp of the last full-window sweep. Resets on cold
- *  start, which just makes the next sweep run sooner — harmless. */
-let lastFullSweepAtMs = 0
+/** Warm-container mirror of config/scheduleMeta.lastFullSweepAt. Only a
+ *  fast-path cache: the persisted doc is authoritative, because Netlify
+ *  cold-starts far more often than the sweep cadence and a reset-to-zero
+ *  module variable would make every cold start run a full sweep. */
+let lastKnownSweepAtMs = 0
+
+const SCHEDULE_META_PATH = 'config/scheduleMeta'
 
 /**
  * The schedule used to empty out after a few days because slot creation was a
@@ -180,9 +188,19 @@ async function topUpSchedule(): Promise<void> {
     const latest = await queryCollection('slots', [], [order('startTime', 'DESCENDING')], 1)
     const latestStartMs = latest.length ? new Date(String(latest[0].data.startTime ?? 0)).getTime() : 0
     const horizonShort = latestStartMs < nowMs + MIN_HORIZON_DAYS * 24 * 60 * 60 * 1000
-    const sweepDue = nowMs - lastFullSweepAtMs >= FULL_SWEEP_INTERVAL_MS
+
+    let sweepDue = nowMs - lastKnownSweepAtMs >= FULL_SWEEP_INTERVAL_MS
+    if (sweepDue && !horizonShort) {
+      // Looks due, but our in-memory timestamp may just be a cold start —
+      // confirm against the persisted timestamp before doing sweep work.
+      const meta = await getDoc<{ lastFullSweepAt?: string }>(SCHEDULE_META_PATH)
+      const persisted = meta?.lastFullSweepAt ? Date.parse(meta.lastFullSweepAt) : 0
+      if (Number.isFinite(persisted) && persisted > lastKnownSweepAtMs) lastKnownSweepAtMs = persisted
+      sweepDue = nowMs - lastKnownSweepAtMs >= FULL_SWEEP_INTERVAL_MS
+    }
     if (!horizonShort && !sweepDue) return
-    lastFullSweepAtMs = nowMs
+    lastKnownSweepAtMs = nowMs
+    await writeDoc(SCHEDULE_META_PATH, { lastFullSweepAt: new Date(nowMs).toISOString() }, { merge: true })
 
     // Expected slots for every ET day from today out to the target horizon.
     const expected = new Map<string, ReturnType<typeof buildExpectedSlotsForDate>[number]>()
@@ -195,13 +213,28 @@ async function topUpSchedule(): Promise<void> {
     }
     if (expected.size === 0) return
 
-    // One ranged query over the fill window tells us which already exist.
     const starts = [...expected.values()].map((s) => new Date(s.startTime).getTime())
     const fromISO = new Date(Math.min(...starts)).toISOString()
     const toISO = new Date(Math.max(...starts)).toISOString()
+    const windowFilters = [
+      fieldFilter('startTime', 'GREATER_THAN_OR_EQUAL', fromISO),
+      fieldFilter('startTime', 'LESS_THAN_OR_EQUAL', toISO),
+    ]
+
+    // Periodic sweeps almost always find a fully seeded week. A COUNT
+    // aggregation (~1 billed read) confirms that without fetching ~110 docs;
+    // only a mismatch (deleted/missing slot) pays for the full existence
+    // query. When the horizon is short we know fill work is coming, so we go
+    // straight to the full query.
+    if (!horizonShort) {
+      const existingCount = await countCollection('slots', windowFilters)
+      if (existingCount === expected.size) return
+    }
+
+    // One ranged query over the fill window tells us which already exist.
     const existing = await queryCollection(
       'slots',
-      [fieldFilter('startTime', 'GREATER_THAN_OR_EQUAL', fromISO), fieldFilter('startTime', 'LESS_THAN_OR_EQUAL', toISO)],
+      windowFilters,
       [order('startTime', 'ASCENDING')],
       (TARGET_HORIZON_DAYS + 2) * 12 + 10,
     )
@@ -219,22 +252,15 @@ async function topUpSchedule(): Promise<void> {
   }
 }
 
-async function findActiveSlot(): Promise<{ path: string; data: SlotDoc } | null> {
-  const now = new Date()
-  const fromISO = new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString()
-  const toISO = new Date(now.getTime() + 60 * 60 * 1000).toISOString()
-
-  const rows = await queryCollection(
-    'slots',
-    [fieldFilter('startTime', 'GREATER_THAN_OR_EQUAL', fromISO), fieldFilter('startTime', 'LESS_THAN_OR_EQUAL', toISO)],
-    [order('startTime', 'ASCENDING')],
-    5,
-  )
-
-  const nowMs = Date.now()
+/**
+ * The currently broadcasting slot, derived from rows already fetched by
+ * advanceSlotLifecycles — its [now-6h, now+1min] window is a strict superset
+ * of any slot that can be active right now, so no extra query is needed.
+ */
+export function pickActiveSlot(rows: SlotRow[], nowMs = Date.now()): SlotRow | null {
   return (
     rows.find((r) => {
-      const s = r.data as SlotDoc
+      const s = r.data
       const start = s.startTime ? new Date(s.startTime).getTime() : 0
       const end = s.endTime ? new Date(s.endTime).getTime() : 0
       return nowMs >= start && nowMs < end && (s.status === 'confirmed' || s.status === 'live')
@@ -247,9 +273,11 @@ async function findActiveSlot(): Promise<{ path: string; data: SlotDoc } | null>
  * (admin, /schedule, /queue, /player) sees the same status:
  *   confirmed → live       (once the slot's start time arrives)
  *   confirmed/live → completed (once the slot's end time passes)
- * Runs every minute alongside the fee poll.
+ * Runs every minute alongside the fee poll. Returns the fetched rows (with
+ * statuses patched to their post-transition values) so the handler can derive
+ * the active slot without a second query.
  */
-async function advanceSlotLifecycles(): Promise<void> {
+async function advanceSlotLifecycles(): Promise<SlotRow[]> {
   try {
     const now = new Date()
     const fromISO = new Date(now.getTime() - 6 * 60 * 60 * 1000).toISOString()
@@ -274,20 +302,31 @@ async function advanceSlotLifecycles(): Promise<void> {
       if (next) {
         const slotId = row.path.split('/').pop()!
         await writeDoc(`slots/${slotId}`, { status: next, updatedAt: now.toISOString() }, { merge: true })
+        s.status = next
       }
     }
+    return rows as SlotRow[]
   } catch (err) {
     console.error('[feePoller] advanceSlotLifecycles error:', err)
+    return []
   }
 }
 
-async function pollAndWrite(dexData: DexData): Promise<void> {
+async function pollAndWrite(dexData: DexData, active: SlotRow | null, tick: number): Promise<void> {
   try {
-    const row = await findActiveSlot()
-    if (!row) return
+    if (!active) return
 
-    const slotId = row.path.split('/').pop()!
-    const slotData = row.data as SlotDoc
+    const slotId = active.path.split('/').pop()!
+    // Tick 0 reuses the row fetched at the top of the invocation; later ticks
+    // re-read just this one doc (1 read, not a range query) so admin-side
+    // changes — fees marked paid/declined, snapshot locked — stay visible
+    // mid-invocation.
+    let slotData = active.data
+    if (tick > 0) {
+      const fresh = await getDoc<SlotDoc>(active.path)
+      if (!fresh) return
+      slotData = fresh
+    }
 
     const existing = slotData.creatorFees
     if (existing?.paymentStatus === 'paid' || existing?.paymentStatus === 'declined') return
@@ -402,11 +441,14 @@ export const handler = async () => {
 
   // Advance clock-driven slot statuses first so /player, admin, /schedule and
   // /queue all agree on which slot is confirmed / live / completed right now.
-  await advanceSlotLifecycles()
+  // The active slot is derived from the same rows — the whole invocation runs
+  // on one slots range query where it used to issue six.
+  const rows = await advanceSlotLifecycles()
+  const active = pickActiveSlot(rows)
 
   // Sample real Twitch activity for the active slot (1 Helix call/min) so the
   // Creator Fees log can prove the streamer was actually live, not intermission.
-  await logSlotActivity()
+  await logSlotActivity(active)
 
   let tokenStatsWritten = false
   for (let i = 0; i < 4; i++) {
@@ -420,7 +462,7 @@ export const handler = async () => {
           console.error('[feePoller] tokenStats write error:', err)
         }
       }
-      await pollAndWrite(dexData)
+      await pollAndWrite(dexData, active, i)
     }
     if (i < 3) await sleep(POLL_INTERVAL_MS)
   }

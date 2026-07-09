@@ -1,5 +1,8 @@
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
+import { Timestamp, addDoc, collection, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/config/firebase'
+
+/** Admin auth-log retention; docs self-delete via the Firestore TTL policy on expiresAt. */
+const AUTH_EVENT_TTL_MS = 90 * 24 * 60 * 60 * 1000
 
 export type AuthEventKind =
   | 'twitch-callback-start'
@@ -33,6 +36,7 @@ export async function logAuthEvent(kind: AuthEventKind, fields: AuthEventFields 
       errorMessage: fields.errorMessage ?? null,
       meta: fields.meta ?? null,
       ua: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      expiresAt: Timestamp.fromDate(new Date(Date.now() + AUTH_EVENT_TTL_MS)),
     })
   } catch {
     // Best-effort logging: never let an audit-write failure break auth.

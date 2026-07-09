@@ -221,7 +221,7 @@ export default function Admin() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const usersSnap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc')))
+        const usersSnap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(500)))
         setUsers(usersSnap.docs.map((d) => ({ ...d.data() } as UserData)))
       } catch {}
     }
@@ -235,7 +235,7 @@ export default function Admin() {
     const from = new Date(now.getTime() - 16 * 60 * 60 * 1000)
     const future = new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000)
     try {
-      const data = await fetchSlots(from, future)
+      const data = await fetchSlots(from, future, 120)
       const sorted = [...data].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
       setSlots(sorted)
     } catch (err) {
@@ -250,9 +250,12 @@ export default function Admin() {
     const now = new Date()
     const past = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
     try {
-      const data = await fetchSlots(past, now)
+      const data = await fetchSlots(past, now, 200)
       const completedWithStreamer = data.filter((s) => s.assignedUid && (s.status === 'completed' || new Date(s.endTime).getTime() < Date.now()))
 
+      // Backfill missing creatorFees, then merge locally instead of re-reading
+      // the whole 14-day window a second time.
+      const backfilled = new Map<string, Slot>()
       await Promise.all(completedWithStreamer.map(async (slot) => {
         if (slot.creatorFees) return
 
@@ -271,10 +274,10 @@ export default function Admin() {
         }
 
         await updateCreatorFees(slot.id, autoFees)
+        backfilled.set(slot.id, { ...slot, creatorFees: autoFees })
       }))
 
-      const refreshed = await fetchSlots(past, now)
-      setFeeSlots(refreshed.filter((s) => s.assignedUid && (s.status === 'completed' || new Date(s.endTime).getTime() < Date.now())))
+      setFeeSlots(completedWithStreamer.map((s) => backfilled.get(s.id) ?? s))
     } catch {}
     setFeeSlotsLoading(false)
   }, [users])

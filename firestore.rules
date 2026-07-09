@@ -12,22 +12,34 @@ service cloud.firestore {
     }
 
     match /slots/{slotId} {
-      allow read: if true;
+      allow get: if true;
+      // Cost-abuse guard: anonymous list queries must carry an explicit limit
+      // so a single request can never bill the whole collection. Every shipped
+      // client query uses limit <= 120 (see src/lib/slots.ts); admins keep
+      // unbounded lists for wipe/reseed/fee tooling. A query with no limit
+      // fails the null check and is denied.
+      allow list: if (request.query.limit != null && request.query.limit <= 150) || isAdmin();
       allow write: if isAdmin();
     }
 
+    // public/ and config/ hold well-known single docs (tokenStats, liveStream,
+    // vodPlaylist, emergencyOverride, scheduleMeta) — clients only ever read
+    // them by ID, so collection listing stays off.
     match /public/{docId} {
-      allow read: if true;
+      allow get: if true;
+      allow list: if false;
       allow write: if isAdmin();
     }
 
     match /config/{docId} {
-      allow read: if true;
+      allow get: if true;
+      allow list: if false;
       allow write: if isAdmin();
     }
 
     match /users/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
       allow create: if isAdmin();
       allow update: if isAdmin();
       allow delete: if isAdmin();
