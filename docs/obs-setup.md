@@ -107,6 +107,67 @@ scene alongside the tickers, so they can never interfere with playback.
 **Nothing to configure for this** — it's automatic. Just make sure the Browser
 Source has **Page permissions: Read and write to OBS** so the OBS detection works.
 
+### Faster "Now Live": no-ads / Turbo fast-reveal (`?noads`)
+
+The 33s "Now Live" curtain is **entirely** the preroll-ad mask — its only job is
+to outlast Twitch's server-stitched ad (≤30s) so the ad video, its countdown
+text, and the startup chrome never reach the encode. If the feed the encoder is
+playing is **genuinely ad-free**, that 33s is dead air and can be cut hard.
+
+Add **`?noads=1`** (or `?turbo=1`) to the Browser Source URL —
+`https://csgn.fun/player?noads=1` — to switch `/player` into **fast-reveal
+mode**:
+
+- The preroll mask drops from 33s to ~2s (just enough to hide the poster and
+  the first buffering frame).
+- The "Now Live" curtain becomes a **deterministic 10-second countdown** (a
+  depleting ring + a live `10 → 1` readout) instead of an indeterminate hold, so
+  OBS viewers see exactly when the feed cuts in — a broadcast bumper, not a
+  stall.
+- Everything else (quality pin to `chunked`, stall-nudge, wedge-rebuild,
+  fail-open reveal) still runs behind the countdown; the fail-open ceiling just
+  moves to ~11s.
+
+Confirm the flag took effect with `?debug=1` — the panel's **`reveal`** row reads
+`no-ads · 10s countdown` (vs `ad-mask · 33s`). Rehearse the bumper on its own
+with `/player?preview=countdown`.
+
+> ⚠️ **Only enable `?noads` once you have verified no preroll actually plays.**
+> If a Twitch ad can still run, the 10s countdown will end *on the ad* and it
+> leaks straight onto the stream — the exact thing the 33s mask exists to
+> prevent. Verify by watching `?debug=1` on the real source through a full
+> streamer start (or `?channel=<name>`): the `gate` row should go
+> `boot → settling → on-air` with **no** long `ad-mask` phase.
+
+**Can Twitch Turbo actually remove the ads?** Partly, with real caveats — Turbo
+only suppresses ads for a session **authenticated as the Turbo account**, and the
+Twitch *embed* `/player` uses (`player.twitch.tv` in an iframe) is a separate
+browser context from your logged-in twitch.tv tab:
+
+- **It is not automatic.** An OBS Browser Source (CEF) starts logged-out, and
+  there's no login UI inside a source pointed at `/player`. Turbo on your normal
+  browser does nothing for the OBS encode.
+- **Making CEF carry the session is fiddly and fragile.** You'd point a
+  throwaway Browser Source at `https://www.twitch.tv/login`, right-click →
+  **Interact**, log into the Turbo account (2FA and CAPTCHA included), and rely
+  on CEF persisting `twitch.tv` cookies in its cache so the embed picks up the
+  session. It can work, but the cookie can expire, a CEF/OBS update can clear the
+  cache, and third-party-cookie handling for the embed is not guaranteed — so it
+  is **not** something to trust for a 24/7 unattended encoder.
+- **Turbo + a rebroadcast embed is a gray area.** Twitch's embed has
+  historically still served ads on third-party sites, and using Turbo to strip
+  ads from a stream you re-broadcast elsewhere isn't a supported, contractual
+  "ad-free embed" feature.
+
+**The robust, network-grade answer is to not depend on Twitch's ad pipeline at
+all** — have streamers/hosts push their feed into CSGN's *own* ingest (RTMP), so
+there is zero Twitch ad surface and `?noads` is simply always correct. That path
+(and the professional-graphics build it unlocks) is written up in
+[`docs/broadcast-graphics.md`](./broadcast-graphics.md). Until that exists, run
+`?noads` **only** on a source you've confirmed is ad-free (a Turbo-authenticated
+CEF that's tested clean, or a non-Twitch/own-ingest OVERRIDE), and leave the safe
+33s mask on for anything that plays real Twitch prerolls.
+
 ### Verifying the encode (do this once before going live)
 
 Open `https://csgn.fun/player?debug=1` in the OBS source (right-click → Interact,
@@ -193,10 +254,11 @@ workflow and gain OS-notification risk — treat it as a temporary fallback only
 | Brand wipe stutters or plays twice in a row | Fixed in-app: the wipe is now one continuous sweep (in left → out right), and it only plays when leaving a state `/player` actually settled in for ≥5s — boot-time state shuffling and brief event races no longer fire it |
 | `/watch` embed not showing | Broadcast post URL not pushed in Admin, or it's a raw `/i/broadcasts/` link (not embeddable — paste the *post* URL) |
 
-**State previews:** open `/player?preview=board`, `?preview=brb`, `?preview=starting`, or
-`?preview=wipe` to check each look inside OBS without touching live state. Add
-`?debug=1` to any `/player` URL for the live diagnostic panel (env, mode, channel,
-playback/gate state, audio state, event log). To rehearse against a specific
+**State previews:** open `/player?preview=board`, `?preview=brb`, `?preview=starting`,
+`?preview=wipe`, or `?preview=countdown` (the no-ads "Now Live" bumper) to check each
+look inside OBS without touching live state. Add `?debug=1` to any `/player` URL for
+the live diagnostic panel (env, mode, channel, reveal mode, playback/gate state, audio
+state, event log). To rehearse against a specific
 public channel without touching slot data, use `/player?channel=<name>` (the
 admin emergency override still wins over it) — handy for verifying the whole
 startup sequence, ad mask included, before a slot goes live.

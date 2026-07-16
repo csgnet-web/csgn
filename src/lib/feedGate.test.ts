@@ -261,3 +261,33 @@ describe('feedGate — degraded environments', () => {
     expect(d.find((s) => s.confirmed)?.tick).toBe(confirmTick)
   })
 })
+
+describe('feedGate — configurable preroll mask (no-ads / Turbo fast-reveal)', () => {
+  // Same Twitch-shaped happy path, but the caller shortens the mask because the
+  // feed is ad-free — the gate must confirm on the shorter clock.
+  const FAST_MASK_MS = 2_000
+
+  it('confirms on the shortened mask instead of the full 33s window', () => {
+    const d = run(createFeedGate(T0, { prerollMaskMs: FAST_MASK_MS }), 20, adThenContent)
+    // frames start tick 3, 2s mask ⇒ pin at tick 5, confirm POST_PIN_STABLE_MS later
+    const pins = d.filter((s) => s.pinQuality)
+    expect(pins.map((p) => p.tick)).toEqual([3 + sec(FAST_MASK_MS)])
+    const first = d.find((s) => s.confirmed)
+    expect(first?.tick).toBe(3 + sec(FAST_MASK_MS) + sec(POST_PIN_STABLE_MS))
+    expect(first?.phase).toBe('on-air')
+  })
+
+  it('reports the shortened mask in maskRemainingMs before any frames', () => {
+    const d = run(createFeedGate(T0, { prerollMaskMs: FAST_MASK_MS }), 1, () => ({
+      currentTimeS: 0,
+      qualityCount: 0,
+      live: false,
+    }))
+    expect(d[0].maskRemainingMs).toBe(FAST_MASK_MS)
+  })
+
+  it('still masks the full 33s window when no override is supplied', () => {
+    const d = run(createFeedGate(T0), 60, adThenContent)
+    expect(d.filter((s) => s.pinQuality).map((p) => p.tick)).toEqual([3 + sec(PREROLL_MASK_MS)])
+  })
+})

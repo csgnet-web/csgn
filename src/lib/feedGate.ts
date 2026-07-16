@@ -107,7 +107,17 @@ export interface FeedGate {
   notePlaying: () => void
 }
 
-export function createFeedGate(createdAtMs: number): FeedGate {
+export function createFeedGate(
+  createdAtMs: number,
+  opts?: {
+    /** Override the preroll-ad cover window. Defaults to PREROLL_MASK_MS (33s,
+     *  sized to outlast Twitch's ad break). /player passes a much smaller value
+     *  in no-ads / Turbo mode, where there is no stitched preroll to outlast —
+     *  the mask then only needs to hide the play-button poster and buffering. */
+    prerollMaskMs?: number
+  },
+): FeedGate {
+  const prerollMaskMs = opts?.prerollMaskMs ?? PREROLL_MASK_MS
   let lastTimeS: number | null = null
   let lastProgressAtMs: number | null = null
   let runStartMs: number | null = null // start of the current uninterrupted progress run
@@ -157,7 +167,7 @@ export function createFeedGate(createdAtMs: number): FeedGate {
     const sinceProgressMs = nowMs - (lastProgressAtMs ?? createdAtMs)
     const flowing = lastProgressAtMs !== null && sinceProgressMs < CONFIRM_LOSS_STALL_MS
     const maskElapsedMs = sessionStartMs === null ? 0 : nowMs - sessionStartMs
-    const maskDone = sessionStartMs !== null && maskElapsedMs >= PREROLL_MASK_MS
+    const maskDone = sessionStartMs !== null && maskElapsedMs >= prerollMaskMs
 
     // ── Quality pin: once per session, only post-mask, only from a real list ──
     let pinQuality = false
@@ -166,7 +176,7 @@ export function createFeedGate(createdAtMs: number): FeedGate {
         pinQuality = true
         pinDone = true
         pinIssuedAtMs = nowMs
-      } else if (maskElapsedMs >= PREROLL_MASK_MS + PIN_WAIT_MS) {
+      } else if (maskElapsedMs >= prerollMaskMs + PIN_WAIT_MS) {
         pinDone = true // list never populated — stay on auto rather than poke blind
       }
     }
@@ -211,7 +221,7 @@ export function createFeedGate(createdAtMs: number): FeedGate {
       nudge,
       rebuild,
       phase,
-      maskRemainingMs: sessionStartMs === null ? PREROLL_MASK_MS : Math.max(0, PREROLL_MASK_MS - maskElapsedMs),
+      maskRemainingMs: sessionStartMs === null ? prerollMaskMs : Math.max(0, prerollMaskMs - maskElapsedMs),
       sinceProgressMs,
     }
   }

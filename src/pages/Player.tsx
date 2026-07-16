@@ -12,7 +12,7 @@ import {
   type BroadcastDoc,
   type MasterState,
 } from '@/lib/masterControl'
-import { createFeedGate, PROGRESS_TICK_MS, type FeedGate, type GateDecision } from '@/lib/feedGate'
+import { createFeedGate, PREROLL_MASK_MS, PROGRESS_TICK_MS, type FeedGate, type GateDecision } from '@/lib/feedGate'
 import { loadTwitchPlayer, type TwitchPlayer, type TwitchPlayerCtor } from '@/lib/twitchEmbed'
 import { isOBS, obsVersion } from '@/lib/environment'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
@@ -59,6 +59,51 @@ const WIPE_MIN_DWELL_MS = 5_000
  *  or tear the embed down; the OBS operator owns any remaining cleanup. */
 const LIVE_REVEAL_DEADLINE_MS = 45_000
 
+// ── No-ads / Turbo fast-reveal (operator flag `?noads` / `?turbo`) ───────────
+// When the OBS encoder is playing an ad-free feed — a Twitch session
+// authenticated as a Turbo account, or an own-ingest / non-Twitch source — there
+// is no server-stitched preroll to outlast, so the whole point of the 33s mask
+// disappears. In that mode the "Now Live" curtain becomes a deterministic 10s
+// countdown: long enough to hide the poster + buffering and give viewers a clean
+// broadcast bumper, short enough that the wait no longer feels like a stall.
+// LEAVE THIS OFF (the default) whenever a Twitch preroll can still play, or the
+// ad would leak straight onto the encode — the 33s mask is what hides it.
+/** Cover window (and countdown length) in no-ads mode — the fixed "Now Live" hold. */
+const FAST_COUNTDOWN_MS = 10_000
+/** Preroll mask in no-ads mode: no stitched ad to outlast, just a brief settle
+ *  so the poster/first-buffering frame never flashes before quality is pinned. */
+const FAST_MASK_MS = 2_000
+/** Fail-open ceiling in no-ads mode — 1s past the countdown, so a feed that
+ *  confirmed cleanly reveals off the countdown (and the gate keeps its
+ *  rebuild/re-cover powers) while a feed that never started still trips the
+ *  deadline right after the count hits zero. */
+const FAST_DEADLINE_MS = FAST_COUNTDOWN_MS + 1_000
+
+interface RevealTiming {
+  /** FeedGate preroll-mask length. */
+  maskMs: number
+  /** Minimum time the curtain is held from entering LIVE (0 = reveal as soon as
+   *  playback is confirmed + debounce; the standard ad-mask behavior). */
+  coverHoldMs: number
+  /** Fail-open reveal ceiling while LIVE. */
+  deadlineMs: number
+  /** Countdown length shown on the curtain (0 = no countdown UI). */
+  countdownS: number
+}
+
+const STANDARD_TIMING: RevealTiming = {
+  maskMs: PREROLL_MASK_MS,
+  coverHoldMs: 0,
+  deadlineMs: LIVE_REVEAL_DEADLINE_MS,
+  countdownS: 0,
+}
+const FAST_TIMING: RevealTiming = {
+  maskMs: FAST_MASK_MS,
+  coverHoldMs: FAST_COUNTDOWN_MS,
+  deadlineMs: FAST_DEADLINE_MS,
+  countdownS: FAST_COUNTDOWN_MS / 1_000,
+}
+
 function buildYouTubeOverrideSrc(url: string): string | null {
   const stream = detectStream(url)
   if (!stream || stream.type !== 'youtube') return null
@@ -96,6 +141,15 @@ function buildYouTubeOverrideSrc(url: string): string | null {
 export default function Player() {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
   const obs = useMemo(() => isOBS(), [])
+  // No-ads / Turbo fast-reveal flag: set on the OBS Browser Source URL
+  // (`/player?noads=1`) only when the encoder's feed is genuinely ad-free.
+  // Picks the shorter mask + fixed 10s countdown instead of the 33s ad-mask.
+  const noAds = useMemo(() => {
+    if (typeof window === 'undefined') return false
+    const p = new URLSearchParams(window.location.search)
+    return p.has('noads') || p.has('turbo')
+  }, [])
+  const timing = useMemo<RevealTiming>(() => (noAds ? FAST_TIMING : STANDARD_TIMING), [noAds])
   const { currentSlot, slotsReady } = useLiveSlot()
   const [state, dispatch] = useReducer(reduce, INITIAL_STATE)
   const [vodItems, setVodItems] = useState<VodItem[]>([])
@@ -126,6 +180,11 @@ export default function Player() {
   // The browser blocked autoplay-with-sound (normal tabs only) — surface a
   // one-tap "enable sound" affordance. Never happens inside OBS.
   const [audioBlocked, setAudioBlocked] = useState(false)
+  // Wall-clock stamp of when the state machine most recently entered LIVE, used
+  // to anchor the fixed "Now Live" countdown window in no-ads mode. A ref (not
+  // state): it's only read inside timers, and Date.now() belongs in an effect,
+  // not render. Null while not LIVE.
+  const liveSinceRef = useRef<number | null>(null)
 
   const playerRef = useRef<TwitchPlayer | null>(null)
   // The channel the CURRENT embed instance was constructed for. The embed is
@@ -257,6 +316,14 @@ export default function Player() {
     setForceReveal(false)
   }
 
+  // Stamp when we (re)entered LIVE — anchors the fixed "Now Live" countdown
+  // window (no-ads mode). Set in an effect (not render) because Date.now() is
+  // impure; it lands well before playback confirms, so the reveal timer below
+  // always reads a populated anchor.
+  useEffect(() => {
+    liveSinceRef.current = state.mode === 'LIVE' ? Date.now() : null
+  }, [state.mode])
+
   // Brand wipe on state changes, gated on dwell time: only a transition out of
   // a mode we actually settled in gets the stinger, so the boot sequence
   // (INTERMISSION → STARTING_SOON → LIVE inside a couple of seconds) and brief
@@ -279,32 +346,45 @@ export default function Player() {
 
   // ── Feed reveal: the cover is reset to hidden-feed on every mode change (the
   //    render-phase block above) and whenever playback confidence is lost. It
-  //    lifts ONLY once FeedGate has confirmed broadcast content (playbackOk)
-  //    plus a short debounce — never on a timer or an embed event alone. If
-  //    the embed never actually plays, the branded cover simply stays up and
-  //    the gate rebuilds the embed behind it. ──
+  //    lifts ONLY once FeedGate has confirmed broadcast content (playbackOk) —
+  //    never on a timer or an embed event alone. If the embed never actually
+  //    plays, the branded cover simply stays up and the gate rebuilds behind it.
+  //
+  //    In the standard ad-mask mode (coverHoldMs = 0) the lift follows
+  //    confirmation by a short debounce, so the reveal lands on a feed already
+  //    proven stable. In no-ads mode (coverHoldMs > 0) the curtain instead runs
+  //    a fixed countdown from entering LIVE: playback confirms quickly behind it
+  //    (short mask), and the reveal waits out the countdown so the transition is
+  //    a deterministic 10s bumper rather than a variable stall. ──
   useEffect(() => {
     if (state.mode !== 'LIVE' || !playbackOk) return
-    const t = setTimeout(() => setFeedReady(true), REVEAL_HOLD_MS)
+    const liveSince = liveSinceRef.current
+    const wait =
+      timing.coverHoldMs > 0 && liveSince !== null
+        ? Math.max(0, timing.coverHoldMs - (Date.now() - liveSince))
+        : REVEAL_HOLD_MS
+    const t = setTimeout(() => setFeedReady(true), wait)
     return () => clearTimeout(t)
-  }, [state.mode, playbackOk])
+  }, [state.mode, playbackOk, timing])
 
   // ── Reveal deadline (fail-open): the cover may NEVER hold longer than
-  //    LIVE_REVEAL_DEADLINE_MS while LIVE. The gate lifting the cover clears
-  //    this timer; if the gate can't, the video is shown and unmuted anyway
-  //    and the gate loses its power to re-cover or rebuild (forceReveal).
-  //    Re-arms whenever the cover comes back, so cover time stays bounded on
-  //    every path — the page can never sit on "Now Live" indefinitely. ──
+  //    timing.deadlineMs while LIVE. The gate lifting the cover clears this
+  //    timer; if the gate can't, the video is shown and unmuted anyway. A feed
+  //    that never confirmed also loses the gate's power to re-cover or rebuild
+  //    (forceReveal) — but a feed that DID confirm (the no-ads countdown racing
+  //    this deadline) keeps it, so a healthy stream is never crippled by the
+  //    fallback. Re-arms whenever the cover comes back, so cover time stays
+  //    bounded on every path — the page can never sit on "Now Live" forever. ──
   useEffect(() => {
     if (state.mode !== 'LIVE' || feedReady) return
     const t = setTimeout(() => {
       logEvent('reveal deadline — forcing feed visible')
-      setForceReveal(true)
+      if (!playbackOkRef.current) setForceReveal(true)
       setPlaybackOk(true)
       setFeedReady(true)
-    }, LIVE_REVEAL_DEADLINE_MS)
+    }, timing.deadlineMs)
     return () => clearTimeout(t)
-  }, [state.mode, feedReady, logEvent])
+  }, [state.mode, feedReady, timing, logEvent])
 
   // ── Firestore: admin emergency override (non-slot takeover URL) ──
   useEffect(() => {
@@ -533,7 +613,7 @@ export default function Player() {
           attach(PlayerCtor)
           playerRef.current = player
           armedChannelRef.current = channel
-          gateRef.current = createFeedGate(Date.now())
+          gateRef.current = createFeedGate(Date.now(), { prerollMaskMs: timing.maskMs })
           armMountTimeout()
         })
         .catch(() => { logEvent('embed load failed'); feedDown() })
@@ -543,7 +623,7 @@ export default function Player() {
       cancelled = true
       if (mountTimeoutRef.current) clearTimeout(mountTimeoutRef.current)
     }
-  }, [channel, rebuildNonce, hostname, obs, logEvent, syncAudio, feedDown, coverFeed])
+  }, [channel, rebuildNonce, hostname, obs, logEvent, syncAudio, feedDown, coverFeed, timing])
 
   // ── FeedGate sampling: once a second, read what the embed is *actually*
   //    doing (frames advancing? quality list up?) and act on the gate's
@@ -656,8 +736,10 @@ export default function Player() {
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
   const overrideSrc = state.mode === 'OVERRIDE' ? buildYouTubeOverrideSrc(state.url) : null
 
-  // Operator preview: /player?preview=board|brb|starting|wipe forces a state
-  // so each look can be checked inside OBS before going live.
+  // Operator preview: /player?preview=board|brb|starting|wipe|countdown forces a
+  // state so each look can be checked inside OBS before going live. `countdown`
+  // renders the no-ads "Now Live" curtain with its live countdown regardless of
+  // the ?noads flag, so the bumper can be rehearsed on its own.
   const preview = useMemo(
     () => (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('preview') : null),
     [],
@@ -669,6 +751,14 @@ export default function Player() {
         {preview === 'brb' && <StatusCard variant="brb" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
         {preview === 'starting' && <StatusCard variant="starting-soon" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
         {preview === 'wipe' && <WipeOverlay visible label="Now Live" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
+        {preview === 'countdown' && (
+          <FeedCover
+            label="Now Live"
+            streamerName={streamerName || 'Streamer'}
+            slotLabel={slotLabel}
+            countdownSeconds={FAST_COUNTDOWN_MS / 1_000}
+          />
+        )}
       </div>
     )
   }
@@ -692,7 +782,12 @@ export default function Player() {
           ad window (video, countdown text, "commercial break" chrome), and
           every startup/rebuild reveal. */}
       {state.mode === 'LIVE' && !feedReady && (
-        <FeedCover label="Now Live" streamerName={streamerName} slotLabel={slotLabel} />
+        <FeedCover
+          label="Now Live"
+          streamerName={streamerName}
+          slotLabel={slotLabel}
+          countdownSeconds={timing.countdownS || undefined}
+        />
       )}
 
       {state.mode === 'OVERRIDE' && (
@@ -747,6 +842,7 @@ export default function Player() {
           obs={obs}
           mode={state.mode}
           channel={channel}
+          reveal={noAds ? `no-ads · ${timing.countdownS}s countdown` : `ad-mask · ${Math.round(timing.maskMs / 1000)}s`}
           playback={playbackOk ? (feedReady ? 'confirmed (revealed)' : 'confirmed (covered)') : 'not confirmed'}
           gate={gateInfo}
           audioBlocked={audioBlocked}
@@ -759,11 +855,12 @@ export default function Player() {
 }
 
 function DebugOverlay({
-  obs, mode, channel, playback, gate, audioBlocked, serverLive, log,
+  obs, mode, channel, reveal, playback, gate, audioBlocked, serverLive, log,
 }: {
   obs: boolean
   mode: MasterState['mode']
   channel: string | null
+  reveal: string
   playback: string
   gate: string
   audioBlocked: boolean
@@ -776,6 +873,7 @@ function DebugOverlay({
       <div className="mb-1 font-bold text-white">CSGN /player debug</div>
       <div className={row}><span>env</span><span>{obs ? `OBS ${obsVersion() ?? ''}`.trim() : 'browser'}</span></div>
       <div className={row}><span>mode</span><span className="text-white">{mode}</span></div>
+      <div className={row}><span>reveal</span><span className="truncate max-w-[12rem]">{reveal}</span></div>
       <div className={row}><span>channel</span><span>{channel ?? '—'}</span></div>
       <div className={row}><span>playback</span><span>{playback}</span></div>
       <div className={row}><span>gate</span><span className="truncate max-w-[12rem]">{gate}</span></div>
