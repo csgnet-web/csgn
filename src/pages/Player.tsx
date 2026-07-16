@@ -95,7 +95,11 @@ const STANDARD_TIMING: RevealTiming = {
   maskMs: PREROLL_MASK_MS,
   coverHoldMs: 0,
   deadlineMs: LIVE_REVEAL_DEADLINE_MS,
-  countdownS: 0,
+  // The shield shows a countdown of the ad-mask window itself. Reveal stays
+  // FeedGate-confirmed (not this clock), so if content isn't up the instant the
+  // count hits zero the curtain pulses until the real cut — the countdown is an
+  // honest "how long the shield holds", not a promise of the exact reveal.
+  countdownS: PREROLL_MASK_MS / 1_000,
 }
 const FAST_TIMING: RevealTiming = {
   maskMs: FAST_MASK_MS,
@@ -150,6 +154,15 @@ export default function Player() {
     return p.has('noads') || p.has('turbo')
   }, [])
   const timing = useMemo<RevealTiming>(() => (noAds ? FAST_TIMING : STANDARD_TIMING), [noAds])
+  // Diagnostic peek (?peek=1): drop the "Going Live Now" curtain to ~22% opacity
+  // so the operator can watch the raw Twitch startup behind it and see for
+  // themselves whether a preroll ad actually plays (and for how long). Pair with
+  // ?debug=1 to read the FeedGate phase alongside it. Never use on a real
+  // broadcast source — the feed (ad and all) shows through.
+  const peek = useMemo(() => {
+    if (typeof window === 'undefined') return false
+    return new URLSearchParams(window.location.search).has('peek')
+  }, [])
   const { currentSlot, slotsReady } = useLiveSlot()
   const [state, dispatch] = useReducer(reduce, INITIAL_STATE)
   const [vodItems, setVodItems] = useState<VodItem[]>([])
@@ -750,10 +763,10 @@ export default function Player() {
         {preview === 'board' && <IntermissionBoard />}
         {preview === 'brb' && <StatusCard variant="brb" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
         {preview === 'starting' && <StatusCard variant="starting-soon" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
-        {preview === 'wipe' && <WipeOverlay visible label="Now Live" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
+        {preview === 'wipe' && <WipeOverlay visible label="Going Live Now" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
         {preview === 'countdown' && (
           <FeedCover
-            label="Now Live"
+            label="Going Live Now"
             streamerName={streamerName || 'Streamer'}
             slotLabel={slotLabel}
             countdownSeconds={FAST_COUNTDOWN_MS / 1_000}
@@ -783,10 +796,11 @@ export default function Player() {
           every startup/rebuild reveal. */}
       {state.mode === 'LIVE' && !feedReady && (
         <FeedCover
-          label="Now Live"
+          label="Going Live Now"
           streamerName={streamerName}
           slotLabel={slotLabel}
           countdownSeconds={timing.countdownS || undefined}
+          translucent={peek}
         />
       )}
 
@@ -817,7 +831,7 @@ export default function Player() {
 
       <WipeOverlay
         visible={showWipe}
-        label={state.mode === 'LIVE' ? 'Now Live' : 'CSGN 24/7'}
+        label={state.mode === 'LIVE' ? 'Going Live Now' : 'CSGN 24/7'}
         streamerName={state.mode === 'LIVE' ? streamerName : undefined}
         slotLabel={state.mode === 'LIVE' ? slotLabel : undefined}
       />
@@ -842,7 +856,7 @@ export default function Player() {
           obs={obs}
           mode={state.mode}
           channel={channel}
-          reveal={noAds ? `no-ads · ${timing.countdownS}s countdown` : `ad-mask · ${Math.round(timing.maskMs / 1000)}s`}
+          reveal={`${noAds ? 'no-ads' : 'ad-mask'} · ${Math.round(timing.maskMs / 1000)}s mask · ${timing.countdownS}s count${peek ? ' · PEEK' : ''}`}
           playback={playbackOk ? (feedReady ? 'confirmed (revealed)' : 'confirmed (covered)') : 'not confirmed'}
           gate={gateInfo}
           audioBlocked={audioBlocked}

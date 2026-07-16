@@ -107,7 +107,37 @@ scene alongside the tickers, so they can never interfere with playback.
 **Nothing to configure for this** — it's automatic. Just make sure the Browser
 Source has **Page permissions: Read and write to OBS** so the OBS detection works.
 
-### Faster "Now Live": no-ads / Turbo fast-reveal (`?noads`)
+### The "Going Live Now" shield — countdown + proving it hides an ad (`?peek`)
+
+The branded startup curtain reads **GOING LIVE NOW** and now carries a
+**countdown** of the shield window (a depleting ring + seconds readout), so
+viewers see how long the hold is instead of a static card. The 33s default is
+unchanged — the countdown is just the shield made visible. Reveal is still
+**FeedGate-confirmed**, not the clock: if real content isn't flowing the instant
+the count hits zero, the ring pulses until the actual cut, so the shield never
+lifts onto an ad or a dead frame.
+
+**"Is a 15s ad actually playing behind the shield, or is the 33s just wasted?"**
+There is **no Twitch API that reports preroll ads** — that's *why* the mask is a
+fixed duration instead of an event (`src/lib/feedGate.ts` header). So the only
+honest way to know is to **watch it once**:
+
+1. Point a throwaway Browser Source (or a tab) at
+   `https://csgn.fun/player?peek=1&debug=1` during a real streamer start (or use
+   `?channel=<name>&peek=1&debug=1` to rehearse against any live channel).
+2. `?peek=1` drops the curtain to ~22% opacity, so you see the **raw Twitch
+   startup through it** — poster, and the preroll ad if one runs. `?debug=1`
+   shows the FeedGate phase (`ad-mask` → `settling` → `on-air`) beside it.
+3. Watch what happens in the first ~35s:
+   - **You see an ad play, then content** → the shield is doing its job; keep 33s.
+   - **Content appears within a second or two, no ad** (this streamer/viewer just
+     isn't served prerolls) → the 33s is longer than needed *for that source*;
+     the no-ads mode below is safe to use on it.
+
+That's the proof — no guessing. Remember `?peek` shows the ad on-screen, so
+**never leave it on a real broadcast source**; it's a one-time diagnostic.
+
+### Optional faster reveal for a genuinely ad-free source (`?noads`)
 
 The 33s "Now Live" curtain is **entirely** the preroll-ad mask — its only job is
 to outlast Twitch's server-stitched ad (≤30s) so the ad video, its countdown
@@ -120,53 +150,39 @@ mode**:
 
 - The preroll mask drops from 33s to ~2s (just enough to hide the poster and
   the first buffering frame).
-- The "Now Live" curtain becomes a **deterministic 10-second countdown** (a
-  depleting ring + a live `10 → 1` readout) instead of an indeterminate hold, so
-  OBS viewers see exactly when the feed cuts in — a broadcast bumper, not a
-  stall.
+- The "Going Live Now" curtain becomes a **deterministic 10-second countdown**
+  (a depleting ring + a live `10 → 1` readout), so OBS viewers see exactly when
+  the feed cuts in — a tighter broadcast bumper.
 - Everything else (quality pin to `chunked`, stall-nudge, wedge-rebuild,
   fail-open reveal) still runs behind the countdown; the fail-open ceiling just
   moves to ~11s.
 
-Confirm the flag took effect with `?debug=1` — the panel's **`reveal`** row reads
-`no-ads · 10s countdown` (vs `ad-mask · 33s`). Rehearse the bumper on its own
-with `/player?preview=countdown`.
+Confirm the flag took effect with `?debug=1` — the panel's **`reveal`** row shows
+`no-ads · 2s mask · 10s count`. Rehearse the bumper on its own with
+`/player?preview=countdown`.
 
-> ⚠️ **Only enable `?noads` once you have verified no preroll actually plays.**
-> If a Twitch ad can still run, the 10s countdown will end *on the ad* and it
-> leaks straight onto the stream — the exact thing the 33s mask exists to
-> prevent. Verify by watching `?debug=1` on the real source through a full
-> streamer start (or `?channel=<name>`): the `gate` row should go
-> `boot → settling → on-air` with **no** long `ad-mask` phase.
+> ⚠️ **Only enable `?noads` on a source you've *confirmed* ad-free with `?peek`
+> (above).** If a Twitch preroll can still run, the 10s countdown ends *on the
+> ad* and it leaks straight onto the stream — the exact thing the 33s mask
+> exists to prevent. When in doubt, leave `?noads` OFF; the 33s shield (now with
+> its own countdown) is the safe default.
 
-**Can Twitch Turbo actually remove the ads?** Partly, with real caveats — Turbo
-only suppresses ads for a session **authenticated as the Turbo account**, and the
-Twitch *embed* `/player` uses (`player.twitch.tv` in an iframe) is a separate
-browser context from your logged-in twitch.tv tab:
+**A note on Twitch Turbo (not the recommended path):** Turbo only suppresses ads
+for a session **authenticated as the Turbo account**, and the Twitch *embed*
+`/player` uses (`player.twitch.tv` in an iframe) is a separate browser context
+from your logged-in twitch.tv tab. An OBS Browser Source (CEF) starts logged-out
+with no login UI, and getting CEF to carry a Turbo session (log in via a throwaway
+Interact source and hope the cookie persists) is fragile — cookies expire, CEF
+updates clear the cache, third-party-cookie handling for embeds isn't guaranteed,
+and Turbo-on-a-rebroadcast-embed is a gray area Twitch has never supported. **Not
+something to trust for a 24/7 unattended encoder** — so `?noads` is best reserved
+for a genuinely ad-free source, not a Turbo workaround.
 
-- **It is not automatic.** An OBS Browser Source (CEF) starts logged-out, and
-  there's no login UI inside a source pointed at `/player`. Turbo on your normal
-  browser does nothing for the OBS encode.
-- **Making CEF carry the session is fiddly and fragile.** You'd point a
-  throwaway Browser Source at `https://www.twitch.tv/login`, right-click →
-  **Interact**, log into the Turbo account (2FA and CAPTCHA included), and rely
-  on CEF persisting `twitch.tv` cookies in its cache so the embed picks up the
-  session. It can work, but the cookie can expire, a CEF/OBS update can clear the
-  cache, and third-party-cookie handling for the embed is not guaranteed — so it
-  is **not** something to trust for a 24/7 unattended encoder.
-- **Turbo + a rebroadcast embed is a gray area.** Twitch's embed has
-  historically still served ads on third-party sites, and using Turbo to strip
-  ads from a stream you re-broadcast elsewhere isn't a supported, contractual
-  "ad-free embed" feature.
-
-**The robust, network-grade answer is to not depend on Twitch's ad pipeline at
-all** — have streamers/hosts push their feed into CSGN's *own* ingest (RTMP), so
-there is zero Twitch ad surface and `?noads` is simply always correct. That path
-(and the professional-graphics build it unlocks) is written up in
-[`docs/broadcast-graphics.md`](./broadcast-graphics.md). Until that exists, run
-`?noads` **only** on a source you've confirmed is ad-free (a Turbo-authenticated
-CEF that's tested clean, or a non-Twitch/own-ingest OVERRIDE), and leave the safe
-33s mask on for anything that plays real Twitch prerolls.
+**The network-grade answer is to not depend on Twitch's ad pipeline at all** —
+have hosts push their feed into CSGN's *own* ingest (RTMP), so there is zero
+Twitch ad surface and `?noads` is simply always correct. That path (and the
+professional-graphics build it unlocks) is in
+[`docs/broadcast-graphics.md`](./broadcast-graphics.md).
 
 ### Verifying the encode (do this once before going live)
 
@@ -255,10 +271,11 @@ workflow and gain OS-notification risk — treat it as a temporary fallback only
 | `/watch` embed not showing | Broadcast post URL not pushed in Admin, or it's a raw `/i/broadcasts/` link (not embeddable — paste the *post* URL) |
 
 **State previews:** open `/player?preview=board`, `?preview=brb`, `?preview=starting`,
-`?preview=wipe`, or `?preview=countdown` (the no-ads "Now Live" bumper) to check each
+`?preview=wipe`, or `?preview=countdown` (the "Going Live Now" bumper) to check each
 look inside OBS without touching live state. Add `?debug=1` to any `/player` URL for
 the live diagnostic panel (env, mode, channel, reveal mode, playback/gate state, audio
-state, event log). To rehearse against a specific
+state, event log), and `?peek=1` to see the raw Twitch startup through a translucent
+shield (proves whether a preroll actually plays — diagnostic only, never on a live source). To rehearse against a specific
 public channel without touching slot data, use `/player?channel=<name>` (the
 admin emergency override still wins over it) — handy for verifying the whole
 startup sequence, ad mask included, before a slot goes live.
