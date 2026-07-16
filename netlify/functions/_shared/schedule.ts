@@ -86,7 +86,9 @@ export function buildExpectedSlotsForDate(targetDate: Date): ExpectedSlot[] {
 
     return {
       id: `slot-${String(slotDate.year).padStart(4, '0')}-${String(slotDate.month).padStart(2, '0')}-${String(slotDate.day).padStart(2, '0')}-${String(template.hourET).padStart(2, '0')}`,
-      type: template.type,
+      // Operator directive: the auto-seeder creates every slot as CEO Creator
+      // for now. Revert to `template.type` to reopen the auction block.
+      type: 'ceo',
       label: `${formatTimeLabel(template.hourET)} – ${formatTimeLabel(template.hourET + template.duration)}`,
       startTime: startUTC.toISOString(),
       endTime: endUTC.toISOString(),

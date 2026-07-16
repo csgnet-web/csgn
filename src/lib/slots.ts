@@ -295,8 +295,11 @@ function buildExpectedSlotsForDate(targetDate: Date, forcedType?: SlotType): Exp
     const startUTC = etToUTC(slotDate.year, slotDate.month, slotDate.day, template.hourET)
     const endUTC = new Date(startUTC.getTime() + template.duration * 60 * 60 * 1000)
 
-    // Phase 1 and Phase 2 (before April 12 noon ET) are CEO-assigned only
-    const effectiveType: SlotType = forcedType ?? (startUTC.toISOString() < PHASE_2_END_UTC ? 'ceo' : template.type)
+    // Operator directive: every slot instantiates as CEO Creator for now (no
+    // open auctions). Revert this to
+    //   forcedType ?? (startUTC.toISOString() < PHASE_2_END_UTC ? 'ceo' : template.type)
+    // to reopen the daytime auction block.
+    const effectiveType: SlotType = forcedType ?? 'ceo'
 
     return {
       id: `slot-${String(slotDate.year).padStart(4, '0')}-${String(slotDate.month).padStart(2, '0')}-${String(slotDate.day).padStart(2, '0')}-${String(template.hourET).padStart(2, '0')}`,
