@@ -85,6 +85,12 @@ One Browser Source renders the whole bottom band:
   subscript-zero micro-prices so memecoins never render as `$0.00`.
 - Tuning lives at the top of the file (`CONFIG`, `LEAGUES`, curated fallback
   arrays). Drop a league by commenting it out.
+- **Admin-driven, no OBS touch** (Admin → Broadcast Ticker card; the band polls
+  the world-readable `config/ticker` doc every ~60s): the **RIGHT NOW rail**
+  (up to 8 headlines, `TAG | text`, leads every rotation cycle like ESPN's The
+  Lead) and the **Coin Spotlight** (any coin by symbol + CoinGecko id or
+  DexScreener pair/URL — a 30s on-fire takeover of the crypto dock every 10
+  minutes until cleared; new picks debut within ~a minute).
 
 ### On-air promos
 
