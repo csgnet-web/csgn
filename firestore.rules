@@ -23,8 +23,8 @@ service cloud.firestore {
     }
 
     // public/ and config/ hold well-known single docs (tokenStats, liveStream,
-    // vodPlaylist, emergencyOverride, scheduleMeta) — clients only ever read
-    // them by ID, so collection listing stays off.
+    // vodPlaylist, emergencyOverride, scheduleMeta, ticker) — clients only ever
+    // read them by ID, so collection listing stays off.
     match /public/{docId} {
       allow get: if true;
       allow list: if false;
@@ -34,6 +34,15 @@ service cloud.firestore {
     match /config/{docId} {
       allow get: if true;
       allow list: if false;
+      allow write: if isAdmin();
+    }
+
+    // config/ticker feeds the OBS broadcast ticker overlay
+    // (docs/obs/csgn-ticker.html), which polls it unauthenticated over the
+    // public Firestore REST API — read is deliberately fully public. Writes
+    // (Admin panel headline rail + coin spotlight) stay admin-only.
+    match /config/ticker {
+      allow read: if true;
       allow write: if isAdmin();
     }
 
