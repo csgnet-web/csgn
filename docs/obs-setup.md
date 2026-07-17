@@ -59,6 +59,33 @@ tickers along the bottom with a branded background filling the rest), size the
   fixed-pixel 1080p-class design: **keep the source at least ~1600 px wide**
   (an 800×600 source clips the intermission board's headline and cards).
 
+### The CSGN ticker band (`docs/obs/csgn-ticker.html`)
+
+The sports scoreboard and the crypto LED board now ship as **one combined
+instrument** — `docs/obs/csgn-ticker.html` in this repo — replacing the two
+separate local files (which drifted: 100px vs 110px tall, no shared baseline).
+One Browser Source renders the whole bottom band:
+
+```
+[ CSGN logo 110 ][ league 150 ][ game panel 1258 ][ crypto LED 400 ] = 1920 × 110
+```
+
+- **Add it:** Browser Source → ✅ *Local file* → `csgn-ticker.html` → Width
+  `1920`, Height `110`, position `X 0, Y 970`. FPS 30 (match output).
+- **Size the `/player` source above it:** `1724 × 970`, centered (16:9 exactly,
+  ~98px brand gutters each side) so the band never crops the live feed.
+- Broadcast features: fixed segment widths for every league; MLB live shows the
+  **base-state diamond, outs and count** (never a dead clock); NFL/CFB show
+  **down & distance + possession** (red in the red zone); golf shows a
+  **top-10 leaderboard**; racing shows the podium; eligible games flip to a
+  **top-performers / season-records stat beat**; league changes play a color
+  wipe and each full cycle ends on a **CSGN logo stinger**. The crypto dock
+  keeps the LED-bulb board and rotates the **top 50 coins + top 100 memecoins**
+  (CoinGecko) with rank, 24h delta, market cap, volume, 7d sparkline, and
+  subscript-zero micro-prices so memecoins never render as `$0.00`.
+- Tuning lives at the top of the file (`CONFIG`, `LEAGUES`, curated fallback
+  arrays). Drop a league by commenting it out.
+
 ### On-air promos
 
 `/player` renders **no overlays over a LIVE feed** — the page's only job while

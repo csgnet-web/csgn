@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
 import { formatESTRange, CSGN_MINT, type Slot } from '@/lib/slots'
 import { X_HANDLE } from '@/lib/social'
+import { CsgnLogo } from '@/components/ui/CsgnLogo'
 
 const PANEL_INTERVAL_MS = 12_000
 
@@ -220,9 +221,7 @@ export default function IntermissionBoard({ dimmed = false }: { dimmed?: boolean
 
       {/* Wordmark, top-left */}
       <div className="absolute top-12 left-14 flex items-center gap-4">
-        <svg viewBox="0 0 120 40" className="h-14 w-auto fill-white" xmlns="http://www.w3.org/2000/svg">
-          <text x="0" y="32" fontFamily="system-ui, sans-serif" fontWeight="900" fontSize="38" letterSpacing="2">CSGN</text>
-        </svg>
+        <CsgnLogo className="h-16 w-auto" />
         <span className="px-3 py-1 rounded-full border border-white/20 text-xs font-bold tracking-[0.3em] uppercase text-gray-400">
           24/7 Network
         </span>

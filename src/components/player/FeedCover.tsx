@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { CsgnLogo } from '@/components/ui/CsgnLogo'
 
 /**
  * FeedCover — an opaque, on-brand curtain held over the Twitch player during the
@@ -59,9 +60,7 @@ export default function FeedCover({
       style={{ background: 'linear-gradient(135deg, #ff2346 0%, #0a0a14 60%)', opacity: translucent ? 0.22 : 1 }}
     >
       <div className="flex flex-col items-center gap-5">
-        <svg viewBox="0 0 120 40" className="h-14 w-auto fill-white opacity-95" xmlns="http://www.w3.org/2000/svg">
-          <text x="0" y="32" fontFamily="system-ui, sans-serif" fontWeight="900" fontSize="38" letterSpacing="2">CSGN</text>
-        </svg>
+        <CsgnLogo className="h-16 w-auto opacity-95" />
 
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-white animate-pulse" />

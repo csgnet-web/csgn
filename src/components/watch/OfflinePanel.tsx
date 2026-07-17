@@ -2,6 +2,7 @@ import { ExternalLink } from 'lucide-react'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
 import { formatESTRange } from '@/lib/slots'
 import { X_HANDLE, X_PROFILE_URL } from '@/lib/social'
+import { CsgnLogo } from '@/components/ui/CsgnLogo'
 
 function toMillis(value: unknown): number {
   if (typeof value === 'string' || value instanceof Date || typeof value === 'number') {
@@ -27,9 +28,7 @@ export default function OfflinePanel() {
   return (
     <div className="w-full max-w-[550px] rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-12 flex flex-col items-center gap-5 text-center">
       <div className="flex flex-col items-center gap-3">
-        <svg viewBox="0 0 120 40" className="h-10 w-auto fill-white opacity-90" xmlns="http://www.w3.org/2000/svg">
-          <text x="0" y="32" fontFamily="system-ui, sans-serif" fontWeight="900" fontSize="38" letterSpacing="2">CSGN</text>
-        </svg>
+        <CsgnLogo className="h-12 w-auto opacity-90" />
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-primary-500 animate-live-pulse" />
           <span className="text-white/80 text-sm font-bold tracking-[0.2em] uppercase">Stream starting soon</span>

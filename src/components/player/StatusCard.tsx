@@ -1,4 +1,5 @@
 import IntermissionBoard from './IntermissionBoard'
+import { CsgnLogo } from '@/components/ui/CsgnLogo'
 
 /**
  * Full-screen network status card over a dimmed intermission backdrop.
@@ -21,9 +22,7 @@ export default function StatusCard({
       <IntermissionBoard dimmed />
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="flex flex-col items-center gap-7 px-16 py-14 rounded-3xl bg-black/60 border border-white/[0.1] backdrop-blur-xl">
-          <svg viewBox="0 0 120 40" className="h-12 w-auto fill-white opacity-90" xmlns="http://www.w3.org/2000/svg">
-            <text x="0" y="32" fontFamily="system-ui, sans-serif" fontWeight="900" fontSize="38" letterSpacing="2">CSGN</text>
-          </svg>
+          <CsgnLogo className="h-14 w-auto opacity-90" />
 
           <div className="flex items-center gap-3">
             <span className={`w-3 h-3 rounded-full animate-live-pulse ${isBrb ? 'bg-gold' : 'bg-primary-500'}`} />

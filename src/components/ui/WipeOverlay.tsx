@@ -8,6 +8,8 @@
  * old approach transitioned back out the way it came in, which read as the
  * stinger stuttering or running twice on-stream.
  */
+import { CsgnLogo } from '@/components/ui/CsgnLogo'
+
 export function WipeOverlay({
   visible,
   label = 'Now Live',
@@ -29,10 +31,7 @@ export function WipeOverlay({
     >
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          {/* CSGN Logo SVG */}
-          <svg viewBox="0 0 120 40" className="h-12 w-auto fill-white opacity-90" xmlns="http://www.w3.org/2000/svg">
-            <text x="0" y="32" fontFamily="system-ui, sans-serif" fontWeight="900" fontSize="38" letterSpacing="2">CSGN</text>
-          </svg>
+          <CsgnLogo className="h-14 w-auto opacity-90" />
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
             <span className="text-white/80 text-sm font-bold tracking-[0.2em] uppercase">{label}</span>
