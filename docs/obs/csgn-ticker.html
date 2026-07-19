@@ -31,17 +31,30 @@
       winner's score in gold with a ◀ marker.
     • MLB live: base-state diamond, outs dots, ball–strike count, inning —
       never a dead 0:00 clock.
+    • MLB pregame: PROBABLE STARTERS flip face (pitcher + W-L, ERA per side).
+      MLB final: PITCHING DECISIONS flip face (W on the winner with SV when
+      earned, L on the loser).
+    • US TV: national network (FOX/ESPN/TBS…) sourced from ESPN's broadcast
+      fields, shown in blue under the game clock/status for every league.
     • NFL/CFB live: down & distance + possession dot (red in the red zone).
     • Golf: top-10 leaderboard as a real table (POS/PLAYER/TOT/THRU headers,
       zebra rows, leader highlighted, under-par green / over-par red).
     • Racing: podium line (top 3) when the API exposes running order.
     • Stat beat: games with player leaders flip to a top-performers face
       (season leaders for pregames) before rotating on.
-    • Transitions: vertical roll within a league, a color league wipe between
-      leagues, and a CSGN logo stinger at the end of each full cycle.
-    • Crypto LED: the bulb-board aesthetic from the original, plus rank chip,
-      TOP 50 / MEME 100 tag, market cap, volume, 7d sparkline, and micro-price
-      support (0.0₅1234-style subscript zeros) so memecoins never read $0.00.
+    • Transitions, broadcast-paced: 7s main dwell, ~640ms decelerating roll
+      within a league, and a three-phase league wipe (slide in → hold covered
+      → slide out, edge sheen, GPU-only transforms) with a CSGN logo stinger
+      closing each full cycle. All timings live in CONFIG and feed both the
+      JS timers and the CSS motion.
+    • 6 AM ET rollover: yesterday's slate (finals + West Coast stragglers)
+      stays on the board until 6:00 AM ET, then the new day loads.
+    • Banana Ball: the Bananas' full remaining 2026 tour is embedded
+      (BANANA_BALL_GAMES) — today's game, else next stop, else last result.
+    • Crypto LED: bulb-board digits with a bigger $ sign and wider spacing,
+      26px coin symbol, rank chip, TOP 50 / MEME 100 tag, market cap, volume,
+      micro-price support (0.0₅1234-style subscript zeros) and a large 7d
+      area chart filling the dock's right side behind the digits.
     • Real brand mark: the CSGN avatar (public/csgn-logo.jpg) is inlined as a
       data URI in the brand block and the cycle stinger.
 
@@ -95,9 +108,13 @@ html,body{margin:0;width:1920px;height:110px;overflow:hidden;background:transpar
 
 /* ── sports window ───────────────────────────────────────────────────────── */
 .sports{flex:1;position:relative;overflow:hidden;background:linear-gradient(180deg,#161616 0%,var(--red-deep) 140%)}
-.item{position:absolute;inset:0;transition:transform .32s cubic-bezier(.4,0,.2,1)}
+/* Roll/wipe/flip durations come from CONFIG (set as CSS vars at boot) so the
+   JS timers and the CSS motion can never drift apart. The roll uses a long
+   decelerating curve (easeOutQuint-ish) — items glide in and settle instead
+   of snapping. will-change keeps OBS's compositor on the GPU path. */
+.item{position:absolute;inset:0;will-change:transform;transition:transform var(--roll-ms,640ms) cubic-bezier(.22,1,.36,1)}
 .no-anim{transition:none!important}
-.flip{position:relative;width:100%;height:100%;transform-style:preserve-3d;transition:transform .5s cubic-bezier(.4,0,.2,1);perspective:900px}
+.flip{position:relative;width:100%;height:100%;transform-style:preserve-3d;will-change:transform;transition:transform .65s cubic-bezier(.4,0,.2,1);perspective:900px}
 .flip.show-b{transform:rotateX(180deg)}
 .face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;display:flex;align-items:center;padding:0 22px}
 .face.b{transform:rotateX(180deg)}
@@ -126,6 +143,7 @@ html,body{margin:0;width:1920px;height:110px;overflow:hidden;background:transpar
 .cell .l2{font-size:17px;color:#fff;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis}
 .cell .l2.rz{color:var(--loss);text-shadow:0 0 6px rgba(255,75,75,.6)}
 .cell .l3{font-size:11px;font-weight:700;color:#8a8a94;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis;text-transform:none}
+.cell .tv{font-size:11px;font-weight:800;color:#6db3ff;letter-spacing:.1em;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis}
 /* baseball live cell */
 .bb{display:flex;align-items:center;gap:12px}
 .dia{position:relative;width:38px;height:32px;flex:none}
@@ -169,6 +187,7 @@ html,body{margin:0;width:1920px;height:110px;overflow:hidden;background:transpar
 .stat-abbr{font-size:15px;font-weight:900;color:var(--gold);text-transform:uppercase}
 .stat-line{font-size:21px;font-weight:900;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}
 .stat-cat{font-size:12px;font-weight:700;color:#9a9aa4;text-transform:uppercase;letter-spacing:.08em}
+.stat-sub{font-size:13px;font-weight:800;color:#cfcfd6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}
 .stat-mid{display:flex;flex-direction:column;align-items:center;gap:3px;padding:0 10px}
 .stat-tag{font-size:11px;font-weight:900;color:var(--red);letter-spacing:.22em;text-transform:uppercase;white-space:nowrap}
 /* live / final treatments */
@@ -178,9 +197,16 @@ html,body{margin:0;width:1920px;height:110px;overflow:hidden;background:transpar
 .final-shimmer::before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,rgba(255,215,0,0) 0%,rgba(255,215,0,.22) 50%,rgba(255,215,0,0) 100%);background-size:300px 100%;animation:goldShimmer 4s linear infinite;z-index:1;pointer-events:none}
 .live-chip{position:absolute;top:6px;right:8px;z-index:3;font-size:10px;font-weight:900;letter-spacing:.18em;color:#fff;background:var(--red);border-radius:3px;padding:2px 6px;text-transform:uppercase}
 
-/* ── league wipe + stinger ───────────────────────────────────────────────── */
+/* ── league wipe + stinger ───────────────────────────────────────────────────
+   Three staged phases (slide in → hold covered → slide out) with a symmetric
+   ease-in-out curve, a soft drop shadow for depth and a bright leading-edge
+   sheen on the right side of the slab (it leads on the way in AND on the way
+   out, since both movements travel left→right). Durations set from JS. */
 .wipe{position:absolute;inset:0;z-index:6;display:flex;align-items:center;gap:22px;padding:0 34px;
-  transform:translateX(-102%);transition:transform .42s cubic-bezier(.55,0,.15,1)}
+  transform:translateX(-102%);will-change:transform;box-shadow:0 0 34px rgba(0,0,0,.65);
+  transition:transform 540ms cubic-bezier(.65,0,.35,1)}
+.wipe::after{content:"";position:absolute;top:0;bottom:0;right:0;width:30px;pointer-events:none;
+  background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.38))}
 .wipe.in{transform:translateX(0)}
 .wipe.out{transform:translateX(102%)}
 .wipe .wname{font-size:44px;font-weight:900;font-style:italic;text-transform:uppercase;color:#fff;letter-spacing:.02em;text-shadow:0 2px 10px rgba(0,0,0,.55)}
@@ -193,29 +219,40 @@ html,body{margin:0;width:1920px;height:110px;overflow:hidden;background:transpar
 .divider{width:2px;flex:none;background:#000;box-shadow:0 0 6px rgba(0,0,0,.9)}
 .crypto{width:400px;height:110px;flex:none;background:radial-gradient(circle at 50% 50%,#131313 0%,#000 100%);
   border-left:1px solid #202020;padding:7px 12px 6px;display:flex;flex-direction:column;justify-content:space-between;font-family:var(--mono);position:relative;overflow:hidden}
-.c-top{display:flex;justify-content:space-between;align-items:center;height:24px}
+.c-top{display:flex;justify-content:space-between;align-items:center;height:26px;position:relative;z-index:2}
 .c-id{display:flex;align-items:center;gap:8px;min-width:0}
 .c-rank{font-size:11px;font-weight:700;color:#141414;background:var(--gold);border-radius:3px;padding:1px 5px;flex:none}
-.c-sym{font-size:22px;color:#e8e8ec;letter-spacing:2px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.c-delta{font-size:15px;flex:none}
+.c-sym{font-size:26px;color:#e8e8ec;letter-spacing:2px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.c-delta{font-size:16px;flex:none}
 .c-delta.up{color:var(--green);text-shadow:0 0 6px rgba(104,255,122,.6)}
 .c-delta.down{color:var(--loss);text-shadow:0 0 6px rgba(255,75,75,.6)}
-.c-led{height:54px;display:flex;align-items:flex-end;gap:4px;overflow:hidden}
-.c-led .cur{font-size:20px;color:#aaa;font-weight:600;align-self:flex-end;margin-right:2px;font-family:var(--cond)}
+.c-led{height:54px;display:flex;align-items:flex-end;gap:7px;overflow:hidden;position:relative;z-index:2}
+.c-led .cur{font-size:30px;color:#cfcfd4;font-weight:700;align-self:flex-end;margin-right:4px;font-family:var(--cond);text-shadow:0 0 8px rgba(255,255,255,.25)}
 .digit{position:relative;width:26px;height:48px;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(5,1fr);gap:1.5px;flex:none}
 .digit.sm{width:17px;height:32px;align-self:flex-end;margin-bottom:1px}
 .bulb{width:7px;height:7px;border-radius:50%;background:#222;box-shadow:0 0 2px #000 inset}
 .digit.sm .bulb{width:4.6px;height:4.6px}
 .bulb.on{background:var(--gold);box-shadow:0 0 5px var(--gold),0 0 10px rgba(255,200,0,.5)}
-.dot{width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px var(--gold);align-self:flex-end;margin:0 2px 3px;flex:none}
-.gap{width:8px;flex:none}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px var(--gold);align-self:flex-end;margin:0 4px 3px;flex:none}
+.gap{width:12px;flex:none}
 .c-dash{font-size:34px;color:#333;letter-spacing:6px;align-self:center}
-.c-bot{display:flex;align-items:center;gap:10px;height:17px;font-size:11.5px;color:#8a8a94}
+.c-bot{display:flex;align-items:center;gap:10px;height:18px;font-size:12px;color:#8a8a94;position:relative;z-index:2}
 .c-tag{font-weight:700;color:#141414;background:#3d3d46;color:#cfcfd6;border-radius:3px;padding:1px 6px;letter-spacing:.08em;flex:none}
 .c-tag.meme{background:rgba(255,35,70,.18);color:#ff8a9c;border:1px solid rgba(255,35,70,.4)}
 .c-tag.top{background:rgba(255,207,64,.14);color:var(--gold);border:1px solid rgba(255,207,64,.35)}
 .c-mv{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.c-spark{margin-left:auto;flex:none}
+/* Big 7d chart — fills the dock's right side behind the LED digits (area
+   fill + glow line, drawn at 2× for crispness). A left-edge alpha mask
+   fades it out under long prices so the digits always win the overlap. */
+.c-chart{position:absolute;right:8px;bottom:20px;width:210px;height:62px;z-index:1;opacity:.92;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0,rgba(0,0,0,.5) 34%,#000 55%);
+  mask-image:linear-gradient(90deg,transparent 0,rgba(0,0,0,.5) 34%,#000 55%)}
+/* soft entry animation every coin swap — the dock breathes instead of popping */
+@keyframes cfade{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+.crypto>.c-top{animation:cfade .5s ease-out both}
+.crypto>.c-led{animation:cfade .5s ease-out .05s both}
+.crypto>.c-bot{animation:cfade .5s ease-out .1s both}
+.crypto>.c-chart{animation:cfade .6s ease-out .08s both}
 
 /* ── coin spotlight ("on fire" takeover of the crypto dock) ─────────────── */
 .spot{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;justify-content:space-between;
@@ -266,11 +303,11 @@ html,body{margin:0;width:1920px;height:110px;overflow:hidden;background:transpar
 "use strict";
 /* ═══════════════ CONFIG ═══════════════ */
 const CONFIG={
-  DWELL_MAIN:4200,      // ms a game's main face holds
-  DWELL_STATS:3000,     // ms the stat face holds (when one exists)
-  ROLL_MS:340,          // vertical roll between items in the same league
-  WIPE_MS:980,          // league-change wipe total
-  STINGER_MS:1600,      // CSGN stinger at end of full cycle
+  DWELL_MAIN:7000,      // ms a game's main face holds (broadcast pace — readable)
+  DWELL_STATS:4600,     // ms the stat face holds (when one exists)
+  ROLL_MS:640,          // vertical roll between items in the same league
+  WIPE_MS:1600,         // league-change wipe total (in → hold covered → out)
+  STINGER_MS:2500,      // CSGN stinger at end of full cycle
   SPORTS_REFRESH_MS:90_000,
   CRYPTO_REFRESH_MS:90_000,
   CRYPTO_DWELL_MS:5_000,
@@ -382,13 +419,50 @@ const LEAGUES=[
 /* pills with light backgrounds need dark text */
 const DARK_TEXT_PILLS=new Set(["bananas"]);
 
-/* Curated fallbacks — carried over verbatim; update as dates get announced. */
+/* ── Savannah Bananas — full remaining 2026 Banana Ball schedule ─────────────
+   Sourced July 2026 from ticket listings (AXS/Ticketmaster/Vivid Seats), MLB
+   club event pages (Cubs/Cardinals/Yankees), gillettestadium.com and league
+   coverage. 2026 league: Bananas, Party Animals, Firefighters, Texas
+   Tailgaters + new Loco Beach Coconuts and Indianapolis Clowns; ~75 stadiums,
+   Feb 26 – October. TV package: ABC/ESPN/ESPN2, truTV, The CW + TNT Sports
+   Friday games; ESPN/ABC games stream on ESPN app + Disney+. Set `tv` on a
+   row once a network is announced for that specific date.
+   Times not yet published are set to the 7 PM local Banana Ball standard and
+   marked (t). Series opponents inferred from the announced weekend series are
+   marked (s). Sep 18–20 opponents are unannounced → "TBA". */
 const BANANA_BALL_GAMES=[
+  // Kinnick Stadium leg (played — keeps the "Recent" card honest post-series)
   {date:"2026-07-03T19:00:00-05:00",away:"Savannah Bananas",home:"Firefighters",venue:"Kinnick Stadium, Iowa City",tv:"truTV"},
-  {date:"2026-07-04T19:00:00-05:00",away:"Savannah Bananas",home:"Firefighters",venue:"Kinnick Stadium, Iowa City",tv:"TBD"},
-  {date:"2026-07-30T19:00:00-04:00",away:"Firefighters",home:"Savannah Bananas",venue:"Historic Grayson Stadium",tv:"truTV"},
-  {date:"2026-07-31T19:00:00-04:00",away:"Savannah Bananas",home:"Firefighters",venue:"Historic Grayson Stadium",tv:"TBD"},
-  {date:"2026-08-01T19:00:00-04:00",away:"Savannah Bananas",home:"Firefighters",venue:"Historic Grayson Stadium",tv:"TBD"},
+  {date:"2026-07-04T19:00:00-05:00",away:"Savannah Bananas",home:"Firefighters",venue:"Kinnick Stadium, Iowa City"},
+  // Wrigley Field, Chicago — Jul 24–26 vs Firefighters (AXS/Cubs listings)
+  {date:"2026-07-24T19:00:00-05:00",away:"Savannah Bananas",home:"Firefighters",venue:"Wrigley Field, Chicago"},
+  {date:"2026-07-25T16:00:00-05:00",away:"Savannah Bananas",home:"Firefighters",venue:"Wrigley Field, Chicago"},
+  {date:"2026-07-26T15:00:00-05:00",away:"Savannah Bananas",home:"Firefighters",venue:"Wrigley Field, Chicago"},
+  // Grayson Stadium homestand — Jul 30–Aug 1 vs Firefighters (Aug 1 7PM conf.)
+  {date:"2026-07-30T19:00:00-04:00",away:"Firefighters",home:"Savannah Bananas",venue:"Grayson Stadium, Savannah"},        // (t)
+  {date:"2026-07-31T19:00:00-04:00",away:"Firefighters",home:"Savannah Bananas",venue:"Grayson Stadium, Savannah"},        // (t)
+  {date:"2026-08-01T19:00:00-04:00",away:"Firefighters",home:"Savannah Bananas",venue:"Grayson Stadium, Savannah"},
+  // Target Field, Minneapolis — Aug 7–8 vs Loco Beach Coconuts, 7 PM
+  {date:"2026-08-07T19:00:00-05:00",away:"Loco Beach Coconuts",home:"Savannah Bananas",venue:"Target Field, Minneapolis"},
+  {date:"2026-08-08T19:00:00-05:00",away:"Loco Beach Coconuts",home:"Savannah Bananas",venue:"Target Field, Minneapolis"},
+  // Coors Field, Denver — Aug 14–15 vs Indianapolis Clowns (Aug 15 7PM conf.)
+  {date:"2026-08-14T19:00:00-06:00",away:"Indianapolis Clowns",home:"Savannah Bananas",venue:"Coors Field, Denver"},        // (t)(s)
+  {date:"2026-08-15T19:00:00-06:00",away:"Indianapolis Clowns",home:"Savannah Bananas",venue:"Coors Field, Denver"},
+  // Busch Stadium, St. Louis — Aug 21–22 (Aug 22 vs Coconuts 7PM conf.)
+  {date:"2026-08-21T19:00:00-05:00",away:"Loco Beach Coconuts",home:"Savannah Bananas",venue:"Busch Stadium, St. Louis"},   // (t)(s)
+  {date:"2026-08-22T19:00:00-05:00",away:"Loco Beach Coconuts",home:"Savannah Bananas",venue:"Busch Stadium, St. Louis"},
+  // Gillette Stadium, Foxborough — Aug 28–29 vs Coconuts (stadium event page)
+  {date:"2026-08-28T19:00:00-04:00",away:"Loco Beach Coconuts",home:"Savannah Bananas",venue:"Gillette Stadium, Foxborough"}, // (t)
+  {date:"2026-08-29T19:00:00-04:00",away:"Loco Beach Coconuts",home:"Savannah Bananas",venue:"Gillette Stadium, Foxborough"}, // (t)
+  // September league play at Grayson — Sep 11–13 vs Party Animals (11th conf.)
+  {date:"2026-09-11T19:00:00-04:00",away:"Party Animals",home:"Savannah Bananas",venue:"Grayson Stadium, Savannah"},
+  {date:"2026-09-12T19:00:00-04:00",away:"Party Animals",home:"Savannah Bananas",venue:"Grayson Stadium, Savannah"},        // (t)(s)
+  {date:"2026-09-13T19:00:00-04:00",away:"Party Animals",home:"Savannah Bananas",venue:"Grayson Stadium, Savannah"},        // (t)(s)
+  {date:"2026-09-18T19:00:00-04:00",away:"TBA",home:"Savannah Bananas",venue:"Grayson Stadium, Savannah"},                  // (t)
+  {date:"2026-09-19T19:00:00-04:00",away:"TBA",home:"Savannah Bananas",venue:"Grayson Stadium, Savannah"},                  // (t)
+  {date:"2026-09-20T19:00:00-04:00",away:"TBA",home:"Savannah Bananas",venue:"Grayson Stadium, Savannah"},                  // (t)
+  // Banana Bowl — top-4 league playoff championship
+  {date:"2026-10-10T19:00:00-04:00",event:"Banana Bowl Championship",venue:"Banana Ball playoffs · site TBD"},              // (t)
 ];
 const MANUAL_FALLBACK_EVENTS={
   "pga":[{kind:"event",date:"2026-07-03T13:00:00-04:00",title:"John Deere Classic",subtitle:"PGA Tour"}],
@@ -404,14 +478,21 @@ function zonedYmd(date=new Date(),tz=TODAY_TZ){
   return `${g("year")}${g("month")}${g("day")}`;
 }
 const addDays=(d,n)=>{const x=new Date(d);x.setUTCDate(x.getUTCDate()+n);return x};
+/* Broadcast-day rule: the slate doesn't flip at midnight. Yesterday's games
+   (finals + any West-Coast stragglers) stay on the board until 6:00 AM ET,
+   then the new day's schedule takes over. Implemented by shifting "now" back
+   6 hours before asking what day it is — every "today" question below goes
+   through broadcastRef() so the whole ticker rolls over together. */
+const BROADCAST_ROLLOVER_MS=6*3600*1000;
+const broadcastRef=(offset=0)=>addDays(new Date(Date.now()-BROADCAST_ROLLOVER_MS),offset);
 function sameZonedDay(ds,offset=0,tz=TODAY_TZ){
   if(!ds)return false;
-  return zonedYmd(new Date(ds),tz)===zonedYmd(addDays(new Date(),offset),tz);
+  return zonedYmd(new Date(ds),tz)===zonedYmd(broadcastRef(offset),tz);
 }
 function dateParamForLeague(l){
-  const today=zonedYmd();
+  const today=zonedYmd(broadcastRef());
   if(!l.dateRangeDays)return today;
-  return `${today}-${zonedYmd(addDays(new Date(),l.dateRangeDays))}`;
+  return `${today}-${zonedYmd(broadcastRef(l.dateRangeDays))}`;
 }
 const displayDate=(d,tz=TODAY_TZ)=>new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:tz});
 const displayTime=(d,tz="America/New_York",suf="ET")=>new Date(d).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",timeZone:tz})+` ${suf}`;
@@ -479,6 +560,62 @@ function leaderOf(c){
 }
 const recordOf=(c)=>cleanText(c?.records?.[0]?.summary||"");
 
+/* ── pitchers (MLB) + national TV ────────────────────────────────────────────
+   ESPN scoreboard shapes, parsed defensively (every field optional):
+     pregame  → competitors[].probables[0] = {athlete:{shortName},
+                statistics:[{name/abbreviation:"wins|W", displayValue}, …]}
+     final    → status.featuredAthletes = [{name:"winningPitcher"|"losing…"|
+                "saving…", athlete, team:{id}, statistics:[…]}, …]
+     TV       → competitions[0].broadcasts[{market:"national",names:[…]}],
+                geoBroadcasts[{type:{shortName:"TV"},market:{type},media}] */
+function pitcherBrief(entry){
+  const a=entry?.athlete||{};
+  const name=cleanText(a.shortName||a.displayName||"");
+  if(!name)return null;
+  const stats=Array.isArray(entry?.statistics)?entry.statistics:[];
+  const by=(...keys)=>{
+    const hit=stats.find((s)=>keys.includes(String(s?.abbreviation||"").toUpperCase())||keys.includes(String(s?.name||"").toLowerCase()));
+    return cleanText(hit?.displayValue??"");
+  };
+  const w=by("W","wins"),lo=by("L","losses"),era=by("ERA","era"),sv=by("SV","saves");
+  let line="";
+  if(w&&lo)line=`${w}-${lo}`;
+  if(era)line+=`${line?", ":""}${era} ERA`;
+  if(!line&&sv)line=`${sv} SV`;
+  return {name,line};
+}
+function probablesOf(l,comp,away,home){
+  if(l.sport!=="baseball")return null;
+  const pick=(c)=>pitcherBrief((c?.probables||[])[0]);
+  const a=pick(away),h=pick(home);
+  return a||h?{away:a,home:h}:null;
+}
+function decisionsOf(l,comp,ev){
+  if(l.sport!=="baseball")return null;
+  const feats=getStatus(comp,ev).featuredAthletes||comp?.featuredAthletes||ev?.featuredAthletes||[];
+  if(!Array.isArray(feats)||!feats.length)return null;
+  const grab=(needle)=>{
+    const f=feats.find((x)=>String(x?.name||x?.abbreviation||"").toLowerCase().includes(needle));
+    return f?pitcherBrief(f):null;
+  };
+  const win=grab("win"),loss=grab("los"),save=grab("sav");
+  return win||loss?{win,loss,save}:null;
+}
+/** National-first US TV listing for a competition ("FOX", "ESPN/ESPN2", "MASN"). */
+function broadcastOf(comp){
+  const natNames=(comp?.broadcasts||[]).find((b)=>String(b?.market||"").toLowerCase()==="national"&&(b?.names||[]).length);
+  if(natNames)return cleanText(natNames.names.slice(0,2).join("/")).slice(0,16);
+  const flat=cleanText(typeof comp?.broadcast==="string"?comp.broadcast:comp?.broadcast?.names?.[0]||"");
+  if(flat)return flat.slice(0,16);
+  const tvGeos=(comp?.geoBroadcasts||[]).filter((g)=>{
+    const t=String(g?.type?.shortName||g?.type?.abbreviation||"").toUpperCase();
+    return t!=="RADIO"&&g?.media?.shortName;
+  });
+  const nat=tvGeos.find((g)=>String(g?.market?.type||g?.market||"").toLowerCase()==="national");
+  const pick=nat||tvGeos[0];
+  return pick?cleanText(pick.media.shortName).slice(0,16):"";
+}
+
 function parseGameEvent(l,ev){
   const comp=ev.competitions?.[0];if(!comp)return[];
   const cs=comp.competitors||[];
@@ -513,13 +650,16 @@ function parseGameEvent(l,ev){
   }
   const leaders={away:leaderOf(away),home:leaderOf(home)};
   const records={away:recordOf(away),home:recordOf(home)};
+  const probables=notStarted?probablesOf(l,comp,away,home):null;
+  const decisions=final?decisionsOf(l,comp,ev):null;
   return [{
     kind:"game",leagueKey:l.key,separator:l.separator||(["soccer","tennis","mma"].includes(l.sport)?"vs":"at"),
     homeAbbr:competitorName(home),awayAbbr:competitorName(away),
     homeLogo:competitorLogo(home),awayLogo:competitorLogo(away),
     homeScore:competitorScore(home,notStarted),awayScore:competitorScore(away,notStarted),
     pregame:notStarted,live,isFinal:final,winner,status:{date:line1,time:line2},sortDate:start,
-    baseball,football,possession,leaders,records,subnote:"",
+    baseball,football,possession,leaders,records,probables,decisions,
+    tv:broadcastOf(comp),subnote:"",
   }];
 }
 function leadingCompetitor(ev){
@@ -590,20 +730,28 @@ function manualFallbackItems(l){
       pregame:true,live:false,isFinal:false,status:{date:displayDate(start),time:displayTime(start)},sortDate:start};
   });
 }
+/** Bananas card: today's game if there is one, else the NEXT game on the tour
+ *  (the broadcast-useful answer), else the most recent result. The 6am ET
+ *  rollover applies via sameZonedDay, so last night's game stays "today" until
+ *  morning. Championship rows ({event}) render as an event card. */
 function bananasItems(l){
-  const now=new Date();
-  const today=BANANA_BALL_GAMES.filter((g)=>sameZonedDay(g.date,0,"America/Chicago"));
+  const now=new Date(Date.now()); // via Date.now so tests can pin the clock
+  const today=BANANA_BALL_GAMES.filter((g)=>sameZonedDay(g.date,0,"America/New_York"));
   const past=BANANA_BALL_GAMES.filter((g)=>new Date(g.date)<=now).sort((a,b)=>new Date(b.date)-new Date(a.date));
   const up=BANANA_BALL_GAMES.filter((g)=>new Date(g.date)>now).sort((a,b)=>new Date(a.date)-new Date(b.date));
-  const sel=today[0]||past[0]||up[0];
+  const sel=today[0]||up[0]||past[0];
   if(!sel)return[];
   const start=new Date(sel.date),isPast=start<now;
+  const status={date:isPast?"Recent":displayDate(start),time:displayTime(start)};
+  if(sel.event){
+    return [{kind:"event",leagueKey:l.key,title:sel.event,subtitle:sel.venue||"",kicker:"Banana Ball",
+      live:false,isFinal:isPast,pregame:!isPast,status,sortDate:start}];
+  }
   return [{kind:"game",leagueKey:l.key,separator:"vs",awayAbbr:sel.away,homeAbbr:sel.home,awayLogo:"",homeLogo:"",
     awayScore:"",homeScore:"",pregame:!isPast,live:false,isFinal:isPast,winner:null,
-    status:{date:isPast?"Recent":displayDate(start,"America/Chicago"),time:displayTime(start,"America/Chicago","CT")},
-    sortDate:start,baseball:null,football:null,possession:null,
+    status,sortDate:start,baseball:null,football:null,possession:null,
     leaders:{away:null,home:null},records:{away:"",home:""},
-    subnote:[sel.venue,sel.tv].filter(Boolean).join(" • ")}];
+    subnote:sel.venue||"",tv:sel.tv||""}];
 }
 const allData={};
 async function fetchLeague(l){
@@ -626,6 +774,7 @@ async function fetchLeague(l){
 
 /* ═══════════════ sports renderers ═══════════════ */
 function renderStatusCell(g){
+  const tv=g.tv?`<span class="tv">${esc(g.tv)}</span>`:"";
   if(g.baseball){
     const b=g.baseball;
     const outs=[0,1,2].map((i)=>`<span class="out ${i<(b.outs||0)?"on":""}"></span>`).join("");
@@ -633,13 +782,13 @@ function renderStatusCell(g){
     return `<div class="cell"><div class="bb">
       <div class="dia"><span class="base b2 ${b.on2?"on":""}"></span><span class="base b3 ${b.on3?"on":""}"></span><span class="base b1 ${b.on1?"on":""}"></span></div>
       <div class="bbr"><span class="inn">${esc(b.inning)}</span>${cnt?`<span class="cnt">${esc(cnt)}</span>`:""}<div class="outs">${outs}</div></div>
-    </div></div>`;
+    </div>${tv}</div>`;
   }
   if(g.football){
     return `<div class="cell"><span class="l1">${esc(g.status.date)} ${esc(g.status.time)}</span>
-      <span class="l2 ${g.football.redZone?"rz":""}">${esc(g.football.dd)}</span></div>`;
+      <span class="l2 ${g.football.redZone?"rz":""}">${esc(g.football.dd)}</span>${tv}</div>`;
   }
-  return `<div class="cell"><span class="l1">${esc(g.status.date)}</span><span class="l2">${esc(g.status.time)}</span>${g.subnote?`<span class="l3">${esc(g.subnote)}</span>`:""}</div>`;
+  return `<div class="cell"><span class="l1">${esc(g.status.date)}</span><span class="l2">${esc(g.status.time)}</span>${g.subnote?`<span class="l3">${esc(g.subnote)}</span>`:""}${tv}</div>`;
 }
 /** One stacked scoreboard row (away on top, home beneath): inline logo, abbr,
  *  record in grey, score right-aligned in a fixed tabular column; winner gets
@@ -685,17 +834,40 @@ function renderGolfBoard(g){
     <div class="golf-grid">${col(g.rows.slice(0,5),0)}${col(g.rows.slice(5,10),5)}</div>
   </div>`;
 }
-/** Second face: player leaders only (records now live on the main face).
- *  Null when neither side has a leader — no empty flip. */
+/** Second face, in priority order:
+ *    MLB pregame + probables  → PROBABLE STARTERS (name + W-L, ERA per side)
+ *    MLB final + decisions    → PITCHING DECISIONS (W on winner, L on loser,
+ *                               SV under the winner when there was one)
+ *    otherwise player leaders → Season leaders / Top performers
+ *  Null when there's nothing to show — no empty flip. */
 function renderStatsFace(g){
   if(g.kind!=="game")return null;
+  const grid=(aHtml,tag,hHtml)=>`<div class="stats"><div class="stat-side a">${aHtml}</div>
+    <div class="stat-mid"><span class="stat-tag">${esc(tag)}</span></div><div class="stat-side h">${hHtml}</div></div>`;
+  if(g.pregame&&g.probables){
+    const side=(abbr,p)=>`<span class="stat-abbr">${esc(abbr)}</span>
+      <span class="stat-line">${p?esc(p.name):"TBD"}</span>${p?.line?`<span class="stat-cat">${esc(p.line)}</span>`:""}`;
+    return grid(side(g.awayAbbr,g.probables.away),"Probable starters",side(g.homeAbbr,g.probables.home));
+  }
+  if(g.isFinal&&g.decisions&&g.winner){
+    const winAbbr=g.winner==="home"?g.homeAbbr:g.awayAbbr;
+    const loseAbbr=g.winner==="home"?g.awayAbbr:g.homeAbbr;
+    const d=g.decisions;
+    const winHtml=`<span class="stat-abbr">${esc(winAbbr)}</span>
+      <span class="stat-line">W: ${d.win?esc(d.win.name):"—"}${d.win?.line?` <span class="rec">(${esc(d.win.line)})</span>`:""}</span>
+      ${d.save?`<span class="stat-sub">SV: ${esc(d.save.name)}${d.save.line?` (${esc(d.save.line.replace(/\s*SV$/,""))})`:""}</span>`:""}`;
+    const lossHtml=`<span class="stat-abbr">${esc(loseAbbr)}</span>
+      <span class="stat-line">L: ${d.loss?esc(d.loss.name):"—"}${d.loss?.line?` <span class="rec">(${esc(d.loss.line)})</span>`:""}</span>`;
+    // winner reads first (left), loser right — regardless of home/away
+    return grid(winHtml,"Pitching decisions",lossHtml);
+  }
   const la=g.leaders?.away,lh=g.leaders?.home;
   if(!la&&!lh)return null;
-  const side=(abbr,l,cls)=>`<div class="stat-side ${cls}"><span class="stat-abbr">${esc(abbr)}</span>
+  const side=(abbr,l)=>`<span class="stat-abbr">${esc(abbr)}</span>
     ${l?`<span class="stat-line">${esc(l.name)} ${esc(l.val)}</span><span class="stat-cat">${esc(l.cat)}</span>`
-       :`<span class="stat-line">—</span>`}</div>`;
+       :`<span class="stat-line">—</span>`}`;
   const tag=g.pregame?"Season leaders":"Top performers";
-  return `<div class="stats">${side(g.awayAbbr,la,"a")}<div class="stat-mid"><span class="stat-tag">${esc(tag)}</span></div>${side(g.homeAbbr,lh,"h")}</div>`;
+  return grid(side(g.awayAbbr,la),tag,side(g.homeAbbr,lh));
 }
 function renderMainFace(g){
   if(g.kind==="golf")return renderGolfBoard(g);
@@ -765,6 +937,13 @@ function scheduleFlipAndAdvance(g){
     }else advance();
   },CONFIG.DWELL_MAIN);
 }
+/** Wipe timing: total splits into slide-in / hold-covered / slide-out. The
+ *  slide legs are capped so a long stinger buys HOLD time (logo on screen),
+ *  not slower travel. Returns the phase times so advance() can sync dwell. */
+function wipePhases(total){
+  const io=Math.min(560,Math.round(total*0.36));
+  return {io,hold:Math.max(0,total-io*2),total};
+}
 function playWipe(kind,league,done){
   if(kind==="league"){
     elWipe.className="wipe";
@@ -775,13 +954,14 @@ function playWipe(kind,league,done){
     elWipe.style.background="";
     elWipe.innerHTML=`<img src="${CSGN_LOGO_URI}" alt="CSGN" style="height:84px;width:84px;border-radius:9px"><div class="wswoosh"></div>`;
   }
-  const total=kind==="league"?CONFIG.WIPE_MS:CONFIG.STINGER_MS;
+  const {io,hold,total}=wipePhases(kind==="league"?CONFIG.WIPE_MS:CONFIG.STINGER_MS);
+  elWipe.style.transitionDuration=`${io}ms`;
   requestAnimationFrame(()=>{
     elWipe.classList.add("in");
-    setTimeout(()=>{done();},total*0.45);            // swap content while covered
-    setTimeout(()=>{elWipe.classList.add("out");},total*0.55);
+    setTimeout(()=>{done();},io+40);                 // swap only once fully covered
+    setTimeout(()=>{elWipe.classList.add("out");},io+hold);
     setTimeout(()=>{elWipe.className="wipe";elWipe.classList.add("no-anim");
-      elWipe.style.transform="";void elWipe.offsetHeight;elWipe.classList.remove("no-anim");},total+80);
+      elWipe.style.transform="";void elWipe.offsetHeight;elWipe.classList.remove("no-anim");},total+120);
   });
 }
 function advance(){
@@ -804,9 +984,10 @@ function advance(){
     setPill(next.league);
     hardSwap(next.items[0]);
   });
-  const total=lastGroup?CONFIG.STINGER_MS:CONFIG.WIPE_MS;
+  // The new item's dwell clock starts when the wipe begins to reveal it.
+  const {io,hold}=wipePhases(lastGroup?CONFIG.STINGER_MS:CONFIG.WIPE_MS);
   clearTimeout(stepTimer);
-  stepTimer=setTimeout(()=>scheduleFlipAndAdvance(next.items[0]),total*0.5);
+  stepTimer=setTimeout(()=>scheduleFlipAndAdvance(next.items[0]),io+hold);
 }
 async function sportsRefresh(){
   await Promise.all(LEAGUES.map(fetchLeague));
@@ -877,19 +1058,52 @@ function renderLed(spec){
   return out;
 }
 const compactUsd=(n)=>Number.isFinite(n)?"$"+new Intl.NumberFormat("en-US",{notation:"compact",maximumFractionDigits:1}).format(n):"—";
+/** Big 7d chart for the dock's right side: glow line + gradient area fill +
+ *  endpoint dot, drawn at the canvas's native 2× resolution. Decorative —
+ *  any failure just leaves the dock without a chart. */
 function drawSpark(canvas,arr){
   try{
     const ctx=canvas.getContext("2d");if(!ctx||!arr?.length)return;
     const w=canvas.width,h=canvas.height;
     ctx.clearRect(0,0,w,h);
-    const step=Math.max(1,Math.floor(arr.length/60));
+    const step=Math.max(1,Math.floor(arr.length/80));
     const pts=arr.filter((_,i)=>i%step===0);
+    if(pts.length<2)return;
     const min=Math.min(...pts),max=Math.max(...pts),span=max-min||1;
+    const up=pts[pts.length-1]>=pts[0];
+    const xy=(v,i)=>[ (i/(pts.length-1))*(w-6)+3, h-4-((v-min)/span)*(h-12) ];
+    const line=up?"rgba(104,255,122,.95)":"rgba(255,75,75,.95)";
+    const fillTop=up?"rgba(104,255,122,.22)":"rgba(255,75,75,.22)";
+    // area fill under the line
     ctx.beginPath();
-    pts.forEach((v,i)=>{const x=(i/(pts.length-1))*(w-2)+1,y=h-1-((v-min)/span)*(h-3);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});
-    ctx.strokeStyle=pts[pts.length-1]>=pts[0]?"rgba(104,255,122,.9)":"rgba(255,75,75,.9)";
-    ctx.lineWidth=1.4;ctx.stroke();
+    pts.forEach((v,i)=>{const [x,y]=xy(v,i);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});
+    const [lastX,lastY]=xy(pts[pts.length-1],pts.length-1);
+    ctx.lineTo(lastX,h);ctx.lineTo(3,h);ctx.closePath();
+    const grad=ctx.createLinearGradient(0,0,0,h);
+    grad.addColorStop(0,fillTop);grad.addColorStop(1,"rgba(0,0,0,0)");
+    ctx.fillStyle=grad;ctx.fill();
+    // the line itself, with a soft glow
+    ctx.beginPath();
+    pts.forEach((v,i)=>{const [x,y]=xy(v,i);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});
+    ctx.strokeStyle=line;ctx.lineWidth=2.6;ctx.lineJoin="round";
+    ctx.shadowColor=line;ctx.shadowBlur=7;
+    ctx.stroke();
+    ctx.shadowBlur=0;
+    // endpoint dot
+    ctx.beginPath();ctx.arc(lastX,lastY,3.4,0,Math.PI*2);ctx.fillStyle=line;ctx.fill();
   }catch{/* decorative */}
+}
+/** Pure card renderer for one coin (tested in isolation). The chart canvas is
+ *  absolutely positioned behind the LED digits and drawn after insert. */
+function renderCoinCard(c){
+  const up=(c.chg??0)>=0;
+  return `
+    <div class="c-top"><div class="c-id"><span class="c-rank">#${esc(c.rank)}</span><span class="c-sym">${esc(c.sym)}</span></div>
+      <span class="c-delta ${up?"up":"down"}">(24h) ${up?"▲":"▼"} ${c.chg!=null?Math.abs(c.chg).toFixed(2):"–"}%</span></div>
+    <div class="c-led">${renderLed(formatLedPrice(c.price))}</div>
+    <div class="c-bot"><span class="c-tag ${c.tag==="TOP 50"?"top":"meme"}">${esc(c.tag)}</span>
+      <span class="c-mv">MC ${compactUsd(c.mc)} · VOL ${compactUsd(c.vol)}</span></div>
+    ${c.spark?'<canvas class="c-chart" width="420" height="124"></canvas>':""}`;
 }
 const CG="https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&sparkline=true&price_change_percentage=24h";
 let cryptoList=[],cryptoIdx=0;
@@ -975,15 +1189,8 @@ function cryptoTick(){
   if(!cryptoList.length)return;
   const c=cryptoList[cryptoIdx];
   cryptoIdx=(cryptoIdx+1)%cryptoList.length;
-  const up=(c.chg??0)>=0;
-  document.getElementById("crypto").innerHTML=`
-    <div class="c-top"><div class="c-id"><span class="c-rank">#${esc(c.rank)}</span><span class="c-sym">${esc(c.sym)}</span></div>
-      <span class="c-delta ${up?"up":"down"}">(24h) ${up?"▲":"▼"} ${c.chg!=null?Math.abs(c.chg).toFixed(2):"–"}%</span></div>
-    <div class="c-led">${renderLed(formatLedPrice(c.price))}</div>
-    <div class="c-bot"><span class="c-tag ${c.tag==="TOP 50"?"top":"meme"}">${esc(c.tag)}</span>
-      <span class="c-mv">MC ${compactUsd(c.mc)} · VOL ${compactUsd(c.vol)}</span>
-      <canvas class="c-spark" width="66" height="15"></canvas></div>`;
-  if(c.spark)drawSpark(document.querySelector("#crypto .c-spark"),c.spark);
+  document.getElementById("crypto").innerHTML=renderCoinCard(c);
+  if(c.spark)drawSpark(document.querySelector("#crypto .c-chart"),c.spark);
 }
 function cryptoInit(){
   cryptoRefresh().then(cryptoTick);
@@ -994,7 +1201,10 @@ function cryptoInit(){
 /* ═══════════════ boot / test hooks ═══════════════ */
 window.__csgn={formatLedPrice,renderLed,renderItem,renderStatusCell,renderGolfBoard,renderStatsFace,
   parseGameEvent,parseGolfEvent,buildScoreboardUrl,LEAGUES,
-  decodeFs,buildRightNowGroup,renderSpotlight,renderRows,renderMainFace};
+  decodeFs,buildRightNowGroup,renderSpotlight,renderRows,renderMainFace,
+  CONFIG,wipePhases,broadcastRef,dateParamForLeague,sameZonedDay,
+  pitcherBrief,broadcastOf,BANANA_BALL_GAMES,bananasItems,renderCoinCard};
+document.documentElement.style.setProperty("--roll-ms",`${CONFIG.ROLL_MS}ms`);
 const brandImg=document.getElementById("brand-logo");
 if(brandImg)brandImg.src=CSGN_LOGO_URI;
 if(!TEST_MODE){

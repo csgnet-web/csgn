@@ -75,16 +75,30 @@ One Browser Source renders the whole bottom band:
 - **Size the `/player` source above it:** `1724 × 970`, centered (16:9 exactly,
   ~98px brand gutters each side) so the band never crops the live feed.
 - Broadcast features: fixed segment widths for every league; MLB live shows the
-  **base-state diamond, outs and count** (never a dead clock); NFL/CFB show
-  **down & distance + possession** (red in the red zone); golf shows a
-  **top-10 leaderboard**; racing shows the podium; eligible games flip to a
-  **top-performers / season-records stat beat**; league changes play a color
-  wipe and each full cycle ends on a **CSGN logo stinger**. The crypto dock
-  keeps the LED-bulb board and rotates the **top 50 coins + top 100 memecoins**
-  (CoinGecko) with rank, 24h delta, market cap, volume, 7d sparkline, and
-  subscript-zero micro-prices so memecoins never render as `$0.00`.
+  **base-state diamond, outs and count** (never a dead clock); MLB pregames flip
+  to **probable starters** (pitcher + W-L, ERA) and finals to **pitching
+  decisions** (W/SV on the winner, L on the loser); every league shows its
+  **US national TV network** (FOX/ESPN/TBS…) in blue under the clock when ESPN
+  lists one; NFL/CFB show **down & distance + possession** (red in the red
+  zone); golf shows a **top-10 leaderboard**; racing shows the podium; other
+  eligible games flip to a **top-performers / season-leaders stat beat**.
+- Pacing is broadcast-slow and staged: ~7s per game face, a ~640ms decelerating
+  roll between games, and a three-phase league wipe (slide in → hold covered →
+  slide out with an edge sheen) ending each full cycle on a **CSGN logo
+  stinger**. All timings live in `CONFIG` and drive both the JS and the CSS.
+- The board runs on a **6 AM ET broadcast day**: yesterday's slate (finals and
+  late West-Coast games) holds until 6:00 AM ET, then the new day loads.
+- The **Savannah Bananas' full remaining tour** is embedded
+  (`BANANA_BALL_GAMES`) — the 🍌 segment shows today's game, else the next
+  stop, else the last result. Update rows as times/opponents get announced.
+- The crypto dock keeps the LED-bulb board and rotates the **top 50 coins +
+  top 100 memecoins** (CoinGecko) with rank chip, 26px symbol, a big `$`,
+  wide-spaced digits, 24h delta, market cap, volume, subscript-zero
+  micro-prices (never `$0.00`) and a **large 7d area chart** filling the right
+  side of the dock behind the digits.
 - Tuning lives at the top of the file (`CONFIG`, `LEAGUES`, curated fallback
-  arrays). Drop a league by commenting it out.
+  arrays). Drop a league by commenting it out. Smoke-test after edits with
+  `node docs/obs/ticker-smoke.mjs` (59 checks, no network needed).
 - **Admin-driven, no OBS touch** (Admin → Broadcast Ticker card; the band polls
   the world-readable `config/ticker` doc every ~60s): the **RIGHT NOW rail**
   (up to 8 headlines, `TAG | text`, leads every rotation cycle like ESPN's The
