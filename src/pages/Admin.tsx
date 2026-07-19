@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, no-empty */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -7,6 +7,7 @@ import {
   BarChart3, Plus, Gavel, Crown,
   Trash2, UserCheck, AlertTriangle, Tv, DollarSign,
   Wallet, CheckCircle2, XCircle, RefreshCw, Link as LinkIcon, ExternalLink, Monitor, Activity,
+  Megaphone, Flame,
 } from 'lucide-react'
 import {
   collection, query, getDocs, doc, setDoc, onSnapshot, orderBy,
@@ -68,6 +69,62 @@ interface UserData {
   role: string
   walletAddress?: string
   createdAt: any
+}
+
+// ── Broadcast ticker (config/ticker) ──
+// The OBS ticker overlay (docs/obs/csgn-ticker.html) polls this doc over the
+// public Firestore REST API roughly once a minute, so edits here reach the
+// broadcast within ~60s without touching OBS.
+
+interface TickerHeadline {
+  tag: string
+  text: string
+}
+
+interface TickerSpotlight {
+  symbol: string
+  coingeckoId?: string
+  dexPair?: string
+  dexChain?: string
+  note?: string
+  updatedAt?: string
+}
+
+const MAX_RIGHT_NOW_ITEMS = 8
+const DEFAULT_RIGHT_NOW_TAG = 'RIGHT NOW'
+
+/** One headline per line; optional `TAG | text` prefix (no pipe = RIGHT NOW). */
+const parseRightNowLines = (raw: string): TickerHeadline[] =>
+  raw
+    .split('\n')
+    .map((line): TickerHeadline | null => {
+      const trimmed = line.trim()
+      if (!trimmed) return null
+      const pipe = trimmed.indexOf('|')
+      const tag = pipe > -1 ? trimmed.slice(0, pipe).trim().toUpperCase() : ''
+      const text = pipe > -1 ? trimmed.slice(pipe + 1).trim() : trimmed
+      if (!text) return null
+      return { tag: tag || DEFAULT_RIGHT_NOW_TAG, text }
+    })
+    .filter((item): item is TickerHeadline => item !== null)
+    .slice(0, MAX_RIGHT_NOW_ITEMS)
+
+/** Serialize saved headlines back into the textarea's one-per-line format. */
+const serializeRightNowLines = (items: TickerHeadline[]): string =>
+  items
+    .map((item) => (item.tag && item.tag !== DEFAULT_RIGHT_NOW_TAG ? `${item.tag} | ${item.text}` : item.text))
+    .join('\n')
+
+/**
+ * Accepts a bare DexScreener pair address or a full dexscreener.com URL —
+ * https://dexscreener.com/solana/AbC123 → { dexChain: 'solana', dexPair: 'AbC123' }.
+ */
+const parseDexPairInput = (raw: string): { dexPair: string; dexChain: string } => {
+  const value = raw.trim()
+  if (!value) return { dexPair: '', dexChain: '' }
+  const match = value.match(/dexscreener\.com\/([^/?#\s]+)\/([^/?#\s]+)/i)
+  if (match) return { dexChain: match[1].toLowerCase(), dexPair: match[2] }
+  return { dexPair: value, dexChain: '' }
 }
 
 export default function Admin() {
@@ -216,6 +273,135 @@ export default function Admin() {
 
   const handleRemoveVod = async (index: number) => {
     await saveVodItems(vodItems.filter((_, i) => i !== index))
+  }
+
+  // Broadcast ticker (config/ticker) — RIGHT NOW headline rail + coin
+  // spotlight shown on the OBS ticker overlay. See helpers above the component.
+  const [rightNowText, setRightNowText] = useState('')
+  const [savedRightNow, setSavedRightNow] = useState<TickerHeadline[]>([])
+  const [savingRightNow, setSavingRightNow] = useState(false)
+  const [rightNowMsg, setRightNowMsg] = useState<string | null>(null)
+  const [savedSpotlight, setSavedSpotlight] = useState<TickerSpotlight | null>(null)
+  const [spotSymbol, setSpotSymbol] = useState('')
+  const [spotCoingeckoId, setSpotCoingeckoId] = useState('')
+  const [spotDexPair, setSpotDexPair] = useState('')
+  const [spotNote, setSpotNote] = useState('')
+  const [savingSpotlight, setSavingSpotlight] = useState(false)
+  const [spotlightMsg, setSpotlightMsg] = useState<string | null>(null)
+  // Mid-edit guards: while true, incoming snapshots don't overwrite the inputs.
+  const rightNowDirtyRef = useRef(false)
+  const spotlightDirtyRef = useRef(false)
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, 'config', 'ticker'),
+      (snap) => {
+        const data = snap.exists() ? snap.data() : null
+        const items = (Array.isArray(data?.rightNow) ? data.rightNow : [])
+          .filter((it: any): it is TickerHeadline => it && typeof it.text === 'string' && it.text.length > 0)
+          .map((it: any) => ({ tag: typeof it.tag === 'string' && it.tag ? it.tag : DEFAULT_RIGHT_NOW_TAG, text: it.text }))
+        setSavedRightNow(items)
+        const spot = data?.spotlight && typeof data.spotlight === 'object' && typeof data.spotlight.symbol === 'string'
+          ? (data.spotlight as TickerSpotlight)
+          : null
+        setSavedSpotlight(spot)
+        // Prefill editors from the saved doc unless the admin is mid-edit.
+        if (!rightNowDirtyRef.current) setRightNowText(serializeRightNowLines(items))
+        if (!spotlightDirtyRef.current) {
+          setSpotSymbol(spot?.symbol || '')
+          setSpotCoingeckoId(spot?.coingeckoId || '')
+          setSpotDexPair(spot?.dexPair ? (spot.dexChain ? `https://dexscreener.com/${spot.dexChain}/${spot.dexPair}` : spot.dexPair) : '')
+          setSpotNote(spot?.note || '')
+        }
+      },
+      () => {}
+    )
+    return unsub
+  }, [])
+
+  const handleSaveRightNow = async () => {
+    setSavingRightNow(true)
+    setActionError(null)
+    setRightNowMsg(null)
+    try {
+      const items = parseRightNowLines(rightNowText)
+      await setDoc(
+        doc(db, 'config', 'ticker'),
+        { rightNow: items, updatedAt: new Date().toISOString() },
+        { merge: true },
+      )
+      rightNowDirtyRef.current = false
+      setRightNowMsg(items.length === 0
+        ? 'Rail cleared — the ticker drops it within ~60s.'
+        : `Saved ${items.length} headline${items.length === 1 ? '' : 's'} — live on the ticker within ~60s.`)
+    } catch (err: any) {
+      setActionError('Ticker rail save failed: ' + (err?.message || 'Unknown error. Check Firestore rules for config/ticker.'))
+    }
+    setSavingRightNow(false)
+  }
+
+  const handleClearRightNow = async () => {
+    setSavingRightNow(true)
+    setActionError(null)
+    setRightNowMsg(null)
+    try {
+      await setDoc(
+        doc(db, 'config', 'ticker'),
+        { rightNow: [], updatedAt: new Date().toISOString() },
+        { merge: true },
+      )
+      setRightNowText('')
+      rightNowDirtyRef.current = false
+      setRightNowMsg('Rail cleared — the ticker drops it within ~60s.')
+    } catch (err: any) {
+      setActionError('Ticker rail clear failed: ' + (err?.message || 'Unknown error.'))
+    }
+    setSavingRightNow(false)
+  }
+
+  const handleSaveSpotlight = async () => {
+    const symbol = spotSymbol.trim().toUpperCase()
+    if (!symbol) return
+    setSavingSpotlight(true)
+    setActionError(null)
+    setSpotlightMsg(null)
+    try {
+      const { dexPair, dexChain } = parseDexPairInput(spotDexPair)
+      const coingeckoId = spotCoingeckoId.trim().toLowerCase()
+      const note = spotNote.trim()
+      const spotlight: TickerSpotlight = {
+        symbol,
+        ...(coingeckoId ? { coingeckoId } : {}),
+        ...(dexPair ? { dexPair } : {}),
+        ...(dexChain ? { dexChain } : {}),
+        ...(note ? { note } : {}),
+        updatedAt: new Date().toISOString(),
+      }
+      await setDoc(doc(db, 'config', 'ticker'), { spotlight }, { merge: true })
+      spotlightDirtyRef.current = false
+      setSpotlightMsg(`$${symbol} spotlight saved — on the ticker within ~60s.`)
+    } catch (err: any) {
+      setActionError('Spotlight save failed: ' + (err?.message || 'Unknown error. Check Firestore rules for config/ticker.'))
+    }
+    setSavingSpotlight(false)
+  }
+
+  const handleClearSpotlight = async () => {
+    setSavingSpotlight(true)
+    setActionError(null)
+    setSpotlightMsg(null)
+    try {
+      await setDoc(doc(db, 'config', 'ticker'), { spotlight: null }, { merge: true })
+      setSpotSymbol('')
+      setSpotCoingeckoId('')
+      setSpotDexPair('')
+      setSpotNote('')
+      spotlightDirtyRef.current = false
+      setSpotlightMsg('Spotlight removed — the ticker drops it within ~60s.')
+    } catch (err: any) {
+      setActionError('Spotlight clear failed: ' + (err?.message || 'Unknown error.'))
+    }
+    setSavingSpotlight(false)
   }
 
   useEffect(() => {
@@ -819,6 +1005,191 @@ export default function Admin() {
                   >
                     Add
                   </Button>
+                </div>
+              </div>
+            </Card>
+
+            {/* Broadcast Ticker (config/ticker → OBS overlay) */}
+            <Card hover={false} className="overflow-hidden">
+              <div className="p-4 border-b border-white/[0.06] flex items-center gap-2">
+                <Megaphone className="w-5 h-5 text-amber-400" />
+                <h3 className="font-semibold text-white">Broadcast Ticker</h3>
+              </div>
+              <div className="p-4 space-y-4">
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  Drives the OBS ticker overlay (<span className="font-mono text-primary-400">docs/obs/csgn-ticker.html</span>).
+                  The overlay polls this config over the public Firestore REST API, so saves here reach the broadcast within ~60s — no OBS restart needed.
+                </p>
+
+                {/* RIGHT NOW headline rail */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm text-gray-300 font-medium">"Right Now" Headline Rail</label>
+                    {savedRightNow.length > 0 && (
+                      <span className="text-xs text-emerald-400">{savedRightNow.length} headline{savedRightNow.length !== 1 ? 's' : ''} live</span>
+                    )}
+                  </div>
+                  <textarea
+                    value={rightNowText}
+                    onChange={(e) => {
+                      setRightNowText(e.target.value)
+                      rightNowDirtyRef.current = true
+                    }}
+                    rows={5}
+                    placeholder={'BREAKING | SOL flips $300\nCSGN auction closes 9PM ET\nMARKETS | BTC reclaims $120K'}
+                    className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:border-primary-500/50 resize-y"
+                  />
+                  <p className="text-xs text-gray-500 leading-relaxed">
+                    One headline per line, max {MAX_RIGHT_NOW_ITEMS}. Optional tag before a pipe —
+                    <span className="font-mono text-primary-400"> BREAKING | SOL flips $300</span>; no pipe = tagged {DEFAULT_RIGHT_NOW_TAG}.
+                    The OBS ticker picks changes up within ~60s.
+                  </p>
+                  {rightNowMsg && (
+                    <p className="text-xs text-emerald-300 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                      {rightNowMsg}
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="primary"
+                      size="md"
+                      className="flex-1"
+                      isLoading={savingRightNow}
+                      leftIcon={<Megaphone className="w-4 h-4" />}
+                      onClick={handleSaveRightNow}
+                    >
+                      Save Rail
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="md"
+                      disabled={savingRightNow || (savedRightNow.length === 0 && !rightNowText.trim())}
+                      onClick={handleClearRightNow}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Coin spotlight */}
+                <div className="pt-4 border-t border-white/[0.06] space-y-2">
+                  <label className="block text-sm text-gray-300 font-medium">Coin Spotlight</label>
+
+                  {savedSpotlight && (
+                    <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl">
+                      <p className="text-[11px] text-amber-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                        <Flame className="w-3 h-3" /> Spotlight live on ticker
+                      </p>
+                      <p className="text-sm font-medium text-white">
+                        ${savedSpotlight.symbol}
+                        {savedSpotlight.note && <span className="text-gray-400 font-normal"> — {savedSpotlight.note}</span>}
+                      </p>
+                      <p className="text-xs text-gray-500 font-mono truncate mt-0.5">
+                        {[
+                          savedSpotlight.coingeckoId && `cg:${savedSpotlight.coingeckoId}`,
+                          savedSpotlight.dexPair && `dex:${savedSpotlight.dexChain ? `${savedSpotlight.dexChain}/` : ''}${savedSpotlight.dexPair}`,
+                        ].filter(Boolean).join(' · ') || 'symbol only'}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-sm text-gray-300 mb-1">Symbol <span className="text-red-400">*</span></label>
+                      <input
+                        type="text"
+                        value={spotSymbol}
+                        onChange={(e) => {
+                          setSpotSymbol(e.target.value.toUpperCase())
+                          spotlightDirtyRef.current = true
+                        }}
+                        placeholder="SOL"
+                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-300 mb-1">CoinGecko ID <span className="text-gray-500 text-xs">(optional)</span></label>
+                      <input
+                        type="text"
+                        value={spotCoingeckoId}
+                        onChange={(e) => {
+                          setSpotCoingeckoId(e.target.value)
+                          spotlightDirtyRef.current = true
+                        }}
+                        placeholder="solana"
+                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">DexScreener Pair <span className="text-gray-500 text-xs">(optional — pair address or full URL)</span></label>
+                    <input
+                      type="text"
+                      value={spotDexPair}
+                      onChange={(e) => {
+                        setSpotDexPair(e.target.value)
+                        spotlightDirtyRef.current = true
+                      }}
+                      placeholder="https://dexscreener.com/solana/… or bare pair address"
+                      className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:border-primary-500/50"
+                    />
+                    {spotDexPair.trim() && (() => {
+                      const parsed = parseDexPairInput(spotDexPair)
+                      return (
+                        <p className="mt-1.5 text-xs text-emerald-300 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                          {parsed.dexChain
+                            ? `URL parsed — chain ${parsed.dexChain}, pair ${parsed.dexPair}`
+                            : `Bare pair address — ${parsed.dexPair}`}
+                        </p>
+                      )
+                    })()}
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">Note <span className="text-gray-500 text-xs">(optional, short)</span></label>
+                    <input
+                      type="text"
+                      value={spotNote}
+                      onChange={(e) => {
+                        setSpotNote(e.target.value)
+                        spotlightDirtyRef.current = true
+                      }}
+                      maxLength={80}
+                      placeholder="e.g. Community takeover trending on X"
+                      className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 leading-relaxed">
+                    Shows a 30s on-fire spotlight in the ticker every 10 minutes until cleared; changes appear within ~60s.
+                  </p>
+                  {spotlightMsg && (
+                    <p className="text-xs text-emerald-300 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                      {spotlightMsg}
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="primary"
+                      size="md"
+                      className="flex-1"
+                      disabled={!spotSymbol.trim()}
+                      isLoading={savingSpotlight}
+                      leftIcon={<Flame className="w-4 h-4" />}
+                      onClick={handleSaveSpotlight}
+                    >
+                      Save Spotlight
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="md"
+                      disabled={savingSpotlight || !savedSpotlight}
+                      onClick={handleClearSpotlight}
+                    >
+                      Remove
+                    </Button>
+                  </div>
                 </div>
               </div>
             </Card>

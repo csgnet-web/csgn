@@ -76,6 +76,13 @@ Simplified v1 flow. Mobile full-page Twitch OAuth redirect (replaces popup, work
 - Admin Creator Fees shows each slot's live-activity log; `/account` Creator Fee History is paginated 10-per-page (newest first, back-arrow to older) and surfaces the same live-minute summary
 - Rotating `/watch` banner gains right padding so lines like "SQUARES COMING SOON" are no longer clipped; `/queue` "CEO Creator Slots" renamed to "Open Slots"
 
+### v1.4 — July 2026
+**Faster "Now Live" + broadcast-graphics plan.**
+- `/player` gains a **no-ads / Turbo fast-reveal mode** (`?noads=1` / `?turbo=1` on the OBS Browser Source URL): when the encoder's feed is ad-free, the preroll mask drops from 33s to ~2s and the "Now Live" curtain becomes a **deterministic 10-second countdown** (depleting ring + live `10 → 1` readout) instead of an indeterminate hold — a broadcast bumper, not a stall
+- The safe 33s preroll-ad mask stays the **default**: fast-reveal is opt-in per source, because a 10s curtain over a feed that still plays a Twitch ad would leak the ad on-stream. `FeedGate`'s mask is now configurable (`createFeedGate(now, { prerollMaskMs })`); the fail-open reveal deadline, quality pin, stall-nudge and wedge-rebuild all still run behind the countdown
+- `?debug=1` panel adds a **`reveal`** row (`no-ads · 10s countdown` vs `ad-mask · 33s`); `?preview=countdown` rehearses the bumper; the reveal deadline no longer strips the gate's rebuild power from a feed that actually confirmed
+- Honest write-up of the **Twitch Turbo** question (Turbo only helps a session authenticated in the *embed's* context, which an OBS CEF source isn't by default — fragile to rely on) and a full **broadcast-graphics build plan** ([`docs/broadcast-graphics.md`](docs/broadcast-graphics.md)): code-driven lower thirds, bug/clock, crypto/headlines ticker, and the PIP whip-around (content square + 1–2 host side-screens), all Firestore-controlled the same way the intermission board and emergency override already are, with own-ingest RTMP as the "decentralized TV network" endgame
+
 ---
 
 ## Getting Started

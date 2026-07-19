@@ -59,6 +59,53 @@ tickers along the bottom with a branded background filling the rest), size the
   fixed-pixel 1080p-class design: **keep the source at least ~1600 px wide**
   (an 800×600 source clips the intermission board's headline and cards).
 
+### The CSGN ticker band (`docs/obs/csgn-ticker.html`)
+
+The sports scoreboard and the crypto LED board now ship as **one combined
+instrument** — `docs/obs/csgn-ticker.html` in this repo — replacing the two
+separate local files (which drifted: 100px vs 110px tall, no shared baseline).
+One Browser Source renders the whole bottom band:
+
+```
+[ CSGN logo 110 ][ league 150 ][ game panel 1258 ][ crypto LED 400 ] = 1920 × 110
+```
+
+- **Add it:** Browser Source → ✅ *Local file* → `csgn-ticker.html` → Width
+  `1920`, Height `110`, position `X 0, Y 970`. FPS 30 (match output).
+- **Size the `/player` source above it:** `1724 × 970`, centered (16:9 exactly,
+  ~98px brand gutters each side) so the band never crops the live feed.
+- Broadcast features: fixed segment widths for every league; MLB live shows the
+  **base-state diamond, outs and count** (never a dead clock); MLB pregames flip
+  to **probable starters** (pitcher + W-L, ERA) and finals to **pitching
+  decisions** (W/SV on the winner, L on the loser); every league shows its
+  **US national TV network** (FOX/ESPN/TBS…) in blue under the clock when ESPN
+  lists one; NFL/CFB show **down & distance + possession** (red in the red
+  zone); golf shows a **top-10 leaderboard**; racing shows the podium; other
+  eligible games flip to a **top-performers / season-leaders stat beat**.
+- Pacing is broadcast-slow and staged: ~7s per game face, a ~640ms decelerating
+  roll between games, and a three-phase league wipe (slide in → hold covered →
+  slide out with an edge sheen) ending each full cycle on a **CSGN logo
+  stinger**. All timings live in `CONFIG` and drive both the JS and the CSS.
+- The board runs on a **6 AM ET broadcast day**: yesterday's slate (finals and
+  late West-Coast games) holds until 6:00 AM ET, then the new day loads.
+- The **Savannah Bananas' full remaining tour** is embedded
+  (`BANANA_BALL_GAMES`) — the 🍌 segment shows today's game, else the next
+  stop, else the last result. Update rows as times/opponents get announced.
+- The crypto dock keeps the LED-bulb board and rotates the **top 50 coins +
+  top 100 memecoins** (CoinGecko) with rank chip, 26px symbol, a big `$`,
+  wide-spaced digits, 24h delta, market cap, volume, subscript-zero
+  micro-prices (never `$0.00`) and a **large 7d area chart** filling the right
+  side of the dock behind the digits.
+- Tuning lives at the top of the file (`CONFIG`, `LEAGUES`, curated fallback
+  arrays). Drop a league by commenting it out. Smoke-test after edits with
+  `node docs/obs/ticker-smoke.mjs` (59 checks, no network needed).
+- **Admin-driven, no OBS touch** (Admin → Broadcast Ticker card; the band polls
+  the world-readable `config/ticker` doc every ~60s): the **RIGHT NOW rail**
+  (up to 8 headlines, `TAG | text`, leads every rotation cycle like ESPN's The
+  Lead) and the **Coin Spotlight** (any coin by symbol + CoinGecko id or
+  DexScreener pair/URL — a 30s on-fire takeover of the crypto dock every 10
+  minutes until cleared; new picks debut within ~a minute).
+
 ### On-air promos
 
 `/player` renders **no overlays over a LIVE feed** — the page's only job while
@@ -106,6 +153,83 @@ scene alongside the tickers, so they can never interfere with playback.
 
 **Nothing to configure for this** — it's automatic. Just make sure the Browser
 Source has **Page permissions: Read and write to OBS** so the OBS detection works.
+
+### The "Going Live Now" shield — countdown + proving it hides an ad (`?peek`)
+
+The branded startup curtain reads **GOING LIVE NOW** and now carries a
+**countdown** of the shield window (a depleting ring + seconds readout), so
+viewers see how long the hold is instead of a static card. The 33s default is
+unchanged — the countdown is just the shield made visible. Reveal is still
+**FeedGate-confirmed**, not the clock: if real content isn't flowing the instant
+the count hits zero, the ring pulses until the actual cut, so the shield never
+lifts onto an ad or a dead frame.
+
+**"Is a 15s ad actually playing behind the shield, or is the 33s just wasted?"**
+There is **no Twitch API that reports preroll ads** — that's *why* the mask is a
+fixed duration instead of an event (`src/lib/feedGate.ts` header). So the only
+honest way to know is to **watch it once**:
+
+1. Point a throwaway Browser Source (or a tab) at
+   `https://csgn.fun/player?peek=1&debug=1` during a real streamer start (or use
+   `?channel=<name>&peek=1&debug=1` to rehearse against any live channel).
+2. `?peek=1` drops the curtain to ~22% opacity, so you see the **raw Twitch
+   startup through it** — poster, and the preroll ad if one runs. `?debug=1`
+   shows the FeedGate phase (`ad-mask` → `settling` → `on-air`) beside it.
+3. Watch what happens in the first ~35s:
+   - **You see an ad play, then content** → the shield is doing its job; keep 33s.
+   - **Content appears within a second or two, no ad** (this streamer/viewer just
+     isn't served prerolls) → the 33s is longer than needed *for that source*;
+     the no-ads mode below is safe to use on it.
+
+That's the proof — no guessing. Remember `?peek` shows the ad on-screen, so
+**never leave it on a real broadcast source**; it's a one-time diagnostic.
+
+### Optional faster reveal for a genuinely ad-free source (`?noads`)
+
+The 33s "Now Live" curtain is **entirely** the preroll-ad mask — its only job is
+to outlast Twitch's server-stitched ad (≤30s) so the ad video, its countdown
+text, and the startup chrome never reach the encode. If the feed the encoder is
+playing is **genuinely ad-free**, that 33s is dead air and can be cut hard.
+
+Add **`?noads=1`** (or `?turbo=1`) to the Browser Source URL —
+`https://csgn.fun/player?noads=1` — to switch `/player` into **fast-reveal
+mode**:
+
+- The preroll mask drops from 33s to ~2s (just enough to hide the poster and
+  the first buffering frame).
+- The "Going Live Now" curtain becomes a **deterministic 10-second countdown**
+  (a depleting ring + a live `10 → 1` readout), so OBS viewers see exactly when
+  the feed cuts in — a tighter broadcast bumper.
+- Everything else (quality pin to `chunked`, stall-nudge, wedge-rebuild,
+  fail-open reveal) still runs behind the countdown; the fail-open ceiling just
+  moves to ~11s.
+
+Confirm the flag took effect with `?debug=1` — the panel's **`reveal`** row shows
+`no-ads · 2s mask · 10s count`. Rehearse the bumper on its own with
+`/player?preview=countdown`.
+
+> ⚠️ **Only enable `?noads` on a source you've *confirmed* ad-free with `?peek`
+> (above).** If a Twitch preroll can still run, the 10s countdown ends *on the
+> ad* and it leaks straight onto the stream — the exact thing the 33s mask
+> exists to prevent. When in doubt, leave `?noads` OFF; the 33s shield (now with
+> its own countdown) is the safe default.
+
+**A note on Twitch Turbo (not the recommended path):** Turbo only suppresses ads
+for a session **authenticated as the Turbo account**, and the Twitch *embed*
+`/player` uses (`player.twitch.tv` in an iframe) is a separate browser context
+from your logged-in twitch.tv tab. An OBS Browser Source (CEF) starts logged-out
+with no login UI, and getting CEF to carry a Turbo session (log in via a throwaway
+Interact source and hope the cookie persists) is fragile — cookies expire, CEF
+updates clear the cache, third-party-cookie handling for embeds isn't guaranteed,
+and Turbo-on-a-rebroadcast-embed is a gray area Twitch has never supported. **Not
+something to trust for a 24/7 unattended encoder** — so `?noads` is best reserved
+for a genuinely ad-free source, not a Turbo workaround.
+
+**The network-grade answer is to not depend on Twitch's ad pipeline at all** —
+have hosts push their feed into CSGN's *own* ingest (RTMP), so there is zero
+Twitch ad surface and `?noads` is simply always correct. That path (and the
+professional-graphics build it unlocks) is in
+[`docs/broadcast-graphics.md`](./broadcast-graphics.md).
 
 ### Verifying the encode (do this once before going live)
 
@@ -193,10 +317,12 @@ workflow and gain OS-notification risk — treat it as a temporary fallback only
 | Brand wipe stutters or plays twice in a row | Fixed in-app: the wipe is now one continuous sweep (in left → out right), and it only plays when leaving a state `/player` actually settled in for ≥5s — boot-time state shuffling and brief event races no longer fire it |
 | `/watch` embed not showing | Broadcast post URL not pushed in Admin, or it's a raw `/i/broadcasts/` link (not embeddable — paste the *post* URL) |
 
-**State previews:** open `/player?preview=board`, `?preview=brb`, `?preview=starting`, or
-`?preview=wipe` to check each look inside OBS without touching live state. Add
-`?debug=1` to any `/player` URL for the live diagnostic panel (env, mode, channel,
-playback/gate state, audio state, event log). To rehearse against a specific
+**State previews:** open `/player?preview=board`, `?preview=brb`, `?preview=starting`,
+`?preview=wipe`, or `?preview=countdown` (the "Going Live Now" bumper) to check each
+look inside OBS without touching live state. Add `?debug=1` to any `/player` URL for
+the live diagnostic panel (env, mode, channel, reveal mode, playback/gate state, audio
+state, event log), and `?peek=1` to see the raw Twitch startup through a translucent
+shield (proves whether a preroll actually plays — diagnostic only, never on a live source). To rehearse against a specific
 public channel without touching slot data, use `/player?channel=<name>` (the
 admin emergency override still wins over it) — handy for verifying the whole
 startup sequence, ad mask included, before a slot goes live.

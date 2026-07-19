@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
 
-const LOGO_URL = 'https://pbs.twimg.com/profile_images/1966988305255276544/3Qz3tNAa_200x200.jpg'
+// Real network avatar (black square brand JPEG, 400×400) — served from
+// public/ so the mark never depends on Twitter's CDN staying up.
+const LOGO_URL = '/csgn-logo.jpg'
 
 interface LogoProps {
   size?: 'sm' | 'md' | 'lg'

@@ -191,6 +191,9 @@ beforeEach(() => {
   FakeTwitchPlayer.instances = []
   harness.obs = true
   harness.loadPlayer = () => Promise.resolve(FakeTwitchPlayer)
+  // /player reads its flags (?noads, ?debug, …) from the URL at mount — reset to
+  // a clean path so a mode test can't leak its query into the next test.
+  window.history.replaceState({}, '', '/')
 })
 
 afterEach(async () => {
@@ -355,6 +358,44 @@ describe('/player when the gate can never observe playback (blind getCurrentTime
     // After the forced reveal the gate loses teardown power — the on-screen
     // feed is never rebuilt out from under the viewer again.
     expect(FakeTwitchPlayer.instances.length).toBeLessThanOrEqual(2)
+    expect(document.querySelector('[data-testid="card-brb"]')).toBeNull()
+  })
+})
+
+describe('/player in no-ads / Turbo fast-reveal mode (?noads=1)', () => {
+  // Same healthy Twitch timeline, but the operator has flagged the source as
+  // ad-free: the curtain must lift on the ~10s countdown, not the 33-45s ad
+  // mask, and the feed must still end up revealed, pinned and audible.
+  const script = (p: () => FakeTwitchPlayer) => (sec: number) => {
+    if (sec === 1) { p().fire(FakeTwitchPlayer.READY); p().fire(FakeTwitchPlayer.PLAYING) }
+    p().currentTime = Math.max(0, sec - 1)
+    if (sec >= 3) p().qualities = [{ group: 'chunked' }, { group: '720p60' }]
+  }
+
+  it('reveals on the fixed countdown, far sooner than the standard ad mask', async () => {
+    window.history.replaceState({}, '', '/player?noads=1')
+    await mountPlayer()
+    const player = () => FakeTwitchPlayer.instances[0]
+    expect(FakeTwitchPlayer.instances).toHaveLength(1)
+
+    const exposures: number[] = []
+    await passSeconds(20, script(player), (sec) => {
+      if (embedVisible(player()) && !coverUp()) exposures.push(sec)
+    })
+
+    // First uncovered second lands around the 10s countdown — well before the
+    // 38s the standard ad-mask path holds for.
+    expect(exposures.length).toBeGreaterThan(0)
+    expect(Math.min(...exposures)).toBeGreaterThanOrEqual(9)
+    expect(Math.min(...exposures)).toBeLessThanOrEqual(13)
+
+    // Still a quiet bootstrap: exactly one source-quality pin, no play() storms.
+    expect(callsOf(player(), 'play')).toHaveLength(0)
+    expect(callsOf(player(), 'setQuality')).toHaveLength(1)
+
+    // End state: revealed, audible, on the LIVE feed.
+    expect(coverUp()).toBe(false)
+    expect(player().muted).toBe(false)
     expect(document.querySelector('[data-testid="card-brb"]')).toBeNull()
   })
 })

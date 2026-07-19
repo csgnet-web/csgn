@@ -1,0 +1,240 @@
+// Smoke test for docs/obs/csgn-ticker.html — loads the file in jsdom (test
+// mode, no network/boot) and drives the exported pure helpers with realistic
+// ESPN/CoinGecko-shaped fixtures.
+//   run:  node docs/obs/ticker-smoke.mjs
+import { JSDOM } from 'jsdom'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const html = readFileSync(join(here, 'csgn-ticker.html'), 'utf8')
+const dom = new JSDOM(html, { url: 'file:///csgn-ticker.html?test', runScripts: 'dangerously' })
+const { __csgn } = dom.window
+if (!__csgn) throw new Error('window.__csgn not exposed — script crashed during parse?')
+
+let failures = 0
+const check = (name, cond) => {
+  if (cond) console.log(`  ok  ${name}`)
+  else { failures++; console.error(`FAIL  ${name}`) }
+}
+/** Pin the page's clock (Date.now) while fn runs. */
+const atTime = (iso, fn) => {
+  const real = dom.window.Date.now
+  dom.window.Date.now = () => new Date(iso).getTime()
+  try { return fn() } finally { dom.window.Date.now = real }
+}
+
+// ── LED price formatting ────────────────────────────────────────────────────
+const f = __csgn.formatLedPrice
+check('BTC 98240 → grouped int', JSON.stringify(f(98240)) === JSON.stringify({ kind: 'plain', text: '98 240' }))
+check('SOL 214.6 → 2dp', f(214.6).text === '214.60')
+check('0.0821 → 4dp', f(0.0821).text === '0.0821')
+const shib = f(0.00001234)
+check('SHIB micro → zeros=4 sig=1234', shib.kind === 'micro' && shib.zeros === 4 && shib.sig === '1234')
+const pepe = f(0.0000089)
+check('PEPE micro → zeros=5 sig=8900', pepe.kind === 'micro' && pepe.zeros === 5 && pepe.sig === '8900')
+check('0 → dash (never $0.00)', f(0).kind === 'dash' && f(null).kind === 'dash')
+const led = __csgn.renderLed(shib)
+check('micro LED renders sub digit', led.includes('digit sm') && (led.match(/class="digit /g) || []).length === 7)
+
+// ── MLB live: base situation instead of a clock ─────────────────────────────
+const mlbLeague = __csgn.LEAGUES.find((l) => l.key === 'mlb')
+const mlbEvent = {
+  date: new Date().toISOString(),
+  competitions: [{
+    date: new Date().toISOString(),
+    status: { period: 5, displayClock: '0:00', type: { state: 'in', shortDetail: 'Bot 5th' } },
+    situation: { balls: 2, strikes: 1, outs: 2, onFirst: true, onSecond: false, onThird: true },
+    broadcasts: [{ market: 'national', names: ['FOX'] }],
+    competitors: [
+      { homeAway: 'home', id: '10', score: '3', team: { shortDisplayName: 'Yankees', logos: [{ href: 'x' }] },
+        leaders: [{ shortDisplayName: 'HR', leaders: [{ displayValue: '2 HR', athlete: { shortName: 'A. Judge' } }] }],
+        records: [{ summary: '55-38' }] },
+      { homeAway: 'away', id: '11', score: '1', team: { shortDisplayName: 'Red Sox' },
+        leaders: [{ shortDisplayName: 'SO', leaders: [{ displayValue: '8 SO', athlete: { shortName: 'B. Bello' } }] }],
+        records: [{ summary: '48-45' }] },
+    ],
+  }],
+  status: { type: { state: 'in' } },
+}
+const [mlb] = __csgn.parseGameEvent(mlbLeague, mlbEvent)
+check('MLB live parsed with baseball situation', !!mlb.baseball && mlb.baseball.on1 && mlb.baseball.on3 && !mlb.baseball.on2 && mlb.baseball.outs === 2)
+const cell = __csgn.renderStatusCell(mlb)
+check('MLB cell shows diamond + count + inning, no 0:00', cell.includes('dia') && cell.includes('2-1') && cell.includes('Bot 5th') && !cell.includes('0:00'))
+check('MLB cell marks 1B+3B occupied, 2B empty', cell.includes('base b1 on') && cell.includes('base b3 on') && !cell.includes('base b2 on'))
+const mlbItem = __csgn.renderItem(mlb)
+check('MLB item has a stats face (top performers)', mlbItem.hasStats && mlbItem.html.includes('A. Judge 2 HR'))
+
+// ── NFL live: down & distance + possession ──────────────────────────────────
+const nflLeague = __csgn.LEAGUES.find((l) => l.key === 'nfl')
+const nflEvent = JSON.parse(JSON.stringify(mlbEvent))
+nflEvent.competitions[0].situation = { shortDownDistanceText: '3rd & 8', possession: '11', isRedZone: true }
+nflEvent.competitions[0].status.type.shortDetail = 'Q3 4:12'
+const [nfl] = __csgn.parseGameEvent(nflLeague, nflEvent)
+check('NFL live: down/distance + away possession + redzone', nfl.football?.dd === '3rd & 8' && nfl.football.redZone && nfl.possession === 'away')
+check('NFL cell renders down & distance', __csgn.renderStatusCell(nfl).includes('3rd &amp; 8'))
+
+// ── Golf: top-10 leaderboard ────────────────────────────────────────────────
+const pga = __csgn.LEAGUES.find((l) => l.key === 'pga')
+const golfEvent = {
+  name: 'The Open Championship', shortName: 'The Open', date: new Date().toISOString(),
+  status: { type: { state: 'in' } },
+  competitions: [{
+    status: { period: 2, type: { state: 'in', shortDetail: 'Round 2' } },
+    competitors: Array.from({ length: 14 }, (_, i) => ({
+      order: i + 1,
+      athlete: { shortName: `Player ${i + 1}` },
+      score: { displayValue: i === 0 ? '-12' : i < 5 ? `-${9 - i}` : `+${i - 4}` },
+      status: { position: { displayName: i === 1 ? 'T2' : String(i + 1) }, thru: i < 3 ? 18 : 11 },
+    })),
+  }],
+}
+const [golf] = __csgn.parseGolfEvent(pga, golfEvent)
+check('Golf parsed as leaderboard with exactly 10 rows', golf.kind === 'golf' && golf.rows.length === 10)
+const board = __csgn.renderGolfBoard(golf)
+check('Golf board renders leader, T2, F-thru, round', board.includes('Player 1') && board.includes('T2') && board.includes('-12') && board.includes('>F<') && board.includes('R2'))
+check('Golf board colors under/over par', board.includes('sc under') && board.includes('sc over'))
+check('Golf renders 10 row nodes', (board.match(/golf-row/g) || []).length === 10)
+check('Golf table has POS/PLAYER/TOT/THRU headers per column', (board.match(/golf-hrow/g) || []).length === 2 && board.includes('POS') && board.includes('PLAYER') && board.includes('TOT') && board.includes('THRU'))
+check('Golf leader row highlighted exactly once', (board.match(/golf-row lead/g) || []).length === 1)
+
+// ── Stacked main face: records on the game side, aligned scores ─────────────
+const mainFace = __csgn.renderMainFace(mlb)
+check('Main face shows both records in grey', mainFace.includes('55-38') && mainFace.includes('48-45'))
+check('Stacked rows: away row before home row', (() => {
+  const away = mainFace.indexOf('Red Sox'), home = mainFace.indexOf('Yankees')
+  return away > -1 && home > -1 && away < home && (mainFace.match(/class="trow"/g) || []).length === 2
+})())
+check('Scores live in the fixed score column', (mainFace.match(/class="scorecell"/g) || []).length === 2)
+const finalGame = { ...mlb, isFinal: true, live: false, winner: 'home', baseball: null }
+const finalFace = __csgn.renderMainFace(finalGame)
+check('Winner gets gold score + ◀ marker', finalFace.includes('score win') && finalFace.includes('win-arrow'))
+
+// ── Stats face priorities ───────────────────────────────────────────────────
+const preEvent = JSON.parse(JSON.stringify(mlbEvent))
+preEvent.competitions[0].status.type.state = 'pre'
+delete preEvent.competitions[0].situation
+const [pre] = __csgn.parseGameEvent(mlbLeague, preEvent)
+const preStats = __csgn.renderStatsFace(pre)
+check('Pregame stats face shows season leaders, not records', preStats !== null && preStats.includes('Season leaders') && preStats.includes('A. Judge 2 HR') && !preStats.includes('55-38'))
+const noLeaders = JSON.parse(JSON.stringify(preEvent))
+noLeaders.competitions[0].competitors.forEach((c) => delete c.leaders)
+const [bare] = __csgn.parseGameEvent(mlbLeague, noLeaders)
+check('No leaders → no stats face at all', __csgn.renderStatsFace(bare) === null)
+
+// ── MLB probable starters (pregame flip face) ───────────────────────────────
+const probEvent = JSON.parse(JSON.stringify(preEvent))
+probEvent.competitions[0].competitors[0].probables = [{
+  name: 'probableStartingPitcher',
+  athlete: { shortName: 'G. Cole' },
+  statistics: [
+    { name: 'wins', abbreviation: 'W', displayValue: '8' },
+    { name: 'losses', abbreviation: 'L', displayValue: '3' },
+    { name: 'ERA', abbreviation: 'ERA', displayValue: '2.75' },
+  ],
+}]
+probEvent.competitions[0].competitors[1].probables = [{ athlete: { shortName: 'B. Bello' }, statistics: [] }]
+const [prob] = __csgn.parseGameEvent(mlbLeague, probEvent)
+check('Probables parsed both sides', prob.probables?.home?.name === 'G. Cole' && prob.probables.home.line === '8-3, 2.75 ERA' && prob.probables.away?.name === 'B. Bello')
+const probFace = __csgn.renderStatsFace(prob)
+check('Pregame face is PROBABLE STARTERS when probables exist', probFace.includes('Probable starters') && probFace.includes('G. Cole') && probFace.includes('8-3, 2.75 ERA') && probFace.includes('B. Bello'))
+check('pitcherBrief tolerates missing stats', JSON.stringify(__csgn.pitcherBrief({ athlete: { shortName: 'J. Doe' } })) === JSON.stringify({ name: 'J. Doe', line: '' }))
+
+// ── MLB pitching decisions (final flip face) ────────────────────────────────
+const finEvent = JSON.parse(JSON.stringify(mlbEvent))
+finEvent.competitions[0].status = {
+  period: 9, type: { state: 'post', shortDetail: 'Final' },
+  featuredAthletes: [
+    { name: 'winningPitcher', athlete: { shortName: 'C. Holmes' }, statistics: [{ abbreviation: 'W', displayValue: '7' }, { abbreviation: 'L', displayValue: '4' }] },
+    { name: 'losingPitcher', athlete: { shortName: 'B. Bello' }, statistics: [{ abbreviation: 'W', displayValue: '5' }, { abbreviation: 'L', displayValue: '6' }] },
+    { name: 'savingPitcher', athlete: { shortName: 'E. Clase' }, statistics: [{ abbreviation: 'SV', displayValue: '25' }] },
+  ],
+}
+delete finEvent.competitions[0].situation
+finEvent.status = { type: { state: 'post' } }
+const [fin] = __csgn.parseGameEvent(mlbLeague, finEvent)
+check('Final parsed with W/L/SV decisions', fin.isFinal && fin.winner === 'home' && fin.decisions?.win?.name === 'C. Holmes' && fin.decisions.loss?.name === 'B. Bello' && fin.decisions.save?.name === 'E. Clase')
+const finStats = __csgn.renderStatsFace(fin)
+check('Final face is PITCHING DECISIONS (W/L/SV)', finStats.includes('Pitching decisions') && finStats.includes('W: C. Holmes') && finStats.includes('L: B. Bello') && finStats.includes('SV: E. Clase') && finStats.includes('(7-4)'))
+check('Winner column leads the decisions face', finStats.indexOf('C. Holmes') < finStats.indexOf('B. Bello'))
+
+// ── US TV sourcing ──────────────────────────────────────────────────────────
+check('National broadcasts[] wins', mlb.tv === 'FOX')
+check('TV rides the live baseball cell', cell.includes('class="tv"') && cell.includes('FOX'))
+check('geoBroadcasts fallback', __csgn.broadcastOf({
+  geoBroadcasts: [
+    { type: { shortName: 'Radio' }, market: { type: 'National' }, media: { shortName: 'ESPNRadio' } },
+    { type: { shortName: 'TV' }, market: { type: 'Home' }, media: { shortName: 'MASN' } },
+    { type: { shortName: 'TV' }, market: { type: 'National' }, media: { shortName: 'TBS' } },
+  ],
+}) === 'TBS')
+check('No broadcast data → empty, no crash', __csgn.broadcastOf({}) === '' && __csgn.broadcastOf(null) === '')
+
+// ── 6 AM ET broadcast-day rollover ──────────────────────────────────────────
+const ymdOf = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d).replaceAll('-', '')
+check('4:30 AM ET still shows yesterday', atTime('2026-07-19T08:30:00Z', () => ymdOf(__csgn.broadcastRef())) === '20260718')
+check('6:01 AM ET flips to today', atTime('2026-07-19T10:01:00Z', () => ymdOf(__csgn.broadcastRef())) === '20260719')
+check('scoreboard dates param follows the broadcast day', atTime('2026-07-19T08:30:00Z', () =>
+  __csgn.buildScoreboardUrl(mlbLeague, 'mlb').includes('dates=20260718')))
+check('sameZonedDay honors the rollover', atTime('2026-07-19T08:30:00Z', () => __csgn.sameZonedDay('2026-07-18T21:00:00-04:00', 0)))
+
+// ── Savannah Bananas: full remaining tour embedded ──────────────────────────
+const bb = __csgn.BANANA_BALL_GAMES
+check('Bananas schedule covers the full remaining tour (≥ 23 rows)', Array.isArray(bb) && bb.length >= 23)
+check('All Bananas dates parse + sorted ascending', bb.every((g, i) => Number.isFinite(new Date(g.date).getTime()) && (i === 0 || new Date(g.date) >= new Date(bb[i - 1].date))))
+check('Wrigley, Coors, Busch, Gillette + Banana Bowl all present', ['Wrigley', 'Coors', 'Busch', 'Gillette'].every((v) => bb.some((g) => (g.venue || '').includes(v))) && bb[bb.length - 1].event?.includes('Banana Bowl'))
+const nextCard = atTime('2026-07-19T16:00:00Z', () => __csgn.bananasItems({ key: 'bananas' }))
+check('Jul 19: card is the NEXT stop (Wrigley Jul 24), pregame', nextCard.length === 1 && nextCard[0].pregame && nextCard[0].subnote.includes('Wrigley') && nextCard[0].status.date === 'Jul 24')
+const gameDay = atTime('2026-08-01T22:00:00Z', () => __csgn.bananasItems({ key: 'bananas' }))
+check('Aug 1: card is that day\'s Grayson game', gameDay.length === 1 && gameDay[0].subnote.includes('Grayson') && gameDay[0].status.date === 'Aug 1')
+const bowl = atTime('2026-10-09T16:00:00Z', () => __csgn.bananasItems({ key: 'bananas' }))
+check('Oct 9: upcoming Banana Bowl renders as event card', bowl.length === 1 && bowl[0].kind === 'event' && bowl[0].title.includes('Banana Bowl'))
+
+// ── Transitions: broadcast pacing ───────────────────────────────────────────
+const C = __csgn.CONFIG
+check('Dwell ≥ 6s main / ≥ 4s stats', C.DWELL_MAIN >= 6000 && C.DWELL_STATS >= 4000)
+check('Roll slowed to ≥ 550ms', C.ROLL_MS >= 550)
+const ph = __csgn.wipePhases(C.WIPE_MS)
+check('League wipe has a real covered hold', ph.io + ph.hold + ph.io === C.WIPE_MS && ph.hold >= 300 && ph.io <= 560)
+const st = __csgn.wipePhases(C.STINGER_MS)
+check('Stinger buys hold time, not slower travel', st.io <= 560 && st.hold > ph.hold)
+
+// ── Crypto dock card ────────────────────────────────────────────────────────
+const coin = { sym: 'BTC', price: 98240, chg: 2.4, mc: 1.9e12, vol: 3.2e10, rank: 1, tag: 'TOP 50', spark: [1, 2, 3] }
+const card = __csgn.renderCoinCard(coin)
+check('Coin card: rank, sym, LED, tag, MC/VOL', card.includes('#1') && card.includes('BTC') && card.includes('digit') && card.includes('TOP 50') && card.includes('MC $1.9T'))
+check('Big 7d chart canvas replaces the old corner spark', card.includes('c-chart') && card.includes('width="420"') && !card.includes('c-spark'))
+check('No spark data → no chart canvas', !__csgn.renderCoinCard({ ...coin, spark: null }).includes('c-chart'))
+
+// ── Firestore REST decode + Right Now group ─────────────────────────────────
+const fsFixture = {
+  fields: {
+    rightNow: { arrayValue: { values: [
+      { mapValue: { fields: { tag: { stringValue: 'BREAKING' }, text: { stringValue: 'SOL flips $300' } } } },
+      { mapValue: { fields: { text: { stringValue: 'CSGN flagship 8PM ET' } } } },
+    ] } },
+    spotlight: { mapValue: { fields: {
+      symbol: { stringValue: 'ANSEM' }, dexPair: { stringValue: 'FNzKy6x7' },
+      dexChain: { stringValue: 'solana' }, note: { stringValue: 'Partner token' },
+    } } },
+  },
+}
+const rail = __csgn.decodeFs(fsFixture.fields.rightNow)
+const spotCfg = __csgn.decodeFs(fsFixture.fields.spotlight)
+check('decodeFs: rightNow array of 2 with tag/text', Array.isArray(rail) && rail.length === 2 && rail[0].tag === 'BREAKING' && rail[1].text === 'CSGN flagship 8PM ET')
+check('decodeFs: spotlight map fields', spotCfg.symbol === 'ANSEM' && spotCfg.dexPair === 'FNzKy6x7' && spotCfg.dexChain === 'solana')
+const rnGroup = __csgn.buildRightNowGroup([{ tag: 'BREAKING', text: 'SOL flips $300' }, { tag: 'CT', text: 'Ansem joins CSGN' }])
+check('Right Now group: red pill league + 2 event items', rnGroup.league.label === 'Right Now' && rnGroup.league.className === 'league-rightnow' && rnGroup.items.length === 2)
+const rnItem = __csgn.renderItem(rnGroup.items[0])
+check('Right Now item renders red kicker tag + headline, no empty cell', rnItem.html.includes('ev-kick rn') && rnItem.html.includes('BREAKING') && rnItem.html.includes('SOL flips $300') && !rnItem.html.includes('class="cell"'))
+check('Empty rail → no group', __csgn.buildRightNowGroup([]) === null && __csgn.buildRightNowGroup(null) === null)
+
+// ── Coin spotlight card ─────────────────────────────────────────────────────
+const spotHtml = __csgn.renderSpotlight({ symbol: 'ANSEM', note: 'Partner token' }, { price: 0.0421, chg: 12.4 })
+check('Spotlight: fire card with chip, symbol, LED price, note', spotHtml.includes('class="spot"') && spotHtml.includes('SPOTLIGHT') && spotHtml.includes('ANSEM') && spotHtml.includes('digit') && spotHtml.includes('Partner token') && spotHtml.includes('▲'))
+const spotNoPx = __csgn.renderSpotlight({ symbol: 'XYZ' }, { price: null, chg: null })
+check('Spotlight without price shows dashes, never $0.00', spotNoPx.includes('c-dash') && !spotNoPx.includes('0.00'))
+
+console.log(failures ? `\n${failures} FAILURES` : '\nAll ticker smoke checks passed')
+process.exit(failures ? 1 : 0)

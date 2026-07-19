@@ -187,6 +187,16 @@ body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255,
   animation: csgn-wipe-in 1.4s cubic-bezier(0.77, 0, 0.18, 1) forwards;
 }
 
+/* ─── "Now Live" countdown ring (fast/no-ads reveal on /player) ─── */
+/* Depletes the stroke from full to empty over the countdown window. Driven by
+   CSS (not JS) so it stays smooth at whatever frame rate OBS renders the
+   browser source at; the numeric readout is updated separately in FeedCover.
+   The circle uses pathLength=100, so dashoffset 0→100 empties it exactly. */
+@keyframes csgn-countdown-ring {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: 100; }
+}
+
 /* ─── Master-control intermission board panel fade ─── */
 @keyframes board-fade {
   0% { opacity: 0; transform: translateY(14px); }
