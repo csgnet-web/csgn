@@ -95,7 +95,7 @@
   --league-cbase:#0b5d3b;--league-wcbb:#702f8a;--league-summer:#ce1141;
   --league-pga:#0a6f47;--league-lpga:#6c2eb9;--league-tennis:#2f6f2f;
   --league-mma:#8a0303;--league-epl:#3d195b;--league-nascar:#1f2937;
-  --league-f1:#e10600;--league-banana:#f7c948;--league-rightnow:#ff2346;
+  --league-f1:#e10600;--league-banana:#f7c948;--league-rightnow:#ff2346;--league-x:#1d9bf0;
   --cond:"Roboto Condensed","Arial Narrow",Arial,system-ui,sans-serif;
   --mono:ui-monospace,"JetBrains Mono",Consolas,monospace;
 }
@@ -169,6 +169,18 @@ html,body{margin:0;width:1930px;height:110px;overflow:hidden;background:transpar
 .ev-kick.rn{color:var(--red);text-shadow:0 0 8px rgba(255,35,70,.4)}
 .ev-title{font-size:42px;font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 0 8px rgba(0,0,0,.9);line-height:1.02}
 .ev-sub{font-size:25px;font-weight:700;color:#d9d9d9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}
+/* ── X (tweet) showcase card — ESPN/UFC-style, 30s dwell ──────────────────── */
+.tweet{flex:1;height:94px;display:flex;align-items:center;gap:20px;padding:0 24px;min-width:0}
+.tw-avatar{width:66px;height:66px;border-radius:50%;flex:none;object-fit:cover;background:#1d1d22;border:1px solid rgba(255,255,255,.18)}
+.tw-avatar.ph{display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;color:#fff;font-family:var(--cond);background:linear-gradient(135deg,#2a2a33,#15151a)}
+.tw-body{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:3px}
+.tw-head{display:flex;align-items:center;gap:9px;min-width:0}
+.tw-name{font-size:25px;font-weight:900;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
+.tw-verified{width:23px;height:23px;flex:none;color:#1d9bf0}
+.tw-handle{font-size:20px;color:#8a8a94;font-weight:600;white-space:nowrap;flex:none}
+.tw-text{font-size:29px;font-weight:700;color:#e9e9ee;line-height:1.08;overflow:hidden;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.tw-x{width:42px;height:42px;flex:none;color:#fff;opacity:.92}
 /* golf leaderboard */
 .golf{flex:1;height:94px;display:flex;flex-direction:column;padding:6px 4px 6px 0;min-width:0}
 .golf-head{display:flex;align-items:baseline;gap:12px;padding:0 4px 3px}
@@ -251,6 +263,8 @@ html,body{margin:0;width:1930px;height:110px;overflow:hidden;background:transpar
 .c-rank.spot{background:linear-gradient(90deg,#ffcf40,#ff7a1a);color:#140700}
 .c-rank.buy{background:linear-gradient(90deg,#68ff7a,#12b04a);color:#052a12}
 .c-buyamt{font-family:var(--cond);font-size:30px;font-weight:900;color:#8dffab;text-shadow:0 0 10px rgba(104,255,122,.5)}
+.c-tag.csgn{background:linear-gradient(90deg,#ffcf40,#ff2346);color:#140700;border:none;font-weight:800}
+.c-rank.csgn{background:linear-gradient(90deg,#ffcf40,#ff2346);color:#140700}
 .c-top{display:flex;justify-content:space-between;align-items:center;height:26px;position:relative;z-index:2}
 .c-id{display:flex;align-items:center;gap:8px;min-width:0}
 .c-rank{font-size:11px;font-weight:700;color:#141414;background:var(--gold);border-radius:3px;padding:1px 5px;flex:none}
@@ -347,6 +361,7 @@ const CONFIG={
   CRYPTO_REFRESH_MS:90_000,
   CRYPTO_DWELL_MS:5_000,
   CRYPTO_ROLL_MS:600,           // the rising second-box transition (promoted/buy)
+  TWEET_DWELL_MS:30_000,        // X post showcase holds 30s (ESPN/UFC style)
   /* admin-driven features (config/ticker doc, polled over public REST) */
   ADMIN_POLL_MS:6_000,          // near-immediate: Right Now / BREAKING land within one poll
   SPOTLIGHT_EVERY_MS:600_000,   // rise a promoted coin every 10 minutes…
@@ -372,8 +387,12 @@ const CSGN_LOGO_URI="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAASABIAAD/4RvnRXhp
                                         → a promoted coin box RISES from the
                                           crypto dock (two boxes briefly stacked)
                                           every 10 min. NOT the Right Now rail.
-     csgn:      {price, chg?, mc?, vol?}          → $CSGN price beat (always shown)
+     csgn:      {price, chg?, mc?, vol?}          → $CSGN price beat + dock coin
+                                          (auto-written by the fee poller)
      liveFee:   {name, usd, ratePerMin?, sinceISO?} → "creator fees this session"
+                                          (auto-written by the fee poller)
+     tweets:    [{name, handle, text, avatar?, verified?}] → X post showcase,
+                                          each card holds 30s (ESPN/UFC style)
      nowLive:   {name, title}                     → who's on screen (beat + overlay)
      upNext:    {name, startET}                   → up-next (interstitial overlay)
      governance:[{tag, text}, …]                  → holder governance beats
@@ -404,8 +423,8 @@ function decodeFs(v){
   return null;
 }
 
-let adminCfg={rightNow:[],spotlight:null,breaking:null,governance:[],vote:null,csgn:null,liveFee:null,nowLive:null,upNext:null,buys:[]};
-let lastRailSig="";
+let adminCfg={rightNow:[],spotlight:null,breaking:null,governance:[],vote:null,csgn:null,liveFee:null,nowLive:null,upNext:null,buys:[],tweets:[]};
+let lastCfgSig="",lastRnSig="";
 async function adminCfgRefresh(){
   try{
     const r=await fetch(FS_TICKER_URL,{cache:"no-store"});
@@ -467,21 +486,29 @@ async function adminCfgRefresh(){
       .filter((b)=>b&&Number(b.usd)>0).slice(-8)
       .map((b)=>({usd:Number(b.usd),by:String(b.by||""),at:String(b.at||"")}));
 
-    adminCfg={rightNow,spotlight,breaking,governance,vote,csgn,liveFee,nowLive,upNext,buys};
+    // X post showcase: [{name, handle, text, avatar?, verified?}] — 30s each
+    const rawTweets=dec("tweets")||[];
+    const tweets=(Array.isArray(rawTweets)?rawTweets:[])
+      .filter((t)=>t&&typeof t.text==="string"&&t.text.trim()).slice(0,10)
+      .map((t)=>({name:String(t.name||t.handle||"CSGN"),handle:String(t.handle||"").replace(/^@/,""),
+        text:String(t.text),avatar:String(t.avatar||""),verified:!!t.verified}));
+
+    adminCfg={rightNow,spotlight,breaking,governance,vote,csgn,liveFee,nowLive,upNext,buys,tweets};
   }catch{ /* keep last good adminCfg */ }
 
   onSpotlightCfg(adminCfg.spotlight);
   applyBreaking(adminCfg.breaking);
   ingestBuys(adminCfg.buys);
 
-  // Right Now / governance / vote changes rebuild the rotation; a fresh Right
-  // Now rail RETRIGGERS the cycle so the update plays immediately, from the top.
-  const railSig=JSON.stringify([adminCfg.rightNow,adminCfg.governance,adminCfg.vote]);
-  if(railSig!==lastRailSig){
-    const hadPrior=lastRailSig!=="";
-    lastRailSig=railSig;
+  // Any admin content change rebuilds the rotation; only a fresh RIGHT NOW rail
+  // RETRIGGERS the cycle so that specific update plays immediately, from the top.
+  const rnSig=JSON.stringify(adminCfg.rightNow);
+  const cfgSig=JSON.stringify([adminCfg.rightNow,adminCfg.governance,adminCfg.vote,adminCfg.tweets]);
+  if(cfgSig!==lastCfgSig){
+    const rnChanged=rnSig!==lastRnSig&&lastCfgSig!=="";
+    lastCfgSig=cfgSig; lastRnSig=rnSig;
     if(groups.length){
-      if(adminCfg.rightNow.length&&hadPrior) retriggerRightNow();
+      if(adminCfg.rightNow.length&&rnChanged) retriggerRightNow();
       else pendingGroups=buildGroups();
     }
   }
@@ -558,6 +585,14 @@ function buildGovernanceGroup(governance,vote){
       kickerClass:"gov",live:false,isFinal:false,pregame:false,status:{date:"",time:""},sortDate:new Date(base+9)});
   }
   return items.length?{league:{key:"gov",label:"VOTE",className:"league-rightnow"},items}:null;
+}
+/** Admin-curated X post showcase — each card holds 30s (ESPN/UFC style). */
+function buildTweetsGroup(tweets){
+  if(!tweets||!tweets.length)return null;
+  const base=Date.now();
+  return {league:{key:"x",label:"ON X",className:"league-x"},
+    items:tweets.map((t,i)=>({kind:"tweet",leagueKey:"x",name:t.name,handle:t.handle,text:t.text,avatar:t.avatar,verified:t.verified,
+      dwellMs:CONFIG.TWEET_DWELL_MS,live:false,isFinal:false,pregame:false,status:{date:"",time:""},sortDate:new Date(base+i)}))};
 }
 
 /* ═══════════════ LEAGUES (carried over from the original file) ═══════════════ */
@@ -992,6 +1027,19 @@ function renderEventCard(g){
     ${g.subtitle?`<div class="ev-sub">${esc(g.subtitle)}</div>`:""}
   </div>`;
 }
+const TW_X_SVG='<svg viewBox="0 0 24 24" class="tw-x" aria-hidden="true"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>';
+const TW_VERIFIED_SVG='<svg viewBox="0 0 24 24" class="tw-verified" aria-hidden="true"><path fill="currentColor" d="M22.25 12c0-1.43-.88-2.67-2.19-3.34.46-1.39.2-2.9-.81-3.91s-2.52-1.27-3.91-.81c-.66-1.31-1.91-2.19-3.34-2.19s-2.67.88-3.33 2.19c-1.4-.46-2.91-.2-3.92.81s-1.26 2.52-.8 3.91c-1.31.67-2.2 1.91-2.2 3.34s.89 2.67 2.2 3.34c-.46 1.39-.21 2.9.8 3.91s2.52 1.26 3.91.81c.67 1.31 1.91 2.19 3.34 2.19s2.68-.88 3.34-2.19c1.39.45 2.9.2 3.91-.81s1.27-2.52.81-3.91c1.31-.67 2.19-1.91 2.19-3.34zm-11.71 4.2L6.8 12.46l1.41-1.42 2.26 2.26 4.8-5.23 1.47 1.36-6.2 6.77z"/></svg>';
+/** ESPN/UFC-style X post card (admin-curated rotation, 30s dwell). */
+function renderTweet(g){
+  const initial=String(g.name||g.handle||"?").trim().charAt(0).toUpperCase()||"?";
+  const avatar=g.avatar
+    ? '<img class="tw-avatar" src="'+esc(g.avatar)+'" alt="">'
+    : '<div class="tw-avatar ph">'+esc(initial)+'</div>';
+  return '<div class="tweet">'+avatar+
+    '<div class="tw-body"><div class="tw-head"><span class="tw-name">'+esc(g.name||"")+'</span>'+
+    (g.verified?TW_VERIFIED_SVG:'')+'<span class="tw-handle">@'+esc(String(g.handle||"").replace(/^@/,""))+'</span></div>'+
+    '<div class="tw-text">'+esc(g.text||"")+'</div></div>'+TW_X_SVG+'</div>';
+}
 function golfScoreClass(s){
   if(/^-/.test(s))return "sc under";
   if(/^\+/.test(s))return "sc over";
@@ -1044,6 +1092,7 @@ function renderStatsFace(g){
   return grid(side(g.awayAbbr,la),tag,side(g.homeAbbr,lh));
 }
 function renderMainFace(g){
+  if(g.kind==="tweet")return renderTweet(g);
   if(g.kind==="golf")return renderGolfBoard(g);
   if(g.kind==="event"){
     const d1=g.status.date?`<span class="l1">${esc(g.status.date)}</span>`:"";
@@ -1078,6 +1127,7 @@ function buildGroups(){
   const rn=buildRightNowGroup(adminCfg.rightNow); if(rn)lead.push(rn);
   lead.push(buildCsgnBeatGroup(adminCfg.csgn,adminCfg.liveFee,adminCfg.nowLive)); // $CSGN always present
   const gov=buildGovernanceGroup(adminCfg.governance,adminCfg.vote); if(gov)lead.push(gov);
+  const tw=buildTweetsGroup(adminCfg.tweets); if(tw)lead.push(tw);
   return [...lead,...leagueGroups];
 }
 function setPill(league){
@@ -1107,6 +1157,7 @@ function hardSwap(g){
 }
 function scheduleFlipAndAdvance(g){
   const hasStats=g&&renderStatsFace(g)!==null;
+  const dwell=(g&&g.dwellMs)||CONFIG.DWELL_MAIN;   // tweets hold 30s; games ~7s
   clearTimeout(stepTimer);
   stepTimer=setTimeout(()=>{
     if(hasStats){
@@ -1114,7 +1165,7 @@ function scheduleFlipAndAdvance(g){
       on.querySelector(".flip")?.classList.add("show-b");
       stepTimer=setTimeout(advance,CONFIG.DWELL_STATS);
     }else advance();
-  },CONFIG.DWELL_MAIN);
+  },dwell);
 }
 /** Wipe timing: total splits into slide-in / hold-covered / slide-out. The
  *  slide legs are capped so a long stinger buys HOLD time (logo on screen),
@@ -1314,6 +1365,15 @@ function renderCoinCard(c){
       <span class="c-mv">MC ${compactUsd(c.mc)} · VOL ${compactUsd(c.vol)}</span></div>
     ${c.spark?'<canvas class="c-chart" width="420" height="124"></canvas>':""}`;
 }
+/** The network's own coin, brand-accented, featured in the dock rotation. */
+function renderCsgnCoinCard(csgn){
+  const up=(csgn.chg??0)>=0;
+  return `<div class="c-top"><div class="c-id"><span class="c-rank csgn">★</span><span class="c-sym">CSGN</span></div>
+      <span class="c-delta ${up?"up":"down"}">(24h) ${up?"▲":"▼"} ${csgn.chg!=null?Math.abs(csgn.chg).toFixed(2):"–"}%</span></div>
+    <div class="c-led">${renderLed(formatLedPrice(csgn.price))}</div>
+    <div class="c-bot"><span class="c-tag csgn">$CSGN</span><span class="c-mv">MC ${compactUsd(csgn.mc)} · VOL ${compactUsd(csgn.vol)}</span></div>`;
+}
+const CSGN_HOLD_CARD='<div class="c-top"><div class="c-id"><span class="c-sym">$CSGN</span></div></div><div class="c-led"><span class="c-dash">— — —</span></div><div class="c-bot"><span class="c-tag csgn">CSGN.FUN</span><span class="c-mv">The crypto sports &amp; gaming network</span></div>';
 const CG="https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&sparkline=true&price_change_percentage=24h";
 let cryptoList=[],cryptoIdx=0;
 async function cryptoRefresh(){
@@ -1453,6 +1513,7 @@ function applyBreaking(b){
   }else el.hidden=true;
 }
 
+let cryptoTickN=0;
 function cryptoTick(){
   if(spotActive||buyActive)return; // spotlight / buy owns the dock
   const cfg=adminCfg.spotlight;
@@ -1460,7 +1521,18 @@ function cryptoTick(){
     startSpotlight(cfg);
     return;
   }
-  if(!cryptoList.length)return;
+  cryptoTickN++;
+  const csgn=adminCfg.csgn;
+  // Feature $CSGN itself every ~7th tick, and always when there's no external
+  // board — the dock is never empty and the network coin is always present.
+  if(csgn&&Number(csgn.price)>0&&(cryptoTickN%7===0||!cryptoList.length)){
+    coinShow(renderCsgnCoinCard(csgn),null,"swap","");
+    return;
+  }
+  if(!cryptoList.length){ // no board and no $CSGN stats yet → branded hold card, never dead
+    coinShow(CSGN_HOLD_CARD,null,"swap","");
+    return;
+  }
   const c=cryptoList[cryptoIdx];
   cryptoIdx=(cryptoIdx+1)%cryptoList.length;
   coinShow(renderCoinCard(c),c.spark,"swap","");
@@ -1477,7 +1549,8 @@ window.__csgn={formatLedPrice,renderLed,renderItem,renderStatusCell,renderGolfBo
   decodeFs,buildRightNowGroup,renderSpotlight,renderRows,renderMainFace,renderEventCard,
   CONFIG,wipePhases,broadcastRef,dateParamForLeague,sameZonedDay,
   pitcherBrief,broadcastOf,BANANA_BALL_GAMES,bananasItems,renderCoinCard,
-  buildCsgnBeatGroup,buildGovernanceGroup,renderBuyCard,shortCountdown,fmtUsd,fmtPriceInline};
+  buildCsgnBeatGroup,buildGovernanceGroup,renderBuyCard,shortCountdown,fmtUsd,fmtPriceInline,
+  renderTweet,buildTweetsGroup,renderCsgnCoinCard};
 document.documentElement.style.setProperty("--roll-ms",`${CONFIG.ROLL_MS}ms`);
 document.documentElement.style.setProperty("--croll-ms",`${CONFIG.CRYPTO_ROLL_MS}ms`);
 const brandImg=document.getElementById("brand-logo");

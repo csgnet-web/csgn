@@ -23,6 +23,28 @@ const parseBeatLines = (raw: string, defTag: string): Beat[] =>
     return text ? { tag: tag || defTag, text } : null
   }).filter((b): b is Beat => b !== null).slice(0, 6)
 
+interface Tweet { name: string; handle: string; text: string; avatar: string; verified: boolean }
+
+// One post per line: "@handle | Name | tweet text" or "@handle | tweet text".
+// Prefix the handle with ! to show the blue verified badge.
+const parseTweetLines = (raw: string): Tweet[] =>
+  raw.split('\n').map((line): Tweet | null => {
+    const l = line.trim()
+    if (!l) return null
+    const parts = l.split('|')
+    if (parts.length < 2) return null
+    let handle = parts[0].trim()
+    const verified = handle.startsWith('!')
+    handle = handle.replace(/^!/, '').replace(/^@/, '').trim()
+    const name = parts.length >= 3 ? parts[1].trim() : handle
+    const text = (parts.length >= 3 ? parts.slice(2).join('|') : parts.slice(1).join('|')).trim()
+    if (!handle || !text) return null
+    return { handle, name: name || handle, text, avatar: '', verified }
+  }).filter((t): t is Tweet => t !== null).slice(0, 10)
+
+const serializeTweets = (tweets: Tweet[]): string =>
+  tweets.map((t) => `${t.verified ? '!' : ''}@${t.handle}${t.name && t.name !== t.handle ? ` | ${t.name}` : ''} | ${t.text}`).join('\n')
+
 const fmtToken = (n: number): string =>
   n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(Math.round(n))
 
@@ -42,6 +64,8 @@ export default function TickerControlsCard() {
   const [nextStart, setNextStart] = useState('')
   // Governance beats
   const [govText, setGovText] = useState('')
+  // X post showcase
+  const [tweetsText, setTweetsText] = useState('')
   // Vote
   const [voteQ, setVoteQ] = useState('')
   const [voteOpts, setVoteOpts] = useState(['', '', '', ''])
@@ -64,6 +88,7 @@ export default function TickerControlsCard() {
         if (d.nowLive) { setLiveName(String(d.nowLive.name || '')); setLiveTitle(String(d.nowLive.title || '')) }
         if (d.upNext) { setNextName(String(d.upNext.name || '')); setNextStart(String(d.upNext.startET || '')) }
         if (Array.isArray(d.governance)) setGovText(d.governance.map((g: Beat) => (g.tag && g.tag !== 'CSGN GOVERNANCE' ? `${g.tag} | ${g.text}` : g.text)).join('\n'))
+        if (Array.isArray(d.tweets)) setTweetsText(serializeTweets(d.tweets as Tweet[]))
       }
     })
   }, [])
@@ -88,6 +113,7 @@ export default function TickerControlsCard() {
   const saveLive = () => run('live', () => write({ nowLive: liveName.trim() || liveTitle.trim() ? { name: liveName.trim(), title: liveTitle.trim() } : null }), 'Live-now updated.')
   const saveNext = () => run('next', () => write({ upNext: nextName.trim() || nextStart.trim() ? { name: nextName.trim(), startET: nextStart.trim() } : null }), 'Up-next updated.')
   const saveGov = () => run('gov', () => write({ governance: parseBeatLines(govText, 'CSGN GOVERNANCE') }), 'Governance beats updated.')
+  const saveTweets = () => run('tweets', () => write({ tweets: parseTweetLines(tweetsText) }), 'X post rotation updated — 30s per card on the ticker.')
 
   const createVote = () => run('vote', async () => {
     const options = voteOpts.map((o) => o.trim()).filter(Boolean)
@@ -145,6 +171,16 @@ export default function TickerControlsCard() {
           <label className={label}>Governance beats (one per line · optional TAG | text)</label>
           <textarea value={govText} onChange={(e) => setGovText(e.target.value)} rows={3} placeholder={'Holders decide tonight’s stream\nBURN | 2.1M $CSGN burned this week'} className={input} />
           <Button size="sm" variant="secondary" isLoading={busy === 'gov'} onClick={saveGov}>Save governance</Button>
+        </div>
+
+        {/* X post showcase */}
+        <div className="space-y-2">
+          <label className={label}>X posts — 30s showcase · one per line: <span className="text-gray-500">@handle | Name | tweet text</span> (prefix ! for verified)</label>
+          <textarea value={tweetsText} onChange={(e) => setTweetsText(e.target.value)} rows={4} placeholder={'!@blknoiz06 | Ansem | CSGN is the ESPN of crypto\n@CSGNet | Holders pick tonight’s stream — vote at csgn.fun'} className={input} />
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-500">Keep a solid rotation — refresh every couple hours.</span>
+            <Button size="sm" variant="secondary" isLoading={busy === 'tweets'} onClick={saveTweets}>Save X rotation</Button>
+          </div>
         </div>
 
         {/* Vote */}

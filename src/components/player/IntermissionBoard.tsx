@@ -67,7 +67,7 @@ function UpNextPanel({ slots }: { slots: Slot[] }) {
  * steps a viewer follows on their phone (Phantom browser → Twitch → go live).
  * Renders on the OBS output, so the CTA is a billboard, not a button.
  */
-function OpenStagePanel({ slot }: { slot: Slot | null }) {
+function OpenStagePanel({ slot, isCurrent = false }: { slot: Slot | null; isCurrent?: boolean }) {
   return (
     <div className="flex flex-col items-center gap-10">
       <div className="flex flex-col items-center gap-3">
@@ -81,7 +81,7 @@ function OpenStagePanel({ slot }: { slot: Slot | null }) {
       <div className="stage-border-sweep rounded-3xl p-[2px]">
         <div className="stage-card-breathe rounded-3xl bg-[#0a0a14] px-14 py-9 flex items-center gap-12">
           <div className="text-left">
-            <p className="text-sm uppercase tracking-[0.3em] text-gray-500 mb-2">{slot ? 'Open Slot' : 'Next Open Slot'}</p>
+            <p className="text-sm uppercase tracking-[0.3em] text-gray-500 mb-2">{slot ? (isCurrent ? 'On Air Now' : 'Open Slot') : 'Next Open Slot'}</p>
             <p className="text-4xl font-black font-mono text-white">{slot ? formatESTRange(slot) : 'Announced daily'}</p>
             <p className="text-lg text-gray-400 mt-2">Streamed to X on <span className="text-white font-bold">@{X_HANDLE}</span> · you keep creator fees</p>
           </div>
@@ -191,24 +191,27 @@ export default function IntermissionBoard({ dimmed = false }: { dimmed?: boolean
 
   const upcoming = allSlots.filter((s) => toMillis(s.startTime) > nowMs).slice(0, 3)
 
-  // The slot the open-stage billboard advertises: the CURRENT slot if it's
-  // unclaimed (the stage is literally empty right now), else the next
-  // unclaimed one coming up.
+  // The open-stage billboard always reflects the slot ON AIR RIGHT NOW — its
+  // stage is empty during intermission (e.g. a streamer ended mid-slot), so the
+  // billboard shows THAT block, never a future one. Only when there is no
+  // current slot at all (dead air between scheduled blocks) does it fall back to
+  // advertising the next open slot.
   const claimable =
-    currentSlot && currentSlot.status === 'open' && !currentSlot.assignedUid
-      ? currentSlot
-      : allSlots.find((s) => toMillis(s.startTime) > nowMs && s.status === 'open' && !s.assignedUid) ?? null
+    currentSlot
+      ?? allSlots.find((s) => toMillis(s.startTime) > nowMs && s.status === 'open' && !s.assignedUid)
+      ?? null
+  const claimableIsCurrent = claimable != null && claimable === currentSlot
 
   // The open-stage billboard alternates with the info panels, so the claim
   // message is on screen half the time the network is between streamers.
   const panels = [
-    <OpenStagePanel key="stage-a" slot={claimable} />,
+    <OpenStagePanel key="stage-a" slot={claimable} isCurrent={claimableIsCurrent} />,
     <UpNextPanel key="next" slots={upcoming} />,
-    <OpenStagePanel key="stage-b" slot={claimable} />,
+    <OpenStagePanel key="stage-b" slot={claimable} isCurrent={claimableIsCurrent} />,
     <TokenPanelBoard key="token" />,
-    <OpenStagePanel key="stage-c" slot={claimable} />,
+    <OpenStagePanel key="stage-c" slot={claimable} isCurrent={claimableIsCurrent} />,
     <FollowPanel key="follow" />,
-    <OpenStagePanel key="stage-d" slot={claimable} />,
+    <OpenStagePanel key="stage-d" slot={claimable} isCurrent={claimableIsCurrent} />,
     <TaglinePanel key="tag" index={Math.floor(panel / 8)} />,
   ]
 

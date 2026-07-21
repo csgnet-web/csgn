@@ -34,6 +34,7 @@ interface CreatorFees {
   snapshotLockedAt?: string
   paidAt?: string
   declineReason?: string
+  feeOwedUSD?: number
 }
 
 interface StreamActivity {
@@ -53,6 +54,8 @@ interface SlotDoc {
   endTime?: string
   streamUrl?: string
   walletAddress?: string
+  assignedName?: string
+  streamTitle?: string
   creatorFees?: CreatorFees
   streamActivity?: StreamActivity
   _feeState?: FeeState
@@ -451,9 +454,11 @@ export const handler = async () => {
   await logSlotActivity(active)
 
   let tokenStatsWritten = false
+  let lastDex: DexData | null = null
   for (let i = 0; i < 4; i++) {
     const dexData = await fetchDexData()
     if (dexData) {
+      lastDex = dexData
       if (!tokenStatsWritten) {
         try {
           await writeDoc('public/tokenStats', buildTokenStatsDoc(dexData), { merge: false })
@@ -465,5 +470,23 @@ export const handler = async () => {
       await pollAndWrite(dexData, active, i)
     }
     if (i < 3) await sleep(POLL_INTERVAL_MS)
+  }
+
+  // Publish CSGN token info + the live creator-fee beat to the broadcast ticker
+  // overlay (config/ticker), so the $CSGN beat + fee readout run automatically —
+  // no manual admin entry. merge:true never touches the admin-curated fields
+  // (rightNow / breaking / governance / vote).
+  const tickerPatch: Record<string, unknown> = { updatedAt: new Date().toISOString() }
+  if (lastDex) {
+    tickerPatch.csgn = { price: lastDex.priceUsd, chg: lastDex.priceChangeH24Pct, mc: lastDex.marketCapUsd, vol: lastDex.volumeH24Usd }
+  }
+  const liveAssigned = active?.data.assignedName && (active.data.status === 'live' || active.data.status === 'confirmed')
+  tickerPatch.liveFee = liveAssigned
+    ? { name: active!.data.assignedName, usd: Math.max(0, active!.data.creatorFees?.feeOwedUSD ?? 0), sinceISO: active!.data.startTime ?? '' }
+    : null
+  try {
+    await writeDoc('config/ticker', tickerPatch, { merge: true })
+  } catch (err) {
+    console.error('[feePoller] ticker csgn/liveFee write error:', err)
   }
 }

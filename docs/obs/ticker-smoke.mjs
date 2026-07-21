@@ -256,5 +256,18 @@ check('Governance group: beat + vote card with countdown + options', gov.items.l
 check('Governance vote kicker uses gov accent', __csgn.renderItem(gov.items[1]).html.includes('ev-kick gov'))
 check('Empty governance → no group', __csgn.buildGovernanceGroup([], null) === null)
 
+// ── X post showcase (30s tweet cards) ───────────────────────────────────────
+const twGroup = __csgn.buildTweetsGroup([{ name: 'Ansem', handle: '@blknoiz06', text: 'CSGN is the ESPN of crypto', avatar: '', verified: true }])
+check('Tweets group: ON X pill + tweet item @ 30s dwell', twGroup.league.label === 'ON X' && twGroup.items.length === 1 && twGroup.items[0].kind === 'tweet' && twGroup.items[0].dwellMs === 30000)
+const twItem = __csgn.renderItem(twGroup.items[0])
+check('Tweet renders name + handle + verified badge + text + X logo', twItem.html.includes('Ansem') && twItem.html.includes('@blknoiz06') && twItem.html.includes('tw-verified') && twItem.html.includes('CSGN is the ESPN of crypto') && twItem.html.includes('tw-x'))
+const twNoAvatar = __csgn.renderTweet({ name: 'Degen', handle: 'degen', text: 'gm', verified: false })
+check('Tweet without avatar → initial placeholder, no verified badge', twNoAvatar.includes('tw-avatar ph') && twNoAvatar.includes('>D<') && !twNoAvatar.includes('tw-verified'))
+check('Empty tweets → no group', __csgn.buildTweetsGroup([]) === null && __csgn.buildTweetsGroup(null) === null)
+
+// ── $CSGN dock coin (network coin always present in the rotation) ────────────
+const csgnCard = __csgn.renderCsgnCoinCard({ price: 0.0000038, chg: 5.2, mc: 3800, vol: 900 })
+check('$CSGN dock coin: brand tag + star rank + CSGN symbol + LED digits', csgnCard.includes('c-tag csgn') && csgnCard.includes('c-rank csgn') && csgnCard.includes('CSGN') && csgnCard.includes('digit'))
+
 console.log(failures ? `\n${failures} FAILURES` : '\nAll ticker smoke checks passed')
 process.exit(failures ? 1 : 0)
