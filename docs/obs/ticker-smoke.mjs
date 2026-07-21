@@ -230,11 +230,44 @@ const rnItem = __csgn.renderItem(rnGroup.items[0])
 check('Right Now item renders red kicker tag + headline, no empty cell', rnItem.html.includes('ev-kick rn') && rnItem.html.includes('BREAKING') && rnItem.html.includes('SOL flips $300') && !rnItem.html.includes('class="cell"'))
 check('Empty rail → no group', __csgn.buildRightNowGroup([]) === null && __csgn.buildRightNowGroup(null) === null)
 
-// ── Coin spotlight card ─────────────────────────────────────────────────────
+// ── Coin spotlight: the RISING promoted box (compact card, gold accent) ─────
 const spotHtml = __csgn.renderSpotlight({ symbol: 'ANSEM', note: 'Partner token' }, { price: 0.0421, chg: 12.4 })
-check('Spotlight: fire card with chip, symbol, LED price, note', spotHtml.includes('class="spot"') && spotHtml.includes('SPOTLIGHT') && spotHtml.includes('ANSEM') && spotHtml.includes('digit') && spotHtml.includes('Partner token') && spotHtml.includes('▲'))
+check('Spotlight: promoted coin card with SPOTLIGHT tag, symbol, LED, note', spotHtml.includes('c-tag spot') && spotHtml.includes('SPOTLIGHT') && spotHtml.includes('ANSEM') && spotHtml.includes('digit') && spotHtml.includes('Partner token') && spotHtml.includes('▲'))
 const spotNoPx = __csgn.renderSpotlight({ symbol: 'XYZ' }, { price: null, chg: null })
 check('Spotlight without price shows dashes, never $0.00', spotNoPx.includes('c-dash') && !spotNoPx.includes('0.00'))
+
+// ── $CSGN buy toast (rises green, reuses the coin-card shape) ────────────────
+const buyHtml = __csgn.renderBuyCard({ usd: 1234, by: '@degen' })
+check('Buy toast: green BUY tag + amount + buyer', buyHtml.includes('c-tag buy') && buyHtml.includes('+$1,234') && buyHtml.includes('@degen') && buyHtml.includes('c-buyamt'))
+
+// ── $CSGN network beat: price card + live creator-fee card ──────────────────
+const beat = __csgn.buildCsgnBeatGroup({ price: 0.0000038, chg: 5.2, mc: 3800, vol: 900 }, { name: 'CEO', usd: 42.5 }, { name: 'CEO' })
+check('CSGN beat: 2 cards, $CSGN LIVE kicker, fee in USD', beat.items.length === 2 && beat.items[0].kicker === '$CSGN LIVE' && beat.items[1].title.includes('$42.50'))
+const beatItem = __csgn.renderItem(beat.items[1])
+check('CSGN fee card: gold kicker + green fee line, no game cell', beatItem.html.includes('ev-kick csgn') && beatItem.html.includes('ev-fee') && !beatItem.html.includes('class="cell"'))
+const beatNoFee = __csgn.buildCsgnBeatGroup(null, null, null)
+check('CSGN beat always present (1 card even with no data)', beatNoFee.items.length === 1 && beatNoFee.items[0].title.includes('$CSGN'))
+
+// ── Governance beat + tonight's vote countdown ──────────────────────────────
+const soon = new Date(Date.now() + 2 * 3600e3 + 14 * 60e3 + 30e3).toISOString()
+check('shortCountdown: h/m, LIVE NOW, empty', __csgn.shortCountdown(soon) === '2h 14m' && __csgn.shortCountdown(new Date(Date.now() - 1000).toISOString()) === 'LIVE NOW' && __csgn.shortCountdown('') === '')
+const gov = __csgn.buildGovernanceGroup([{ tag: 'CSGN GOVERNANCE', text: 'Holders pick tonight' }], { question: 'CFB dynasty or Black Ops?', options: ['CFB', 'BLACK OPS'], startISO: soon })
+check('Governance group: beat + vote card with countdown + options', gov.items.length === 2 && gov.items[1].title === 'CFB DYNASTY OR BLACK OPS?' && gov.items[1].kicker.includes('STREAM IN 2h') && gov.items[1].subtitle.includes('CFB'))
+check('Governance vote kicker uses gov accent', __csgn.renderItem(gov.items[1]).html.includes('ev-kick gov'))
+check('Empty governance → no group', __csgn.buildGovernanceGroup([], null) === null)
+
+// ── X post showcase (30s tweet cards) ───────────────────────────────────────
+const twGroup = __csgn.buildTweetsGroup([{ name: 'Ansem', handle: '@blknoiz06', text: 'CSGN is the ESPN of crypto', avatar: '', verified: true }])
+check('Tweets group: ON X pill + tweet item @ 30s dwell', twGroup.league.label === 'ON X' && twGroup.items.length === 1 && twGroup.items[0].kind === 'tweet' && twGroup.items[0].dwellMs === 30000)
+const twItem = __csgn.renderItem(twGroup.items[0])
+check('Tweet renders name + handle + verified badge + text + X logo', twItem.html.includes('Ansem') && twItem.html.includes('@blknoiz06') && twItem.html.includes('tw-verified') && twItem.html.includes('CSGN is the ESPN of crypto') && twItem.html.includes('tw-x'))
+const twNoAvatar = __csgn.renderTweet({ name: 'Degen', handle: 'degen', text: 'gm', verified: false })
+check('Tweet without avatar → initial placeholder, no verified badge', twNoAvatar.includes('tw-avatar ph') && twNoAvatar.includes('>D<') && !twNoAvatar.includes('tw-verified'))
+check('Empty tweets → no group', __csgn.buildTweetsGroup([]) === null && __csgn.buildTweetsGroup(null) === null)
+
+// ── $CSGN dock coin (network coin always present in the rotation) ────────────
+const csgnCard = __csgn.renderCsgnCoinCard({ price: 0.0000038, chg: 5.2, mc: 3800, vol: 900 })
+check('$CSGN dock coin: brand tag + star rank + CSGN symbol + LED digits', csgnCard.includes('c-tag csgn') && csgnCard.includes('c-rank csgn') && csgnCard.includes('CSGN') && csgnCard.includes('digit'))
 
 console.log(failures ? `\n${failures} FAILURES` : '\nAll ticker smoke checks passed')
 process.exit(failures ? 1 : 0)

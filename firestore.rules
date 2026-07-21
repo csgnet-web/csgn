@@ -46,6 +46,17 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // votes/{voteId} holds the aggregate tally (tokens + distinct-wallet count
+    // per option), updated atomically by the castVote function (firebase-admin,
+    // which bypasses these rules). Public read powers the scoreboard and the
+    // on-air overlay; admins create/reset a vote from the panel. Individual
+    // ballots (votes/{id}/ballots/{wallet}) have no rule → server-only.
+    match /votes/{voteId} {
+      allow get: if true;
+      allow list: if false;
+      allow write: if isAdmin();
+    }
+
     match /users/{userId} {
       allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
       allow list: if isAdmin();

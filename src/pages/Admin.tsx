@@ -18,6 +18,7 @@ import { useAuth } from '@/contexts/useAuth'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import TickerControlsCard from '@/components/admin/TickerControlsCard'
 import { PUMP_FUN_FEE_TIERS, estimateCreatorFeeSOL, formatTierRange, resolvePumpFeeTier } from '@/lib/dexscreener'
 import { parseXPostId, isBroadcastUrl } from '@/lib/xembed'
 import {
@@ -1193,6 +1194,8 @@ export default function Admin() {
                 </div>
               </div>
             </Card>
+
+            <TickerControlsCard />
 
           </div>
         )}
