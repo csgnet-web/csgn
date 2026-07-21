@@ -133,21 +133,21 @@ html,body{margin:0;width:1930px;height:110px;overflow:hidden;background:transpar
 /* stacked two-row scoreboard (away over home) — scores in a fixed right
    column so they align vertically; records ride the main face in grey */
 .rows{flex:1;display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:0}
-.trow{display:grid;grid-template-columns:26px minmax(0,1fr) 92px;align-items:center;gap:10px;height:33px}
-.tlogo{width:24px;height:24px;object-fit:contain;justify-self:center;filter:brightness(1.15)}
-.tname{display:flex;align-items:baseline;gap:9px;min-width:0}
-.abbr{font-size:26px;font-weight:900;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1;text-shadow:0 0 6px rgba(0,0,0,.8)}
-.rec{font-size:12.5px;font-weight:700;color:#9a9aa4;font-family:var(--mono);white-space:nowrap}
+.trow{display:grid;grid-template-columns:30px minmax(0,1fr) 104px;align-items:center;gap:12px;height:39px}
+.tlogo{width:30px;height:30px;object-fit:contain;justify-self:center;filter:brightness(1.15)}
+.tname{display:flex;align-items:baseline;gap:11px;min-width:0}
+.abbr{font-size:31px;font-weight:900;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1;text-shadow:0 0 6px rgba(0,0,0,.8)}
+.rec{font-size:15px;font-weight:700;color:#9a9aa4;font-family:var(--mono);white-space:nowrap}
 .scorecell{display:flex;align-items:center;justify-content:flex-end;gap:6px}
-.score{font-size:29px;font-weight:900;color:#fff;font-variant-numeric:tabular-nums;line-height:1;text-shadow:0 0 8px rgba(255,255,255,.35)}
+.score{font-size:35px;font-weight:900;color:#fff;font-variant-numeric:tabular-nums;line-height:1;text-shadow:0 0 8px rgba(255,255,255,.35)}
 .score.win{color:var(--gold);text-shadow:0 0 10px rgba(255,207,64,.5)}
 .win-arrow{font-size:13px;color:var(--gold)}
 .poss{width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 7px var(--gold);flex:none;align-self:center}
 /* status cell — fixed width so every league lines up */
 .cell{width:170px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
   border-left:2px solid rgba(255,255,255,.85);padding-left:16px;text-transform:uppercase;font-weight:800;height:76px}
-.cell .l1{font-size:15px;color:#ccc;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis}
-.cell .l2{font-size:17px;color:#fff;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis}
+.cell .l1{font-size:18px;color:#ccc;white-space:nowrap;max-width:164px;overflow:hidden;text-overflow:ellipsis}
+.cell .l2{font-size:23px;color:#fff;white-space:nowrap;max-width:164px;overflow:hidden;text-overflow:ellipsis}
 .cell .l2.rz{color:var(--loss);text-shadow:0 0 6px rgba(255,75,75,.6)}
 .cell .l3{font-size:11px;font-weight:700;color:#8a8a94;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis;text-transform:none}
 .cell .tv{font-size:11px;font-weight:800;color:#6db3ff;letter-spacing:.1em;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis}
@@ -164,11 +164,11 @@ html,body{margin:0;width:1930px;height:110px;overflow:hidden;background:transpar
 .out{width:7px;height:7px;border-radius:50%;background:#3a3a42}
 .out.on{background:var(--loss);box-shadow:0 0 5px rgba(255,75,75,.7)}
 /* event card */
-.event{flex:1;display:flex;flex-direction:column;justify-content:center;gap:5px;min-width:0}
-.ev-kick{font-size:13px;font-weight:800;color:#aaa;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.event{flex:1;display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0}
+.ev-kick{font-size:18px;font-weight:800;color:#aaa;text-transform:uppercase;letter-spacing:.1em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ev-kick.rn{color:var(--red);text-shadow:0 0 8px rgba(255,35,70,.4)}
-.ev-title{font-size:27px;font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 0 8px rgba(0,0,0,.9)}
-.ev-sub{font-size:17px;font-weight:700;color:#d9d9d9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}
+.ev-title{font-size:42px;font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 0 8px rgba(0,0,0,.9);line-height:1.02}
+.ev-sub{font-size:25px;font-weight:700;color:#d9d9d9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}
 /* golf leaderboard */
 .golf{flex:1;height:94px;display:flex;flex-direction:column;padding:6px 4px 6px 0;min-width:0}
 .golf-head{display:flex;align-items:baseline;gap:12px;padding:0 4px 3px}
@@ -254,7 +254,7 @@ html,body{margin:0;width:1930px;height:110px;overflow:hidden;background:transpar
 .c-top{display:flex;justify-content:space-between;align-items:center;height:26px;position:relative;z-index:2}
 .c-id{display:flex;align-items:center;gap:8px;min-width:0}
 .c-rank{font-size:11px;font-weight:700;color:#141414;background:var(--gold);border-radius:3px;padding:1px 5px;flex:none}
-.c-sym{font-size:26px;color:#e8e8ec;letter-spacing:2px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.c-sym{font-size:30px;color:#e8e8ec;letter-spacing:2px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .c-delta{font-size:16px;flex:none}
 .c-delta.up{color:var(--green);text-shadow:0 0 6px rgba(104,255,122,.6)}
 .c-delta.down{color:var(--loss);text-shadow:0 0 6px rgba(255,75,75,.6)}
@@ -287,9 +287,12 @@ html,body{margin:0;width:1930px;height:110px;overflow:hidden;background:transpar
 .c-layer>.c-chart{animation:cfade .6s ease-out .08s both}
 
 /* ── BREAKING overlay — persistent red takeover, stays until admin clears ─── */
-.breaking{position:absolute;inset:0 0 0 110px;z-index:20;display:flex;align-items:stretch;
+/* Overscans top/right/bottom (clipped by body overflow:hidden) and overlaps
+   4px into the opaque brand block, so the takeover is fully opaque edge-to-edge
+   with no seam or content bleed. */
+.breaking{position:absolute;top:-2px;right:-2px;bottom:-2px;left:106px;z-index:20;display:flex;align-items:stretch;
   background:linear-gradient(90deg,#8a0010,#e10022 32%,#ff2346 72%,#8a0010);
-  box-shadow:inset 0 0 46px rgba(255,20,50,.5);animation:brk-in .45s cubic-bezier(.2,.85,.2,1)}
+  box-shadow:inset 0 0 46px rgba(255,20,50,.5);animation:brk-in .4s cubic-bezier(.2,.85,.2,1)}
 .breaking[hidden]{display:none}
 .brk-kick{flex:none;display:flex;align-items:center;padding:0 26px;background:#6d000e;
   font-size:38px;font-weight:900;font-style:italic;letter-spacing:.03em;color:#fff;text-transform:uppercase;
