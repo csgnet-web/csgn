@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>CSGN Over-Live Interstitials</title>
+<!--
+  ═══════════════════════════════════════════════════════════════════════════
+  CSGN OVER-LIVE INTERSTITIALS — one transparent OBS Browser Source, 1920×1080,
+  layered ABOVE the live feed and ABOVE the ticker. These are the graphics that
+  used to only appear on the off-air rotation: they now occasionally break into
+  the LIVE broadcast, then clear, so the feed stays clean between them.
+
+  WHAT IT SHOWS (rotates, ~one every few minutes, ~12s each — see CONFIG)
+    • LIVE NOW      — who is on screen right now (name + show title)
+    • UP NEXT       — who's next + the ET start time
+    • HOLDERS VOTE  — tonight's stream vote (question + options) with a LIVE
+                      countdown to 8:00 PM ET (or vote.startISO if the admin set one)
+
+  ADMIN-DRIVEN — the SAME world-readable doc the ticker reads (config/ticker):
+      nowLive: { name, title }
+      upNext:  { name, startET }        // startET is a display string e.g. "10:00 PM ET"
+      vote:    { question, options:[…], startISO?, closesISO? }
+    Nothing set → nothing shows (fully transparent, feed stays clean).
+
+  INSTALL (OBS)
+    Browser Source → ✅ Local file → this file
+    Width 1920 · Height 1080 · position X 0, Y 0 · ON TOP of the feed + ticker
+    Custom CSS: body { background: rgba(0,0,0,0); }
+    Shutdown source when not visible: OFF.
+
+  URL FLAGS
+    ?demo   — force sample content immediately (for setup / this repo's smoke shot)
+    ?always — show back-to-back (no long gap) to rehearse the look
+  ═══════════════════════════════════════════════════════════════════════════
+-->
+<style>
+:root{
+  --red:#ff2346; --red-deep:#7d1010; --gold:#ffcf40; --green:#68ff7a; --ink:#fff; --muted:#c7c7cf;
+  --panel:rgba(10,10,13,.92);
+  --cond:"Roboto Condensed","Arial Narrow",Arial,system-ui,sans-serif;
+  --mono:ui-monospace,"JetBrains Mono",Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:transparent;font-family:var(--cond);color:var(--ink)}
+.stage{position:absolute;inset:0}
+
+/* ── shared lower-third shell (slides up from bottom-left, above the ticker) ── */
+.l3{position:absolute;left:64px;bottom:150px;min-width:760px;max-width:1180px;
+  display:flex;align-items:stretch;transform:translateY(40px);opacity:0;pointer-events:none;
+  filter:drop-shadow(0 12px 34px rgba(0,0,0,.55));transition:transform .5s cubic-bezier(.2,.9,.2,1),opacity .5s}
+.l3.show{transform:none;opacity:1}
+.l3-accent{width:12px;flex:none;background:linear-gradient(180deg,var(--red),var(--red-deep));border-radius:4px 0 0 4px}
+.l3-body{flex:1;background:var(--panel);border:1px solid rgba(255,255,255,.08);border-left:none;border-radius:0 6px 6px 0;
+  padding:20px 34px 22px;backdrop-filter:blur(3px)}
+.l3-kick{display:flex;align-items:center;gap:14px;font-size:22px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;margin-bottom:8px}
+.l3-kick.live{color:var(--red)} .l3-kick.next{color:var(--gold)} .l3-kick.vote{color:#7ad0ff}
+.dot{width:14px;height:14px;border-radius:50%;background:var(--red);box-shadow:0 0 12px var(--red);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.5;transform:scale(.9)}50%{opacity:1;transform:scale(1.15)}}
+.l3-title{font-size:56px;font-weight:900;font-style:italic;text-transform:uppercase;line-height:1;letter-spacing:.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:1080px}
+.l3-sub{font-size:28px;font-weight:700;color:var(--muted);margin-top:10px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:1080px}
+.l3-brand{position:absolute;top:-16px;right:-14px;font-family:var(--cond);font-weight:900;font-style:italic;font-size:20px;
+  letter-spacing:.04em;color:#fff;background:#0c0c0e;border:1px solid rgba(255,35,70,.5);border-radius:6px;padding:4px 10px}
+.l3-brand b{color:var(--red)}
+
+/* ── vote lower-third extras ── */
+.opts{display:flex;gap:12px;margin-top:14px;flex-wrap:wrap}
+.opt{font-size:26px;font-weight:800;text-transform:uppercase;color:#fff;background:rgba(255,255,255,.07);
+  border:1px solid rgba(255,255,255,.16);border-radius:6px;padding:8px 18px;letter-spacing:.02em}
+.opt .k{color:var(--gold);margin-right:10px;font-family:var(--mono)}
+.cd{display:flex;align-items:baseline;gap:10px;margin-top:16px;font-family:var(--mono)}
+.cd-lbl{font-size:20px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.cd-val{font-size:46px;font-weight:900;color:var(--gold);text-shadow:0 0 14px rgba(255,207,64,.35)}
+.cd-val.live{color:var(--red);text-shadow:0 0 14px rgba(255,35,70,.45)}
+.vote-cta{font-size:22px;font-weight:800;color:#7ad0ff;letter-spacing:.06em;margin-top:12px;text-transform:uppercase}
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="l3" id="l3">
+    <div class="l3-accent"></div>
+    <div class="l3-body" id="l3body">
+      <div class="l3-brand">CS<b>G</b>N</div>
+    </div>
+  </div>
+</div>
+<script>
+/* ═══════════════ CONFIG ═══════════════ */
+const CONFIG={
+  POLL_MS:10_000,          // re-read config/ticker
+  SHOW_EVERY_MS:180_000,   // one interstitial every ~3 minutes…
+  SHOW_DWELL_MS:12_000,    // …held for 12s, then the feed is clean again
+  FIRST_DELAY_MS:8_000,    // first interstitial soon after load
+  CD_TICK_MS:1_000,        // countdown refresh
+};
+const FS_TICKER_URL="https://firestore.googleapis.com/v1/projects/csgn-ac44b/databases/(default)/documents/config/ticker";
+const params=new URLSearchParams(location.search);
+const TEST_MODE=params.has("test");
+const DEMO=params.has("demo");
+const ALWAYS=params.has("always");
+
+const esc=(v)=>String(v??"").replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/* Firestore REST value decoder (same shape the ticker uses). */
+function decodeFs(v){
+  if(!v||typeof v!=="object")return null;
+  if("stringValue" in v)return v.stringValue;
+  if("integerValue" in v)return Number(v.integerValue);
+  if("doubleValue" in v)return Number(v.doubleValue);
+  if("booleanValue" in v)return Boolean(v.booleanValue);
+  if("timestampValue" in v)return v.timestampValue;
+  if("nullValue" in v)return null;
+  if("mapValue" in v){const o={};for(const[k,val]of Object.entries(v.mapValue?.fields||{}))o[k]=decodeFs(val);return o}
+  if("arrayValue" in v)return (v.arrayValue?.values||[]).map(decodeFs);
+  return null;
+}
+
+/* Next 8:00 PM America/New_York as a real instant (DST-safe via wall-clock delta). */
+function next8pmET(){
+  const now=new Date();
+  const etNow=new Date(now.toLocaleString("en-US",{timeZone:"America/New_York"}));
+  const target=new Date(etNow); target.setHours(20,0,0,0);
+  if(target<=etNow)target.setDate(target.getDate()+1);
+  return new Date(now.getTime()+(target-etNow));
+}
+/** {h,m,s,live} countdown to an ISO time (or next 8pm ET when none given). */
+function countdownParts(iso){
+  const t=iso?new Date(iso).getTime():next8pmET().getTime();
+  const ms=t-Date.now();
+  if(!Number.isFinite(t))return {text:"",live:false};
+  if(ms<=0)return {text:"LIVE NOW",live:true};
+  const s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60;
+  const pad=(n)=>String(n).padStart(2,"0");
+  return {text:h>0?`${h}:${pad(m)}:${pad(ss)}`:`${pad(m)}:${pad(ss)}`,live:false};
+}
+
+/* ═══════════════ state ═══════════════ */
+let cfg={nowLive:null,upNext:null,vote:null};
+async function refresh(){
+  try{
+    const r=await fetch(FS_TICKER_URL,{cache:"no-store"});
+    if(!r.ok)throw new Error(String(r.status));
+    const f=(await r.json()).fields||{};
+    const dec=(k)=>f[k]?decodeFs(f[k]):undefined;
+    const n=dec("nowLive"), u=dec("upNext"), v=dec("vote");
+    cfg={
+      nowLive:n&&(n.name||n.title)?{name:String(n.name||""),title:String(n.title||"")}:null,
+      upNext:u&&(u.name||u.startET)?{name:String(u.name||""),startET:String(u.startET||"")}:null,
+      vote:v&&(v.question||v.options)?{question:String(v.question||"Vote tonight's stream"),
+        options:Array.isArray(v.options)?v.options.map(String).slice(0,4):[],
+        startISO:String(v.startISO||v.streamStartISO||""),closesISO:String(v.closesISO||"")}:null,
+    };
+  }catch{/* keep last good */}
+}
+
+/* ═══════════════ render + rotation ═══════════════ */
+const el3=document.getElementById("l3");
+const body=document.getElementById("l3body");
+let cdTimer=null;
+
+function renderLiveNow(d){
+  return `<div class="l3-brand">CS<b>G</b>N</div>
+    <div class="l3-kick live"><span class="dot"></span>LIVE NOW ON CSGN</div>
+    <div class="l3-title">${esc(d.name||"CSGN")}</div>
+    ${d.title?`<div class="l3-sub">${esc(d.title)}</div>`:""}`;
+}
+function renderUpNext(d){
+  return `<div class="l3-brand">CS<b>G</b>N</div>
+    <div class="l3-kick next">◆ UP NEXT</div>
+    <div class="l3-title">${esc(d.name||"CSGN")}</div>
+    ${d.startET?`<div class="l3-sub">${esc(d.startET)}</div>`:""}`;
+}
+function renderVote(d){
+  const opts=(d.options||[]).map((o,i)=>`<span class="opt"><span class="k">${i+1}</span>${esc(o)}</span>`).join("");
+  return `<div class="l3-brand">CS<b>G</b>N</div>
+    <div class="l3-kick vote">★ HOLDERS VOTE TONIGHT'S STREAM</div>
+    <div class="l3-title">${esc(d.question||"You decide tonight")}</div>
+    ${opts?`<div class="opts">${opts}</div>`:""}
+    <div class="cd"><span class="cd-lbl">Stream starts in</span><span class="cd-val" id="cdv">—</span></div>
+    <div class="vote-cta">Hold $CSGN to vote · csgn.fun</div>`;
+}
+function startCountdown(iso){
+  clearInterval(cdTimer);
+  const tick=()=>{
+    const el=document.getElementById("cdv"); if(!el)return;
+    const {text,live}=countdownParts(iso);
+    el.textContent=text; el.classList.toggle("live",live);
+  };
+  tick(); cdTimer=setInterval(tick,CONFIG.CD_TICK_MS);
+}
+
+/** Build the list of graphics currently available from config (in order). */
+function available(){
+  const list=[];
+  if(cfg.nowLive)list.push({type:"live",render:()=>renderLiveNow(cfg.nowLive)});
+  if(cfg.vote)list.push({type:"vote",render:()=>renderVote(cfg.vote),iso:()=>cfg.vote.startISO});
+  if(cfg.upNext)list.push({type:"next",render:()=>renderUpNext(cfg.upNext)});
+  return list;
+}
+let rotIdx=0;
+function showOne(){
+  const list=available();
+  if(!list.length)return schedule();          // nothing to show → try again later
+  const g=list[rotIdx%list.length]; rotIdx++;
+  body.innerHTML=g.render();
+  if(g.type==="vote")startCountdown(g.iso?.()||"");
+  requestAnimationFrame(()=>el3.classList.add("show"));
+  setTimeout(()=>{
+    el3.classList.remove("show");
+    clearInterval(cdTimer);
+    schedule();
+  },CONFIG.SHOW_DWELL_MS);
+}
+function schedule(){
+  const gap=ALWAYS?1500:CONFIG.SHOW_EVERY_MS;
+  setTimeout(showOne,gap);
+}
+
+/* ═══════════════ test hooks / boot ═══════════════ */
+window.__csgnL3={decodeFs,countdownParts,next8pmET,renderLiveNow,renderUpNext,renderVote,available,setCfg:(c)=>{cfg=c}};
+
+if(DEMO){
+  cfg={nowLive:{name:"THE CEO",title:"Nightly Markets & Drama Whip-Around"},
+    upNext:{name:"CFB 27 Dynasty — League Night",startET:"10:00 PM ET"},
+    vote:{question:"CFB Dynasty or Black Ops tonight?",options:["CFB Dynasty","Black Ops"],startISO:""}};
+  setTimeout(showOne,300);
+}else if(!TEST_MODE){
+  refresh().then(()=>setTimeout(showOne,CONFIG.FIRST_DELAY_MS));
+  setInterval(refresh,CONFIG.POLL_MS);
+}
+</script>
+</body>
+</html>

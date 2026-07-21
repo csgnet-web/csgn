@@ -5,16 +5,16 @@
 <title>CSGN Broadcast Ticker — combined sports + crypto band</title>
 <!--
   ═══════════════════════════════════════════════════════════════════════════
-  CSGN TICKER BAND — one OBS Browser Source, 1920×110, bottom of the canvas.
+  CSGN TICKER BAND — one OBS Browser Source, 1930×110, bottom of the canvas.
 
   Combines the two legacy files (sports scoreboard + crypto LED board) into a
   single instrument so the heights, baseline and divider can never drift:
 
-    [ CSGN 110 ][ LEAGUE 150 ][ GAME PANEL 1258 ][2][ CRYPTO LED 400 ] = 1920
+    [ CSGN 110 ][ LEAGUE 150 ][ GAME PANEL 1268 ][2][ CRYPTO LED 400 ] = 1930
 
   INSTALL (OBS)
     Browser Source → ✅ Local file → this file
-    Width 1920 · Height 110 · position X 0, Y 970
+    Width 1930 · Height 110 · position X 0, Y 975
     FPS: match output (30). Shutdown when not visible: OFF.
 
   DATA
@@ -59,17 +59,24 @@
       data URI in the brand block and the cycle stinger.
 
   ADMIN-DRIVEN (no OBS touch — csgn.fun/admin → Broadcast Ticker card)
-    Polls the world-readable Firestore doc config/ticker every 60s:
+    Polls the world-readable Firestore doc config/ticker every ~6s (near-
+    immediate) — full field schema at the `admin config` comment in the script.
       https://firestore.googleapis.com/v1/projects/csgn-ac44b/databases/
         (default)/documents/config/ticker
-    • RIGHT NOW rail — rightNow: [{tag, text}, …] (≤8). Plays as the FIRST
-      segment of every rotation cycle with a red RIGHT NOW pill, each item an
-      event card with its tag as the red kicker. Empty → the rail vanishes.
+    • RIGHT NOW rail — rightNow: [{tag, text}, …] (≤8). LEADS every rotation
+      cycle; a change RETRIGGERS the cycle so the update plays at once, from the
+      top. Red pill, red kicker per item. Empty → the rail vanishes.
+    • BREAKING — breaking: "text" | {text} | null. Red takeover that STAYS over
+      everything (keeps the CSGN mark) until the admin clears it.
     • COIN SPOTLIGHT — spotlight: {symbol, coingeckoId?, dexPair?, dexChain?,
-      note?} | null. Every 10 minutes the crypto dock is taken over for 30s by
-      an on-fire card (rises from below, CSS flames, SPOTLIGHT chip, LED
-      price). Price source: DexScreener pair → CoinGecko id → the rotation
-      list, in that order. New/changed config debuts within ~5s + one poll.
+      note?} | null. A promoted coin box RISES from the crypto dock (two boxes
+      briefly stacked), every 10 min, gold SPOTLIGHT accent. NOT the rail.
+      Price: DexScreener pair → CoinGecko id → rotation list. Debuts ~5s+one poll.
+    • $CSGN BEAT — csgn/liveFee/nowLive: always-on $CSGN price card + live
+      "creator fees this session" card in the crypto-first lead.
+    • GOVERNANCE — governance/vote: holder beats + tonight's vote with a coarse
+      countdown (the second-accurate one is the csgn-lowerthirds.html overlay).
+    • $CSGN BUYS — buys: [{usd, by?, at?}]. New buys TOAST up (green) in the dock.
 
   TUNING
     Dwell/transition times: CONFIG below. Drop a league: comment it out of
@@ -93,8 +100,8 @@
   --mono:ui-monospace,"JetBrains Mono",Consolas,monospace;
 }
 *{box-sizing:border-box}
-html,body{margin:0;width:1920px;height:110px;overflow:hidden;background:transparent;font-family:var(--cond);}
-.shell{display:flex;width:1920px;height:110px;background:var(--shell);border-top:1px solid rgba(255,35,70,.55)}
+html,body{margin:0;width:1930px;height:110px;overflow:hidden;background:transparent;font-family:var(--cond);}
+.shell{display:flex;width:1930px;height:110px;background:var(--shell);border-top:1px solid rgba(255,35,70,.55);position:relative}
 
 /* ── brand block ─────────────────────────────────────────────────────────── */
 .brand{width:110px;height:110px;flex:none;background:#0c0c0e;display:flex;align-items:center;justify-content:center;border-right:1px solid #1c1c22}
@@ -103,7 +110,7 @@ html,body{margin:0;width:1920px;height:110px;overflow:hidden;background:transpar
 /* ── league pill (static column) ─────────────────────────────────────────── */
 .pill{width:150px;height:110px;flex:none;display:flex;align-items:center;justify-content:center;
   font-size:27px;font-weight:900;font-style:italic;color:#fff;text-transform:uppercase;letter-spacing:.02em;
-  box-shadow:0 0 8px rgba(0,0,0,.5) inset;background:#222;transition:background .3s;text-align:center;line-height:1;padding:0 8px}
+  box-shadow:0 0 8px rgba(0,0,0,.5) inset;background:#222;transition:background .3s;text-align:center;line-height:1;padding:0 8px;overflow:hidden;white-space:nowrap}
 .pill.dk{color:#161616}
 
 /* ── sports window ───────────────────────────────────────────────────────── */
@@ -198,27 +205,52 @@ html,body{margin:0;width:1920px;height:110px;overflow:hidden;background:transpar
 .live-chip{position:absolute;top:6px;right:8px;z-index:3;font-size:10px;font-weight:900;letter-spacing:.18em;color:#fff;background:var(--red);border-radius:3px;padding:2px 6px;text-transform:uppercase}
 
 /* ── league wipe + stinger ───────────────────────────────────────────────────
-   Three staged phases (slide in → hold covered → slide out) with a symmetric
-   ease-in-out curve, a soft drop shadow for depth and a bright leading-edge
-   sheen on the right side of the slab (it leads on the way in AND on the way
-   out, since both movements travel left→right). Durations set from JS. */
-.wipe{position:absolute;inset:0;z-index:6;display:flex;align-items:center;gap:22px;padding:0 34px;
-  transform:translateX(-102%);will-change:transform;box-shadow:0 0 34px rgba(0,0,0,.65);
-  transition:transform 540ms cubic-bezier(.65,0,.35,1)}
-.wipe::after{content:"";position:absolute;top:0;bottom:0;right:0;width:30px;pointer-events:none;
-  background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.38))}
+   Staged phases (slide in → hold covered → slide out) that travel ONE way,
+   left→right, both legs — the slab never reverses across the visible band. A
+   faint diagonal texture + a bright leading-edge sheen give it depth. Between
+   wipes the slab is parked off-screen AND visibility-gated (playWipe), so the
+   reset snap can never flash back across the bar (the old end-of-cycle bug). */
+.wipe{position:absolute;inset:0;z-index:6;display:flex;align-items:center;gap:22px;padding:0 40px;
+  transform:translateX(-102%);will-change:transform;box-shadow:0 0 40px rgba(0,0,0,.7);overflow:hidden;
+  transition:transform 540ms cubic-bezier(.7,0,.2,1)}
+.wipe::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;
+  background:repeating-linear-gradient(-58deg,rgba(255,255,255,.10) 0 2px,transparent 2px 22px)}
+.wipe::after{content:"";position:absolute;top:0;bottom:0;right:0;width:46px;pointer-events:none;
+  background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.5))}
 .wipe.in{transform:translateX(0)}
 .wipe.out{transform:translateX(102%)}
-.wipe .wname{font-size:44px;font-weight:900;font-style:italic;text-transform:uppercase;color:#fff;letter-spacing:.02em;text-shadow:0 2px 10px rgba(0,0,0,.55)}
-.wipe .wstripes{flex:1;height:52px;background:repeating-linear-gradient(-60deg,rgba(255,255,255,.16) 0 14px,transparent 14px 34px)}
-.wipe.csgn{background:#0c0c0e}
-.wipe.csgn svg{height:64px;width:auto}
-.wipe.csgn .wswoosh{flex:1;height:5px;border-radius:3px;background:linear-gradient(90deg,var(--red),rgba(255,35,70,0));box-shadow:0 0 14px rgba(255,35,70,.7)}
+.wipe .wname{font-size:46px;font-weight:900;font-style:italic;text-transform:uppercase;color:#fff;letter-spacing:.02em;
+  text-shadow:0 2px 12px rgba(0,0,0,.6);position:relative;z-index:2;animation:wname-in .5s cubic-bezier(.2,.9,.2,1) both}
+.wipe .wstripes{flex:1;height:54px;position:relative;z-index:2;border-radius:2px;
+  background:repeating-linear-gradient(-60deg,rgba(255,255,255,.20) 0 14px,transparent 14px 34px)}
+@keyframes wname-in{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:none}}
+.wipe.csgn{background:#0b0b0e}
+.wipe.csgn::before{opacity:.4;background:repeating-linear-gradient(-58deg,rgba(255,35,70,.12) 0 2px,transparent 2px 22px)}
+.wipe.csgn .wlogo{height:80px;width:80px;border-radius:10px;position:relative;z-index:2;
+  box-shadow:0 0 28px rgba(255,35,70,.55);animation:stinger-pop .6s cubic-bezier(.2,1.25,.3,1) both}
+.wipe.csgn .wswoosh{flex:1;height:5px;border-radius:3px;position:relative;z-index:2;
+  background:linear-gradient(90deg,var(--red),rgba(255,35,70,0));box-shadow:0 0 18px rgba(255,35,70,.85);
+  animation:swoosh-in .55s .06s cubic-bezier(.2,.9,.2,1) both}
+@keyframes stinger-pop{from{opacity:0;transform:scale(.7) rotate(-7deg)}to{opacity:1;transform:none}}
+@keyframes swoosh-in{from{opacity:0;transform:scaleX(.15);transform-origin:left}to{opacity:1;transform:none}}
 
 /* ── crypto dock ─────────────────────────────────────────────────────────── */
 .divider{width:2px;flex:none;background:#000;box-shadow:0 0 6px rgba(0,0,0,.9)}
 .crypto{width:400px;height:110px;flex:none;background:radial-gradient(circle at 50% 50%,#131313 0%,#000 100%);
-  border-left:1px solid #202020;padding:7px 12px 6px;display:flex;flex-direction:column;justify-content:space-between;font-family:var(--mono);position:relative;overflow:hidden}
+  border-left:1px solid #202020;font-family:var(--mono);position:relative;overflow:hidden}
+/* Two stacked layers so a promoted coin (or a $CSGN buy) can RISE from below —
+   both boxes are briefly visible, one over the other, then the new one settles.
+   Normal rotation just swaps the active layer (soft cfade breathe). */
+.c-layer{position:absolute;inset:0;padding:7px 12px 6px;display:flex;flex-direction:column;justify-content:space-between;
+  will-change:transform;transition:transform var(--croll-ms,600ms) cubic-bezier(.22,1,.36,1)}
+.c-layer.inc{transform:translateY(100%)}
+.c-layer.promoted{box-shadow:inset 0 0 0 2px rgba(255,180,60,.55),inset 0 0 30px rgba(255,150,40,.28)}
+.c-layer.buy{box-shadow:inset 0 0 0 2px rgba(104,255,122,.55),inset 0 0 30px rgba(40,200,90,.28)}
+.c-tag.spot{background:linear-gradient(90deg,#ffcf40,#ff7a1a);color:#140700;border:none;font-weight:800}
+.c-tag.buy{background:linear-gradient(90deg,#68ff7a,#12b04a);color:#052a12;border:none;font-weight:800}
+.c-rank.spot{background:linear-gradient(90deg,#ffcf40,#ff7a1a);color:#140700}
+.c-rank.buy{background:linear-gradient(90deg,#68ff7a,#12b04a);color:#052a12}
+.c-buyamt{font-family:var(--cond);font-size:30px;font-weight:900;color:#8dffab;text-shadow:0 0 10px rgba(104,255,122,.5)}
 .c-top{display:flex;justify-content:space-between;align-items:center;height:26px;position:relative;z-index:2}
 .c-id{display:flex;align-items:center;gap:8px;min-width:0}
 .c-rank{font-size:11px;font-weight:700;color:#141414;background:var(--gold);border-radius:3px;padding:1px 5px;flex:none}
@@ -249,35 +281,31 @@ html,body{margin:0;width:1920px;height:110px;overflow:hidden;background:transpar
   mask-image:linear-gradient(90deg,transparent 0,rgba(0,0,0,.5) 34%,#000 55%)}
 /* soft entry animation every coin swap — the dock breathes instead of popping */
 @keyframes cfade{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
-.crypto>.c-top{animation:cfade .5s ease-out both}
-.crypto>.c-led{animation:cfade .5s ease-out .05s both}
-.crypto>.c-bot{animation:cfade .5s ease-out .1s both}
-.crypto>.c-chart{animation:cfade .6s ease-out .08s both}
+.c-layer>.c-top{animation:cfade .5s ease-out both}
+.c-layer>.c-led{animation:cfade .5s ease-out .05s both}
+.c-layer>.c-bot{animation:cfade .5s ease-out .1s both}
+.c-layer>.c-chart{animation:cfade .6s ease-out .08s both}
 
-/* ── coin spotlight ("on fire" takeover of the crypto dock) ─────────────── */
-.spot{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;justify-content:space-between;
-  padding:7px 12px 6px;font-family:var(--mono);overflow:hidden;
-  background:radial-gradient(circle at 50% 130%,#3a0d00 0%,#170600 55%,#000 100%);
-  transform:translateY(110px);transition:transform .5s cubic-bezier(.2,.7,.2,1);
-  box-shadow:inset 0 0 26px rgba(255,122,26,.35);animation:spot-glow 1.8s ease-in-out infinite}
-.spot.up{transform:translateY(0)}
-@keyframes spot-glow{0%,100%{box-shadow:inset 0 0 22px rgba(255,122,26,.3)}50%{box-shadow:inset 0 0 40px rgba(255,122,26,.6)}}
-/* CSS flame tongues rising along the bottom edge */
-.spot::before{content:"";position:absolute;left:-4%;right:-4%;bottom:-14px;height:58px;pointer-events:none;
-  background:
-    radial-gradient(22px 44px at 12% 100%, rgba(255,140,26,.55), transparent 70%),
-    radial-gradient(30px 58px at 32% 100%, rgba(255,60,10,.5), transparent 70%),
-    radial-gradient(20px 40px at 52% 100%, rgba(255,170,40,.55), transparent 70%),
-    radial-gradient(30px 60px at 72% 100%, rgba(255,80,10,.5), transparent 70%),
-    radial-gradient(22px 44px at 90% 100%, rgba(255,150,30,.55), transparent 70%);
-  filter:blur(5px);animation:spot-flick .85s ease-in-out infinite alternate}
-@keyframes spot-flick{from{transform:scaleY(.9) translateY(2px);opacity:.75}to{transform:scaleY(1.12) translateY(-3px);opacity:1}}
-.spot-top{display:flex;justify-content:space-between;align-items:center;height:24px;position:relative;z-index:2}
-.spot-chip{font-size:10px;font-weight:700;letter-spacing:.22em;color:#140700;border-radius:3px;padding:2px 8px;
-  background:linear-gradient(90deg,#ffcf40,#ff7a1a);animation:spot-chip 1.4s ease-in-out infinite}
-@keyframes spot-chip{0%,100%{box-shadow:0 0 6px rgba(255,150,30,.5)}50%{box-shadow:0 0 16px rgba(255,150,30,.95)}}
-.spot-sym{font-size:22px;color:#fff;letter-spacing:2px;font-weight:700;text-shadow:0 0 10px rgba(255,140,26,.7)}
-.spot-note{font-size:11.5px;color:#ffd9a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative;z-index:2}
+/* ── BREAKING overlay — persistent red takeover, stays until admin clears ─── */
+.breaking{position:absolute;inset:0 0 0 110px;z-index:20;display:flex;align-items:stretch;
+  background:linear-gradient(90deg,#8a0010,#e10022 32%,#ff2346 72%,#8a0010);
+  box-shadow:inset 0 0 46px rgba(255,20,50,.5);animation:brk-in .45s cubic-bezier(.2,.85,.2,1)}
+.breaking[hidden]{display:none}
+.brk-kick{flex:none;display:flex;align-items:center;padding:0 26px;background:#6d000e;
+  font-size:38px;font-weight:900;font-style:italic;letter-spacing:.03em;color:#fff;text-transform:uppercase;
+  box-shadow:0 0 26px rgba(0,0,0,.55);animation:brk-flash 1.1s steps(1,end) infinite}
+.brk-kick::before{content:"⚠";margin-right:14px;font-style:normal}
+.brk-body{flex:1;overflow:hidden;position:relative;display:flex;align-items:center;padding:0 28px}
+.brk-text{font-size:32px;font-weight:800;color:#fff;white-space:nowrap;text-shadow:0 2px 10px rgba(0,0,0,.5);will-change:transform}
+.brk-text.scroll{animation:brk-scroll linear infinite}
+@keyframes brk-flash{0%,49%{background:#6d000e}50%,100%{background:#ff2346}}
+@keyframes brk-in{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:none}}
+@keyframes brk-scroll{from{transform:translateX(0)}to{transform:translateX(var(--brk-shift,-50%))}}
+/* $CSGN / governance beat accents (rendered as event cards in the sports window) */
+.ev-kick.csgn{color:var(--gold);text-shadow:0 0 8px rgba(255,207,64,.4)}
+.ev-kick.gov{color:#7ad0ff;text-shadow:0 0 8px rgba(90,190,255,.4)}
+.ev-fee{font-family:var(--mono);color:var(--green);text-shadow:0 0 8px rgba(104,255,122,.45)}
+.ev-cd{font-family:var(--mono);color:var(--gold);font-weight:800}
 </style>
 </head>
 <body>
@@ -293,10 +321,14 @@ html,body{margin:0;width:1920px;height:110px;overflow:hidden;background:transpar
   </div>
   <div class="divider"></div>
   <div class="crypto" id="crypto">
-    <div class="c-top"><div class="c-id"><span class="c-sym" id="c-sym">CSGN</span></div><span class="c-delta up" id="c-delta">—</span></div>
-    <div class="c-led" id="c-led"><span class="c-dash">— — —</span></div>
-    <div class="c-bot" id="c-bot"><span class="c-tag top">BOOTING</span><span class="c-mv">crypto board loading…</span></div>
+    <div class="c-layer cur" id="c-cur">
+      <div class="c-top"><div class="c-id"><span class="c-sym">CSGN</span></div><span class="c-delta up">—</span></div>
+      <div class="c-led"><span class="c-dash">— — —</span></div>
+      <div class="c-bot"><span class="c-tag top">BOOTING</span><span class="c-mv">crypto board loading…</span></div>
+    </div>
+    <div class="c-layer inc" id="c-inc"></div>
   </div>
+  <div class="breaking" id="breaking" hidden><div class="brk-kick">Breaking</div><div class="brk-body"><span class="brk-text" id="brk-text"></span></div></div>
 </div>
 
 <script>
@@ -311,10 +343,12 @@ const CONFIG={
   SPORTS_REFRESH_MS:90_000,
   CRYPTO_REFRESH_MS:90_000,
   CRYPTO_DWELL_MS:5_000,
+  CRYPTO_ROLL_MS:600,           // the rising second-box transition (promoted/buy)
   /* admin-driven features (config/ticker doc, polled over public REST) */
-  ADMIN_POLL_MS:60_000,
-  SPOTLIGHT_EVERY_MS:600_000,   // fire the spotlight every 10 minutes…
-  SPOTLIGHT_DWELL_MS:30_000,    // …for 30 seconds, until the admin clears it
+  ADMIN_POLL_MS:6_000,          // near-immediate: Right Now / BREAKING land within one poll
+  SPOTLIGHT_EVERY_MS:600_000,   // rise a promoted coin every 10 minutes…
+  SPOTLIGHT_DWELL_MS:30_000,    // …holding 30 seconds, until the admin clears it
+  BUY_DWELL_MS:4_500,           // how long a $CSGN buy toast holds before rotation resumes
 };
 const TODAY_TZ="America/New_York";
 const TEST_MODE=new URLSearchParams(location.search).has("test");
@@ -324,12 +358,27 @@ const TEST_MODE=new URLSearchParams(location.search).has("test");
 const CSGN_LOGO_URI="data:image/jpeg;base64,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lFAC0dKKKAEpaKKAEopaKAEpaKKACkpaSgAopaKACkpaSgApaSloAKKSloAKKKKACikooAWjvSc4paACiikoAO9FFFAC0UUlAC0UUlAC0UlFAH//0viKkopaACkopaACikooAWiikoAWikpaACiiigApPailoAKKKPegAopKWgAooooASl60dqKACikpaACj60UUAJRRRQAtJS0UAFFJRQAUtFFABSUtFABSZpaSgBaPrRRQAUUUlABRRS0AJRS0lAC0UlFACiiijNAH/9P4ipKWigApKKWgBKKKKAFpKWigAooooAKSlooAKKKKACiiigApKWigAooooAKKKKAEpaKKACiiigBKWiigApKWigApKWigAooooAKKKKACikxS0AJS9aKKACiiigBKWiigAooooASloooAKKKKAP/U+IqKSigBaSlpKAFo60UlAC0UUUAFFHNFABSYpaKACiiigApKWkoAKKWigAooooAKKKSgBaO9FFABRRRQAUUUUAFFFFABSUtFABRRSUALRRRQAUUUlAC/Wiij2oAKKKKAEpaSloAKKKSgBaSiloASloooA//V+IqKKSgBaKKKACikpaACiiigAooo5oAKKKKACiiigAooooAKT6UtFACUtFFABRR7UUAFFFFABRRRQAUUGigAooooAKKKOtABRRRQAUlLRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUlLQB//W+IqSlooAKKSloASlopKACloooAKKKOtABRWhpekarrd2LHRbSa9uD0jgjaRvyUHH417FpH7OXxa1ZBI+mx2KnvdzJG3/AHwu5vzFJtLcLHhlLX0/F+yf8Q2XMl9piH08yY/yips37KHxFjXMN7pkp9PNlX+cVLnXcfKz5ior2zWP2ePizo8Zm/soXqLyTZypMf8AvjIc/gteN3dnd2Fy9lfwyW88Zw8cqlHU+6tgimmnsKxXo5oopgFGKK2dF8O+IPElwbXw9p9xqEq9Vt42k2/7xUYH44oAxqK950r9mv4s6mgkmsoLFT/z9XCK34qm8iunT9k74hMPnv8ATFPp5kx/lFU8y7jsz5for6Wuv2VPiXCu63n024Poszqf/H4wP1rgtd+BnxV8PRNcXmiSzxIMs9oyXAA9xGS3/jtNSXcLM8mopzo0btG4KspwykYII7EHkGm0xBRRRQAUVpaXo+r6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";
 
 /* ═══════════════ admin config (config/ticker via Firestore REST) ═══════════
-   The Admin panel (csgn.fun/admin → Broadcast Ticker) writes config/ticker:
-     rightNow:  [{tag, text}, …]              → "RIGHT NOW" rail, plays at the
-                                                start of every rotation cycle
+   The Admin panel (csgn.fun/admin → Broadcast Ticker) writes config/ticker.
+   Polled every CONFIG.ADMIN_POLL_MS (~6s) so updates land near-immediately.
+     rightNow:  [{tag, text}, …]        → "RIGHT NOW" rail; leads every cycle.
+                                          A CHANGE retriggers the cycle so the
+                                          update plays at once, from the top.
+     breaking:  "text" | {text} | null  → red BREAKING takeover; STAYS on screen
+                                          over everything until the admin clears it.
      spotlight: {symbol, coingeckoId?, dexPair?, dexChain?, note?} | null
-                                              → 30s on-fire takeover of the
-                                                crypto dock every 10 minutes
+                                        → a promoted coin box RISES from the
+                                          crypto dock (two boxes briefly stacked)
+                                          every 10 min. NOT the Right Now rail.
+     csgn:      {price, chg?, mc?, vol?}          → $CSGN price beat (always shown)
+     liveFee:   {name, usd, ratePerMin?, sinceISO?} → "creator fees this session"
+     nowLive:   {name, title}                     → who's on screen (beat + overlay)
+     upNext:    {name, startET}                   → up-next (interstitial overlay)
+     governance:[{tag, text}, …]                  → holder governance beats
+     vote:      {question, options:[…], startISO?, closesISO?} → tonight's vote +
+                                          countdown (coarse on the ticker, live in
+                                          the csgn-lowerthirds.html overlay)
+     buys:      [{usd, by?, at?}, …]     → newest $CSGN buys TOAST up (green) in
+                                          the crypto dock as they arrive
    The doc is world-readable (firestore.rules) so this file can poll it
    unauthenticated. Any fetch/shape error is treated as "no config". */
 const FS_TICKER_URL="https://firestore.googleapis.com/v1/projects/csgn-ac44b/databases/(default)/documents/config/ticker";
@@ -352,28 +401,87 @@ function decodeFs(v){
   return null;
 }
 
-let adminCfg={rightNow:[],spotlight:null};
+let adminCfg={rightNow:[],spotlight:null,breaking:null,governance:[],vote:null,csgn:null,liveFee:null,nowLive:null,upNext:null,buys:[]};
+let lastRailSig="";
 async function adminCfgRefresh(){
   try{
     const r=await fetch(FS_TICKER_URL,{cache:"no-store"});
     if(!r.ok)throw new Error(String(r.status)); // 404 until the doc exists
     const doc=await r.json();
     const f=doc.fields||{};
-    const rawRail=f.rightNow?decodeFs(f.rightNow):[];
+    const dec=(k)=>f[k]?decodeFs(f[k]):undefined;
+
+    const rawRail=dec("rightNow")||[];
     const rightNow=(Array.isArray(rawRail)?rawRail:[])
-      .filter((h)=>h&&typeof h.text==="string"&&h.text.trim())
-      .slice(0,8)
+      .filter((h)=>h&&typeof h.text==="string"&&h.text.trim()).slice(0,8)
       .map((h)=>({tag:String(h.tag||"RIGHT NOW").toUpperCase(),text:String(h.text)}));
-    const rawSpot=f.spotlight?decodeFs(f.spotlight):null;
+
+    const rawSpot=dec("spotlight")||null;
     const spotlight=rawSpot&&typeof rawSpot==="object"&&rawSpot.symbol
       ?{symbol:String(rawSpot.symbol).toUpperCase(),coingeckoId:String(rawSpot.coingeckoId||""),
         dexPair:String(rawSpot.dexPair||""),dexChain:String(rawSpot.dexChain||"solana").toLowerCase(),
         note:String(rawSpot.note||"")}
       :null;
-    adminCfg={rightNow,spotlight};
-  }catch{ adminCfg={rightNow:adminCfg.rightNow,spotlight:adminCfg.spotlight} } // keep last good
+
+    // BREAKING — a string or {text}; stays on screen until the admin clears it
+    const rawBrk=dec("breaking");
+    const breaking=(typeof rawBrk==="string"&&rawBrk.trim())?{text:rawBrk.trim()}
+      :(rawBrk&&typeof rawBrk==="object"&&rawBrk.text?{text:String(rawBrk.text)}:null);
+
+    // programming governance beats + tonight's holder vote
+    const rawGov=dec("governance")||[];
+    const governance=(Array.isArray(rawGov)?rawGov:[])
+      .filter((h)=>h&&typeof h.text==="string"&&h.text.trim()).slice(0,6)
+      .map((h)=>({tag:String(h.tag||"CSGN GOVERNANCE").toUpperCase(),text:String(h.text)}));
+    const rawVote=dec("vote")||null;
+    const vote=rawVote&&typeof rawVote==="object"&&(rawVote.question||rawVote.options)
+      ?{question:String(rawVote.question||"Vote tonight's stream"),
+        options:Array.isArray(rawVote.options)?rawVote.options.map(String).slice(0,4):[],
+        startISO:String(rawVote.startISO||rawVote.streamStartISO||""),
+        closesISO:String(rawVote.closesISO||"")}
+      :null;
+
+    // $CSGN network stats + the live creator fee (drives the on-air fee beat)
+    const rawCsgn=dec("csgn")||null;
+    const csgn=rawCsgn&&typeof rawCsgn==="object"
+      ?{price:Number(rawCsgn.price)||null,chg:rawCsgn.chg!=null?Number(rawCsgn.chg):null,
+        mc:Number(rawCsgn.mc)||null,vol:Number(rawCsgn.vol)||null}:null;
+    const rawFee=dec("liveFee")||null;
+    const liveFee=rawFee&&typeof rawFee==="object"
+      ?{name:String(rawFee.name||""),usd:Number(rawFee.usd)||0,
+        ratePerMin:Number(rawFee.ratePerMin)||0,sinceISO:String(rawFee.sinceISO||"")}:null;
+
+    const rawNow=dec("nowLive")||null;
+    const nowLive=rawNow&&typeof rawNow==="object"&&(rawNow.name||rawNow.title)
+      ?{name:String(rawNow.name||""),title:String(rawNow.title||"")}:null;
+    const rawUp=dec("upNext")||null;
+    const upNext=rawUp&&typeof rawUp==="object"&&(rawUp.name||rawUp.startET)
+      ?{name:String(rawUp.name||""),startET:String(rawUp.startET||"")}:null;
+
+    // $CSGN buy notifications: [{usd, by?, at?}] — the ticker toasts NEW ones
+    const rawBuys=dec("buys")||[];
+    const buys=(Array.isArray(rawBuys)?rawBuys:[])
+      .filter((b)=>b&&Number(b.usd)>0).slice(-8)
+      .map((b)=>({usd:Number(b.usd),by:String(b.by||""),at:String(b.at||"")}));
+
+    adminCfg={rightNow,spotlight,breaking,governance,vote,csgn,liveFee,nowLive,upNext,buys};
+  }catch{ /* keep last good adminCfg */ }
+
   onSpotlightCfg(adminCfg.spotlight);
-  if(groups.length)pendingGroups=buildGroups(); // Right Now changes land at the next advance
+  applyBreaking(adminCfg.breaking);
+  ingestBuys(adminCfg.buys);
+
+  // Right Now / governance / vote changes rebuild the rotation; a fresh Right
+  // Now rail RETRIGGERS the cycle so the update plays immediately, from the top.
+  const railSig=JSON.stringify([adminCfg.rightNow,adminCfg.governance,adminCfg.vote]);
+  if(railSig!==lastRailSig){
+    const hadPrior=lastRailSig!=="";
+    lastRailSig=railSig;
+    if(groups.length){
+      if(adminCfg.rightNow.length&&hadPrior) retriggerRightNow();
+      else pendingGroups=buildGroups();
+    }
+  }
 }
 
 /** The admin "Right Now" rail as a rotation group (null when empty). */
@@ -387,6 +495,66 @@ function buildRightNowGroup(items){
       live:false,isFinal:false,pregame:false,status:{date:"",time:""},sortDate:new Date(base+i),
     })),
   };
+}
+
+/* ── $CSGN + governance rotation beats (admin-driven, always crypto-first) ─── */
+function shortCountdown(iso){
+  if(!iso)return "";
+  const t=new Date(iso).getTime();
+  if(!Number.isFinite(t))return "";
+  const ms=t-Date.now();
+  if(ms<=0)return "LIVE NOW";
+  const m=Math.floor(ms/60000),h=Math.floor(m/60);
+  return h>0?`${h}h ${m%60}m`:`${m}m`;
+}
+function fmtUsd(n){
+  if(!Number.isFinite(n))return "$0";
+  if(n>=1000)return "$"+Math.round(n).toLocaleString("en-US");
+  if(n>=1)return "$"+n.toFixed(2);
+  return "$"+n.toFixed(4);
+}
+function fmtPriceInline(p){
+  if(!Number.isFinite(p)||p<=0)return "—";
+  if(p>=1000)return "$"+Math.round(p).toLocaleString("en-US");
+  if(p>=1)return "$"+p.toFixed(2);
+  if(p>=0.01)return "$"+p.toFixed(4);
+  return "$"+p.toPrecision(2);
+}
+/** $CSGN network beat: live price + who's on screen + creator fees this session
+ *  — the thesis made visible ("trade → the streamer on screen earns"). Always on. */
+function buildCsgnBeatGroup(csgn,liveFee,nowLive){
+  const base=Date.now(),items=[];
+  const priceTxt=csgn&&csgn.price!=null
+    ? `$CSGN ${fmtPriceInline(csgn.price)}${csgn.chg!=null?`   ${csgn.chg>=0?"▲":"▼"} ${Math.abs(csgn.chg).toFixed(1)}%`:""}`
+    : "$CSGN — THE CRYPTO SPORTS & GAMING NETWORK";
+  items.push({kind:"event",leagueKey:"csgn",title:priceTxt,
+    subtitle:csgn&&csgn.mc!=null?`MC ${compactUsd(csgn.mc)} · VOL ${compactUsd(csgn.vol)} · CSGN.FUN`:"LIVE 24/7 · CSGN.FUN",
+    kicker:"$CSGN LIVE",kickerClass:"csgn",live:false,isFinal:false,pregame:false,
+    status:{date:"",time:""},sortDate:new Date(base)});
+  if(liveFee&&(liveFee.name||liveFee.usd)){
+    items.push({kind:"event",leagueKey:"csgn",title:`CREATOR FEES THIS SESSION: ${fmtUsd(liveFee.usd)}`,
+      subtitle:nowLive&&nowLive.name?`LIVE NOW: ${nowLive.name}`:liveFee.name?`LIVE NOW: ${liveFee.name}`:"TRADE $CSGN → THE STREAMER ON SCREEN EARNS",
+      kicker:"ON-CHAIN CREATOR FEES",kickerClass:"csgn",feeLine:true,live:false,isFinal:false,pregame:false,
+      status:{date:"",time:""},sortDate:new Date(base+1)});
+  }
+  return {league:{key:"csgn",label:"$CSGN",className:"league-rightnow"},items};
+}
+/** Programming governance: holder beats + tonight's vote with a coarse countdown
+ *  (the second-accurate countdown lives in the over-live interstitial overlay). */
+function buildGovernanceGroup(governance,vote){
+  const base=Date.now(),items=[];
+  (governance||[]).forEach((h,i)=>items.push({kind:"event",leagueKey:"gov",
+    title:h.text,subtitle:"HOLD $CSGN TO VOTE · CSGN.FUN",kicker:h.tag||"CSGN GOVERNANCE",kickerClass:"gov",
+    live:false,isFinal:false,pregame:false,status:{date:"",time:""},sortDate:new Date(base+i)}));
+  if(vote){
+    const cd=shortCountdown(vote.startISO);
+    const opts=vote.options&&vote.options.length?vote.options.join("   vs   "):"";
+    items.push({kind:"event",leagueKey:"gov",title:(vote.question||"").toUpperCase(),
+      subtitle:opts||"HOLDERS DECIDE TONIGHT'S STREAM · CSGN.FUN",
+      kicker:cd?(cd==="LIVE NOW"?"HOLDER VOTE · LIVE NOW":`HOLDERS VOTE · STREAM IN ${cd}`):"HOLDERS VOTE · CSGN.FUN",
+      kickerClass:"gov",live:false,isFinal:false,pregame:false,status:{date:"",time:""},sortDate:new Date(base+9)});
+  }
+  return items.length?{league:{key:"gov",label:"VOTE",className:"league-rightnow"},items}:null;
 }
 
 /* ═══════════════ LEAGUES (carried over from the original file) ═══════════════ */
@@ -629,7 +797,7 @@ function parseGameEvent(l,ev){
   let line1="",line2="";
   if(live){line1=livePeriodLabel(l,period,st);line2=clock||st.shortDetail||"LIVE"}
   else if(final){line1=st.shortDetail||"Final";line2=st.detail&&st.detail!==line1?st.detail:""}
-  else{line1=displayDate(start);line2=displayTime(start)}
+  else{line1=sameZonedDay(start,0)?"":displayDate(start);line2=displayTime(start)}
   let winner=null;
   if(final){const hs=parseFloat(home.score||"0"),as=parseFloat(away.score||"0");if(hs>as)winner="home";else if(as>hs)winner="away"}
   /* live situation extras */
@@ -682,7 +850,7 @@ function parseGenericEvent(l,ev){
   let line1="",line2="";
   if(live){line1=st.shortDetail||"LIVE";line2=st.detail&&st.detail!==line1?st.detail:""}
   else if(final){line1=st.shortDetail||"Final";line2=st.detail&&st.detail!==line1?st.detail:""}
-  else{line1=displayDate(start);line2=displayTime(start)}
+  else{line1=sameZonedDay(start,0)?"":displayDate(start);line2=displayTime(start)}
   const title=cleanText(ev.shortName||ev.name||ev.title||l.label);
   const venue=cleanText(comp.venue?.fullName||ev.venue?.fullName||ev.location||"");
   const detail=cleanText(comp.notes?.[0]?.headline||ev.note||ev.season?.slug||"");
@@ -785,10 +953,12 @@ function renderStatusCell(g){
     </div>${tv}</div>`;
   }
   if(g.football){
-    return `<div class="cell"><span class="l1">${esc(g.status.date)} ${esc(g.status.time)}</span>
+    const dt=[g.status.date,g.status.time].filter(Boolean).join(" ");
+    return `<div class="cell"><span class="l1">${esc(dt)}</span>
       <span class="l2 ${g.football.redZone?"rz":""}">${esc(g.football.dd)}</span>${tv}</div>`;
   }
-  return `<div class="cell"><span class="l1">${esc(g.status.date)}</span><span class="l2">${esc(g.status.time)}</span>${g.subnote?`<span class="l3">${esc(g.subnote)}</span>`:""}${tv}</div>`;
+  const d1=g.status.date?`<span class="l1">${esc(g.status.date)}</span>`:"";
+  return `<div class="cell">${d1}<span class="l2">${esc(g.status.time)}</span>${g.subnote?`<span class="l3">${esc(g.subnote)}</span>`:""}${tv}</div>`;
 }
 /** One stacked scoreboard row (away on top, home beneath): inline logo, abbr,
  *  record in grey, score right-aligned in a fixed tabular column; winner gets
@@ -812,9 +982,10 @@ function renderRows(g){
 }
 function renderEventCard(g){
   const rn=g.leagueKey==="rightnow";
+  const kc=g.kickerClass||(rn?"rn":"");
   return `<div class="event">
-    ${g.kicker?`<div class="ev-kick${rn?" rn":""}">${esc(g.kicker)}</div>`:""}
-    <div class="ev-title">${esc(g.title)}</div>
+    ${g.kicker?`<div class="ev-kick ${kc}">${esc(g.kicker)}</div>`:""}
+    <div class="ev-title${g.feeLine?" ev-fee":""}">${esc(g.title)}</div>
     ${g.subtitle?`<div class="ev-sub">${esc(g.subtitle)}</div>`:""}
   </div>`;
 }
@@ -872,8 +1043,9 @@ function renderStatsFace(g){
 function renderMainFace(g){
   if(g.kind==="golf")return renderGolfBoard(g);
   if(g.kind==="event"){
+    const d1=g.status.date?`<span class="l1">${esc(g.status.date)}</span>`:"";
     const cell=(g.status.date||g.status.time)
-      ?`<div class="cell"><span class="l1">${esc(g.status.date)}</span><span class="l2">${esc(g.status.time)}</span></div>`
+      ?`<div class="cell">${d1}<span class="l2">${esc(g.status.time)}</span></div>`
       :"";
     return `<div class="gamebox ${g.live?"live-glow":g.isFinal?"final-shimmer":""}">${renderEventCard(g)}${cell}</div>`;
   }
@@ -893,13 +1065,17 @@ const elCur=document.getElementById("cur");
 const elNxt=document.getElementById("nxt");
 const elWipe=document.getElementById("wipe");
 let groups=[],pendingGroups=null,gi=0,ii=0,showingCur=true,stepTimer=null;
+let wipeActive=false,railJumpQueued=false;
 
 function buildGroups(){
   const leagueGroups=LEAGUES.map((l)=>({league:l,items:(allData[l.key]||[]).slice().sort((a,b)=>new Date(a.sortDate)-new Date(b.sortDate))}))
     .filter((g)=>g.items.length>0);
-  // Admin "Right Now" rail leads every cycle (like ESPN's The Lead).
-  const rn=buildRightNowGroup(adminCfg.rightNow);
-  return rn?[rn,...leagueGroups]:leagueGroups;
+  // Crypto-first lead: Right Now rail → $CSGN beat → governance → the sports slate.
+  const lead=[];
+  const rn=buildRightNowGroup(adminCfg.rightNow); if(rn)lead.push(rn);
+  lead.push(buildCsgnBeatGroup(adminCfg.csgn,adminCfg.liveFee,adminCfg.nowLive)); // $CSGN always present
+  const gov=buildGovernanceGroup(adminCfg.governance,adminCfg.vote); if(gov)lead.push(gov);
+  return [...lead,...leagueGroups];
 }
 function setPill(league){
   elPill.textContent=league.label;
@@ -945,6 +1121,7 @@ function wipePhases(total){
   return {io,hold:Math.max(0,total-io*2),total};
 }
 function playWipe(kind,league,done){
+  wipeActive=true;
   if(kind==="league"){
     elWipe.className="wipe";
     elWipe.style.background=`var(--${league.className})`;
@@ -952,17 +1129,46 @@ function playWipe(kind,league,done){
   }else{
     elWipe.className="wipe csgn";
     elWipe.style.background="";
-    elWipe.innerHTML=`<img src="${CSGN_LOGO_URI}" alt="CSGN" style="height:84px;width:84px;border-radius:9px"><div class="wswoosh"></div>`;
+    elWipe.innerHTML=`<img class="wlogo" src="${CSGN_LOGO_URI}" alt="CSGN"><div class="wswoosh"></div>`;
   }
   const {io,hold,total}=wipePhases(kind==="league"?CONFIG.WIPE_MS:CONFIG.STINGER_MS);
+  // Park off-screen LEFT with no animation and make it visible, then run the
+  // one-way L→R sweep. The slab never reverses across the band.
+  elWipe.classList.add("no-anim");
+  elWipe.style.visibility="visible";
+  elWipe.style.transform="translateX(-102%)";
+  void elWipe.offsetHeight;
+  elWipe.classList.remove("no-anim");
   elWipe.style.transitionDuration=`${io}ms`;
   requestAnimationFrame(()=>{
-    elWipe.classList.add("in");
-    setTimeout(()=>{done();},io+40);                 // swap only once fully covered
-    setTimeout(()=>{elWipe.classList.add("out");},io+hold);
-    setTimeout(()=>{elWipe.className="wipe";elWipe.classList.add("no-anim");
-      elWipe.style.transform="";void elWipe.offsetHeight;elWipe.classList.remove("no-anim");},total+120);
+    elWipe.classList.add("in");                        // slide in to cover  (→ 0)
+    setTimeout(()=>{done();},io+40);                   // swap the feed only once covered
+    setTimeout(()=>{elWipe.classList.add("out");},io+hold); // continue OFF the right (→ +102%)
+    setTimeout(()=>{                                   // fully gone: HIDE, then park left invisibly
+      elWipe.className="wipe no-anim";                 // drop in/out/csgn + kill the transition
+      elWipe.style.visibility="hidden";                // hidden during the snap-back → never a flash
+      elWipe.style.transform="translateX(-102%)";
+      void elWipe.offsetHeight;
+      elWipe.classList.remove("no-anim");
+      wipeActive=false;
+      if(railJumpQueued){railJumpQueued=false;retriggerRightNow();}
+    },total+120);
   });
+}
+/** Jump the rotation straight to the Right Now rail (admin pushed an update).
+ *  Waits out any running wipe so it never interrupts a transition mid-sweep. */
+function retriggerRightNow(){
+  const g=buildGroups();
+  const idx=g.findIndex((x)=>x.league.key==="rightnow");
+  if(idx<0){pendingGroups=g;return}                    // rail cleared → fold in normally
+  if(wipeActive){railJumpQueued=true;return}           // don't cut a wipe in half
+  groups=g;pendingGroups=null;gi=idx;ii=0;
+  const next=groups[idx];
+  clearTimeout(stepTimer);
+  playWipe("league",next.league,()=>{setPill(next.league);hardSwap(next.items[0]);});
+  const {io,hold}=wipePhases(CONFIG.WIPE_MS);
+  clearTimeout(stepTimer);
+  stepTimer=setTimeout(()=>scheduleFlipAndAdvance(next.items[0]),io+hold);
 }
 function advance(){
   if(pendingGroups){groups=pendingGroups;pendingGroups=null;
@@ -1124,8 +1330,34 @@ async function cryptoRefresh(){
     if(merged.length){cryptoList=merged;if(cryptoIdx>=merged.length)cryptoIdx=0}
   }catch(e){console.warn("coingecko refresh failed — keeping cached board",e)}
 }
-/* ── coin spotlight engine ── */
-let spotSig="",spotLastAt=0,spotActive=false,spotSoonTimer=null;
+/* ── crypto dock: two stacked layers, so a promoted coin or a $CSGN buy can
+   RISE from below (both briefly visible) instead of the old fire takeover ── */
+const elCCur=document.getElementById("c-cur");
+const elCInc=document.getElementById("c-inc");
+let cShowCur=true;
+function cLayers(){return cShowCur?{on:elCCur,off:elCInc}:{on:elCInc,off:elCCur}}
+/** Show a card in the crypto dock.
+ *  mode 'swap' = instant layer flip + soft cfade breathe (normal rotation);
+ *  mode 'rise' = the incoming box rolls up from below, stacked over the
+ *  outgoing one for the transition, then settles. accent '' | 'promoted' | 'buy'. */
+function coinShow(html,spark,mode,accent){
+  if(!elCCur||!elCInc)return; // defensive (test mode / missing DOM)
+  const {on,off}=cLayers();
+  off.className="c-layer"+(accent?" "+accent:"");
+  off.innerHTML=html;
+  if(spark)drawSpark(off.querySelector(".c-chart"),spark);
+  if(mode==="rise"){
+    off.classList.add("no-anim");off.style.transform="translateY(100%)";void off.offsetHeight;off.classList.remove("no-anim");
+    requestAnimationFrame(()=>{on.style.transform="translateY(-100%)";off.style.transform="translateY(0)"});
+  }else{
+    off.classList.add("no-anim");off.style.transform="translateY(0)";void off.offsetHeight;off.classList.remove("no-anim");
+    on.classList.add("no-anim");on.style.transform="translateY(100%)";void on.offsetHeight;on.classList.remove("no-anim");
+  }
+  cShowCur=!cShowCur;
+}
+
+/* ── coin spotlight engine (now a RISING promoted box, not a takeover) ── */
+let spotSig="",spotLastAt=0,spotActive=false,spotSoonTimer=null,spotHoldTimer=null;
 function onSpotlightCfg(cfg){
   const sig=cfg?[cfg.symbol,cfg.coingeckoId,cfg.dexPair,cfg.note].join("|"):"";
   if(sig===spotSig)return;
@@ -1133,7 +1365,7 @@ function onSpotlightCfg(cfg){
   if(cfg){ // new/changed spotlight — debut within ~5s, then the 10-min cadence
     spotLastAt=0;
     clearTimeout(spotSoonTimer);
-    spotSoonTimer=setTimeout(()=>{if(!spotActive)cryptoTick()},5_000);
+    spotSoonTimer=setTimeout(()=>{if(!spotActive&&!buyActive)cryptoTick()},5_000);
   }
 }
 async function fetchSpotPrice(cfg){
@@ -1154,33 +1386,72 @@ async function fetchSpotPrice(cfg){
   const hit=cryptoList.find((c)=>c.sym===cfg.symbol);
   return hit?{price:hit.price,chg:hit.chg}:{price:null,chg:null};
 }
-/** Pure renderer for the on-fire spotlight card (tested in isolation). */
+/** Pure renderer for the promoted coin box (rises from the right of the dock).
+ *  Same coin-card shape as a normal coin, with a gold SPOTLIGHT accent. */
 function renderSpotlight(cfg,px){
   const up=(px.chg??0)>=0;
-  const delta=px.chg!=null?`(24h) ${up?"▲":"▼"} ${Math.abs(px.chg).toFixed(2)}%`:"(24h) —";
-  return `<div class="spot">
-    <div class="spot-top"><div class="c-id"><span class="spot-chip">SPOTLIGHT</span><span class="spot-sym">${esc(cfg.symbol)}</span></div>
-      <span class="c-delta ${up?"up":"down"}">${esc(delta)}</span></div>
+  return `<div class="c-top"><div class="c-id"><span class="c-rank spot">◆</span><span class="c-sym">${esc(cfg.symbol)}</span></div>
+      <span class="c-delta ${up?"up":"down"}">(24h) ${up?"▲":"▼"} ${px.chg!=null?Math.abs(px.chg).toFixed(2):"–"}%</span></div>
     <div class="c-led">${renderLed(formatLedPrice(px.price))}</div>
-    <div class="spot-note">${esc(cfg.note||"Admin spotlight · csgn.fun")}</div>
-  </div>`;
+    <div class="c-bot"><span class="c-tag spot">SPOTLIGHT</span><span class="c-mv">${esc(cfg.note||"Featured on CSGN · csgn.fun")}</span></div>`;
 }
 async function startSpotlight(cfg){
   spotActive=true;
   let px={price:null,chg:null};
   try{px=await fetchSpotPrice(cfg)}catch{/* dashes */}
-  const el=document.getElementById("crypto");
-  el.innerHTML=renderSpotlight(cfg,px);
-  requestAnimationFrame(()=>el.querySelector(".spot")?.classList.add("up")); // rise in
-  setTimeout(()=>{
-    spotActive=false;
-    spotLastAt=Date.now();
-    cryptoTick(); // hand the dock straight back to the rotation
+  coinShow(renderSpotlight(cfg,px),null,"rise","promoted"); // second box rises into view
+  clearTimeout(spotHoldTimer);
+  spotHoldTimer=setTimeout(()=>{
+    spotActive=false;spotLastAt=Date.now();
+    if(!buyActive)cryptoTick(); // hand the dock straight back to the rotation
   },CONFIG.SPOTLIGHT_DWELL_MS);
 }
 
+/* ── $CSGN buy notifications (rise from the dock, green accent) ── */
+let lastBuyKey="",buyQueue=[],buyActive=false,buyHoldTimer=null;
+const buyKey=(b)=>`${b.at||""}|${b.usd}|${b.by||""}`;
+function ingestBuys(buys){
+  if(!buys||!buys.length)return;
+  const newestKey=buyKey(buys[buys.length-1]);
+  if(lastBuyKey===""){lastBuyKey=newestKey;return} // first sync: don't replay history
+  if(newestKey===lastBuyKey)return;
+  const idx=buys.findIndex((b)=>buyKey(b)===lastBuyKey);
+  const fresh=idx>=0?buys.slice(idx+1):buys.slice(-1);
+  lastBuyKey=newestKey;
+  if(!fresh.length)return;
+  buyQueue.push(...fresh.slice(-4)); // cap the burst
+  if(!buyActive)nextBuy();
+}
+function renderBuyCard(b){
+  const by=b.by?`by ${b.by}`:"csgn.fun";
+  return `<div class="c-top"><div class="c-id"><span class="c-rank buy">$CSGN</span><span class="c-sym">BUY</span></div>
+      <span class="c-delta up">🚀</span></div>
+    <div class="c-led"><span class="c-buyamt">+${fmtUsd(b.usd)}</span></div>
+    <div class="c-bot"><span class="c-tag buy">NEW BUY</span><span class="c-mv">${esc(by)}</span></div>`;
+}
+function nextBuy(){
+  if(!buyQueue.length){buyActive=false;if(!spotActive)cryptoTick();return}
+  if(spotActive){buyHoldTimer=setTimeout(nextBuy,800);return} // let a spotlight finish first
+  buyActive=true;
+  const b=buyQueue.shift();
+  coinShow(renderBuyCard(b),null,"rise","buy");
+  clearTimeout(buyHoldTimer);
+  buyHoldTimer=setTimeout(nextBuy,CONFIG.BUY_DWELL_MS);
+}
+
+/* ── BREAKING overlay: on until the admin clears it ── */
+function applyBreaking(b){
+  const el=document.getElementById("breaking");
+  if(!el)return;
+  const txt=document.getElementById("brk-text");
+  if(b&&b.text){
+    if(txt&&txt.textContent!==b.text)txt.textContent=b.text;
+    el.hidden=false;
+  }else el.hidden=true;
+}
+
 function cryptoTick(){
-  if(spotActive)return; // spotlight owns the dock
+  if(spotActive||buyActive)return; // spotlight / buy owns the dock
   const cfg=adminCfg.spotlight;
   if(cfg&&(spotLastAt===0||Date.now()-spotLastAt>=CONFIG.SPOTLIGHT_EVERY_MS)){
     startSpotlight(cfg);
@@ -1189,8 +1460,7 @@ function cryptoTick(){
   if(!cryptoList.length)return;
   const c=cryptoList[cryptoIdx];
   cryptoIdx=(cryptoIdx+1)%cryptoList.length;
-  document.getElementById("crypto").innerHTML=renderCoinCard(c);
-  if(c.spark)drawSpark(document.querySelector("#crypto .c-chart"),c.spark);
+  coinShow(renderCoinCard(c),c.spark,"swap","");
 }
 function cryptoInit(){
   cryptoRefresh().then(cryptoTick);
@@ -1201,10 +1471,12 @@ function cryptoInit(){
 /* ═══════════════ boot / test hooks ═══════════════ */
 window.__csgn={formatLedPrice,renderLed,renderItem,renderStatusCell,renderGolfBoard,renderStatsFace,
   parseGameEvent,parseGolfEvent,buildScoreboardUrl,LEAGUES,
-  decodeFs,buildRightNowGroup,renderSpotlight,renderRows,renderMainFace,
+  decodeFs,buildRightNowGroup,renderSpotlight,renderRows,renderMainFace,renderEventCard,
   CONFIG,wipePhases,broadcastRef,dateParamForLeague,sameZonedDay,
-  pitcherBrief,broadcastOf,BANANA_BALL_GAMES,bananasItems,renderCoinCard};
+  pitcherBrief,broadcastOf,BANANA_BALL_GAMES,bananasItems,renderCoinCard,
+  buildCsgnBeatGroup,buildGovernanceGroup,renderBuyCard,shortCountdown,fmtUsd,fmtPriceInline};
 document.documentElement.style.setProperty("--roll-ms",`${CONFIG.ROLL_MS}ms`);
+document.documentElement.style.setProperty("--croll-ms",`${CONFIG.CRYPTO_ROLL_MS}ms`);
 const brandImg=document.getElementById("brand-logo");
 if(brandImg)brandImg.src=CSGN_LOGO_URI;
 if(!TEST_MODE){
