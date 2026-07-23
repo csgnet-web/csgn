@@ -56,6 +56,8 @@ export default function TickerControlsCard() {
 
   // BREAKING
   const [breaking, setBreaking] = useState('')
+  const [breaking2, setBreaking2] = useState('') // optional second line
+  const [breakingRow, setBreakingRow] = useState(false) // own row above the ticker vs. full takeover
   const [breakingOn, setBreakingOn] = useState(false)
   // Now live / up next
   const [liveName, setLiveName] = useState('')
@@ -76,7 +78,8 @@ export default function TickerControlsCard() {
   useEffect(() => {
     return onSnapshot(doc(db, 'config', 'ticker'), (snap) => {
       const d = snap.exists() ? snap.data() : {}
-      const brk = typeof d.breaking === 'string' ? d.breaking : (d.breaking && typeof d.breaking === 'object' ? String(d.breaking.text || '') : '')
+      const brkObj = d.breaking && typeof d.breaking === 'object' ? d.breaking : null
+      const brk = typeof d.breaking === 'string' ? d.breaking : (brkObj ? String(brkObj.text || '') : '')
       setBreakingOn(!!brk)
       const v = d.vote && typeof d.vote === 'object' && d.vote.id
         ? { id: String(d.vote.id), question: String(d.vote.question || ''), options: Array.isArray(d.vote.options) ? d.vote.options.map(String) : [], status: d.vote.status ? String(d.vote.status) : 'open' }
@@ -85,6 +88,8 @@ export default function TickerControlsCard() {
       if (!seeded.current) {
         seeded.current = true
         setBreaking(brk)
+        setBreaking2(brkObj ? String(brkObj.text2 || '') : '')
+        setBreakingRow(brkObj ? String(brkObj.mode || '') === 'row' : false)
         if (d.nowLive) { setLiveName(String(d.nowLive.name || '')); setLiveTitle(String(d.nowLive.title || '')) }
         if (d.upNext) { setNextName(String(d.upNext.name || '')); setNextStart(String(d.upNext.startET || '')) }
         if (Array.isArray(d.governance)) setGovText(d.governance.map((g: Beat) => (g.tag && g.tag !== 'CSGN GOVERNANCE' ? `${g.tag} | ${g.text}` : g.text)).join('\n'))
@@ -108,8 +113,14 @@ export default function TickerControlsCard() {
   }
   const write = (data: Record<string, unknown>) => setDoc(doc(db, 'config', 'ticker'), { ...data, updatedAt: new Date().toISOString() }, { merge: true })
 
-  const saveBreaking = () => run('brk', () => write({ breaking: breaking.trim() || null }), breaking.trim() ? 'BREAKING is live on the ticker.' : 'BREAKING cleared.')
-  const clearBreaking = () => run('brkClear', async () => { await write({ breaking: null }); setBreaking('') }, 'BREAKING cleared.')
+  const saveBreaking = () => run('brk', () => {
+    const text = breaking.trim()
+    const payload = text
+      ? { text, text2: breaking2.trim(), mode: breakingRow ? 'row' : 'takeover' }
+      : null
+    return write({ breaking: payload })
+  }, breaking.trim() ? (breakingRow ? 'BREAKING live as its own row above the ticker.' : 'BREAKING is live on the ticker.') : 'BREAKING cleared.')
+  const clearBreaking = () => run('brkClear', async () => { await write({ breaking: null }); setBreaking(''); setBreaking2(''); setBreakingRow(false) }, 'BREAKING cleared.')
   const saveLive = () => run('live', () => write({ nowLive: liveName.trim() || liveTitle.trim() ? { name: liveName.trim(), title: liveTitle.trim() } : null }), 'Live-now updated.')
   const saveNext = () => run('next', () => write({ upNext: nextName.trim() || nextStart.trim() ? { name: nextName.trim(), startET: nextStart.trim() } : null }), 'Up-next updated.')
   const saveGov = () => run('gov', () => write({ governance: parseBeatLines(govText, 'CSGN GOVERNANCE') }), 'Governance beats updated.')
@@ -143,7 +154,13 @@ export default function TickerControlsCard() {
         {/* BREAKING */}
         <div className="space-y-2">
           <label className={label}>BREAKING {breakingOn && <span className="text-red-400">● live now</span>}</label>
-          <textarea value={breaking} onChange={(e) => setBreaking(e.target.value)} rows={2} placeholder="Red takeover — stays on air until cleared" className={input} />
+          <textarea value={breaking} onChange={(e) => setBreaking(e.target.value)} rows={2} placeholder="Headline — stays on air until cleared" className={input} />
+          <input value={breaking2} onChange={(e) => setBreaking2(e.target.value)} placeholder="Second line (optional)" className={input} />
+          <label className="flex items-center gap-2 text-xs text-gray-300 select-none cursor-pointer">
+            <input type="checkbox" checked={breakingRow} onChange={(e) => setBreakingRow(e.target.checked)} className="accent-red-500 w-4 h-4" />
+            Show as its own row above the ticker (two rows) — the ticker keeps running below.
+            <span className="text-gray-500">Needs a taller OBS source (1930×240); at 110px it falls back to a full takeover.</span>
+          </label>
           <div className="flex gap-2">
             <Button size="sm" variant="danger" isLoading={busy === 'brk'} onClick={saveBreaking}>Set BREAKING</Button>
             <Button size="sm" variant="secondary" isLoading={busy === 'brkClear'} onClick={clearBreaking}>Clear</Button>

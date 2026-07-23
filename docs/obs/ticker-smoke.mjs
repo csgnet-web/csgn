@@ -240,6 +240,32 @@ check('Spotlight without price shows dashes, never $0.00', spotNoPx.includes('c-
 const buyHtml = __csgn.renderBuyCard({ usd: 1234, by: '@degen' })
 check('Buy toast: green BUY tag + amount + buyer', buyHtml.includes('c-tag buy') && buyHtml.includes('+$1,234') && buyHtml.includes('@degen') && buyHtml.includes('c-buyamt'))
 
+// ── BREAKING normalize + two modes + optional second line ───────────────────
+const nb = __csgn.normalizeBreaking
+check('breaking: bare string → takeover, no 2nd line', JSON.stringify(nb('SEC sues X')) === JSON.stringify({ text: 'SEC sues X', text2: '', mode: 'takeover' }))
+check('breaking: {text,text2} → takeover with 2nd line', nb({ text: 'A', text2: 'B' }).text2 === 'B' && nb({ text: 'A', text2: 'B' }).mode === 'takeover')
+check('breaking: mode:"row" preserved', nb({ text: 'A', mode: 'row' }).mode === 'row')
+check('breaking: unknown mode → takeover', nb({ text: 'A', mode: 'banner' }).mode === 'takeover')
+check('breaking: empty/whitespace/no-text → null', nb('') === null && nb('  ') === null && nb({ text2: 'x' }) === null && nb(null) === null)
+// applyBreaking drives the DOM: jsdom has headroom (innerHeight 768) so row mode
+// lights the top bar and the second line lands; takeover fills both text + sub.
+__csgn.applyBreaking(nb({ text: 'HEAD', text2: 'SUBLINE', mode: 'takeover' }))
+check('applyBreaking takeover: overlay shown, both lines set, row hidden',
+  !dom.window.document.getElementById('breaking').hidden &&
+  dom.window.document.getElementById('brk-text').textContent === 'HEAD' &&
+  dom.window.document.getElementById('brk-sub').textContent === 'SUBLINE' &&
+  dom.window.document.getElementById('brk-row').hidden)
+check('hasHeadroom true when the source is taller than the band (jsdom 768)', __csgn.hasHeadroom() === true)
+__csgn.applyBreaking(nb({ text: 'ROWHEAD', text2: 'ROWSUB', mode: 'row' }))
+check('applyBreaking row: top bar shown with both lines, takeover overlay hidden',
+  !dom.window.document.getElementById('brk-row').hidden &&
+  dom.window.document.getElementById('brk-row-text').textContent === 'ROWHEAD' &&
+  dom.window.document.getElementById('brk-row-sub').textContent === 'ROWSUB' &&
+  dom.window.document.getElementById('breaking').hidden)
+__csgn.applyBreaking(null)
+check('applyBreaking null clears both the overlay and the top bar',
+  dom.window.document.getElementById('breaking').hidden && dom.window.document.getElementById('brk-row').hidden)
+
 // ── $CSGN network beat: price card + live creator-fee card ──────────────────
 const beat = __csgn.buildCsgnBeatGroup({ price: 0.0000038, chg: 5.2, mc: 3800, vol: 900 }, { name: 'CEO', usd: 42.5 }, { name: 'CEO' })
 check('CSGN beat: 2 cards, $CSGN LIVE kicker, fee in USD', beat.items.length === 2 && beat.items[0].kicker === '$CSGN LIVE' && beat.items[1].title.includes('$42.50'))
