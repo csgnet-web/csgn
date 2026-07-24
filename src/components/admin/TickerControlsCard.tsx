@@ -59,6 +59,12 @@ export default function TickerControlsCard() {
   const [breaking2, setBreaking2] = useState('') // optional second line
   const [breakingRow, setBreakingRow] = useState(false) // own row above the ticker vs. full takeover
   const [breakingOn, setBreakingOn] = useState(false)
+  // Main chyron — full control of the three headline lines (leads the rotation)
+  const [chyKicker, setChyKicker] = useState('')
+  const [chyTitle, setChyTitle] = useState('')
+  const [chySub, setChySub] = useState('')
+  const [chyPill, setChyPill] = useState('')
+  const [chyronOn, setChyronOn] = useState(false)
   // Now live / up next
   const [liveName, setLiveName] = useState('')
   const [liveTitle, setLiveTitle] = useState('')
@@ -81,6 +87,8 @@ export default function TickerControlsCard() {
       const brkObj = d.breaking && typeof d.breaking === 'object' ? d.breaking : null
       const brk = typeof d.breaking === 'string' ? d.breaking : (brkObj ? String(brkObj.text || '') : '')
       setBreakingOn(!!brk)
+      const chy = d.chyron && typeof d.chyron === 'object' ? d.chyron : null
+      setChyronOn(!!(chy && (String(chy.title || '').trim() || String(chy.kicker || '').trim())))
       const v = d.vote && typeof d.vote === 'object' && d.vote.id
         ? { id: String(d.vote.id), question: String(d.vote.question || ''), options: Array.isArray(d.vote.options) ? d.vote.options.map(String) : [], status: d.vote.status ? String(d.vote.status) : 'open' }
         : null
@@ -90,6 +98,7 @@ export default function TickerControlsCard() {
         setBreaking(brk)
         setBreaking2(brkObj ? String(brkObj.text2 || '') : '')
         setBreakingRow(brkObj ? String(brkObj.mode || '') === 'row' : false)
+        if (chy) { setChyKicker(String(chy.kicker || '')); setChyTitle(String(chy.title || '')); setChySub(String(chy.subtitle || '')); setChyPill(String(chy.pill || '')) }
         if (d.nowLive) { setLiveName(String(d.nowLive.name || '')); setLiveTitle(String(d.nowLive.title || '')) }
         if (d.upNext) { setNextName(String(d.upNext.name || '')); setNextStart(String(d.upNext.startET || '')) }
         if (Array.isArray(d.governance)) setGovText(d.governance.map((g: Beat) => (g.tag && g.tag !== 'CSGN GOVERNANCE' ? `${g.tag} | ${g.text}` : g.text)).join('\n'))
@@ -121,6 +130,14 @@ export default function TickerControlsCard() {
     return write({ breaking: payload })
   }, breaking.trim() ? (breakingRow ? 'BREAKING live as its own row above the ticker.' : 'BREAKING is live on the ticker.') : 'BREAKING cleared.')
   const clearBreaking = () => run('brkClear', async () => { await write({ breaking: null }); setBreaking(''); setBreaking2(''); setBreakingRow(false) }, 'BREAKING cleared.')
+  const saveChyron = () => run('chy', () => {
+    const title = chyTitle.trim(); const kicker = chyKicker.trim()
+    const payload = (title || kicker)
+      ? { kicker, title, subtitle: chySub.trim(), pill: chyPill.trim() }
+      : null
+    return write({ chyron: payload })
+  }, chyTitle.trim() || chyKicker.trim() ? 'Main chyron is live on the ticker.' : 'Main chyron cleared.')
+  const clearChyron = () => run('chyClear', async () => { await write({ chyron: null }); setChyKicker(''); setChyTitle(''); setChySub(''); setChyPill('') }, 'Main chyron cleared.')
   const saveLive = () => run('live', () => write({ nowLive: liveName.trim() || liveTitle.trim() ? { name: liveName.trim(), title: liveTitle.trim() } : null }), 'Live-now updated.')
   const saveNext = () => run('next', () => write({ upNext: nextName.trim() || nextStart.trim() ? { name: nextName.trim(), startET: nextStart.trim() } : null }), 'Up-next updated.')
   const saveGov = () => run('gov', () => write({ governance: parseBeatLines(govText, 'CSGN GOVERNANCE') }), 'Governance beats updated.')
@@ -164,6 +181,21 @@ export default function TickerControlsCard() {
           <div className="flex gap-2">
             <Button size="sm" variant="danger" isLoading={busy === 'brk'} onClick={saveBreaking}>Set BREAKING</Button>
             <Button size="sm" variant="secondary" isLoading={busy === 'brkClear'} onClick={clearBreaking}>Clear</Button>
+          </div>
+        </div>
+
+        {/* Main chyron — full control of the three headline lines */}
+        <div className="space-y-2">
+          <label className={label}>Main chyron — all three lines {chyronOn && <span className="text-emerald-400">● live now</span>}</label>
+          <div className="grid sm:grid-cols-[1fr_auto] gap-2">
+            <input value={chyKicker} onChange={(e) => setChyKicker(e.target.value)} placeholder="Kicker (small top line) — e.g. CSGN ALERT" className={input} />
+            <input value={chyPill} onChange={(e) => setChyPill(e.target.value)} placeholder="Pill label (CSGN)" className={input + ' sm:w-40'} />
+          </div>
+          <input value={chyTitle} onChange={(e) => setChyTitle(e.target.value)} placeholder="Headline (big middle line) — auto-shrinks to fit, never clips" className={input} />
+          <input value={chySub} onChange={(e) => setChySub(e.target.value)} placeholder="Subline (bottom line)" className={input} />
+          <div className="flex gap-2">
+            <Button size="sm" variant="gold" isLoading={busy === 'chy'} onClick={saveChyron}>Set chyron</Button>
+            <Button size="sm" variant="secondary" isLoading={busy === 'chyClear'} onClick={clearChyron}>Clear</Button>
           </div>
         </div>
 

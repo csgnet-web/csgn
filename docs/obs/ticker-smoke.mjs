@@ -75,7 +75,7 @@ const [nfl] = __csgn.parseGameEvent(nflLeague, nflEvent)
 check('NFL live: down/distance + away possession + redzone', nfl.football?.dd === '3rd & 8' && nfl.football.redZone && nfl.possession === 'away')
 check('NFL cell renders down & distance', __csgn.renderStatusCell(nfl).includes('3rd &amp; 8'))
 
-// ── Golf: top-10 leaderboard ────────────────────────────────────────────────
+// ── Golf: rotating faces of 3 with headshots ────────────────────────────────
 const pga = __csgn.LEAGUES.find((l) => l.key === 'pga')
 const golfEvent = {
   name: 'The Open Championship', shortName: 'The Open', date: new Date().toISOString(),
@@ -84,20 +84,21 @@ const golfEvent = {
     status: { period: 2, type: { state: 'in', shortDetail: 'Round 2' } },
     competitors: Array.from({ length: 14 }, (_, i) => ({
       order: i + 1,
-      athlete: { shortName: `Player ${i + 1}` },
+      athlete: { shortName: `Player ${i + 1}`, headshot: i < 2 ? { href: `https://a.espncdn.com/i/headshots/golf/players/full/${i}.png` } : undefined },
       score: { displayValue: i === 0 ? '-12' : i < 5 ? `-${9 - i}` : `+${i - 4}` },
       status: { position: { displayName: i === 1 ? 'T2' : String(i + 1) }, thru: i < 3 ? 18 : 11 },
     })),
   }],
 }
-const [golf] = __csgn.parseGolfEvent(pga, golfEvent)
-check('Golf parsed as leaderboard with exactly 10 rows', golf.kind === 'golf' && golf.rows.length === 10)
-const board = __csgn.renderGolfBoard(golf)
-check('Golf board renders leader, T2, F-thru, round', board.includes('Player 1') && board.includes('T2') && board.includes('-12') && board.includes('>F<') && board.includes('R2'))
-check('Golf board colors under/over par', board.includes('sc under') && board.includes('sc over'))
-check('Golf renders 10 row nodes', (board.match(/golf-row/g) || []).length === 10)
-check('Golf table has POS/PLAYER/TOT/THRU headers per column', (board.match(/golf-hrow/g) || []).length === 2 && board.includes('POS') && board.includes('PLAYER') && board.includes('TOT') && board.includes('THRU'))
-check('Golf leader row highlighted exactly once', (board.match(/golf-row lead/g) || []).length === 1)
+const golfItems = __csgn.parseGolfEvent(pga, golfEvent)
+check('Golf splits into rotating faces of 3 (top 9 → 3 faces)', golfItems.length === 3 && golfItems.every((it) => it.kind === 'golf' && it.rows.length === 3))
+check('Golf face carries photos + pos + score + thru', golfItems[0].rows[0].photo.includes('headshots') && golfItems[0].rows[0].score === '-12' && golfItems[0].rows[1].pos === 'T2')
+const board = __csgn.renderGolfBoard(golfItems[0])
+const board3 = __csgn.renderGolfBoard(golfItems[2])
+check('Golf face renders 3 big cards, tournament + round', (board.match(/g3-card[ "]/g) || []).length === 3 && board.includes('The Open') && board.includes('R2'))
+check('Golf leader highlighted once on face 1, never on later faces', (board.match(/g3-card lead/g) || []).length === 1 && (board3.match(/g3-card lead/g) || []).length === 0)
+check('Golf headshot img when present, initial placeholder when absent', board.includes('g3-photo" src="https://a.espncdn.com') && board.includes('g3-photo ph') && board.includes('THRU'))
+check('Golf faces color under/over par', board.includes('g3-score under') && board3.includes('g3-score over'))
 
 // ── Stacked main face: records on the game side, aligned scores ─────────────
 const mainFace = __csgn.renderMainFace(mlb)
@@ -239,6 +240,13 @@ check('Spotlight without price shows dashes, never $0.00', spotNoPx.includes('c-
 // ── $CSGN buy toast (rises green, reuses the coin-card shape) ────────────────
 const buyHtml = __csgn.renderBuyCard({ usd: 1234, by: '@degen' })
 check('Buy toast: green BUY tag + amount + buyer', buyHtml.includes('c-tag buy') && buyHtml.includes('+$1,234') && buyHtml.includes('@degen') && buyHtml.includes('c-buyamt'))
+
+// ── Main chyron: admin-authored three lines, leads the rotation ─────────────
+check('Chyron group null when blank', __csgn.buildChyronGroup(null) === null && __csgn.buildChyronGroup({ title: '  ' }) === null)
+const chy = __csgn.buildChyronGroup({ kicker: 'CSGN ALERT', title: 'ANSEM JUST APED $50K INTO $CSGN', subtitle: 'watch it happen live · csgn.fun', pill: 'LIVE' })
+check('Chyron group: pill label + one event item with all three lines', chy.league.label === 'LIVE' && chy.items.length === 1 && chy.items[0].kicker === 'CSGN ALERT' && chy.items[0].title.includes('ANSEM') && chy.items[0].subtitle.includes('csgn.fun'))
+const chyCard = __csgn.renderEventCard(chy.items[0])
+check('Chyron renders as a three-line event card (kicker/title/sub)', chyCard.includes('CSGN ALERT') && chyCard.includes('ANSEM') && chyCard.includes('event sub'))
 
 // ── BREAKING normalize + two modes + optional second line ───────────────────
 const nb = __csgn.normalizeBreaking

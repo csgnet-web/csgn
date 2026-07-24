@@ -121,6 +121,9 @@
    both features gracefully fall back to in-band behaviour — nothing breaks. */
 html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;background:transparent;font-family:var(--cond);position:relative}
 .shell{display:flex;width:1930px;height:110px;background:var(--shell);border-top:1px solid rgba(255,35,70,.55);position:absolute;left:0;bottom:0;z-index:2}
+/* Paint the shell colour a few px BELOW the band (clipped by body overflow) so a
+   sub-pixel/scrollbar seam can never leave a gap under the bar at the very bottom. */
+.shell::after{content:"";position:absolute;left:0;right:0;top:100%;height:8px;background:var(--shell)}
 
 /* ── rising coin spotlight — a second token box that slides UP from behind the
    crypto dock to sit directly above it (both visible, stacked) for its dwell,
@@ -182,20 +185,25 @@ html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;ba
 .tlogo{width:42px;height:42px;object-fit:contain;justify-self:center;filter:brightness(1.15)}
 .tname{display:flex;align-items:baseline;gap:14px;min-width:0}
 .abbr{font-size:41px;font-weight:900;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1;text-shadow:0 0 6px rgba(0,0,0,.8)}
-.rec{font-size:19px;font-weight:700;color:#9a9aa4;font-family:var(--mono);white-space:nowrap}
+.rec{font-size:27px;font-weight:800;color:#b6b6c0;font-family:var(--mono);white-space:nowrap;letter-spacing:-.01em}
 .scorecell{display:flex;align-items:center;justify-content:flex-end;gap:8px}
 .score{font-size:47px;font-weight:900;color:#fff;font-variant-numeric:tabular-nums;line-height:1;text-shadow:0 0 8px rgba(255,255,255,.35)}
 .score.win{color:var(--gold);text-shadow:0 0 10px rgba(255,207,64,.5)}
 .win-arrow{font-size:13px;color:var(--gold)}
 .poss{width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 7px var(--gold);flex:none;align-self:center}
 /* status cell — fixed width so every league lines up */
-.cell{width:220px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
-  border-left:2px solid rgba(255,255,255,.85);padding-left:20px;text-transform:uppercase;font-weight:800;height:88px}
-.cell .l1{font-size:21px;color:#ccc;white-space:nowrap;max-width:210px;overflow:hidden;text-overflow:ellipsis}
-.cell .l2{font-size:30px;color:#fff;white-space:nowrap;max-width:210px;overflow:hidden;text-overflow:ellipsis}
+/* status / game-detail block — sized to read from across a room and fill the
+   right side of the panel; FINAL and the TV network are the headline elements. */
+.cell{width:270px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  border-left:2px solid rgba(255,255,255,.85);padding-left:26px;text-transform:uppercase;font-weight:800;height:92px}
+.cell .l1{font-size:24px;color:#c9c9d2;white-space:nowrap;max-width:250px;overflow:hidden;text-overflow:ellipsis;letter-spacing:.02em}
+.cell .l2{font-size:40px;line-height:.96;color:#fff;white-space:nowrap;max-width:256px;overflow:hidden;text-overflow:ellipsis}
+.cell .l2.fin{font-size:52px;font-weight:900;color:var(--gold);letter-spacing:.02em;text-shadow:0 0 12px rgba(255,207,64,.4)}
 .cell .l2.rz{color:var(--loss);text-shadow:0 0 6px rgba(255,75,75,.6)}
-.cell .l3{font-size:13px;font-weight:700;color:#8a8a94;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;text-transform:none}
-.cell .tv{font-size:14px;font-weight:800;color:#6db3ff;letter-spacing:.1em;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+.cell .l3{font-size:15px;font-weight:700;color:#9a9aa4;white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis;text-transform:none}
+/* national TV network as a bold blue badge — much bigger and clearer than before */
+.cell .tv{font-size:21px;font-weight:900;color:#a9ccff;background:rgba(70,140,255,.15);border:1px solid rgba(95,160,255,.45);
+  border-radius:6px;padding:2px 11px;letter-spacing:.05em;white-space:nowrap;max-width:246px;overflow:hidden;text-overflow:ellipsis}
 /* baseball live cell — bigger diamond + roomier count so it never crushes */
 .bb{display:flex;align-items:center;gap:16px}
 .dia{position:relative;width:50px;height:42px;flex:none}
@@ -233,24 +241,26 @@ html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;ba
 .tw-text{font-size:29px;font-weight:700;color:#e9e9ee;line-height:1.08;overflow:hidden;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .tw-x{width:42px;height:42px;flex:none;color:#fff;opacity:.92}
-/* golf leaderboard */
-.golf{flex:1;height:94px;display:flex;flex-direction:column;padding:6px 4px 6px 0;min-width:0}
-.golf-head{display:flex;align-items:baseline;gap:12px;padding:0 4px 3px}
-.golf-title{font-size:16px;font-weight:900;text-transform:uppercase;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.golf-round{font-size:12px;font-weight:800;color:var(--gold);text-transform:uppercase;letter-spacing:.08em;flex:none}
-.golf-grid{flex:1;display:grid;grid-template-columns:1fr 1fr;column-gap:22px;min-height:0}
-.golf-col{display:flex;flex-direction:column;justify-content:space-between}
-.golf-hrow{display:grid;grid-template-columns:34px 1fr 52px 46px;gap:6px;font-size:9.5px;font-weight:800;letter-spacing:.14em;color:#8a8a94;text-transform:uppercase;padding-bottom:2px;border-bottom:1px solid rgba(255,255,255,.16)}
-.golf-hrow span:nth-child(1),.golf-hrow span:nth-child(3),.golf-hrow span:nth-child(4){text-align:right}
-.golf-row{display:grid;grid-template-columns:34px 1fr 52px 46px;align-items:center;gap:6px;font-size:13.5px;line-height:1;color:#e8e8ec;border-bottom:1px solid rgba(255,255,255,.05);flex:1}
-.golf-row:nth-child(odd){background:rgba(255,255,255,.025)}
-.golf-row.lead .nm{color:#fff;text-shadow:0 0 8px rgba(255,207,64,.3)}
-.golf-row.lead .pos{color:var(--gold)}
-.golf-row .pos{font-weight:900;color:#cfcfd6;font-family:var(--mono);font-size:12px;text-align:right}
-.golf-row .nm{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}
-.golf-row .sc{font-weight:900;text-align:right;font-family:var(--mono)}
-.golf-row .sc.under{color:var(--green)} .golf-row .sc.over{color:var(--loss)}
-.golf-row .thru{color:#9a9aa4;text-align:right;font-family:var(--mono);font-size:11px}
+/* golf — three players at a time, big, with headshots (rotates through the field) */
+.golf3{flex:1;height:94px;display:flex;align-items:stretch;gap:16px;padding:4px 6px;min-width:0}
+.g3-rail{flex:none;width:230px;display:flex;flex-direction:column;justify-content:center;gap:5px;border-right:2px solid rgba(255,255,255,.22);padding-right:16px}
+.g3-tour{font-size:25px;font-weight:900;text-transform:uppercase;color:#fff;line-height:1.02;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.g3-round{font-size:16px;font-weight:800;color:var(--gold);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.g3-cards{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;min-width:0}
+.g3-card{display:flex;align-items:center;gap:13px;padding:0 15px;background:rgba(255,255,255,.03);border-radius:9px;min-width:0}
+.g3-card.lead{background:linear-gradient(90deg,rgba(255,207,64,.16),rgba(255,207,64,.03));box-shadow:inset 0 0 0 1px rgba(255,207,64,.4)}
+.g3-photo{width:60px;height:60px;border-radius:9px;object-fit:cover;object-position:top center;flex:none;background:#1d1d22;border:1px solid rgba(255,255,255,.16)}
+.g3-photo.ph{display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:900;color:#fff;font-family:var(--cond);background:linear-gradient(135deg,#2a2a33,#15151a)}
+/* name on its own full-width line so it never ellipsizes; pos·thru·score beneath */
+.g3-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.g3-name{font-size:27px;font-weight:900;text-transform:uppercase;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1}
+.g3-line{display:flex;align-items:baseline;gap:11px;min-width:0}
+.g3-pos{font-size:19px;font-weight:900;font-family:var(--mono);color:#cfcfd6;flex:none;line-height:1}
+.g3-card.lead .g3-pos{color:var(--gold)}
+.g3-thru{font-size:13px;font-weight:700;color:#9a9aa4;font-family:var(--mono);white-space:nowrap;letter-spacing:.04em}
+.g3-score{font-size:29px;font-weight:900;font-family:var(--mono);color:#e8e8ec;line-height:1;margin-left:auto;flex:none}
+.g3-score.under{color:var(--green)} .g3-score.over{color:var(--loss)}
 /* stats face */
 .stats{flex:1;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:20px;min-width:0}
 .stat-side{display:flex;flex-direction:column;gap:3px;min-width:0}
@@ -492,7 +502,7 @@ function decodeFs(v){
   return null;
 }
 
-let adminCfg={rightNow:[],spotlight:null,breaking:null,governance:[],vote:null,csgn:null,liveFee:null,nowLive:null,upNext:null,buys:[],tweets:[]};
+let adminCfg={rightNow:[],spotlight:null,breaking:null,chyron:null,governance:[],vote:null,csgn:null,liveFee:null,nowLive:null,upNext:null,buys:[],tweets:[]};
 let lastCfgSig="",lastRnSig="";
 async function adminCfgRefresh(){
   try{
@@ -518,6 +528,13 @@ async function adminCfgRefresh(){
     // it. text2 = optional second line. mode:"row" = its own bar above the ticker
     // (needs a taller source); anything else = full-band takeover (default).
     const breaking=normalizeBreaking(dec("breaking"));
+
+    // MAIN CHYRON — {kicker, title, subtitle, pill?}: full manual control of the
+    // three headline lines. Leads the rotation. Null/blank → nothing shown.
+    const rawChy=dec("chyron")||null;
+    const chyron=rawChy&&typeof rawChy==="object"&&(String(rawChy.title||"").trim()||String(rawChy.kicker||"").trim())
+      ?{kicker:String(rawChy.kicker||""),title:String(rawChy.title||""),subtitle:String(rawChy.subtitle||""),pill:String(rawChy.pill||"")}
+      :null;
 
     // programming governance beats + tonight's holder vote
     const rawGov=dec("governance")||[];
@@ -562,7 +579,7 @@ async function adminCfgRefresh(){
       .map((t)=>({name:String(t.name||t.handle||"CSGN"),handle:String(t.handle||"").replace(/^@/,""),
         text:String(t.text),avatar:String(t.avatar||""),verified:!!t.verified}));
 
-    adminCfg={rightNow,spotlight,breaking,governance,vote,csgn,liveFee,nowLive,upNext,buys,tweets};
+    adminCfg={rightNow,spotlight,breaking,chyron,governance,vote,csgn,liveFee,nowLive,upNext,buys,tweets};
   }catch{ /* keep last good adminCfg */ }
 
   onSpotlightCfg(adminCfg.spotlight);
@@ -583,6 +600,15 @@ async function adminCfgRefresh(){
   }
 }
 
+/** Admin-authored "main chyron": full manual control of the three lines
+ *  (kicker / headline / subline). Leads the rotation; null when unset. */
+function buildChyronGroup(c){
+  if(!c||!(String(c.title||"").trim()||String(c.kicker||"").trim()))return null;
+  return {league:{key:"chyron",label:(c.pill||"CSGN").toUpperCase(),className:"league-rightnow"},
+    items:[{kind:"event",leagueKey:"chyron",title:String(c.title||""),subtitle:String(c.subtitle||""),
+      kicker:String(c.kicker||""),kickerClass:"csgn",live:false,isFinal:false,pregame:false,
+      status:{date:"",time:""},sortDate:new Date()}]};
+}
 /** The admin "Right Now" rail as a rotation group (null when empty). */
 function buildRightNowGroup(items){
   if(!items||!items.length)return null;
@@ -979,17 +1005,28 @@ function parseGolfEvent(l,ev){
   const st=statusType(comp,ev),state=stateOf(comp,ev),start=new Date(ev.date||comp?.date||Date.now());
   const rows=[...cs]
     .sort((a,b)=>(parseFloat(a.order??a.rank??999))-(parseFloat(b.order??b.rank??999)))
-    .slice(0,10)
+    .slice(0,9)
     .map((c,i)=>{
       const pos=cleanText(c.status?.position?.displayName||c.status?.position?.id||String(i+1));
       const score=cleanText(typeof c.score==="object"?(c.score?.displayValue??""):(c.score??""))||"E";
       let thru=cleanText(c.status?.thru!=null?String(c.status.thru):"");
       if(thru==="18")thru="F";
       if(!thru)thru=cleanText(c.status?.displayValue||"");
-      return {pos,name:competitorName(c),score,thru};
+      const photo=c.athlete?.headshot?.href||c.headshot?.href||"";
+      return {pos,name:competitorName(c),score,thru,photo,idx:i};
     });
   const round=comp?.status?.period?`R${comp.status.period}`:cleanText(st.shortDetail||"");
-  return [{kind:"golf",leagueKey:l.key,title:cleanText(ev.shortName||ev.name||l.label),round,rows,
+  const title=cleanText(ev.shortName||ev.name||l.label);
+  const base=start.getTime();
+  // Split the field into faces of 3 so the board ROTATES through the leaderboard
+  // (big cards with headshots) instead of cramming 10 into one tiny table.
+  const groups=[];
+  for(let i=0;i<rows.length;i+=3){
+    groups.push({kind:"golf",leagueKey:l.key,title,round,rows:rows.slice(i,i+3),
+      live:state==="in",isFinal:state==="post",pregame:state==="pre",
+      status:{date:displayDate(start),time:displayTime(start)},sortDate:new Date(base+i)});
+  }
+  return groups.length?groups:[{kind:"golf",leagueKey:l.key,title,round,rows:[],
     live:state==="in",isFinal:state==="post",pregame:state==="pre",
     status:{date:displayDate(start),time:displayTime(start)},sortDate:start}];
 }
@@ -1064,6 +1101,13 @@ function renderStatusCell(g){
     return `<div class="cell"><span class="l1">${esc(dt)}</span>
       <span class="l2 ${g.football.redZone?"rz":""}">${esc(g.football.dd)}</span>${tv}</div>`;
   }
+  // Finals: the "Final" label lives in status.date (line1) — lead with it, big
+  // and gold; any detail (OT) rides beneath. Scheduled shows date over time.
+  if(g.isFinal){
+    const fin=g.status.date||g.status.time||"Final";
+    const sub=(g.status.time&&g.status.time!==g.status.date)?g.status.time:(g.subnote||"");
+    return `<div class="cell"><span class="l2 fin">${esc(fin)}</span>${sub?`<span class="l3">${esc(sub)}</span>`:""}${tv}</div>`;
+  }
   const d1=g.status.date?`<span class="l1">${esc(g.status.date)}</span>`:"";
   return `<div class="cell">${d1}<span class="l2">${esc(g.status.time)}</span>${g.subnote?`<span class="l3">${esc(g.subnote)}</span>`:""}${tv}</div>`;
 }
@@ -1114,15 +1158,28 @@ function golfScoreClass(s){
   if(/^\+/.test(s))return "sc over";
   return "sc";
 }
+/** Golf face: three players at a time, big, with ESPN headshots. parseGolfEvent
+ *  emits one of these per group of 3 so the rotation walks the leaderboard. */
 function renderGolfBoard(g){
-  const HEAD='<div class="golf-hrow"><span>POS</span><span>PLAYER</span><span>TOT</span><span>THRU</span></div>';
-  const col=(rows,startIdx)=>`<div class="golf-col">${HEAD}${rows.map((r,i)=>`<div class="golf-row${startIdx+i===0?" lead":""}">
-      <span class="pos">${esc(r.pos)}</span><span class="nm">${esc(r.name)}</span>
-      <span class="${golfScoreClass(r.score)}">${esc(r.score)}</span><span class="thru">${esc(r.thru)}</span>
-    </div>`).join("")}</div>`;
-  return `<div class="golf">
-    <div class="golf-head"><span class="golf-title">${esc(g.title)}</span><span class="golf-round">${esc(g.round||"")}${g.live?" · LIVE":g.isFinal?" · FINAL":""}</span></div>
-    <div class="golf-grid">${col(g.rows.slice(0,5),0)}${col(g.rows.slice(5,10),5)}</div>
+  const statusTxt=g.live?"LIVE":g.isFinal?"FINAL":"";
+  const cards=(g.rows||[]).map((r)=>{
+    const lead=r.idx===0?" lead":"";
+    const initial=String(r.name||"?").trim().charAt(0).toUpperCase()||"?";
+    const photo=r.photo
+      ?`<img class="g3-photo" src="${esc(r.photo)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'g3-photo ph',textContent:'${esc(initial)}'}))">`
+      :`<div class="g3-photo ph">${esc(initial)}</div>`;
+    const scls=/^-/.test(r.score)?"under":/^\+/.test(r.score)?"over":"";
+    // Golf boards read last-name-only ("Scheffler") — shorter and broadcast-standard.
+    const disp=String(r.name||"").includes(" ")?String(r.name).split(" ").pop():r.name;
+    return `<div class="g3-card${lead}">${photo}
+      <div class="g3-col"><span class="g3-name">${esc(disp)}</span>
+        <div class="g3-line"><span class="g3-pos">${esc(r.pos)}</span><span class="g3-thru">${esc(r.thru?("THRU "+r.thru):"")}</span><span class="g3-score ${scls}">${esc(r.score)}</span></div>
+      </div>
+    </div>`;
+  }).join("");
+  return `<div class="golf3">
+    <div class="g3-rail"><span class="g3-tour">${esc(g.title)}</span><span class="g3-round">${esc(g.round||"")}${statusTxt?" · "+statusTxt:""}</span></div>
+    <div class="g3-cards">${cards}</div>
   </div>`;
 }
 /** Second face, in priority order:
@@ -1191,8 +1248,9 @@ let wipeActive=false,railJumpQueued=false;
 function buildGroups(){
   const leagueGroups=LEAGUES.map((l)=>({league:l,items:(allData[l.key]||[]).slice().sort((a,b)=>new Date(a.sortDate)-new Date(b.sortDate))}))
     .filter((g)=>g.items.length>0);
-  // Crypto-first lead: Right Now rail → $CSGN beat → governance → the sports slate.
+  // Crypto-first lead: Main chyron → Right Now rail → $CSGN beat → governance → slate.
   const lead=[];
+  const chy=buildChyronGroup(adminCfg.chyron); if(chy)lead.push(chy);
   const rn=buildRightNowGroup(adminCfg.rightNow); if(rn)lead.push(rn);
   lead.push(buildCsgnBeatGroup(adminCfg.csgn,adminCfg.liveFee,adminCfg.nowLive)); // $CSGN always present
   const gov=buildGovernanceGroup(adminCfg.governance,adminCfg.vote); if(gov)lead.push(gov);
@@ -1208,9 +1266,23 @@ function setPill(league){
   elPill.style.background=`var(--${league.className})`;
 }
 function currentEls(){return showingCur?{on:elCur,off:elNxt}:{on:elNxt,off:elCur}}
+/** Shrink a headline until it fits its column so the main chyron/title can NEVER
+ *  ellipsize — step the font down from its CSS size to a floor, then stop. */
+function fitText(root){
+  if(!root||!root.querySelectorAll)return;
+  root.querySelectorAll(".ev-title,.ev-sub").forEach((el)=>{
+    el.style.fontSize="";                       // start from the CSS-defined size
+    const cw=el.clientWidth; if(!cw)return;      // not laid out yet — skip
+    let size=parseFloat(getComputedStyle(el).fontSize)||0; if(!size)return;
+    const min=Math.max(16,size*0.52);
+    let guard=48;
+    while(el.scrollWidth>cw+1 && size>min && guard-->0){ size-=1.5; el.style.fontSize=size+"px"; }
+  });
+}
 function renderInto(el,g){
   try{el.innerHTML=g?renderItem(g).html:'<div class="face"><div class="gamebox"><div class="event"><div class="ev-title">No games on the board</div><div class="ev-sub">CSGN 24/7 · csgn.fun</div></div></div></div>'}
-  catch(e){console.error("render failed",e);el.innerHTML=""}
+  catch(e){console.error("render failed",e);el.innerHTML="";return}
+  fitText(el); // never let the headline clip into an ellipsis
 }
 function rollTo(g){
   const {on,off}=currentEls();
@@ -1670,7 +1742,7 @@ window.__csgn={formatLedPrice,renderLed,renderItem,renderStatusCell,renderGolfBo
   CONFIG,wipePhases,broadcastRef,dateParamForLeague,sameZonedDay,
   pitcherBrief,broadcastOf,BANANA_BALL_GAMES,bananasItems,renderCoinCard,
   buildCsgnBeatGroup,buildGovernanceGroup,renderBuyCard,shortCountdown,fmtUsd,fmtPriceInline,
-  renderTweet,buildTweetsGroup,renderCsgnCoinCard,normalizeBreaking,applyBreaking,hasHeadroom};
+  renderTweet,buildTweetsGroup,renderCsgnCoinCard,normalizeBreaking,applyBreaking,hasHeadroom,buildChyronGroup,fitText};
 document.documentElement.style.setProperty("--roll-ms",`${CONFIG.ROLL_MS}ms`);
 document.documentElement.style.setProperty("--croll-ms",`${CONFIG.CRYPTO_ROLL_MS}ms`);
 const brandImg=document.getElementById("brand-logo");
