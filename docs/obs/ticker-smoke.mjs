@@ -241,6 +241,11 @@ check('Spotlight without price shows dashes, never $0.00', spotNoPx.includes('c-
 const buyHtml = __csgn.renderBuyCard({ usd: 1234, by: '@degen' })
 check('Buy toast: green BUY tag + amount + buyer', buyHtml.includes('c-tag buy') && buyHtml.includes('+$1,234') && buyHtml.includes('@degen') && buyHtml.includes('c-buyamt'))
 
+// ── Fans-on-the-board: the live viewer→on-air action counter card ───────────
+check('Actions card hidden unless shown + has actions', __csgn.buildActionsGroup({ total: 5 }, false) === null && __csgn.buildActionsGroup({ total: 0 }, true) === null)
+const actGrp = __csgn.buildActionsGroup({ total: 847, votes: 512, submissions: 300, spotlights: 35 }, true)
+check('Actions card: FAN POWER pill + total + breakdown', actGrp.league.label === 'FAN POWER' && actGrp.items[0].title.includes('847') && actGrp.items[0].subtitle.includes('512 VOTES') && actGrp.items[0].subtitle.includes('35 SPOTLIGHTS'))
+
 // ── Main chyron: admin-authored three lines, leads the rotation ─────────────
 check('Chyron group null when blank', __csgn.buildChyronGroup(null) === null && __csgn.buildChyronGroup({ title: '  ' }) === null)
 const chy = __csgn.buildChyronGroup({ kicker: 'CSGN ALERT', title: 'ANSEM JUST APED $50K INTO $CSGN', subtitle: 'watch it happen live · csgn.fun', pill: 'LIVE' })

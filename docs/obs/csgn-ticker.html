@@ -483,6 +483,7 @@ const CSGN_LOGO_URI="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAASABIAAD/4RvnRXhp
    The doc is world-readable (firestore.rules) so this file can poll it
    unauthenticated. Any fetch/shape error is treated as "no config". */
 const FS_TICKER_URL="https://firestore.googleapis.com/v1/projects/csgn-ac44b/databases/(default)/documents/config/ticker";
+const FS_ACTIONS_URL="https://firestore.googleapis.com/v1/projects/csgn-ac44b/databases/(default)/documents/public/onAirActions";
 
 /** Decode one Firestore REST value object into a plain JS value. */
 function decodeFs(v){
@@ -502,7 +503,8 @@ function decodeFs(v){
   return null;
 }
 
-let adminCfg={rightNow:[],spotlight:null,breaking:null,chyron:null,governance:[],vote:null,csgn:null,liveFee:null,nowLive:null,upNext:null,buys:[],tweets:[]};
+let adminCfg={rightNow:[],spotlight:null,breaking:null,chyron:null,governance:[],vote:null,csgn:null,liveFee:null,nowLive:null,upNext:null,buys:[],tweets:[],showActions:false};
+let onAirActions={total:0,votes:0,submissions:0,spotlights:0,buys:0};
 let lastCfgSig="",lastRnSig="";
 async function adminCfgRefresh(){
   try{
@@ -579,8 +581,19 @@ async function adminCfgRefresh(){
       .map((t)=>({name:String(t.name||t.handle||"CSGN"),handle:String(t.handle||"").replace(/^@/,""),
         text:String(t.text),avatar:String(t.avatar||""),verified:!!t.verified}));
 
-    adminCfg={rightNow,spotlight,breaking,chyron,governance,vote,csgn,liveFee,nowLive,upNext,buys,tweets};
+    // show the live viewer→on-air action counter on air when the admin flips it on
+    const showActions=!!dec("showActions");
+
+    adminCfg={rightNow,spotlight,breaking,chyron,governance,vote,csgn,liveFee,nowLive,upNext,buys,tweets,showActions};
   }catch{ /* keep last good adminCfg */ }
+
+  // Live "fans on the board" counter (public/onAirActions) — best-effort; 404s
+  // until the first action lands, in which case we simply keep the zeros.
+  try{
+    const ra=await fetch(FS_ACTIONS_URL,{cache:"no-store"});
+    if(ra.ok){const af=(await ra.json()).fields||{};const n=(k)=>Number(decodeFs(af[k])||0)||0;
+      onAirActions={total:n("total"),votes:n("votes"),submissions:n("submissions"),spotlights:n("spotlights"),buys:n("buys")};}
+  }catch{/* keep last good counter */}
 
   onSpotlightCfg(adminCfg.spotlight);
   applyBreaking(adminCfg.breaking);
@@ -589,7 +602,7 @@ async function adminCfgRefresh(){
   // Any admin content change rebuilds the rotation; only a fresh RIGHT NOW rail
   // RETRIGGERS the cycle so that specific update plays immediately, from the top.
   const rnSig=JSON.stringify(adminCfg.rightNow);
-  const cfgSig=JSON.stringify([adminCfg.rightNow,adminCfg.governance,adminCfg.vote,adminCfg.tweets]);
+  const cfgSig=JSON.stringify([adminCfg.rightNow,adminCfg.governance,adminCfg.vote,adminCfg.tweets,adminCfg.chyron,adminCfg.showActions]);
   if(cfgSig!==lastCfgSig){
     const rnChanged=rnSig!==lastRnSig&&lastCfgSig!=="";
     lastCfgSig=cfgSig; lastRnSig=rnSig;
@@ -600,6 +613,20 @@ async function adminCfgRefresh(){
   }
 }
 
+/** "Fans on the board" — the live viewer→on-air action counter as a rotation
+ *  card. Only shown when the admin flips showActions on and there are actions. */
+function buildActionsGroup(a,show){
+  if(!show||!a||!(a.total>0))return null;
+  const parts=[];
+  if(a.votes)parts.push(`${a.votes} VOTES`);
+  if(a.submissions)parts.push(`${a.submissions} HEADLINES`);
+  if(a.spotlights)parts.push(`${a.spotlights} SPOTLIGHTS`);
+  const sub=(parts.length?parts.join(" · ")+" · ":"")+"HOLD $CSGN TO STEER THE BROADCAST · CSGN.FUN";
+  return {league:{key:"actions",label:"FAN POWER",className:"league-rightnow"},
+    items:[{kind:"event",leagueKey:"actions",kicker:"VIEWERS ON THE BOARD",kickerClass:"csgn",
+      title:`${a.total.toLocaleString("en-US")} FAN ACTIONS ON AIR TONIGHT`,subtitle:sub,
+      live:false,isFinal:false,pregame:false,status:{date:"",time:""},sortDate:new Date()}]};
+}
 /** Admin-authored "main chyron": full manual control of the three lines
  *  (kicker / headline / subline). Leads the rotation; null when unset. */
 function buildChyronGroup(c){
@@ -1251,6 +1278,7 @@ function buildGroups(){
   // Crypto-first lead: Main chyron → Right Now rail → $CSGN beat → governance → slate.
   const lead=[];
   const chy=buildChyronGroup(adminCfg.chyron); if(chy)lead.push(chy);
+  const act=buildActionsGroup(onAirActions,adminCfg.showActions); if(act)lead.push(act);
   const rn=buildRightNowGroup(adminCfg.rightNow); if(rn)lead.push(rn);
   lead.push(buildCsgnBeatGroup(adminCfg.csgn,adminCfg.liveFee,adminCfg.nowLive)); // $CSGN always present
   const gov=buildGovernanceGroup(adminCfg.governance,adminCfg.vote); if(gov)lead.push(gov);
@@ -1742,7 +1770,7 @@ window.__csgn={formatLedPrice,renderLed,renderItem,renderStatusCell,renderGolfBo
   CONFIG,wipePhases,broadcastRef,dateParamForLeague,sameZonedDay,
   pitcherBrief,broadcastOf,BANANA_BALL_GAMES,bananasItems,renderCoinCard,
   buildCsgnBeatGroup,buildGovernanceGroup,renderBuyCard,shortCountdown,fmtUsd,fmtPriceInline,
-  renderTweet,buildTweetsGroup,renderCsgnCoinCard,normalizeBreaking,applyBreaking,hasHeadroom,buildChyronGroup,fitText};
+  renderTweet,buildTweetsGroup,renderCsgnCoinCard,normalizeBreaking,applyBreaking,hasHeadroom,buildChyronGroup,fitText,buildActionsGroup};
 document.documentElement.style.setProperty("--roll-ms",`${CONFIG.ROLL_MS}ms`);
 document.documentElement.style.setProperty("--croll-ms",`${CONFIG.CRYPTO_ROLL_MS}ms`);
 const brandImg=document.getElementById("brand-logo");

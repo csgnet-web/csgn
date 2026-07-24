@@ -10,6 +10,7 @@ import { json, parseJson, requireMethod, withHttp } from './_shared/http'
 import { requireString } from './_shared/validators'
 import { checkRateLimit, clientIp } from './_shared/rateLimit'
 import { getCsgnBalance } from './_shared/solana'
+import { bumpOnAirAction } from './_shared/onAirActions'
 
 type WalletProof = { type: string; walletAddress: string; exp: number; iat: number; jti: string }
 type Body = { proofToken?: string; voteId?: string; option?: number }
@@ -71,6 +72,7 @@ export const handler = withHttp(async (event) => {
           : createWrite(ballotPath, { option, weight, wallet, createdAt: now }),
       ]
       await commitWrites(writes, txn)
+      if (!prev) await bumpOnAirAction('vote') // count first-time ballots on the on-air tally
       return json(200, { ok: true, option, weight, tally })
     } catch {
       // transaction conflict / transient — retry with a fresh read

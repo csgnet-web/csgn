@@ -65,6 +65,9 @@ export default function TickerControlsCard() {
   const [chySub, setChySub] = useState('')
   const [chyPill, setChyPill] = useState('')
   const [chyronOn, setChyronOn] = useState(false)
+  // Viewer → on-air action counter (public/onAirActions) + its on-air toggle
+  const [actions, setActions] = useState({ total: 0, votes: 0, submissions: 0, spotlights: 0, buys: 0 })
+  const [showActions, setShowActions] = useState(false)
   // Now live / up next
   const [liveName, setLiveName] = useState('')
   const [liveTitle, setLiveTitle] = useState('')
@@ -89,6 +92,7 @@ export default function TickerControlsCard() {
       setBreakingOn(!!brk)
       const chy = d.chyron && typeof d.chyron === 'object' ? d.chyron : null
       setChyronOn(!!(chy && (String(chy.title || '').trim() || String(chy.kicker || '').trim())))
+      setShowActions(!!d.showActions)
       const v = d.vote && typeof d.vote === 'object' && d.vote.id
         ? { id: String(d.vote.id), question: String(d.vote.question || ''), options: Array.isArray(d.vote.options) ? d.vote.options.map(String) : [], status: d.vote.status ? String(d.vote.status) : 'open' }
         : null
@@ -104,6 +108,14 @@ export default function TickerControlsCard() {
         if (Array.isArray(d.governance)) setGovText(d.governance.map((g: Beat) => (g.tag && g.tag !== 'CSGN GOVERNANCE' ? `${g.tag} | ${g.text}` : g.text)).join('\n'))
         if (Array.isArray(d.tweets)) setTweetsText(serializeTweets(d.tweets as Tweet[]))
       }
+    })
+  }, [])
+
+  useEffect(() => {
+    return onSnapshot(doc(db, 'public', 'onAirActions'), (snap) => {
+      const d = snap.exists() ? snap.data() : {}
+      const n = (k: string) => Number(d[k]) || 0
+      setActions({ total: n('total'), votes: n('votes'), submissions: n('submissions'), spotlights: n('spotlights'), buys: n('buys') })
     })
   }, [])
 
@@ -138,6 +150,8 @@ export default function TickerControlsCard() {
     return write({ chyron: payload })
   }, chyTitle.trim() || chyKicker.trim() ? 'Main chyron is live on the ticker.' : 'Main chyron cleared.')
   const clearChyron = () => run('chyClear', async () => { await write({ chyron: null }); setChyKicker(''); setChyTitle(''); setChySub(''); setChyPill('') }, 'Main chyron cleared.')
+  const toggleActions = () => run('actToggle', () => write({ showActions: !showActions }), !showActions ? 'Fan-action counter is now on air.' : 'Fan-action counter hidden from air.')
+  const resetActions = () => run('actReset', () => setDoc(doc(db, 'public', 'onAirActions'), { total: 0, votes: 0, submissions: 0, spotlights: 0, buys: 0, since: new Date().toISOString(), updatedAt: new Date().toISOString() }), 'Fan-action counter reset for a new session.')
   const saveLive = () => run('live', () => write({ nowLive: liveName.trim() || liveTitle.trim() ? { name: liveName.trim(), title: liveTitle.trim() } : null }), 'Live-now updated.')
   const saveNext = () => run('next', () => write({ upNext: nextName.trim() || nextStart.trim() ? { name: nextName.trim(), startET: nextStart.trim() } : null }), 'Up-next updated.')
   const saveGov = () => run('gov', () => write({ governance: parseBeatLines(govText, 'CSGN GOVERNANCE') }), 'Governance beats updated.')
@@ -182,6 +196,27 @@ export default function TickerControlsCard() {
             <Button size="sm" variant="danger" isLoading={busy === 'brk'} onClick={saveBreaking}>Set BREAKING</Button>
             <Button size="sm" variant="secondary" isLoading={busy === 'brkClear'} onClick={clearBreaking}>Clear</Button>
           </div>
+        </div>
+
+        {/* Viewer → on-air action counter */}
+        <div className="space-y-2 rounded-xl bg-white/[0.03] border border-white/[0.08] p-3">
+          <div className="flex items-center justify-between">
+            <label className={label + ' mb-0'}>Fans on the board — viewer → on-air actions {showActions && <span className="text-emerald-400">● on air</span>}</label>
+            <span className="text-2xl font-bold font-mono text-white tabular-nums">{actions.total.toLocaleString('en-US')}</span>
+          </div>
+          <div className="grid grid-cols-4 gap-2 text-center">
+            {([['Votes', actions.votes], ['Headlines', actions.submissions], ['Spotlights', actions.spotlights], ['Buys', actions.buys]] as const).map(([k, v]) => (
+              <div key={k} className="rounded-lg bg-white/[0.03] py-1.5">
+                <div className="text-lg font-bold font-mono text-white tabular-nums">{v.toLocaleString('en-US')}</div>
+                <div className="text-[10px] uppercase tracking-wide text-gray-500">{k}</div>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant={showActions ? 'secondary' : 'gold'} isLoading={busy === 'actToggle'} onClick={toggleActions}>{showActions ? 'Hide from air' : 'Show on air'}</Button>
+            <Button size="sm" variant="ghost" isLoading={busy === 'actReset'} onClick={resetActions}>Reset session</Button>
+          </div>
+          <p className="text-xs text-gray-500">Counts every token-weighted vote, holder headline, and coin-spotlight burn as it lands. Auto-increments server-side; flip it on air whenever you want to show the crowd steering the broadcast.</p>
         </div>
 
         {/* Main chyron — full control of the three headline lines */}

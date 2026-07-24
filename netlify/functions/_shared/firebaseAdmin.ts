@@ -120,6 +120,15 @@ export async function commitWrites(writes: unknown[], transaction?: string) {
   if (!res.ok) throw new Error(`Firestore commit failed: ${res.status} ${await res.text()}`)
 }
 
+/** Atomic field increments (Firestore transform): creates the doc if missing,
+ *  bumps each field by its delta, and stamps updatedAt server-side. Powers the
+ *  live "on-air actions" counter the OBS ticker polls. */
+export async function incrementDoc(path: string, fields: Record<string, number>, stampUpdatedAt = true) {
+  const fieldTransforms: unknown[] = Object.entries(fields).map(([fieldPath, n]) => ({ fieldPath, increment: { integerValue: String(n) } }))
+  if (stampUpdatedAt) fieldTransforms.push({ fieldPath: 'updatedAt', setToServerValue: 'REQUEST_TIME' })
+  await commitWrites([{ transform: { document: docName(path), fieldTransforms } }])
+}
+
 export function updateWrite(path: string, data: Record<string, unknown>, exists = true) { return { update: { name: docName(path), fields: encodeFields(data) }, updateMask: { fieldPaths: Object.keys(data) }, currentDocument: { exists } } }
 export function createWrite(path: string, data: Record<string, unknown>) { return { update: { name: docName(path), fields: encodeFields(data) }, currentDocument: { exists: false } } }
 export function deleteWrite(path: string) { return { delete: docName(path) } }

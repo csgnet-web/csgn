@@ -13,6 +13,7 @@ import { requireString } from './_shared/validators'
 import { checkRateLimit, clientIp } from './_shared/rateLimit'
 import { getCsgnBalance } from './_shared/solana'
 import { containsProfanity } from './_shared/profanity'
+import { bumpOnAirAction } from './_shared/onAirActions'
 
 const MIN_CSGN = 5_000_000
 const MAX_LEN = 90
@@ -67,5 +68,6 @@ export const handler = withHttp(async (event) => {
     { merge: true },
   )
 
+  await bumpOnAirAction('submission') // this Right Now item is now on the board
   return json(200, { ok: true, text, item, railSize: next.length })
 })
