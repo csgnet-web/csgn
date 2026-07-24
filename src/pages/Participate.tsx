@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { motion } from 'framer-motion'
-import { Wallet, Megaphone, Check, Trophy, AlertCircle, Vote as VoteIcon } from 'lucide-react'
+import { Wallet, Megaphone, Check, Trophy, AlertCircle, Vote as VoteIcon, Flame } from 'lucide-react'
 import { db } from '@/config/firebase'
 import { api } from '@/lib/api'
 import { proveWallet } from '@/lib/walletProof'
+import { burnCsgn } from '@/lib/spotlightBurn'
 import { fetchCsgnBalance, CSGN_RIGHT_NOW_MIN } from '@/lib/csgnBalance'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { Button } from '@/components/ui/Button'
@@ -36,10 +37,22 @@ export default function Participate() {
   const [rnMsg, setRnMsg] = useState<string | null>(null)
   const [rnErr, setRnErr] = useState<string | null>(null)
 
+  // Buy-and-burn coin spotlight
+  const [burnCost, setBurnCost] = useState(500_000)
+  const [spotSymbol, setSpotSymbol] = useState('')
+  const [spotPair, setSpotPair] = useState('')
+  const [spotNote, setSpotNote] = useState('')
+  const [spotBusy, setSpotBusy] = useState(false)
+  const [spotMsg, setSpotMsg] = useState<string | null>(null)
+  const [spotErr, setSpotErr] = useState<string | null>(null)
+
   // Current vote (config/ticker.vote)
   useEffect(() => {
     return onSnapshot(doc(db, 'config', 'ticker'), (snap) => {
-      const v = snap.exists() ? (snap.data().vote as Record<string, unknown> | undefined) : undefined
+      const data = snap.exists() ? snap.data() : {}
+      const cost = Number(data.spotlightBurnCsgn)
+      if (cost > 0) setBurnCost(cost)
+      const v = data.vote as Record<string, unknown> | undefined
       setVote(
         v && v.id && Array.isArray(v.options)
           ? { id: String(v.id), question: String(v.question || 'Tonight’s vote'), options: (v.options as unknown[]).map(String), startISO: v.startISO ? String(v.startISO) : undefined, status: v.status ? String(v.status) : 'open' }
@@ -111,6 +124,38 @@ export default function Participate() {
     }
     setRnBusy(false)
   }
+
+  // A pasted DexScreener URL → its pair address; otherwise use the value as-is.
+  const extractPair = (raw: string): string => {
+    const t = raw.trim()
+    const m = t.match(/dexscreener\.com\/[^/]+\/([A-Za-z0-9]+)/)
+    return m ? m[1] : t
+  }
+  const doSpotlight = async () => {
+    setSpotErr(null); setSpotMsg(null)
+    const symbol = spotSymbol.trim().toUpperCase()
+    if (!/^[A-Z0-9$]{2,12}$/.test(symbol)) { setSpotErr('Enter a valid ticker symbol (2–12 characters).'); return }
+    setSpotBusy(true)
+    try {
+      const addr = await ensureWallet()
+      // Prove the wallet first so a later-rejected burn wastes no on-chain action.
+      const proof = await proveWallet(addr, signMessage)
+      // Burn on-chain (Phantom prompts + signs), then redeem the signature.
+      const signature = await burnCsgn(addr, burnCost)
+      const res = await api.burnSpotlight(proof, signature, {
+        symbol,
+        dexPair: extractPair(spotPair) || undefined,
+        note: spotNote.trim() || undefined,
+      })
+      setSpotMsg(`🔥 Burned ${fmtFull(res.burned)} $CSGN — ${symbol} rises in the broadcast spotlight within a minute.`)
+      setSpotSymbol(''); setSpotPair(''); setSpotNote('')
+      loadBalance(addr)
+    } catch (e) {
+      setSpotErr(e instanceof Error ? e.message : 'Spotlight failed.')
+    }
+    setSpotBusy(false)
+  }
+  const canBurnSpotlight = balance != null && balance >= burnCost
 
   const options = vote?.options ?? []
   const cells = options.map((_, i) => tally[String(i)] || { tokens: 0, wallets: 0 })
@@ -269,6 +314,44 @@ export default function Participate() {
 
           {rnMsg && <p className="text-sm text-emerald-400 flex items-center gap-1.5"><Check className="w-4 h-4" /> {rnMsg}</p>}
           {rnErr && <p className="text-sm text-red-400 flex items-center gap-1.5"><AlertCircle className="w-4 h-4" /> {rnErr}</p>}
+        </Card>
+      </section>
+
+      {/* Buy-and-burn coin spotlight */}
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Flame className="w-5 h-5 text-amber-400" />
+          <h2 className="text-lg font-display font-bold uppercase tracking-wide">Spotlight Your Coin</h2>
+        </div>
+        <Card hover={false} className="p-5 space-y-3">
+          <p className="text-sm text-gray-400">
+            Burn <span className="text-amber-300 font-semibold">{fmtFull(burnCost)} $CSGN</span> to raise your coin into the broadcast’s{' '}
+            <span className="text-amber-300 font-semibold">crypto spotlight</span> — it rises on air within a minute, and the burn permanently removes $CSGN from supply.
+          </p>
+
+          {!walletAddress ? (
+            <Button onClick={() => void connect()} isLoading={isConnecting} leftIcon={<Wallet className="w-4 h-4" />}>Connect Phantom to spotlight a coin</Button>
+          ) : !canBurnSpotlight ? (
+            <div className="flex items-start gap-2 text-sm text-amber-300/90 bg-amber-500/[0.06] border border-amber-500/20 rounded-xl p-3">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>You hold {balance != null ? fmtFull(balance) : '—'} $CSGN. You need {fmtFull(burnCost)} to buy a spotlight.</span>
+            </div>
+          ) : (
+            <>
+              <div className="grid sm:grid-cols-2 gap-2">
+                <input value={spotSymbol} onChange={(e) => setSpotSymbol(e.target.value.slice(0, 12))} placeholder="Ticker symbol — e.g. BONK" className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-amber-500/60 outline-none px-3 py-2 text-sm uppercase" />
+                <input value={spotPair} onChange={(e) => setSpotPair(e.target.value)} placeholder="DexScreener URL or pair (optional)" className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-amber-500/60 outline-none px-3 py-2 text-sm" />
+              </div>
+              <input value={spotNote} onChange={(e) => setSpotNote(e.target.value.slice(0, 90))} placeholder="Spotlight note (optional) — shown under the price" className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-amber-500/60 outline-none px-3 py-2 text-sm" />
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">Burns {fmtFull(burnCost)} $CSGN · you sign in Phantom · deflationary</span>
+                <Button size="sm" variant="gold" isLoading={spotBusy} onClick={() => void doSpotlight()} leftIcon={<Flame className="w-4 h-4" />}>Burn to Spotlight</Button>
+              </div>
+            </>
+          )}
+
+          {spotMsg && <p className="text-sm text-emerald-400 flex items-center gap-1.5"><Check className="w-4 h-4" /> {spotMsg}</p>}
+          {spotErr && <p className="text-sm text-red-400 flex items-center gap-1.5"><AlertCircle className="w-4 h-4" /> {spotErr}</p>}
         </Card>
       </section>
     </motion.main>

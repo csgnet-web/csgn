@@ -68,6 +68,7 @@ export default function TickerControlsCard() {
   // Viewer → on-air action counter (public/onAirActions) + its on-air toggle
   const [actions, setActions] = useState({ total: 0, votes: 0, submissions: 0, spotlights: 0, buys: 0 })
   const [showActions, setShowActions] = useState(false)
+  const [burnCost, setBurnCost] = useState('') // $CSGN a holder burns to buy a coin spotlight
   // Now live / up next
   const [liveName, setLiveName] = useState('')
   const [liveTitle, setLiveTitle] = useState('')
@@ -103,6 +104,7 @@ export default function TickerControlsCard() {
         setBreaking2(brkObj ? String(brkObj.text2 || '') : '')
         setBreakingRow(brkObj ? String(brkObj.mode || '') === 'row' : false)
         if (chy) { setChyKicker(String(chy.kicker || '')); setChyTitle(String(chy.title || '')); setChySub(String(chy.subtitle || '')); setChyPill(String(chy.pill || '')) }
+        if (Number(d.spotlightBurnCsgn) > 0) setBurnCost(String(d.spotlightBurnCsgn))
         if (d.nowLive) { setLiveName(String(d.nowLive.name || '')); setLiveTitle(String(d.nowLive.title || '')) }
         if (d.upNext) { setNextName(String(d.upNext.name || '')); setNextStart(String(d.upNext.startET || '')) }
         if (Array.isArray(d.governance)) setGovText(d.governance.map((g: Beat) => (g.tag && g.tag !== 'CSGN GOVERNANCE' ? `${g.tag} | ${g.text}` : g.text)).join('\n'))
@@ -152,6 +154,11 @@ export default function TickerControlsCard() {
   const clearChyron = () => run('chyClear', async () => { await write({ chyron: null }); setChyKicker(''); setChyTitle(''); setChySub(''); setChyPill('') }, 'Main chyron cleared.')
   const toggleActions = () => run('actToggle', () => write({ showActions: !showActions }), !showActions ? 'Fan-action counter is now on air.' : 'Fan-action counter hidden from air.')
   const resetActions = () => run('actReset', () => setDoc(doc(db, 'public', 'onAirActions'), { total: 0, votes: 0, submissions: 0, spotlights: 0, buys: 0, since: new Date().toISOString(), updatedAt: new Date().toISOString() }), 'Fan-action counter reset for a new session.')
+  const saveBurnCost = () => run('burnCost', () => {
+    const n = Math.round(Number(burnCost))
+    if (!(n > 0)) throw new Error('Enter a positive $CSGN amount.')
+    return write({ spotlightBurnCsgn: n })
+  }, 'Spotlight burn price updated.')
   const saveLive = () => run('live', () => write({ nowLive: liveName.trim() || liveTitle.trim() ? { name: liveName.trim(), title: liveTitle.trim() } : null }), 'Live-now updated.')
   const saveNext = () => run('next', () => write({ upNext: nextName.trim() || nextStart.trim() ? { name: nextName.trim(), startET: nextStart.trim() } : null }), 'Up-next updated.')
   const saveGov = () => run('gov', () => write({ governance: parseBeatLines(govText, 'CSGN GOVERNANCE') }), 'Governance beats updated.')
@@ -217,6 +224,13 @@ export default function TickerControlsCard() {
             <Button size="sm" variant="ghost" isLoading={busy === 'actReset'} onClick={resetActions}>Reset session</Button>
           </div>
           <p className="text-xs text-gray-500">Counts every token-weighted vote, holder headline, and coin-spotlight burn as it lands. Auto-increments server-side; flip it on air whenever you want to show the crowd steering the broadcast.</p>
+          <div className="flex items-end gap-2 pt-1 border-t border-white/[0.06] mt-1">
+            <div className="flex-1">
+              <label className={label}>Buy-and-burn spotlight price ($CSGN a holder burns to spotlight a coin)</label>
+              <input value={burnCost} onChange={(e) => setBurnCost(e.target.value.replace(/[^0-9]/g, ''))} placeholder="500000" inputMode="numeric" className={input} />
+            </div>
+            <Button size="sm" variant="secondary" isLoading={busy === 'burnCost'} onClick={saveBurnCost}>Save</Button>
+          </div>
         </div>
 
         {/* Main chyron — full control of the three headline lines */}
