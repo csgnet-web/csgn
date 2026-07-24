@@ -5,17 +5,27 @@
 <title>CSGN Broadcast Ticker — combined sports + crypto band</title>
 <!--
   ═══════════════════════════════════════════════════════════════════════════
-  CSGN TICKER BAND — one OBS Browser Source, 1930×110, bottom of the canvas.
+  CSGN TICKER BAND — one OBS Browser Source, 1930 wide, bottom of the canvas.
 
   Combines the two legacy files (sports scoreboard + crypto LED board) into a
-  single instrument so the heights, baseline and divider can never drift:
+  single instrument so the heights, baseline and divider can never drift. The
+  110px band is PINNED TO THE BOTTOM of the source; segment widths are fixed:
 
-    [ CSGN 110 ][ LEAGUE 150 ][ GAME PANEL 1268 ][2][ CRYPTO LED 400 ] = 1930
+    [ CSGN 110 ][ LEAGUE 158 ][ GAME PANEL 1260 ][2][ CRYPTO LED 400 ] = 1930
 
   INSTALL (OBS)
     Browser Source → ✅ Local file → this file
-    Width 1930 · Height 110 · position X 0, Y 975
+    Width 1930 · Height 240 · position X 0, Y 845   ← recommended
     FPS: match output (30). Shutdown when not visible: OFF.
+
+    HEIGHT MATTERS. The band is always the bottom 110px. Any extra height is
+    transparent HEADROOM above the band, and it unlocks two broadcast effects:
+      • the coin SPOTLIGHT rises out from behind the crypto dock to sit stacked
+        directly above it, and
+      • a BREAKING item can run as its OWN red row above the ticker (two rows).
+    Height 240 (Y 845) gives 130px of headroom for both. At Height 110 (Y 975)
+    everything still works — the spotlight rises in-dock and BREAKING takes over
+    the band — so an older 110px source keeps running unchanged.
 
   DATA
     Sports  — ESPN public scoreboard API, all leagues in LEAGUES below,
@@ -66,12 +76,16 @@
     • RIGHT NOW rail — rightNow: [{tag, text}, …] (≤8). LEADS every rotation
       cycle; a change RETRIGGERS the cycle so the update plays at once, from the
       top. Red pill, red kicker per item. Empty → the rail vanishes.
-    • BREAKING — breaking: "text" | {text} | null. Red takeover that STAYS over
-      everything (keeps the CSGN mark) until the admin clears it.
+    • BREAKING — breaking: "text" | {text, text2?, mode?} | null. Red takeover
+      that STAYS until the admin clears it. text2 = optional second line. With
+      mode:"row" (and a taller source) it runs as its OWN red bar above the band
+      so the ticker keeps rotating below; otherwise it takes the whole band over.
     • COIN SPOTLIGHT — spotlight: {symbol, coingeckoId?, dexPair?, dexChain?,
-      note?} | null. A promoted coin box RISES from the crypto dock (two boxes
-      briefly stacked), every 10 min, gold SPOTLIGHT accent. NOT the rail.
-      Price: DexScreener pair → CoinGecko id → rotation list. Debuts ~5s+one poll.
+      note?} | null. Every 10 min a promoted coin box (gold SPOTLIGHT accent)
+      RISES from behind the crypto dock to sit stacked directly above it for 30s,
+      then slides back down — the dock keeps rotating underneath. (On a 110px
+      source with no headroom it rises in-dock instead.) NOT the rail. Price:
+      DexScreener pair → CoinGecko id → rotation list. Debuts ~5s+one poll.
     • $CSGN BEAT — csgn/liveFee/nowLive: always-on $CSGN price card + live
       "creator fees this session" card in the crypto-first lead.
     • GOVERNANCE — governance/vote: holder beats + tonight's vote with a coarse
@@ -100,17 +114,48 @@
   --mono:ui-monospace,"JetBrains Mono",Consolas,monospace;
 }
 *{box-sizing:border-box}
-html,body{margin:0;width:1930px;height:110px;overflow:hidden;background:transparent;font-family:var(--cond);}
-.shell{display:flex;width:1930px;height:110px;background:var(--shell);border-top:1px solid rgba(255,35,70,.55);position:relative}
+/* The band is always 110px and PINNED TO THE BOTTOM of the viewport. When the
+   OBS browser source is made taller than 110 (recommended 1930×240), the space
+   ABOVE the band is transparent HEADROOM used by the rising coin spotlight and
+   the optional two-row BREAKING bar. At exactly 110px there's no headroom and
+   both features gracefully fall back to in-band behaviour — nothing breaks. */
+html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;background:transparent;font-family:var(--cond);position:relative}
+.shell{display:flex;width:1930px;height:110px;background:var(--shell);border-top:1px solid rgba(255,35,70,.55);position:absolute;left:0;bottom:0;z-index:2}
+/* Paint the shell colour a few px BELOW the band (clipped by body overflow) so a
+   sub-pixel/scrollbar seam can never leave a gap under the bar at the very bottom. */
+.shell::after{content:"";position:absolute;left:0;right:0;top:100%;height:8px;background:var(--shell)}
+
+/* ── rising coin spotlight — a second token box that slides UP from behind the
+   crypto dock to sit directly above it (both visible, stacked) for its dwell,
+   then slides back down behind the dock. z-index 1 keeps it hidden behind the
+   opaque dock at rest; only the part that clears the band's top edge shows. ── */
+.riser{position:absolute;right:0;bottom:110px;width:400px;height:110px;z-index:1;overflow:hidden;
+  background:radial-gradient(circle at 50% 50%,#131313 0%,#000 100%);border-left:1px solid #202020;
+  font-family:var(--mono);transform:translateY(110px);transition:transform .62s cubic-bezier(.22,1,.36,1);
+  box-shadow:inset 0 0 0 2px rgba(255,180,60,.6),inset 0 0 30px rgba(255,150,40,.30),0 -10px 26px rgba(0,0,0,.6)}
+.riser.up{transform:translateY(0)}
+.riser[hidden]{display:none}
+.riser .c-layer{position:absolute;inset:0;padding:7px 12px 6px;display:flex;flex-direction:column;justify-content:space-between;transform:none}
+
+/* ── two-row BREAKING — a red bar that occupies the headroom directly above the
+   band so the news stays up while the ticker keeps rotating below it. ── */
+.brk-row{position:absolute;left:0;right:0;bottom:110px;height:98px;z-index:5;display:flex;align-items:stretch;
+  background:linear-gradient(90deg,#8a0010,#e10022 32%,#ff2346 72%,#8a0010);
+  box-shadow:inset 0 0 46px rgba(255,20,50,.5),0 -6px 20px rgba(0,0,0,.55);animation:brk-in .4s cubic-bezier(.2,.85,.2,1)}
+.brk-row[hidden]{display:none}
 
 /* ── brand block ─────────────────────────────────────────────────────────── */
 .brand{width:110px;height:110px;flex:none;background:#0c0c0e;display:flex;align-items:center;justify-content:center;border-right:1px solid #1c1c22}
 .brand img{width:96px;height:96px;border-radius:9px;display:block}
 
 /* ── league pill (static column) ─────────────────────────────────────────── */
-.pill{width:150px;height:110px;flex:none;display:flex;align-items:center;justify-content:center;
-  font-size:27px;font-weight:900;font-style:italic;color:#fff;text-transform:uppercase;letter-spacing:.02em;
-  box-shadow:0 0 8px rgba(0,0,0,.5) inset;background:#222;transition:background .3s;text-align:center;line-height:1;padding:0 8px;overflow:hidden;white-space:nowrap}
+.pill{width:158px;height:110px;flex:none;display:flex;align-items:center;justify-content:center;
+  font-size:30px;font-weight:900;font-style:italic;color:#fff;text-transform:uppercase;letter-spacing:.01em;
+  box-shadow:0 0 8px rgba(0,0,0,.5) inset;background:#222;transition:background .3s;text-align:center;line-height:1.02;padding:0 8px;overflow:hidden;
+  white-space:normal;overflow-wrap:anywhere;hyphens:none}
+/* Long multi-word labels ("RIGHT NOW") wrap to two centred lines and step the
+   font down a touch so nothing clips the 158px pill; single words stay big. */
+.pill.two{font-size:26px;letter-spacing:0}
 .pill.dk{color:#161616}
 
 /* ── sports window ───────────────────────────────────────────────────────── */
@@ -127,48 +172,63 @@ html,body{margin:0;width:1930px;height:110px;overflow:hidden;background:transpar
 .face.b{transform:rotateX(180deg)}
 
 /* game panel */
-.gamebox{position:relative;flex:1;height:94px;display:flex;align-items:center;gap:18px;padding:0 20px;color:#fff;
+.gamebox{position:relative;flex:1;height:94px;display:flex;align-items:center;justify-content:center;gap:46px;padding:0 20px;color:#fff;
   background:radial-gradient(circle at 30% 50%,#0b0b0b 0%,#141414 100%);border-radius:6px;overflow:hidden;
   box-shadow:inset 0 3px 6px rgba(255,255,255,.05),inset 0 -4px 8px rgba(0,0,0,.6)}
 /* stacked two-row scoreboard (away over home) — scores in a fixed right
    column so they align vertically; records ride the main face in grey */
-.rows{flex:1;display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:0}
-.trow{display:grid;grid-template-columns:30px minmax(0,1fr) 104px;align-items:center;gap:12px;height:39px}
-.tlogo{width:30px;height:30px;object-fit:contain;justify-self:center;filter:brightness(1.15)}
-.tname{display:flex;align-items:baseline;gap:11px;min-width:0}
-.abbr{font-size:31px;font-weight:900;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1;text-shadow:0 0 6px rgba(0,0,0,.8)}
-.rec{font-size:15px;font-weight:700;color:#9a9aa4;font-family:var(--mono);white-space:nowrap}
-.scorecell{display:flex;align-items:center;justify-content:flex-end;gap:6px}
-.score{font-size:35px;font-weight:900;color:#fff;font-variant-numeric:tabular-nums;line-height:1;text-shadow:0 0 8px rgba(255,255,255,.35)}
+/* Shrink-to-fit + centred (via .gamebox justify-content) so the score sits
+   right beside the matchup instead of pinned to the far edge with a dead gap;
+   the away/home rows share this block's width so their scores stay aligned. */
+.rows{flex:0 1 auto;display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0;max-width:60%}
+.trow{display:grid;grid-template-columns:44px minmax(0,1fr) 128px;align-items:center;gap:22px;height:43px}
+.tlogo{width:42px;height:42px;object-fit:contain;justify-self:center;filter:brightness(1.15)}
+.tname{display:flex;align-items:baseline;gap:14px;min-width:0}
+.abbr{font-size:41px;font-weight:900;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1;text-shadow:0 0 6px rgba(0,0,0,.8)}
+.rec{font-size:27px;font-weight:800;color:#b6b6c0;font-family:var(--mono);white-space:nowrap;letter-spacing:-.01em}
+.scorecell{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.score{font-size:47px;font-weight:900;color:#fff;font-variant-numeric:tabular-nums;line-height:1;text-shadow:0 0 8px rgba(255,255,255,.35)}
 .score.win{color:var(--gold);text-shadow:0 0 10px rgba(255,207,64,.5)}
 .win-arrow{font-size:13px;color:var(--gold)}
 .poss{width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 7px var(--gold);flex:none;align-self:center}
 /* status cell — fixed width so every league lines up */
-.cell{width:170px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-  border-left:2px solid rgba(255,255,255,.85);padding-left:16px;text-transform:uppercase;font-weight:800;height:76px}
-.cell .l1{font-size:18px;color:#ccc;white-space:nowrap;max-width:164px;overflow:hidden;text-overflow:ellipsis}
-.cell .l2{font-size:23px;color:#fff;white-space:nowrap;max-width:164px;overflow:hidden;text-overflow:ellipsis}
+/* status / game-detail block — sized to read from across a room and fill the
+   right side of the panel; FINAL and the TV network are the headline elements. */
+.cell{width:270px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  border-left:2px solid rgba(255,255,255,.85);padding-left:26px;text-transform:uppercase;font-weight:800;height:92px}
+.cell .l1{font-size:24px;color:#c9c9d2;white-space:nowrap;max-width:250px;overflow:hidden;text-overflow:ellipsis;letter-spacing:.02em}
+.cell .l2{font-size:40px;line-height:.96;color:#fff;white-space:nowrap;max-width:256px;overflow:hidden;text-overflow:ellipsis}
+.cell .l2.fin{font-size:52px;font-weight:900;color:var(--gold);letter-spacing:.02em;text-shadow:0 0 12px rgba(255,207,64,.4)}
 .cell .l2.rz{color:var(--loss);text-shadow:0 0 6px rgba(255,75,75,.6)}
-.cell .l3{font-size:11px;font-weight:700;color:#8a8a94;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis;text-transform:none}
-.cell .tv{font-size:11px;font-weight:800;color:#6db3ff;letter-spacing:.1em;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis}
-/* baseball live cell */
-.bb{display:flex;align-items:center;gap:12px}
-.dia{position:relative;width:38px;height:32px;flex:none}
-.base{position:absolute;width:12px;height:12px;background:#3a3a42;border-radius:2px;transform:rotate(45deg)}
-.base.on{background:var(--gold);box-shadow:0 0 7px rgba(255,207,64,.85)}
-.b2{left:13px;top:0}.b3{left:0;bottom:2px}.b1{right:0;bottom:2px}
-.bbr{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
-.inn{font-size:16px;font-weight:900;color:#fff;white-space:nowrap}
-.cnt{font-size:13px;color:#ccc;font-family:var(--mono)}
-.outs{display:flex;gap:3px}
-.out{width:7px;height:7px;border-radius:50%;background:#3a3a42}
+.cell .l3{font-size:15px;font-weight:700;color:#9a9aa4;white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis;text-transform:none}
+/* national TV network as a bold blue badge — much bigger and clearer than before */
+.cell .tv{font-size:21px;font-weight:900;color:#a9ccff;background:rgba(70,140,255,.15);border:1px solid rgba(95,160,255,.45);
+  border-radius:6px;padding:2px 11px;letter-spacing:.05em;white-space:nowrap;max-width:246px;overflow:hidden;text-overflow:ellipsis}
+/* baseball live cell — bigger diamond + roomier count so it never crushes */
+.bb{display:flex;align-items:center;gap:16px}
+.dia{position:relative;width:50px;height:42px;flex:none}
+.base{position:absolute;width:16px;height:16px;background:#3a3a42;border-radius:2px;transform:rotate(45deg)}
+.base.on{background:var(--gold);box-shadow:0 0 8px rgba(255,207,64,.85)}
+.b2{left:17px;top:0}.b3{left:0;bottom:3px}.b1{right:0;bottom:3px}
+.bbr{display:flex;flex-direction:column;align-items:flex-start;gap:3px}
+.inn{font-size:22px;font-weight:900;color:#fff;white-space:nowrap;line-height:1}
+.cnt{font-size:17px;color:#ccc;font-family:var(--mono);line-height:1}
+.outs{display:flex;gap:4px}
+.out{width:9px;height:9px;border-radius:50%;background:#3a3a42}
 .out.on{background:var(--loss);box-shadow:0 0 5px rgba(255,75,75,.7)}
 /* event card */
 .event{flex:1;display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0}
-.ev-kick{font-size:18px;font-weight:800;color:#aaa;text-transform:uppercase;letter-spacing:.1em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev-kick{font-size:22px;font-weight:800;color:#aaa;text-transform:uppercase;letter-spacing:.1em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ev-kick.rn{color:var(--red);text-shadow:0 0 8px rgba(255,35,70,.4)}
-.ev-title{font-size:42px;font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 0 8px rgba(0,0,0,.9);line-height:1.02}
-.ev-sub{font-size:25px;font-weight:700;color:#d9d9d9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}
+/* Two-line card (kicker + title): title runs huge to fill the band. */
+.ev-title{font-size:52px;font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 0 8px rgba(0,0,0,.9);line-height:1.02}
+.ev-sub{font-size:30px;font-weight:700;color:#d9d9d9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}
+/* Three-line card (kicker + title + subtitle) steps everything down so all
+   three rows fit the 94px game panel without vertical clipping. */
+.event.sub{gap:2px}
+.event.sub .ev-kick{font-size:20px}
+.event.sub .ev-title{font-size:40px}
+.event.sub .ev-sub{font-size:26px}
 /* ── X (tweet) showcase card — ESPN/UFC-style, 30s dwell ──────────────────── */
 .tweet{flex:1;height:94px;display:flex;align-items:center;gap:20px;padding:0 24px;min-width:0}
 .tw-avatar{width:66px;height:66px;border-radius:50%;flex:none;object-fit:cover;background:#1d1d22;border:1px solid rgba(255,255,255,.18)}
@@ -181,24 +241,26 @@ html,body{margin:0;width:1930px;height:110px;overflow:hidden;background:transpar
 .tw-text{font-size:29px;font-weight:700;color:#e9e9ee;line-height:1.08;overflow:hidden;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .tw-x{width:42px;height:42px;flex:none;color:#fff;opacity:.92}
-/* golf leaderboard */
-.golf{flex:1;height:94px;display:flex;flex-direction:column;padding:6px 4px 6px 0;min-width:0}
-.golf-head{display:flex;align-items:baseline;gap:12px;padding:0 4px 3px}
-.golf-title{font-size:16px;font-weight:900;text-transform:uppercase;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.golf-round{font-size:12px;font-weight:800;color:var(--gold);text-transform:uppercase;letter-spacing:.08em;flex:none}
-.golf-grid{flex:1;display:grid;grid-template-columns:1fr 1fr;column-gap:22px;min-height:0}
-.golf-col{display:flex;flex-direction:column;justify-content:space-between}
-.golf-hrow{display:grid;grid-template-columns:34px 1fr 52px 46px;gap:6px;font-size:9.5px;font-weight:800;letter-spacing:.14em;color:#8a8a94;text-transform:uppercase;padding-bottom:2px;border-bottom:1px solid rgba(255,255,255,.16)}
-.golf-hrow span:nth-child(1),.golf-hrow span:nth-child(3),.golf-hrow span:nth-child(4){text-align:right}
-.golf-row{display:grid;grid-template-columns:34px 1fr 52px 46px;align-items:center;gap:6px;font-size:13.5px;line-height:1;color:#e8e8ec;border-bottom:1px solid rgba(255,255,255,.05);flex:1}
-.golf-row:nth-child(odd){background:rgba(255,255,255,.025)}
-.golf-row.lead .nm{color:#fff;text-shadow:0 0 8px rgba(255,207,64,.3)}
-.golf-row.lead .pos{color:var(--gold)}
-.golf-row .pos{font-weight:900;color:#cfcfd6;font-family:var(--mono);font-size:12px;text-align:right}
-.golf-row .nm{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}
-.golf-row .sc{font-weight:900;text-align:right;font-family:var(--mono)}
-.golf-row .sc.under{color:var(--green)} .golf-row .sc.over{color:var(--loss)}
-.golf-row .thru{color:#9a9aa4;text-align:right;font-family:var(--mono);font-size:11px}
+/* golf — three players at a time, big, with headshots (rotates through the field) */
+.golf3{flex:1;height:94px;display:flex;align-items:stretch;gap:16px;padding:4px 6px;min-width:0}
+.g3-rail{flex:none;width:230px;display:flex;flex-direction:column;justify-content:center;gap:5px;border-right:2px solid rgba(255,255,255,.22);padding-right:16px}
+.g3-tour{font-size:25px;font-weight:900;text-transform:uppercase;color:#fff;line-height:1.02;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.g3-round{font-size:16px;font-weight:800;color:var(--gold);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.g3-cards{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;min-width:0}
+.g3-card{display:flex;align-items:center;gap:13px;padding:0 15px;background:rgba(255,255,255,.03);border-radius:9px;min-width:0}
+.g3-card.lead{background:linear-gradient(90deg,rgba(255,207,64,.16),rgba(255,207,64,.03));box-shadow:inset 0 0 0 1px rgba(255,207,64,.4)}
+.g3-photo{width:60px;height:60px;border-radius:9px;object-fit:cover;object-position:top center;flex:none;background:#1d1d22;border:1px solid rgba(255,255,255,.16)}
+.g3-photo.ph{display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:900;color:#fff;font-family:var(--cond);background:linear-gradient(135deg,#2a2a33,#15151a)}
+/* name on its own full-width line so it never ellipsizes; pos·thru·score beneath */
+.g3-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.g3-name{font-size:27px;font-weight:900;text-transform:uppercase;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1}
+.g3-line{display:flex;align-items:baseline;gap:11px;min-width:0}
+.g3-pos{font-size:19px;font-weight:900;font-family:var(--mono);color:#cfcfd6;flex:none;line-height:1}
+.g3-card.lead .g3-pos{color:var(--gold)}
+.g3-thru{font-size:13px;font-weight:700;color:#9a9aa4;font-family:var(--mono);white-space:nowrap;letter-spacing:.04em}
+.g3-score{font-size:29px;font-weight:900;font-family:var(--mono);color:#e8e8ec;line-height:1;margin-left:auto;flex:none}
+.g3-score.under{color:var(--green)} .g3-score.over{color:var(--loss)}
 /* stats face */
 .stats{flex:1;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:20px;min-width:0}
 .stat-side{display:flex;flex-direction:column;gap:3px;min-width:0}
@@ -214,7 +276,9 @@ html,body{margin:0;width:1930px;height:110px;overflow:hidden;background:transpar
 .live-glow{animation:livePulse 2s infinite ease-in-out}
 @keyframes goldShimmer{0%{background-position:-300px 0}100%{background-position:300px 0}}
 .final-shimmer::before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,rgba(255,215,0,0) 0%,rgba(255,215,0,.22) 50%,rgba(255,215,0,0) 100%);background-size:300px 100%;animation:goldShimmer 4s linear infinite;z-index:1;pointer-events:none}
-.live-chip{position:absolute;top:6px;right:8px;z-index:3;font-size:10px;font-weight:900;letter-spacing:.18em;color:#fff;background:var(--red);border-radius:3px;padding:2px 6px;text-transform:uppercase}
+/* LIVE chip rides the top-LEFT of the game panel (over the scoreboard's dead
+   corner) so it never sits on top of the baseball/status cell on the right. */
+.live-chip{position:absolute;top:5px;left:8px;z-index:3;font-size:11px;font-weight:900;letter-spacing:.18em;color:#fff;background:var(--red);border-radius:3px;padding:2px 7px;text-transform:uppercase}
 
 /* ── league wipe + stinger ───────────────────────────────────────────────────
    Staged phases (slide in → hold covered → slide out) that travel ONE way,
@@ -313,8 +377,17 @@ html,body{margin:0;width:1930px;height:110px;overflow:hidden;background:transpar
   box-shadow:0 0 26px rgba(0,0,0,.55);animation:brk-flash 1.1s steps(1,end) infinite}
 .brk-kick::before{content:"⚠";margin-right:14px;font-style:normal}
 .brk-body{flex:1;overflow:hidden;position:relative;display:flex;align-items:center;padding:0 28px}
-.brk-text{font-size:32px;font-weight:800;color:#fff;white-space:nowrap;text-shadow:0 2px 10px rgba(0,0,0,.5);will-change:transform}
+/* Optional second line: the body holds a centred column of a headline + subline.
+   The subline collapses when empty so single-line breakings look unchanged. */
+.brk-lines{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:3px}
+.brk-text{font-size:32px;font-weight:800;color:#fff;white-space:nowrap;text-shadow:0 2px 10px rgba(0,0,0,.5);will-change:transform;overflow:hidden;text-overflow:ellipsis}
+.brk-sub{font-size:22px;font-weight:700;color:rgba(255,255,255,.92);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 2px 8px rgba(0,0,0,.5)}
+.brk-sub:empty{display:none}
 .brk-text.scroll{animation:brk-scroll linear infinite}
+/* two-row bar: slightly tighter kicker so it fits the 98px headroom strip */
+.brk-row .brk-kick{font-size:34px;padding:0 22px}
+.brk-row .brk-text{font-size:34px}
+.brk-row .brk-sub{font-size:20px}
 @keyframes brk-flash{0%,49%{background:#6d000e}50%,100%{background:#ff2346}}
 @keyframes brk-in{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:none}}
 @keyframes brk-scroll{from{transform:translateX(0)}to{transform:translateX(var(--brk-shift,-50%))}}
@@ -345,8 +418,11 @@ html,body{margin:0;width:1930px;height:110px;overflow:hidden;background:transpar
     </div>
     <div class="c-layer inc" id="c-inc"></div>
   </div>
-  <div class="breaking" id="breaking" hidden><div class="brk-kick">Breaking</div><div class="brk-body"><span class="brk-text" id="brk-text"></span></div></div>
+  <div class="breaking" id="breaking" hidden><div class="brk-kick">Breaking</div><div class="brk-body"><div class="brk-lines"><span class="brk-text" id="brk-text"></span><span class="brk-sub" id="brk-sub"></span></div></div></div>
 </div>
+<!-- Headroom overlays (only visible when the OBS source is taller than 110px) -->
+<div class="riser" id="riser" hidden><div class="c-layer promoted"></div></div>
+<div class="brk-row" id="brk-row" hidden><div class="brk-kick">Breaking</div><div class="brk-body"><div class="brk-lines"><span class="brk-text" id="brk-row-text"></span><span class="brk-sub" id="brk-row-sub"></span></div></div></div>
 
 <script>
 "use strict";
@@ -381,8 +457,11 @@ const CSGN_LOGO_URI="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAASABIAAD/4RvnRXhp
      rightNow:  [{tag, text}, …]        → "RIGHT NOW" rail; leads every cycle.
                                           A CHANGE retriggers the cycle so the
                                           update plays at once, from the top.
-     breaking:  "text" | {text} | null  → red BREAKING takeover; STAYS on screen
-                                          over everything until the admin clears it.
+     breaking:  "text" | {text, text2?, mode?} | null → red BREAKING; STAYS until
+                                          the admin clears it. text2 = optional 2nd
+                                          line. mode:"row" runs it as its own bar
+                                          above the ticker (taller source); else a
+                                          full-band takeover.
      spotlight: {symbol, coingeckoId?, dexPair?, dexChain?, note?} | null
                                         → a promoted coin box RISES from the
                                           crypto dock (two boxes briefly stacked)
@@ -404,6 +483,7 @@ const CSGN_LOGO_URI="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAASABIAAD/4RvnRXhp
    The doc is world-readable (firestore.rules) so this file can poll it
    unauthenticated. Any fetch/shape error is treated as "no config". */
 const FS_TICKER_URL="https://firestore.googleapis.com/v1/projects/csgn-ac44b/databases/(default)/documents/config/ticker";
+const FS_ACTIONS_URL="https://firestore.googleapis.com/v1/projects/csgn-ac44b/databases/(default)/documents/public/onAirActions";
 
 /** Decode one Firestore REST value object into a plain JS value. */
 function decodeFs(v){
@@ -423,7 +503,8 @@ function decodeFs(v){
   return null;
 }
 
-let adminCfg={rightNow:[],spotlight:null,breaking:null,governance:[],vote:null,csgn:null,liveFee:null,nowLive:null,upNext:null,buys:[],tweets:[]};
+let adminCfg={rightNow:[],spotlight:null,breaking:null,chyron:null,governance:[],vote:null,csgn:null,liveFee:null,nowLive:null,upNext:null,buys:[],tweets:[],showActions:false};
+let onAirActions={total:0,votes:0,submissions:0,spotlights:0,buys:0};
 let lastCfgSig="",lastRnSig="";
 async function adminCfgRefresh(){
   try{
@@ -445,10 +526,17 @@ async function adminCfgRefresh(){
         note:String(rawSpot.note||"")}
       :null;
 
-    // BREAKING — a string or {text}; stays on screen until the admin clears it
-    const rawBrk=dec("breaking");
-    const breaking=(typeof rawBrk==="string"&&rawBrk.trim())?{text:rawBrk.trim()}
-      :(rawBrk&&typeof rawBrk==="object"&&rawBrk.text?{text:String(rawBrk.text)}:null);
+    // BREAKING — string | {text, text2?, mode?}; stays on until the admin clears
+    // it. text2 = optional second line. mode:"row" = its own bar above the ticker
+    // (needs a taller source); anything else = full-band takeover (default).
+    const breaking=normalizeBreaking(dec("breaking"));
+
+    // MAIN CHYRON — {kicker, title, subtitle, pill?}: full manual control of the
+    // three headline lines. Leads the rotation. Null/blank → nothing shown.
+    const rawChy=dec("chyron")||null;
+    const chyron=rawChy&&typeof rawChy==="object"&&(String(rawChy.title||"").trim()||String(rawChy.kicker||"").trim())
+      ?{kicker:String(rawChy.kicker||""),title:String(rawChy.title||""),subtitle:String(rawChy.subtitle||""),pill:String(rawChy.pill||"")}
+      :null;
 
     // programming governance beats + tonight's holder vote
     const rawGov=dec("governance")||[];
@@ -493,8 +581,19 @@ async function adminCfgRefresh(){
       .map((t)=>({name:String(t.name||t.handle||"CSGN"),handle:String(t.handle||"").replace(/^@/,""),
         text:String(t.text),avatar:String(t.avatar||""),verified:!!t.verified}));
 
-    adminCfg={rightNow,spotlight,breaking,governance,vote,csgn,liveFee,nowLive,upNext,buys,tweets};
+    // show the live viewer→on-air action counter on air when the admin flips it on
+    const showActions=!!dec("showActions");
+
+    adminCfg={rightNow,spotlight,breaking,chyron,governance,vote,csgn,liveFee,nowLive,upNext,buys,tweets,showActions};
   }catch{ /* keep last good adminCfg */ }
+
+  // Live "fans on the board" counter (public/onAirActions) — best-effort; 404s
+  // until the first action lands, in which case we simply keep the zeros.
+  try{
+    const ra=await fetch(FS_ACTIONS_URL,{cache:"no-store"});
+    if(ra.ok){const af=(await ra.json()).fields||{};const n=(k)=>Number(decodeFs(af[k])||0)||0;
+      onAirActions={total:n("total"),votes:n("votes"),submissions:n("submissions"),spotlights:n("spotlights"),buys:n("buys")};}
+  }catch{/* keep last good counter */}
 
   onSpotlightCfg(adminCfg.spotlight);
   applyBreaking(adminCfg.breaking);
@@ -503,7 +602,7 @@ async function adminCfgRefresh(){
   // Any admin content change rebuilds the rotation; only a fresh RIGHT NOW rail
   // RETRIGGERS the cycle so that specific update plays immediately, from the top.
   const rnSig=JSON.stringify(adminCfg.rightNow);
-  const cfgSig=JSON.stringify([adminCfg.rightNow,adminCfg.governance,adminCfg.vote,adminCfg.tweets]);
+  const cfgSig=JSON.stringify([adminCfg.rightNow,adminCfg.governance,adminCfg.vote,adminCfg.tweets,adminCfg.chyron,adminCfg.showActions]);
   if(cfgSig!==lastCfgSig){
     const rnChanged=rnSig!==lastRnSig&&lastCfgSig!=="";
     lastCfgSig=cfgSig; lastRnSig=rnSig;
@@ -514,6 +613,29 @@ async function adminCfgRefresh(){
   }
 }
 
+/** "Fans on the board" — the live viewer→on-air action counter as a rotation
+ *  card. Only shown when the admin flips showActions on and there are actions. */
+function buildActionsGroup(a,show){
+  if(!show||!a||!(a.total>0))return null;
+  const parts=[];
+  if(a.votes)parts.push(`${a.votes} VOTES`);
+  if(a.submissions)parts.push(`${a.submissions} HEADLINES`);
+  if(a.spotlights)parts.push(`${a.spotlights} SPOTLIGHTS`);
+  const sub=(parts.length?parts.join(" · ")+" · ":"")+"HOLD $CSGN TO STEER THE BROADCAST · CSGN.FUN";
+  return {league:{key:"actions",label:"FAN POWER",className:"league-rightnow"},
+    items:[{kind:"event",leagueKey:"actions",kicker:"VIEWERS ON THE BOARD",kickerClass:"csgn",
+      title:`${a.total.toLocaleString("en-US")} FAN ACTIONS ON AIR TONIGHT`,subtitle:sub,
+      live:false,isFinal:false,pregame:false,status:{date:"",time:""},sortDate:new Date()}]};
+}
+/** Admin-authored "main chyron": full manual control of the three lines
+ *  (kicker / headline / subline). Leads the rotation; null when unset. */
+function buildChyronGroup(c){
+  if(!c||!(String(c.title||"").trim()||String(c.kicker||"").trim()))return null;
+  return {league:{key:"chyron",label:(c.pill||"CSGN").toUpperCase(),className:"league-rightnow"},
+    items:[{kind:"event",leagueKey:"chyron",title:String(c.title||""),subtitle:String(c.subtitle||""),
+      kicker:String(c.kicker||""),kickerClass:"csgn",live:false,isFinal:false,pregame:false,
+      status:{date:"",time:""},sortDate:new Date()}]};
+}
 /** The admin "Right Now" rail as a rotation group (null when empty). */
 function buildRightNowGroup(items){
   if(!items||!items.length)return null;
@@ -910,17 +1032,28 @@ function parseGolfEvent(l,ev){
   const st=statusType(comp,ev),state=stateOf(comp,ev),start=new Date(ev.date||comp?.date||Date.now());
   const rows=[...cs]
     .sort((a,b)=>(parseFloat(a.order??a.rank??999))-(parseFloat(b.order??b.rank??999)))
-    .slice(0,10)
+    .slice(0,9)
     .map((c,i)=>{
       const pos=cleanText(c.status?.position?.displayName||c.status?.position?.id||String(i+1));
       const score=cleanText(typeof c.score==="object"?(c.score?.displayValue??""):(c.score??""))||"E";
       let thru=cleanText(c.status?.thru!=null?String(c.status.thru):"");
       if(thru==="18")thru="F";
       if(!thru)thru=cleanText(c.status?.displayValue||"");
-      return {pos,name:competitorName(c),score,thru};
+      const photo=c.athlete?.headshot?.href||c.headshot?.href||"";
+      return {pos,name:competitorName(c),score,thru,photo,idx:i};
     });
   const round=comp?.status?.period?`R${comp.status.period}`:cleanText(st.shortDetail||"");
-  return [{kind:"golf",leagueKey:l.key,title:cleanText(ev.shortName||ev.name||l.label),round,rows,
+  const title=cleanText(ev.shortName||ev.name||l.label);
+  const base=start.getTime();
+  // Split the field into faces of 3 so the board ROTATES through the leaderboard
+  // (big cards with headshots) instead of cramming 10 into one tiny table.
+  const groups=[];
+  for(let i=0;i<rows.length;i+=3){
+    groups.push({kind:"golf",leagueKey:l.key,title,round,rows:rows.slice(i,i+3),
+      live:state==="in",isFinal:state==="post",pregame:state==="pre",
+      status:{date:displayDate(start),time:displayTime(start)},sortDate:new Date(base+i)});
+  }
+  return groups.length?groups:[{kind:"golf",leagueKey:l.key,title,round,rows:[],
     live:state==="in",isFinal:state==="post",pregame:state==="pre",
     status:{date:displayDate(start),time:displayTime(start)},sortDate:start}];
 }
@@ -995,6 +1128,13 @@ function renderStatusCell(g){
     return `<div class="cell"><span class="l1">${esc(dt)}</span>
       <span class="l2 ${g.football.redZone?"rz":""}">${esc(g.football.dd)}</span>${tv}</div>`;
   }
+  // Finals: the "Final" label lives in status.date (line1) — lead with it, big
+  // and gold; any detail (OT) rides beneath. Scheduled shows date over time.
+  if(g.isFinal){
+    const fin=g.status.date||g.status.time||"Final";
+    const sub=(g.status.time&&g.status.time!==g.status.date)?g.status.time:(g.subnote||"");
+    return `<div class="cell"><span class="l2 fin">${esc(fin)}</span>${sub?`<span class="l3">${esc(sub)}</span>`:""}${tv}</div>`;
+  }
   const d1=g.status.date?`<span class="l1">${esc(g.status.date)}</span>`:"";
   return `<div class="cell">${d1}<span class="l2">${esc(g.status.time)}</span>${g.subnote?`<span class="l3">${esc(g.subnote)}</span>`:""}${tv}</div>`;
 }
@@ -1021,7 +1161,7 @@ function renderRows(g){
 function renderEventCard(g){
   const rn=g.leagueKey==="rightnow";
   const kc=g.kickerClass||(rn?"rn":"");
-  return `<div class="event">
+  return `<div class="event${g.subtitle?" sub":""}">
     ${g.kicker?`<div class="ev-kick ${kc}">${esc(g.kicker)}</div>`:""}
     <div class="ev-title${g.feeLine?" ev-fee":""}">${esc(g.title)}</div>
     ${g.subtitle?`<div class="ev-sub">${esc(g.subtitle)}</div>`:""}
@@ -1045,15 +1185,28 @@ function golfScoreClass(s){
   if(/^\+/.test(s))return "sc over";
   return "sc";
 }
+/** Golf face: three players at a time, big, with ESPN headshots. parseGolfEvent
+ *  emits one of these per group of 3 so the rotation walks the leaderboard. */
 function renderGolfBoard(g){
-  const HEAD='<div class="golf-hrow"><span>POS</span><span>PLAYER</span><span>TOT</span><span>THRU</span></div>';
-  const col=(rows,startIdx)=>`<div class="golf-col">${HEAD}${rows.map((r,i)=>`<div class="golf-row${startIdx+i===0?" lead":""}">
-      <span class="pos">${esc(r.pos)}</span><span class="nm">${esc(r.name)}</span>
-      <span class="${golfScoreClass(r.score)}">${esc(r.score)}</span><span class="thru">${esc(r.thru)}</span>
-    </div>`).join("")}</div>`;
-  return `<div class="golf">
-    <div class="golf-head"><span class="golf-title">${esc(g.title)}</span><span class="golf-round">${esc(g.round||"")}${g.live?" · LIVE":g.isFinal?" · FINAL":""}</span></div>
-    <div class="golf-grid">${col(g.rows.slice(0,5),0)}${col(g.rows.slice(5,10),5)}</div>
+  const statusTxt=g.live?"LIVE":g.isFinal?"FINAL":"";
+  const cards=(g.rows||[]).map((r)=>{
+    const lead=r.idx===0?" lead":"";
+    const initial=String(r.name||"?").trim().charAt(0).toUpperCase()||"?";
+    const photo=r.photo
+      ?`<img class="g3-photo" src="${esc(r.photo)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'g3-photo ph',textContent:'${esc(initial)}'}))">`
+      :`<div class="g3-photo ph">${esc(initial)}</div>`;
+    const scls=/^-/.test(r.score)?"under":/^\+/.test(r.score)?"over":"";
+    // Golf boards read last-name-only ("Scheffler") — shorter and broadcast-standard.
+    const disp=String(r.name||"").includes(" ")?String(r.name).split(" ").pop():r.name;
+    return `<div class="g3-card${lead}">${photo}
+      <div class="g3-col"><span class="g3-name">${esc(disp)}</span>
+        <div class="g3-line"><span class="g3-pos">${esc(r.pos)}</span><span class="g3-thru">${esc(r.thru?("THRU "+r.thru):"")}</span><span class="g3-score ${scls}">${esc(r.score)}</span></div>
+      </div>
+    </div>`;
+  }).join("");
+  return `<div class="golf3">
+    <div class="g3-rail"><span class="g3-tour">${esc(g.title)}</span><span class="g3-round">${esc(g.round||"")}${statusTxt?" · "+statusTxt:""}</span></div>
+    <div class="g3-cards">${cards}</div>
   </div>`;
 }
 /** Second face, in priority order:
@@ -1122,8 +1275,10 @@ let wipeActive=false,railJumpQueued=false;
 function buildGroups(){
   const leagueGroups=LEAGUES.map((l)=>({league:l,items:(allData[l.key]||[]).slice().sort((a,b)=>new Date(a.sortDate)-new Date(b.sortDate))}))
     .filter((g)=>g.items.length>0);
-  // Crypto-first lead: Right Now rail → $CSGN beat → governance → the sports slate.
+  // Crypto-first lead: Main chyron → Right Now rail → $CSGN beat → governance → slate.
   const lead=[];
+  const chy=buildChyronGroup(adminCfg.chyron); if(chy)lead.push(chy);
+  const act=buildActionsGroup(onAirActions,adminCfg.showActions); if(act)lead.push(act);
   const rn=buildRightNowGroup(adminCfg.rightNow); if(rn)lead.push(rn);
   lead.push(buildCsgnBeatGroup(adminCfg.csgn,adminCfg.liveFee,adminCfg.nowLive)); // $CSGN always present
   const gov=buildGovernanceGroup(adminCfg.governance,adminCfg.vote); if(gov)lead.push(gov);
@@ -1132,13 +1287,30 @@ function buildGroups(){
 }
 function setPill(league){
   elPill.textContent=league.label;
-  elPill.className=`pill ${DARK_TEXT_PILLS.has(league.key)?"dk":""}`;
+  // Multi-word labels ("RIGHT NOW") wrap to two lines with a slightly smaller
+  // face so they never clip the pill; single words stay full-size.
+  const two=/\s/.test(String(league.label||"").trim());
+  elPill.className=`pill ${two?"two ":""}${DARK_TEXT_PILLS.has(league.key)?"dk":""}`;
   elPill.style.background=`var(--${league.className})`;
 }
 function currentEls(){return showingCur?{on:elCur,off:elNxt}:{on:elNxt,off:elCur}}
+/** Shrink a headline until it fits its column so the main chyron/title can NEVER
+ *  ellipsize — step the font down from its CSS size to a floor, then stop. */
+function fitText(root){
+  if(!root||!root.querySelectorAll)return;
+  root.querySelectorAll(".ev-title,.ev-sub").forEach((el)=>{
+    el.style.fontSize="";                       // start from the CSS-defined size
+    const cw=el.clientWidth; if(!cw)return;      // not laid out yet — skip
+    let size=parseFloat(getComputedStyle(el).fontSize)||0; if(!size)return;
+    const min=Math.max(16,size*0.52);
+    let guard=48;
+    while(el.scrollWidth>cw+1 && size>min && guard-->0){ size-=1.5; el.style.fontSize=size+"px"; }
+  });
+}
 function renderInto(el,g){
   try{el.innerHTML=g?renderItem(g).html:'<div class="face"><div class="gamebox"><div class="event"><div class="ev-title">No games on the board</div><div class="ev-sub">CSGN 24/7 · csgn.fun</div></div></div></div>'}
-  catch(e){console.error("render failed",e);el.innerHTML=""}
+  catch(e){console.error("render failed",e);el.innerHTML="";return}
+  fitText(el); // never let the headline clip into an ellipsis
 }
 function rollTo(g){
   const {on,off}=currentEls();
@@ -1419,8 +1591,15 @@ function coinShow(html,spark,mode,accent){
   cShowCur=!cShowCur;
 }
 
-/* ── coin spotlight engine (now a RISING promoted box, not a takeover) ── */
-let spotSig="",spotLastAt=0,spotActive=false,spotSoonTimer=null,spotHoldTimer=null;
+/* ── coin spotlight engine — a promoted token box that RISES from behind the
+   dock to sit directly above it (both stacked) when the source has headroom,
+   or falls back to an in-dock rising box at exactly 110px. ── */
+const BAND_H=110;
+/* Live read so resizing the OBS source takes effect without a reload. */
+function hasHeadroom(){return (window.innerHeight-BAND_H)>=96;}
+const elRiser=document.getElementById("riser");
+function riseAboveMode(){return !!elRiser&&hasHeadroom();}
+let spotSig="",spotLastAt=0,spotActive=false,spotPending=false,spotSoonTimer=null,spotHoldTimer=null;
 function onSpotlightCfg(cfg){
   const sig=cfg?[cfg.symbol,cfg.coingeckoId,cfg.dexPair,cfg.note].join("|"):"";
   if(sig===spotSig)return;
@@ -1459,15 +1638,34 @@ function renderSpotlight(cfg,px){
     <div class="c-bot"><span class="c-tag spot">SPOTLIGHT</span><span class="c-mv">${esc(cfg.note||"Featured on CSGN · csgn.fun")}</span></div>`;
 }
 async function startSpotlight(cfg){
-  spotActive=true;
+  if(spotPending)return; // guard the async price fetch against a double-fire
+  spotPending=true;
   let px={price:null,chg:null};
   try{px=await fetchSpotPrice(cfg)}catch{/* dashes */}
-  coinShow(renderSpotlight(cfg,px),null,"rise","promoted"); // second box rises into view
-  clearTimeout(spotHoldTimer);
-  spotHoldTimer=setTimeout(()=>{
-    spotActive=false;spotLastAt=Date.now();
-    if(!buyActive)cryptoTick(); // hand the dock straight back to the rotation
-  },CONFIG.SPOTLIGHT_DWELL_MS);
+  if(riseAboveMode()){
+    // The promoted box slides UP from behind the dock and rests directly above
+    // it — two token boxes stacked — while the dock keeps rotating underneath.
+    const layer=elRiser.querySelector(".c-layer");
+    if(layer)layer.innerHTML=renderSpotlight(cfg,px);
+    elRiser.hidden=false;void elRiser.offsetHeight; // ensure it starts translated down
+    elRiser.classList.add("up");
+    spotActive=false; // no dock takeover in rise-above mode
+    clearTimeout(spotHoldTimer);
+    spotHoldTimer=setTimeout(()=>{
+      elRiser.classList.remove("up"); // slide smoothly back down behind the dock
+      spotLastAt=Date.now();
+    },CONFIG.SPOTLIGHT_DWELL_MS);
+  }else{
+    // No headroom (110px source) → the classic in-dock rising box for 30s.
+    spotActive=true;
+    coinShow(renderSpotlight(cfg,px),null,"rise","promoted");
+    clearTimeout(spotHoldTimer);
+    spotHoldTimer=setTimeout(()=>{
+      spotActive=false;spotLastAt=Date.now();
+      if(!buyActive)cryptoTick(); // hand the dock straight back to the rotation
+    },CONFIG.SPOTLIGHT_DWELL_MS);
+  }
+  spotPending=false;
 }
 
 /* ── $CSGN buy notifications (rise from the dock, green accent) ── */
@@ -1502,25 +1700,47 @@ function nextBuy(){
   buyHoldTimer=setTimeout(nextBuy,CONFIG.BUY_DWELL_MS);
 }
 
-/* ── BREAKING overlay: on until the admin clears it ── */
+/* ── BREAKING: full-band takeover, or (mode:"row" + a taller source) its own red
+   bar above the ticker so the rotation keeps running below. Optional 2nd line. ── */
+/** Normalize the admin `breaking` field → {text, text2, mode} | null. Accepts a
+ *  bare string or {text, text2?, mode?}; mode:"row" opts into the two-row bar. */
+function normalizeBreaking(raw){
+  if(typeof raw==="string"&&raw.trim())return {text:raw.trim(),text2:"",mode:"takeover"};
+  if(raw&&typeof raw==="object"&&raw.text)return {
+    text:String(raw.text),text2:String(raw.text2||""),
+    mode:String(raw.mode||"takeover").toLowerCase()==="row"?"row":"takeover"};
+  return null;
+}
+function setLine(id,val){const el=document.getElementById(id);if(el&&el.textContent!==(val||""))el.textContent=val||"";}
 function applyBreaking(b){
-  const el=document.getElementById("breaking");
-  if(!el)return;
-  const txt=document.getElementById("brk-text");
-  if(b&&b.text){
-    if(txt&&txt.textContent!==b.text)txt.textContent=b.text;
-    el.hidden=false;
-  }else el.hidden=true;
+  const over=document.getElementById("breaking");
+  const row=document.getElementById("brk-row");
+  if(!over||!row)return;
+  // "row" mode only when there's headroom above the band; otherwise a row-mode
+  // breaking still shows — as a takeover — so the news is never silently dropped.
+  const rowMode=!!(b&&b.mode==="row"&&hasHeadroom());
+  if(b&&!rowMode){
+    setLine("brk-text",b.text);setLine("brk-sub",b.text2);
+    over.hidden=false;
+  }else over.hidden=true;
+  if(b&&rowMode){
+    setLine("brk-row-text",b.text);setLine("brk-row-sub",b.text2);
+    row.hidden=false;
+  }else row.hidden=true;
 }
 
 let cryptoTickN=0;
-function cryptoTick(){
-  if(spotActive||buyActive)return; // spotlight / buy owns the dock
+/** Fire the spotlight when it's due. In rise-above mode it floats over the dock
+ *  and the rotation continues; in fallback mode it takes the dock for its dwell. */
+function maybeSpotlight(){
+  if(spotActive||spotPending)return;                              // in progress
+  if(riseAboveMode()&&elRiser.classList.contains("up"))return;    // riser already up
   const cfg=adminCfg.spotlight;
-  if(cfg&&(spotLastAt===0||Date.now()-spotLastAt>=CONFIG.SPOTLIGHT_EVERY_MS)){
-    startSpotlight(cfg);
-    return;
-  }
+  if(cfg&&(spotLastAt===0||Date.now()-spotLastAt>=CONFIG.SPOTLIGHT_EVERY_MS))startSpotlight(cfg);
+}
+function cryptoTick(){
+  maybeSpotlight();
+  if(spotActive||buyActive)return; // fallback spotlight / buy owns the dock
   cryptoTickN++;
   const csgn=adminCfg.csgn;
   // Feature $CSGN itself every ~7th tick, and always when there's no external
@@ -1550,7 +1770,7 @@ window.__csgn={formatLedPrice,renderLed,renderItem,renderStatusCell,renderGolfBo
   CONFIG,wipePhases,broadcastRef,dateParamForLeague,sameZonedDay,
   pitcherBrief,broadcastOf,BANANA_BALL_GAMES,bananasItems,renderCoinCard,
   buildCsgnBeatGroup,buildGovernanceGroup,renderBuyCard,shortCountdown,fmtUsd,fmtPriceInline,
-  renderTweet,buildTweetsGroup,renderCsgnCoinCard};
+  renderTweet,buildTweetsGroup,renderCsgnCoinCard,normalizeBreaking,applyBreaking,hasHeadroom,buildChyronGroup,fitText,buildActionsGroup};
 document.documentElement.style.setProperty("--roll-ms",`${CONFIG.ROLL_MS}ms`);
 document.documentElement.style.setProperty("--croll-ms",`${CONFIG.CRYPTO_ROLL_MS}ms`);
 const brandImg=document.getElementById("brand-logo");

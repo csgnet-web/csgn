@@ -158,6 +158,7 @@ export default function Admin() {
   const [currentLiveUrl, setCurrentLiveUrl] = useState('')
   const [currentLiveStreamer, setCurrentLiveStreamer] = useState('')
   const [currentLiveTitle, setCurrentLiveTitle] = useState('')
+  const [onAirActions, setOnAirActions] = useState({ total: 0, votes: 0, submissions: 0, spotlights: 0, buys: 0 })
   const [pushingStream, setPushingStream] = useState(false)
   const [wipingSlots, setWipingSlots] = useState(false)
   const [confirmWipe, setConfirmWipe] = useState(false)
@@ -179,6 +180,15 @@ export default function Admin() {
   const [feeWallet, setFeeWallet] = useState('')
   const [feeDeclineReason, setFeeDeclineReason] = useState('')
   const [feeActionLoading, setFeeActionLoading] = useState<string | null>(null)
+
+  // Live fan-action counter for the dashboard hero
+  useEffect(() => {
+    return onSnapshot(doc(db, 'public', 'onAirActions'), (snap) => {
+      const d = snap.exists() ? snap.data() : {}
+      const n = (k: string) => Number(d[k]) || 0
+      setOnAirActions({ total: n('total'), votes: n('votes'), submissions: n('submissions'), spotlights: n('spotlights'), buys: n('buys') })
+    }, () => {})
+  }, [])
 
   // Listen to current live stream config
   useEffect(() => {
@@ -839,19 +849,39 @@ export default function Admin() {
         {/* ── Overview Tab ── */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Dashboard hero — network status + the live fan-action counter */}
+            <div className={`rounded-2xl border p-5 sm:p-6 flex flex-wrap items-center justify-between gap-4 ${currentLiveUrl ? 'border-red-500/30 bg-gradient-to-r from-red-600/20 via-red-500/[0.07] to-transparent' : 'border-white/[0.08] bg-white/[0.03]'}`}>
+              <div className="min-w-0">
+                <div className="text-[11px] uppercase tracking-[0.2em] text-gray-500 mb-1">Network status</div>
+                <div className={`text-3xl font-black font-display flex items-center gap-2.5 ${currentLiveUrl ? 'text-white' : 'text-gray-300'}`}>
+                  <span className={`w-2.5 h-2.5 rounded-full ${currentLiveUrl ? 'bg-red-500 animate-pulse' : 'bg-gray-600'}`} />
+                  {currentLiveUrl ? 'ON AIR' : 'OFFLINE'}
+                </div>
+                <div className="text-sm text-gray-400 mt-1 truncate">
+                  {currentLiveUrl ? `${currentLiveStreamer || 'CSGN'}${currentLiveTitle ? ` · "${currentLiveTitle}"` : ''}` : 'No broadcast live on /watch'}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-4xl sm:text-5xl font-black font-mono text-white tabular-nums leading-none">{onAirActions.total.toLocaleString()}</div>
+                <div className="text-[11px] uppercase tracking-[0.15em] text-amber-300/90 mt-1.5">fan actions on air</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
               {[
-                { label: 'Total Users', value: users.length, icon: Users, color: 'text-primary-400' },
-                { label: 'Active Streamers', value: streamerCount, icon: Radio, color: 'text-emerald-400' },
-                { label: 'Live / Confirmed Now', value: liveNowCount, icon: Tv, color: 'text-red-400' },
-                { label: 'Slots Loaded', value: slots.length, icon: Clock, color: 'text-accent-400' },
+                { label: 'Total Users', value: users.length, icon: Users, color: 'text-primary-400', bg: 'bg-primary-500/10' },
+                { label: 'Active Streamers', value: streamerCount, icon: Radio, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+                { label: 'Live / Confirmed', value: liveNowCount, icon: Tv, color: 'text-red-400', bg: 'bg-red-500/10' },
+                { label: 'Slots Loaded', value: slots.length, icon: Clock, color: 'text-accent-400', bg: 'bg-accent-500/10' },
+                { label: 'Fan Votes', value: onAirActions.votes, icon: BarChart3, color: 'text-cyan-400', bg: 'bg-cyan-500/10' },
+                { label: 'Coin Spotlights', value: onAirActions.spotlights, icon: Activity, color: 'text-amber-400', bg: 'bg-amber-500/10' },
               ].map((stat) => (
-                <Card key={stat.label} hover={false} className="p-5">
-                  <div className="flex items-center justify-between mb-3">
+                <Card key={stat.label} hover={false} className="p-4">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 ${stat.bg}`}>
                     <stat.icon className={`w-5 h-5 ${stat.color}`} />
                   </div>
-                  <div className="text-3xl font-bold font-display text-white">{stat.value}</div>
-                  <p className="text-sm text-gray-500 mt-0.5">{stat.label}</p>
+                  <div className="text-2xl font-bold font-display text-white tabular-nums">{stat.value}</div>
+                  <p className="text-xs text-gray-500 mt-0.5">{stat.label}</p>
                 </Card>
               ))}
             </div>

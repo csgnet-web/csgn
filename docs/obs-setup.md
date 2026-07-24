@@ -67,13 +67,21 @@ separate local files (which drifted: 100px vs 110px tall, no shared baseline).
 One Browser Source renders the whole bottom band:
 
 ```
-[ CSGN logo 110 ][ league 150 ][ game panel 1258 ][ crypto LED 400 ] = 1920 × 110
+[ CSGN logo 110 ][ league 158 ][ game panel 1260 ][ crypto LED 400 ] = 1930  (band always 110 tall, pinned to the bottom)
 ```
 
 - **Add it:** Browser Source → ✅ *Local file* → `csgn-ticker.html` → Width
-  `1920`, Height `110`, position `X 0, Y 970`. FPS 30 (match output).
-- **Size the `/player` source above it:** `1724 × 970`, centered (16:9 exactly,
-  ~98px brand gutters each side) so the band never crops the live feed.
+  `1930`, **Height `240`, position `X 0, Y 845`** (recommended). FPS 30 (match output).
+- **Why 240 tall.** The visible band is always the bottom **110px**; the extra
+  height is transparent **headroom** above it. That headroom is what lets the
+  **coin spotlight rise up out of the dock** (stacked above it) and a **BREAKING
+  item run as its own row above the ticker**. Put this source **above** the
+  `/player` source in the scene list so those pop-ups draw over the feed; the
+  headroom is otherwise fully transparent and crops nothing. At the old **Height
+  `110`, Y `975`** everything still works — the spotlight rises in-dock and
+  BREAKING takes over the band — so a 110px source keeps running unchanged.
+- **Size the `/player` source:** `1724 × 970`, centered (16:9, ~98px brand
+  gutters each side) so the 110px band never crops the live feed.
 - Broadcast features: fixed segment widths for every league; MLB live shows the
   **base-state diamond, outs and count** (never a dead clock); MLB pregames flip
   to **probable starters** (pitcher + W-L, ERA) and finals to **pitching
@@ -96,15 +104,26 @@ One Browser Source renders the whole bottom band:
   wide-spaced digits, 24h delta, market cap, volume, subscript-zero
   micro-prices (never `$0.00`) and a **large 7d area chart** filling the right
   side of the dock behind the digits.
+- Text is sized to **fill the band**: the matchup + score sit together as a
+  centred group (no dead middle gap), the baseball diamond/count/outs cell is
+  enlarged so it never crushes, long league labels ("RIGHT NOW") wrap to two
+  lines in the pill instead of clipping, and event/coin type steps up across the
+  board — verified by rendering the real 1930×110 geometry.
 - Tuning lives at the top of the file (`CONFIG`, `LEAGUES`, curated fallback
   arrays). Drop a league by commenting it out. Smoke-test after edits with
-  `node docs/obs/ticker-smoke.mjs` (59 checks, no network needed).
+  `node docs/obs/ticker-smoke.mjs` (no network needed).
 - **Admin-driven, no OBS touch** (Admin → Broadcast Ticker card; the band polls
-  the world-readable `config/ticker` doc every ~60s): the **RIGHT NOW rail**
-  (up to 8 headlines, `TAG | text`, leads every rotation cycle like ESPN's The
-  Lead) and the **Coin Spotlight** (any coin by symbol + CoinGecko id or
-  DexScreener pair/URL — a 30s on-fire takeover of the crypto dock every 10
-  minutes until cleared; new picks debut within ~a minute).
+  the world-readable `config/ticker` doc every ~6s):
+  - **RIGHT NOW rail** — up to 8 headlines (`TAG | text`), leads every rotation
+    cycle like ESPN's The Lead.
+  - **Coin Spotlight** — any coin by symbol + CoinGecko id or DexScreener
+    pair/URL. Every 10 min a gold-accented promoted box **rises from behind the
+    crypto dock to sit stacked directly above it** for 30s, then slides back down
+    while the dock keeps rotating (on a 110px source it rises in-dock instead).
+  - **BREAKING** — a headline with an **optional second line**, shown either as a
+    full-band red takeover *or*, with the "own row" toggle (and a 240px-tall
+    source), as **its own red row above the ticker** so the rotation keeps
+    running below it.
 
 ### On-air promos
 
@@ -225,11 +244,61 @@ and Turbo-on-a-rebroadcast-embed is a gray area Twitch has never supported. **No
 something to trust for a 24/7 unattended encoder** — so `?noads` is best reserved
 for a genuinely ad-free source, not a Turbo workaround.
 
+### "Should I switch to Window Capture of a logged-in Turbo browser?"
+
+This is a **different** idea from Turbo-in-CEF above, and a more legitimate one:
+run a **real** Chrome/Firefox window, logged into Twitch on an account that has
+**Turbo** (or is **subscribed** to the channel), and point OBS at it with
+**Window Capture** instead of a Browser Source. On twitch.tv proper, Turbo/sub
+genuinely removes ads, so the capture is ad-free with **no 33s curtain** — the
+feed just cuts in clean. That's the real upside, and it's worth being honest
+that it works. Two things decide whether it's a good trade:
+
+**1. Capture the channel, not the embed.** Turbo's ad-removal is reliable on
+`twitch.tv/<channel>` (theatre/fullscreen). It is **not** reliable inside the
+`embed.twitch.tv` player that `/player` uses — the embed is a separate context
+and modern third-party-cookie blocking often means the Turbo entitlement never
+reaches it, so ads can still run. So the ad-free Window-Capture recipe is
+"logged-in Turbo browser → `twitch.tv/<channel>` fullscreen → Window Capture,"
+which means you **give up `/player`'s Master Control** — BRB grace, auto-return
+on reconnect, the intermission playlist, the FeedGate watchdog, brand wipes, and
+the four-signal LIVE detection. For a 24/7 *unattended* network that automation
+is most of the value, so this path suits a **manned** show far better than the
+always-on channel.
+
+**2. A real browser is more fragile to run unattended than a Browser Source.**
+The gotchas that will actually bite you:
+
+- **Chrome throttles occluded windows.** A browser window that's covered or on a
+  background desktop drops to a few FPS or stops painting — your capture
+  stutters or freezes. Launch the capture browser with
+  `--disable-backgrounding-occluded-windows --disable-renderer-backgrounding
+  --disable-background-timer-throttling` and keep it on its own visible
+  desktop/monitor (or a virtual display).
+- **Autoplay-with-sound needs a gesture.** A normal tab can't force sound (the
+  browser rule `/player` works around only applies inside OBS/CEF), so after
+  every reload someone has to click once for audio. A Browser Source doesn't.
+- **No auto-recovery.** A Browser Source reloads itself after a crash/GPU reset
+  straight back to the right feed; a real window won't re-navigate on its own.
+  You'd need a kiosk/watchdog script to relaunch and re-open the channel.
+- **The session expires.** A real browser profile holds the Turbo login far
+  better than CEF, but it still lapses eventually — someone must re-log-in.
+
+**Recommendation.** Keep the **Browser-Source `/player`** as the 24/7 spine — it
+already guarantees no ad reaches the encode (the 33s mask), forces sound, and
+carries all the automation — and use **`?noads`** on channels you've confirmed
+ad-free with `?peek` to kill the curtain there. Reach for **Window Capture +
+Turbo only for a manned, high-stakes broadcast** where an instant, curtain-free,
+provably ad-free start is worth losing the automation and babysitting the
+window — and capture `twitch.tv/<channel>` directly, hardened as above. Don't
+make it the default encoder.
+
 **The network-grade answer is to not depend on Twitch's ad pipeline at all** —
 have hosts push their feed into CSGN's *own* ingest (RTMP), so there is zero
-Twitch ad surface and `?noads` is simply always correct. That path (and the
-professional-graphics build it unlocks) is in
-[`docs/broadcast-graphics.md`](./broadcast-graphics.md).
+Twitch ad surface, `?noads` is simply always correct, **and** you keep full
+Master Control and graphics. That path (and the professional-graphics build it
+unlocks) is in [`docs/broadcast-graphics.md`](./broadcast-graphics.md), and it's
+the one to invest in.
 
 ### Verifying the encode (do this once before going live)
 

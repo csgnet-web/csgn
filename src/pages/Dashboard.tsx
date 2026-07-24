@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  User, Mail, Wallet, Trophy, Lock,
+  Mail, Wallet, Trophy, Lock,
   CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Crown, Twitch, X as XIcon, Info,
   ChevronLeft, ChevronRight, Radio,
 } from 'lucide-react'
@@ -54,6 +54,10 @@ export default function Dashboard() {
   const feePageCount = Math.max(1, Math.ceil(feeHistory.length / FEE_PAGE_SIZE))
   const safeFeePage = Math.min(feePage, feePageCount - 1)
   const pagedFees = feeHistory.slice(safeFeePage * FEE_PAGE_SIZE, safeFeePage * FEE_PAGE_SIZE + FEE_PAGE_SIZE)
+
+  // Social-profile stats (derived from the same slot history).
+  const totalFeesUSD = useMemo(() => feeHistory.reduce((s, x) => s + (x.creatorFees?.feeOwedUSD || 0), 0), [feeHistory])
+  const totalLiveMinutes = useMemo(() => feeHistory.reduce((s, x) => s + (x.streamActivity?.liveCheckCount || 0), 0), [feeHistory])
 
 
   useEffect(() => {
@@ -162,6 +166,18 @@ Use your email/username and password to access your account.
 
   const savedWallet = profile?.phantom?.walletAddress || profile?.walletAddress
   const twitchDisplay = profile?.twitch?.displayName || profile?.twitch?.username || profile?.twitchUsername
+  const displayName = profile?.displayName || profile?.username || 'CSGN Member'
+  const handle = profile?.username || (profile?.email ? profile.email.split('@')[0] : 'member')
+  const avatarUrl = profile?.twitch?.profileImageUrl || ''
+  const initial = (displayName || '?').trim().charAt(0).toUpperCase() || '?'
+  const role = profile?.role || 'viewer'
+  const xp = profile?.xp ?? 0
+  const stats: Array<[string, string]> = [
+    ['XP', xp.toLocaleString()],
+    ['Slots', String(feeHistory.length)],
+    ['Live min', totalLiveMinutes.toLocaleString()],
+    ['Fees', `$${totalFeesUSD.toFixed(totalFeesUSD >= 100 ? 0 : 2)}`],
+  ]
 
   return (
     <div className="min-h-screen pt-24 lg:pt-32 pb-24">
@@ -192,28 +208,46 @@ Use your email/username and password to access your account.
           </Card>
         )}
 
-        {/* Profile card */}
-        <Card hover={false} className="p-6 bg-white/[0.03] border-red-500/25">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-display font-bold text-white">Account Hub</h1>
-              <div className="mt-2 space-y-1 text-sm text-gray-300">
-                <p className="flex items-center gap-2"><User className="w-4 h-4 text-red-400" /> {profile?.username || profile?.displayName || 'User'}</p>
-                <p className="flex items-center gap-2"><Mail className="w-4 h-4 text-red-400" /> {profile?.email}</p>
-                <p className="flex items-center gap-2"><Crown className="w-4 h-4 text-cyan-400" /> XP {(profile?.xp ?? 0).toLocaleString()}</p>
+        {/* Social profile header — banner, avatar, handle, stat row, connections */}
+        <Card hover={false} className="overflow-hidden p-0 bg-white/[0.03] border-red-500/25">
+          <div className="h-28 sm:h-36 bg-gradient-to-r from-red-600/50 via-red-500/20 to-cyan-500/30 relative">
+            <div className="absolute inset-0 opacity-40" style={{ backgroundImage: 'radial-gradient(circle at 20% 30%, rgba(255,255,255,.14), transparent 45%), radial-gradient(circle at 80% 60%, rgba(60,180,255,.18), transparent 45%)' }} />
+          </div>
+          <div className="px-5 sm:px-7 pb-6 -mt-12 sm:-mt-14">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div className="flex items-end gap-4 min-w-0">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="" className="w-24 h-24 rounded-2xl border-4 border-[#0c0c1a] object-cover bg-[#0c0c1a] shrink-0" />
+                ) : (
+                  <div className="w-24 h-24 rounded-2xl border-4 border-[#0c0c1a] bg-gradient-to-br from-red-500/50 to-cyan-500/40 flex items-center justify-center text-4xl font-black text-white shrink-0">{initial}</div>
+                )}
+                <div className="pb-1 min-w-0">
+                  <h1 className="text-2xl sm:text-3xl font-display font-bold text-white leading-tight truncate">{displayName}</h1>
+                  <p className="text-sm text-gray-400 truncate">@{handle}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pb-1">
+                <Badge variant="blue">{role}</Badge>
+                <Link to="/queue"><Button size="sm" variant="secondary">Get a slot</Button></Link>
               </div>
             </div>
-            <Badge variant="blue">{profile?.role || 'viewer'}</Badge>
-          </div>
 
-          <div className="mt-4 space-y-3">
-            <div className="w-full rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-200 flex items-center gap-2">
-              <Twitch className="w-4 h-4" /> Twitch verified: {twitchDisplay || 'Connected'}
+            {/* Stat row (social "followers"-style) */}
+            <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {stats.map(([k, v]) => (
+                <div key={k} className="rounded-xl bg-white/[0.03] border border-white/[0.06] px-4 py-3">
+                  <div className="text-xl font-bold font-mono text-white tabular-nums">{v}</div>
+                  <div className="text-[11px] uppercase tracking-wide text-gray-500">{k}</div>
+                </div>
+              ))}
             </div>
-            <div className="w-full rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-200 flex items-center gap-2">
-              <Wallet className="w-4 h-4" /> Phantom verified
+
+            {/* Connection chips */}
+            <div className="mt-4 flex flex-wrap gap-2 text-sm">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-emerald-200"><Twitch className="w-4 h-4" /> {twitchDisplay || 'Twitch'}</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-emerald-200"><Wallet className="w-4 h-4" /> {savedWallet ? `${savedWallet.slice(0, 4)}…${savedWallet.slice(-4)}` : 'Phantom'}</span>
+              {profile?.email && <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-gray-300"><Mail className="w-4 h-4 text-gray-500" /> {profile.email}</span>}
             </div>
-            {savedWallet && <p className="text-xs text-gray-500 font-mono flex items-center gap-1"><Wallet className="w-3 h-3" /> Verified: {savedWallet.slice(0, 8)}...{savedWallet.slice(-6)}</p>}
           </div>
         </Card>
 
