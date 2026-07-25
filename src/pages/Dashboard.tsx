@@ -14,6 +14,7 @@ import { fetchSlotsByAssignee, type Slot } from '@/lib/slots'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import MemeVoteCard from '@/components/MemeVoteCard'
 
 export default function Dashboard() {
   const { user, profile, signIn, resendVerification, refreshProfile } = useAuth()
@@ -250,6 +251,9 @@ Use your email/username and password to access your account.
             </div>
           </div>
         </Card>
+
+        {/* Change your Meme-100 token vote from your profile, any time */}
+        <MemeVoteCard />
 
         <Card hover={false} className="p-5">
           <h3 className="text-white font-semibold flex items-center gap-2">

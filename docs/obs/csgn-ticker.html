@@ -31,7 +31,7 @@
     Sports  — ESPN public scoreboard API, all leagues in LEAGUES below,
               refreshed every 90s. Networking identical to the original file.
     Crypto  — CoinGecko markets API: top-50 by market cap + top-100 of the
-              meme-token category, 24h change + 7d sparkline, refreshed every
+              meme-token category, 24h change + 24h sparkline, refreshed every
               90s (2 requests), rotating every 5s.
 
   BROADCAST FEATURES
@@ -345,6 +345,13 @@ html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;ba
 .c-rank.csgn{background:linear-gradient(90deg,#ffcf40,#ff2346);color:#140700}
 .c-tag.pick{background:linear-gradient(90deg,#6db3ff,#1d6fff);color:#00122e;border:none;font-weight:800}
 .c-rank.pick{background:linear-gradient(90deg,#6db3ff,#1d6fff);color:#00122e}
+/* Meme-100 power-ranking leaderboard (top 3) in the dock's middle band */
+.ml-list{height:54px;display:flex;flex-direction:column;justify-content:center;gap:3px;position:relative;z-index:2}
+.ml-row{display:grid;grid-template-columns:22px 1fr auto;align-items:center;gap:8px;font-family:var(--cond)}
+.ml-rank{font-size:15px;font-weight:900;color:#6db3ff;font-family:var(--mono);text-align:center}
+.ml-sym{font-size:17px;font-weight:800;color:#e8e8ec;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ml-d{font-size:14px;font-weight:800;font-family:var(--mono)}
+.ml-d.up{color:var(--green)} .ml-d.down{color:var(--loss)}
 .c-top{display:flex;justify-content:space-between;align-items:center;height:26px;position:relative;z-index:2}
 .c-id{display:flex;align-items:center;gap:8px;min-width:0}
 .c-rank{font-size:11px;font-weight:700;color:#141414;background:var(--gold);border-radius:3px;padding:1px 5px;flex:none}
@@ -367,7 +374,7 @@ html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;ba
 .c-tag.meme{background:rgba(255,35,70,.18);color:#ff8a9c;border:1px solid rgba(255,35,70,.4)}
 .c-tag.top{background:rgba(255,207,64,.14);color:var(--gold);border:1px solid rgba(255,207,64,.35)}
 .c-mv{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-/* Big 7d chart — fills the dock's right side behind the LED digits (area
+/* Big 24h chart — fills the dock's right side behind the LED digits (area
    fill + glow line, drawn at 2× for crispness). A left-edge alpha mask
    fades it out under long prices so the digits always win the overlap. */
 .c-chart{position:absolute;right:8px;bottom:20px;width:210px;height:62px;z-index:1;opacity:.92;
@@ -1599,7 +1606,7 @@ function renderLed(spec){
   return out;
 }
 const compactUsd=(n)=>Number.isFinite(n)?"$"+new Intl.NumberFormat("en-US",{notation:"compact",maximumFractionDigits:1}).format(n):"—";
-/** Big 7d chart for the dock's right side: glow line + gradient area fill +
+/** Big 24h chart for the dock's right side: glow line + gradient area fill +
  *  endpoint dot, drawn at the canvas's native 2× resolution. Decorative —
  *  any failure just leaves the dock without a chart. */
 function drawSpark(canvas,arr){
@@ -1639,10 +1646,10 @@ function drawSpark(canvas,arr){
 function renderCoinCard(c){
   const up=(c.chg??0)>=0;
   return `
-    <div class="c-top"><div class="c-id"><span class="c-rank">#${esc(c.rank)}</span><span class="c-sym">${esc(c.sym)}</span></div>
+    <div class="c-top"><div class="c-id"><span class="c-rank">#${esc(c.powerRank||c.rank)}</span><span class="c-sym">${esc(c.sym)}</span></div>
       <span class="c-delta ${up?"up":"down"}">(24h) ${up?"▲":"▼"} ${c.chg!=null?Math.abs(c.chg).toFixed(2):"–"}%</span></div>
     <div class="c-led">${renderLed(formatLedPrice(c.price))}</div>
-    <div class="c-bot"><span class="c-tag ${c.tag==="TOP 50"?"top":"meme"}">${esc(c.tag)}</span>
+    <div class="c-bot"><span class="c-tag ${c.tag==="TOP 50"?"top":"meme"}">${c.tag==="MEME 100"&&c.powerRank?"MEME POWER":esc(c.tag)}</span>
       <span class="c-mv">MC ${compactUsd(c.mc)} · VOL ${compactUsd(c.vol)}</span></div>
     ${c.spark?'<canvas class="c-chart" width="420" height="124"></canvas>':""}`;
 }
@@ -1650,18 +1657,36 @@ const compactNum=(n)=>!Number.isFinite(n)||n<=0?"0":n>=1e9?(n/1e9).toFixed(1)+"B
 /** Meme-100 community pick: the memecoin with the highest POWER SCORE — a blend
  *  of holder vote weight (50%), 24h volume (30%) and market cap (20%), normalized
  *  across the meme set. Null unless a coin actually has holder votes behind it. */
-function pickCommunity(memes,votes){
-  if(!memes||!memes.length)return null;
+/** Rank the Meme 100 by POWER SCORE — a blend, each factor normalized across the
+ *  set, of: holder $CSGN vote weight (35%), 24h volume (25%), market cap (15%),
+ *  and a social/buzz proxy (25% = turnover vol/mcap + 24h momentum). Returns the
+ *  coins sorted best-first with .power, .powerRank and .votesCell attached. */
+function rankMemes(memes,votes){
+  if(!memes||!memes.length)return [];
   const votesOf=(c)=>Number(votes[c.sym]?.tokens)||0;
-  const maxV=Math.max(1,...memes.map(votesOf)),maxVol=Math.max(1,...memes.map((c)=>c.vol||0)),maxMc=Math.max(1,...memes.map((c)=>c.mc||0));
-  let best=null,bestScore=-1;
-  for(const c of memes){
-    const score=0.5*(votesOf(c)/maxV)+0.3*((c.vol||0)/maxVol)+0.2*((c.mc||0)/maxMc);
-    if(score>bestScore){bestScore=score;best=c;}
-  }
-  return best&&votesOf(best)>0?{coin:best,votes:votes[best.sym]||{tokens:0,wallets:0}}:null;
+  const buzzOf=(c)=>((c.vol||0)/((c.mc||0)||1))+Math.abs(c.chg||0)/100;
+  const nrm=(f)=>{const m=Math.max(1e-9,...memes.map(f));return (c)=>f(c)/m;};
+  const nV=nrm(votesOf),nVol=nrm((c)=>c.vol||0),nMc=nrm((c)=>c.mc||0),nB=nrm(buzzOf);
+  return memes
+    .map((c)=>({...c,power:0.35*nV(c)+0.25*nVol(c)+0.15*nMc(c)+0.25*nB(c),votesCell:votes[c.sym]||{tokens:0,wallets:0}}))
+    .sort((a,b)=>b.power-a.power)
+    .map((c,i)=>({...c,powerRank:i+1}));
 }
-function communityPick(){return pickCommunity(cryptoList.filter((c)=>c.tag==="MEME 100"),memeVotes);}
+/** The #1 Meme-100 coin by power score — but only a "community pick" once real
+ *  holder votes back it (else it's just the market leader, not a community call). */
+function communityPick(){
+  const top=rankMemes(cryptoList.filter((c)=>c.tag==="MEME 100"),memeVotes)[0];
+  return top&&Number(top.votesCell.tokens)>0?{coin:top,votes:top.votesCell}:null;
+}
+/** Top-5 Meme-100 power ranking as a dock leaderboard card. */
+function renderMemeLeaderboard(ranked){
+  const rows=ranked.slice(0,3).map((c)=>{const up=(c.chg??0)>=0;
+    return `<div class="ml-row"><span class="ml-rank">${c.powerRank}</span><span class="ml-sym">${esc(c.sym)}</span>
+      <span class="ml-d ${up?"up":"down"}">${up?"▲":"▼"}${c.chg!=null?Math.abs(c.chg).toFixed(1):"–"}%</span></div>`;}).join("");
+  return `<div class="c-top"><div class="c-id"><span class="c-rank pick">☰</span><span class="c-sym">MEME 100</span></div><span class="c-delta up">POWER RANK</span></div>
+    <div class="ml-list">${rows}</div>
+    <div class="c-bot"><span class="c-tag pick">COMMUNITY POWER RANKING</span><span class="c-mv">VOL · MC · SOCIAL · $CSGN VOTES</span></div>`;
+}
 /** The community-chosen memecoin, cyan-accented, featured in the dock rotation. */
 function renderCommunityPick(c,votes){
   const up=(c.chg??0)>=0;
@@ -1687,10 +1712,13 @@ async function cryptoRefresh(){
       fetchJson(`${CG}&per_page=50&page=1`),
       fetchJson(`${CG}&category=meme-token&per_page=100&page=1`),
     ]);
+    // The 7d sparkline is hourly, so the LAST 24 points are the last 24h — the
+    // chart shows exactly a 24h window, so its red/green matches the (24h) delta.
+    const last24=(r)=>{const p=r.sparkline_in_7d?.price;return Array.isArray(p)&&p.length?p.slice(-24):null;};
     const map=(rows,tag)=>rows.map((r,i)=>({
       sym:(r.symbol||"?").toUpperCase(),price:r.current_price,chg:r.price_change_percentage_24h,
       mc:r.market_cap,vol:r.total_volume,rank:tag==="TOP 50"?(r.market_cap_rank??i+1):i+1,
-      tag,spark:r.sparkline_in_7d?.price||null,
+      tag,spark:last24(r),
     }));
     const M=map(majors||[],"TOP 50"),X=map(memes||[],"MEME 100");
     const merged=[];
@@ -1887,12 +1915,19 @@ function cryptoTick(){
     const pick=communityPick();
     if(pick){coinShow(renderCommunityPick(pick.coin,pick.votes),pick.coin.spark,"swap","");return;}
   }
+  // Air the Meme-100 community power ranking (top 5) every ~8th tick.
+  if(cryptoTickN%8===0){
+    const ranked=rankMemes(cryptoList.filter((x)=>x.tag==="MEME 100"),memeVotes);
+    if(ranked.length>=3){coinShow(renderMemeLeaderboard(ranked),null,"swap","");return;}
+  }
   if(!cryptoList.length){ // no board and no $CSGN stats yet → branded hold card, never dead
     coinShow(CSGN_HOLD_CARD,null,"swap","");
     return;
   }
   const c=cryptoList[cryptoIdx];
   cryptoIdx=(cryptoIdx+1)%cryptoList.length;
+  // Memecoins show their community POWER rank (blended), not the raw market-cap index.
+  if(c.tag==="MEME 100"){const hit=rankMemes(cryptoList.filter((x)=>x.tag==="MEME 100"),memeVotes).find((x)=>x.sym===c.sym);c.powerRank=hit?hit.powerRank:0;}
   coinShow(renderCoinCard(c),c.spark,"swap","");
 }
 function cryptoInit(){
@@ -1908,7 +1943,7 @@ window.__csgn={formatLedPrice,renderLed,renderItem,renderStatusCell,renderGolfBo
   CONFIG,wipePhases,broadcastRef,dateParamForLeague,sameZonedDay,
   pitcherBrief,broadcastOf,BANANA_BALL_GAMES,bananasItems,renderCoinCard,
   buildCsgnBeatGroup,buildGovernanceGroup,renderBuyCard,shortCountdown,fmtUsd,fmtPriceInline,
-  renderTweet,buildTweetsGroup,renderCsgnCoinCard,normalizeBreaking,applyBreaking,hasHeadroom,buildChyronGroup,fitText,fitCells,buildActionsGroup,golfCardsHtml,pickCommunity,renderCommunityPick,compactNum};
+  renderTweet,buildTweetsGroup,renderCsgnCoinCard,normalizeBreaking,applyBreaking,hasHeadroom,buildChyronGroup,fitText,fitCells,buildActionsGroup,golfCardsHtml,rankMemes,renderCommunityPick,renderMemeLeaderboard,compactNum};
 document.documentElement.style.setProperty("--roll-ms",`${CONFIG.ROLL_MS}ms`);
 document.documentElement.style.setProperty("--croll-ms",`${CONFIG.CRYPTO_ROLL_MS}ms`);
 const brandImg=document.getElementById("brand-logo");

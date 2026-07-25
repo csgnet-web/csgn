@@ -265,19 +265,22 @@ check('Spotlight without price shows dashes, never $0.00', spotNoPx.includes('c-
 const buyHtml = __csgn.renderBuyCard({ usd: 1234, by: '@degen' })
 check('Buy toast: green BUY tag + amount + buyer', buyHtml.includes('c-tag buy') && buyHtml.includes('+$1,234') && buyHtml.includes('@degen') && buyHtml.includes('c-buyamt'))
 
-// ── Meme-100 community pick: token-vote weight blended with volume + market cap
+// ── Meme-100 power ranking: votes + volume + market cap + social/buzz ────────
 const memes = [
   { sym: 'WIF', price: 2.1, chg: 5, vol: 1e8, mc: 2e9, tag: 'MEME 100' },
   { sym: 'BONK', price: 0.00002, chg: 3, vol: 5e8, mc: 1.5e9, tag: 'MEME 100' }, // more volume
   { sym: 'POPCAT', price: 1.2, chg: 8, vol: 2e7, mc: 1e9, tag: 'MEME 100' },
 ]
-// With NO votes, the blend leans on market data → no "community pick" (needs votes)
-check('Community pick is null until a coin has votes', __csgn.pickCommunity(memes, {}) === null)
-// Heavy holder vote on WIF (weakest market metrics) still wins on power score
-const pick = __csgn.pickCommunity(memes, { WIF: { tokens: 5e8, wallets: 42 } })
-check('Holder votes give real power: WIF wins despite lower vol/mcap', pick && pick.coin.sym === 'WIF' && pick.votes.wallets === 42)
-const pickCard = __csgn.renderCommunityPick(pick.coin, pick.votes)
-check('Community pick card: COMMUNITY PICK tag + backers + power', pickCard.includes('c-tag pick') && pickCard.includes('COMMUNITY PICK') && pickCard.includes('42 backers') && pickCard.includes('WIF'))
+// No votes → ranking is pure market data; every coin carries a power + powerRank
+const rankedNoVotes = __csgn.rankMemes(memes, {})
+check('rankMemes returns the whole set, power-ranked', rankedNoVotes.length === 3 && rankedNoVotes[0].powerRank === 1 && rankedNoVotes[2].powerRank === 3 && rankedNoVotes.every((c) => typeof c.power === 'number'))
+// Heavy holder vote on WIF (weakest market metrics) lifts it to #1 on power score
+const ranked = __csgn.rankMemes(memes, { WIF: { tokens: 5e8, wallets: 42 } })
+check('Holder votes give real power: WIF ranks #1 despite lower vol/mcap', ranked[0].sym === 'WIF' && ranked[0].votesCell.wallets === 42)
+const mlBoard = __csgn.renderMemeLeaderboard(ranked)
+check('Meme leaderboard card: MEME 100 POWER RANK + top rows', mlBoard.includes('MEME 100') && mlBoard.includes('POWER RANK') && (mlBoard.match(/ml-row/g) || []).length === 3 && mlBoard.includes('COMMUNITY POWER RANKING'))
+const pickCard = __csgn.renderCommunityPick(ranked[0], ranked[0].votesCell)
+check('Community pick card: COMMUNITY PICK tag + backers + WIF', pickCard.includes('c-tag pick') && pickCard.includes('COMMUNITY PICK') && pickCard.includes('42 backers') && pickCard.includes('WIF'))
 check('compactNum abbreviates', __csgn.compactNum(1.5e6) === '1.5M' && __csgn.compactNum(2e9) === '2.0B')
 
 // ── Fans-on-the-board: the live viewer→on-air action counter card ───────────
