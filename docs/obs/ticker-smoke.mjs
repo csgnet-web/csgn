@@ -61,7 +61,7 @@ const mlbEvent = {
 const [mlb] = __csgn.parseGameEvent(mlbLeague, mlbEvent)
 check('MLB live parsed with baseball situation', !!mlb.baseball && mlb.baseball.on1 && mlb.baseball.on3 && !mlb.baseball.on2 && mlb.baseball.outs === 2)
 const cell = __csgn.renderStatusCell(mlb)
-check('MLB cell shows diamond + count + inning, no 0:00', cell.includes('dia') && cell.includes('2-1') && cell.includes('Bot 5th') && !cell.includes('0:00'))
+check('MLB cell shows diamond + colon count + inning, no 0:00', cell.includes('dia') && cell.includes('2:1') && cell.includes('Bot 5th') && !cell.includes('0:00'))
 check('MLB cell marks 1B+3B occupied, 2B empty', cell.includes('base b1 on') && cell.includes('base b3 on') && !cell.includes('base b2 on'))
 const mlbItem = __csgn.renderItem(mlb)
 check('MLB item has a stats face (top performers)', mlbItem.hasStats && mlbItem.html.includes('A. Judge 2 HR'))
@@ -75,30 +75,36 @@ const [nfl] = __csgn.parseGameEvent(nflLeague, nflEvent)
 check('NFL live: down/distance + away possession + redzone', nfl.football?.dd === '3rd & 8' && nfl.football.redZone && nfl.possession === 'away')
 check('NFL cell renders down & distance', __csgn.renderStatusCell(nfl).includes('3rd &amp; 8'))
 
-// ── Golf: rotating faces of 3 with headshots ────────────────────────────────
+// ── Golf: ONE tournament item, static rail, internally-rotating sets of 3 ────
 const pga = __csgn.LEAGUES.find((l) => l.key === 'pga')
 const golfEvent = {
-  name: 'The Open Championship', shortName: 'The Open', date: new Date().toISOString(),
+  name: 'The Genesis Scottish Open', shortName: 'Scottish', date: new Date().toISOString(),
   status: { type: { state: 'in' } },
   competitions: [{
     status: { period: 2, type: { state: 'in', shortDetail: 'Round 2' } },
     competitors: Array.from({ length: 14 }, (_, i) => ({
       order: i + 1,
-      athlete: { shortName: `Player ${i + 1}`, headshot: i < 2 ? { href: `https://a.espncdn.com/i/headshots/golf/players/full/${i}.png` } : undefined },
+      athlete: { shortName: `Player ${i + 1}`, flag: i < 2 ? { href: `https://a.espncdn.com/i/teamlogos/countries/500/usa.png` } : undefined },
       score: { displayValue: i === 0 ? '-12' : i < 5 ? `-${9 - i}` : `+${i - 4}` },
       status: { position: { displayName: i === 1 ? 'T2' : String(i + 1) }, thru: i < 3 ? 18 : 11 },
     })),
   }],
 }
 const golfItems = __csgn.parseGolfEvent(pga, golfEvent)
-check('Golf splits into rotating faces of 3 (top 9 → 3 faces)', golfItems.length === 3 && golfItems.every((it) => it.kind === 'golf' && it.rows.length === 3))
-check('Golf face carries photos + pos + score + thru', golfItems[0].rows[0].photo.includes('headshots') && golfItems[0].rows[0].score === '-12' && golfItems[0].rows[1].pos === 'T2')
+check('Golf = ONE tournament item carrying the whole field', golfItems.length === 1 && golfItems[0].kind === 'golf' && golfItems[0].rows.length === 9)
+check('Golf field split into 3 internal sets of 3, dwell scales', golfItems[0].golfGroups.length === 3 && golfItems[0].golfGroups.every((s) => s.length === 3) && golfItems[0].dwellMs === 3 * __csgn.CONFIG.GOLF_GROUP_MS)
+check('Golf uses full event name + "Round N · Live"', golfItems[0].title === 'The Genesis Scottish Open' && golfItems[0].round === 'Round 2 · Live')
+check('Golf row carries nationality flag + pos + score', golfItems[0].rows[0].flag.includes('countries') && golfItems[0].rows[0].score === '-12' && golfItems[0].rows[1].pos === 'T2')
 const board = __csgn.renderGolfBoard(golfItems[0])
-const board3 = __csgn.renderGolfBoard(golfItems[2])
-check('Golf face renders 3 big cards, tournament + round', (board.match(/g3-card[ "]/g) || []).length === 3 && board.includes('The Open') && board.includes('R2'))
-check('Golf leader highlighted once on face 1, never on later faces', (board.match(/g3-card lead/g) || []).length === 1 && (board3.match(/g3-card lead/g) || []).length === 0)
-check('Golf headshot img when present, initial placeholder when absent', board.includes('g3-photo" src="https://a.espncdn.com') && board.includes('g3-photo ph') && board.includes('THRU'))
-check('Golf faces color under/over par', board.includes('g3-score under') && board3.includes('g3-score over'))
+check('Golf board: static rail (full name + round) + first set of 3', board.includes('The Genesis Scottish Open') && board.includes('Round 2 · Live') && (board.match(/g3-card[ "]/g) || []).length === 3)
+check('Golf leader highlighted once; flag img + THRU + score', (board.match(/g3-card lead/g) || []).length === 1 && board.includes('g3-flag" src="https://a.espncdn.com') && board.includes('g3-flag ph') && board.includes('THRU') && board.includes('g3-score under'))
+// "End of Round N" for a completed round instead of "RN FINAL"
+const golfDone = JSON.parse(JSON.stringify(golfEvent))
+golfDone.status = { type: { state: 'post' } }
+golfDone.competitions[0].status = { period: 1, type: { state: 'post', shortDetail: 'Final' } }
+check('Golf completed round reads "End of Round 1"', __csgn.parseGolfEvent(pga, golfDone)[0].round === 'End of Round 1')
+// internal rotation helper renders a later set of 3 with the over-par colour
+check('golfCardsHtml renders a set of 3 (later set has over-par)', (__csgn.golfCardsHtml(golfItems[0].golfGroups[2]).match(/g3-card[ "]/g) || []).length === 3 && __csgn.golfCardsHtml(golfItems[0].golfGroups[2]).includes('g3-score over'))
 
 // ── Stacked main face: records on the game side, aligned scores ─────────────
 const mainFace = __csgn.renderMainFace(mlb)
@@ -157,8 +163,26 @@ finEvent.status = { type: { state: 'post' } }
 const [fin] = __csgn.parseGameEvent(mlbLeague, finEvent)
 check('Final parsed with W/L/SV decisions', fin.isFinal && fin.winner === 'home' && fin.decisions?.win?.name === 'C. Holmes' && fin.decisions.loss?.name === 'B. Bello' && fin.decisions.save?.name === 'E. Clase')
 const finStats = __csgn.renderStatsFace(fin)
-check('Final face is PITCHING DECISIONS (W/L/SV)', finStats.includes('Pitching decisions') && finStats.includes('W: C. Holmes') && finStats.includes('L: B. Bello') && finStats.includes('SV: E. Clase') && finStats.includes('(7-4)'))
+check('Final face: decisions + top bat, no SV', finStats.includes('Decisions') && finStats.includes('W: C. Holmes') && finStats.includes('L: B. Bello') && !finStats.includes('SV') && finStats.includes('A. Judge 2 HR') && finStats.includes('(7-4)'))
 check('Winner column leads the decisions face', finStats.indexOf('C. Holmes') < finStats.indexOf('B. Bello'))
+
+// MMA: weight class + title-fight flag
+const mmaLeague = __csgn.LEAGUES.find((l) => l.key === 'mma')
+const mmaEvent = {
+  name: 'UFC 300', date: new Date().toISOString(), status: { type: { state: 'post' } },
+  competitions: [{
+    date: new Date().toISOString(),
+    status: { type: { state: 'post', shortDetail: 'Final' } },
+    notes: [{ headline: 'Lightweight Title Bout' }],
+    competitors: [
+      { homeAway: 'home', id: 'a', winner: true, score: '1', athlete: { shortName: 'Makhachev' } },
+      { homeAway: 'away', id: 'b', score: '0', athlete: { shortName: 'Oliveira' } },
+    ],
+  }],
+}
+const [mma] = __csgn.parseGameEvent(mmaLeague, mmaEvent)
+check('MMA parses weight class + title flag', mma.titleFight === true && /lightweight/i.test(mma.subnote))
+check('MMA cell shows TITLE chip + weight class', __csgn.renderStatusCell(mma).includes('titlechip') && __csgn.renderStatusCell(mma).toLowerCase().includes('lightweight'))
 
 // ── US TV sourcing ──────────────────────────────────────────────────────────
 check('National broadcasts[] wins', mlb.tv === 'FOX')
