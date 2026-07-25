@@ -26,6 +26,7 @@ export const api = {
   claimSlot: (slotId: string) => functionFetch<{ ok: boolean; slotId: string }>('claimSlot', { method: 'POST', body: JSON.stringify({ slotId }) }, true),
   submitRightNow: (proofToken: string, text: string) => functionFetch<{ ok: boolean; text: string; railSize: number }>('submitRightNow', { method: 'POST', body: JSON.stringify({ proofToken, text }) }),
   castVote: (proofToken: string, voteId: string, option: number) => functionFetch<{ ok: boolean; option: number; weight: number }>('castVote', { method: 'POST', body: JSON.stringify({ proofToken, voteId, option }) }),
+  voteMeme: (proofToken: string, symbol: string) => functionFetch<{ ok: boolean; symbol: string; weight: number; tallies: Record<string, { tokens: number; wallets: number }> }>('voteMeme', { method: 'POST', body: JSON.stringify({ proofToken, symbol }) }),
   burnSpotlight: (proofToken: string, signature: string, coin: { symbol: string; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }) =>
     functionFetch<{ ok: boolean; symbol: string; burned: number; required: number }>('burnSpotlight', { method: 'POST', body: JSON.stringify({ proofToken, signature, ...coin }) }),
 }

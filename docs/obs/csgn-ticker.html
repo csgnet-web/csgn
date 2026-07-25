@@ -343,6 +343,8 @@ html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;ba
 .c-buyamt{font-family:var(--cond);font-size:30px;font-weight:900;color:#8dffab;text-shadow:0 0 10px rgba(104,255,122,.5)}
 .c-tag.csgn{background:linear-gradient(90deg,#ffcf40,#ff2346);color:#140700;border:none;font-weight:800}
 .c-rank.csgn{background:linear-gradient(90deg,#ffcf40,#ff2346);color:#140700}
+.c-tag.pick{background:linear-gradient(90deg,#6db3ff,#1d6fff);color:#00122e;border:none;font-weight:800}
+.c-rank.pick{background:linear-gradient(90deg,#6db3ff,#1d6fff);color:#00122e}
 .c-top{display:flex;justify-content:space-between;align-items:center;height:26px;position:relative;z-index:2}
 .c-id{display:flex;align-items:center;gap:8px;min-width:0}
 .c-rank{font-size:11px;font-weight:700;color:#141414;background:var(--gold);border-radius:3px;padding:1px 5px;flex:none}
@@ -499,6 +501,7 @@ const CSGN_LOGO_URI="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAASABIAAD/4RvnRXhp
    unauthenticated. Any fetch/shape error is treated as "no config". */
 const FS_TICKER_URL="https://firestore.googleapis.com/v1/projects/csgn-ac44b/databases/(default)/documents/config/ticker";
 const FS_ACTIONS_URL="https://firestore.googleapis.com/v1/projects/csgn-ac44b/databases/(default)/documents/public/onAirActions";
+const FS_MEMEVOTE_URL="https://firestore.googleapis.com/v1/projects/csgn-ac44b/databases/(default)/documents/public/memeVote";
 
 /** Decode one Firestore REST value object into a plain JS value. */
 function decodeFs(v){
@@ -520,6 +523,7 @@ function decodeFs(v){
 
 let adminCfg={rightNow:[],spotlight:null,breaking:null,chyron:null,governance:[],vote:null,csgn:null,liveFee:null,nowLive:null,upNext:null,buys:[],tweets:[],showActions:false};
 let onAirActions={total:0,votes:0,submissions:0,spotlights:0,buys:0};
+let memeVotes={}; // { SYMBOL: {tokens, wallets} } — holder power behind each memecoin
 let lastCfgSig="",lastRnSig="";
 async function adminCfgRefresh(){
   try{
@@ -609,6 +613,13 @@ async function adminCfgRefresh(){
     if(ra.ok){const af=(await ra.json()).fields||{};const n=(k)=>Number(decodeFs(af[k])||0)||0;
       onAirActions={total:n("total"),votes:n("votes"),submissions:n("submissions"),spotlights:n("spotlights"),buys:n("buys")};}
   }catch{/* keep last good counter */}
+  // Meme-100 community vote weights (public/memeVote.tallies) — blended with each
+  // coin's volume + market cap into the on-air power score.
+  try{
+    const rm=await fetch(FS_MEMEVOTE_URL,{cache:"no-store"});
+    if(rm.ok){const t=decodeFs((await rm.json()).fields?.tallies)||{};
+      if(t&&typeof t==="object")memeVotes=t;}
+  }catch{/* keep last good meme votes */}
 
   onSpotlightCfg(adminCfg.spotlight);
   applyBreaking(adminCfg.breaking);
@@ -1635,6 +1646,30 @@ function renderCoinCard(c){
       <span class="c-mv">MC ${compactUsd(c.mc)} · VOL ${compactUsd(c.vol)}</span></div>
     ${c.spark?'<canvas class="c-chart" width="420" height="124"></canvas>':""}`;
 }
+const compactNum=(n)=>!Number.isFinite(n)||n<=0?"0":n>=1e9?(n/1e9).toFixed(1)+"B":n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(0)+"K":String(Math.round(n));
+/** Meme-100 community pick: the memecoin with the highest POWER SCORE — a blend
+ *  of holder vote weight (50%), 24h volume (30%) and market cap (20%), normalized
+ *  across the meme set. Null unless a coin actually has holder votes behind it. */
+function pickCommunity(memes,votes){
+  if(!memes||!memes.length)return null;
+  const votesOf=(c)=>Number(votes[c.sym]?.tokens)||0;
+  const maxV=Math.max(1,...memes.map(votesOf)),maxVol=Math.max(1,...memes.map((c)=>c.vol||0)),maxMc=Math.max(1,...memes.map((c)=>c.mc||0));
+  let best=null,bestScore=-1;
+  for(const c of memes){
+    const score=0.5*(votesOf(c)/maxV)+0.3*((c.vol||0)/maxVol)+0.2*((c.mc||0)/maxMc);
+    if(score>bestScore){bestScore=score;best=c;}
+  }
+  return best&&votesOf(best)>0?{coin:best,votes:votes[best.sym]||{tokens:0,wallets:0}}:null;
+}
+function communityPick(){return pickCommunity(cryptoList.filter((c)=>c.tag==="MEME 100"),memeVotes);}
+/** The community-chosen memecoin, cyan-accented, featured in the dock rotation. */
+function renderCommunityPick(c,votes){
+  const up=(c.chg??0)>=0;
+  return `<div class="c-top"><div class="c-id"><span class="c-rank pick">▲</span><span class="c-sym">${esc(c.sym)}</span></div>
+      <span class="c-delta ${up?"up":"down"}">(24h) ${up?"▲":"▼"} ${c.chg!=null?Math.abs(c.chg).toFixed(2):"–"}%</span></div>
+    <div class="c-led">${renderLed(formatLedPrice(c.price))}</div>
+    <div class="c-bot"><span class="c-tag pick">COMMUNITY PICK</span><span class="c-mv">${votes.wallets||0} backers · ${compactNum(votes.tokens||0)} $CSGN power</span></div>`;
+}
 /** The network's own coin, brand-accented, featured in the dock rotation. */
 function renderCsgnCoinCard(csgn){
   const up=(csgn.chg??0)>=0;
@@ -1847,6 +1882,11 @@ function cryptoTick(){
     coinShow(renderCsgnCoinCard(csgn),null,"swap","");
     return;
   }
+  // Feature the holder-voted meme "community pick" (power score) every ~6th tick.
+  if(cryptoTickN%6===0){
+    const pick=communityPick();
+    if(pick){coinShow(renderCommunityPick(pick.coin,pick.votes),pick.coin.spark,"swap","");return;}
+  }
   if(!cryptoList.length){ // no board and no $CSGN stats yet → branded hold card, never dead
     coinShow(CSGN_HOLD_CARD,null,"swap","");
     return;
@@ -1868,7 +1908,7 @@ window.__csgn={formatLedPrice,renderLed,renderItem,renderStatusCell,renderGolfBo
   CONFIG,wipePhases,broadcastRef,dateParamForLeague,sameZonedDay,
   pitcherBrief,broadcastOf,BANANA_BALL_GAMES,bananasItems,renderCoinCard,
   buildCsgnBeatGroup,buildGovernanceGroup,renderBuyCard,shortCountdown,fmtUsd,fmtPriceInline,
-  renderTweet,buildTweetsGroup,renderCsgnCoinCard,normalizeBreaking,applyBreaking,hasHeadroom,buildChyronGroup,fitText,fitCells,buildActionsGroup,golfCardsHtml};
+  renderTweet,buildTweetsGroup,renderCsgnCoinCard,normalizeBreaking,applyBreaking,hasHeadroom,buildChyronGroup,fitText,fitCells,buildActionsGroup,golfCardsHtml,pickCommunity,renderCommunityPick,compactNum};
 document.documentElement.style.setProperty("--roll-ms",`${CONFIG.ROLL_MS}ms`);
 document.documentElement.style.setProperty("--croll-ms",`${CONFIG.CRYPTO_ROLL_MS}ms`);
 const brandImg=document.getElementById("brand-logo");

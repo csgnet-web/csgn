@@ -265,6 +265,21 @@ check('Spotlight without price shows dashes, never $0.00', spotNoPx.includes('c-
 const buyHtml = __csgn.renderBuyCard({ usd: 1234, by: '@degen' })
 check('Buy toast: green BUY tag + amount + buyer', buyHtml.includes('c-tag buy') && buyHtml.includes('+$1,234') && buyHtml.includes('@degen') && buyHtml.includes('c-buyamt'))
 
+// ── Meme-100 community pick: token-vote weight blended with volume + market cap
+const memes = [
+  { sym: 'WIF', price: 2.1, chg: 5, vol: 1e8, mc: 2e9, tag: 'MEME 100' },
+  { sym: 'BONK', price: 0.00002, chg: 3, vol: 5e8, mc: 1.5e9, tag: 'MEME 100' }, // more volume
+  { sym: 'POPCAT', price: 1.2, chg: 8, vol: 2e7, mc: 1e9, tag: 'MEME 100' },
+]
+// With NO votes, the blend leans on market data → no "community pick" (needs votes)
+check('Community pick is null until a coin has votes', __csgn.pickCommunity(memes, {}) === null)
+// Heavy holder vote on WIF (weakest market metrics) still wins on power score
+const pick = __csgn.pickCommunity(memes, { WIF: { tokens: 5e8, wallets: 42 } })
+check('Holder votes give real power: WIF wins despite lower vol/mcap', pick && pick.coin.sym === 'WIF' && pick.votes.wallets === 42)
+const pickCard = __csgn.renderCommunityPick(pick.coin, pick.votes)
+check('Community pick card: COMMUNITY PICK tag + backers + power', pickCard.includes('c-tag pick') && pickCard.includes('COMMUNITY PICK') && pickCard.includes('42 backers') && pickCard.includes('WIF'))
+check('compactNum abbreviates', __csgn.compactNum(1.5e6) === '1.5M' && __csgn.compactNum(2e9) === '2.0B')
+
 // ── Fans-on-the-board: the live viewer→on-air action counter card ───────────
 check('Actions card hidden unless shown + has actions', __csgn.buildActionsGroup({ total: 5 }, false) === null && __csgn.buildActionsGroup({ total: 0 }, true) === null)
 const actGrp = __csgn.buildActionsGroup({ total: 847, votes: 512, submissions: 300, spotlights: 35 }, true)

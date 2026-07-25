@@ -46,6 +46,13 @@ export default function Participate() {
   const [spotMsg, setSpotMsg] = useState<string | null>(null)
   const [spotErr, setSpotErr] = useState<string | null>(null)
 
+  // Meme-100 community vote (token-weighted, no burn)
+  const [memeSymbol, setMemeSymbol] = useState('')
+  const [memeBusy, setMemeBusy] = useState(false)
+  const [memeMsg, setMemeMsg] = useState<string | null>(null)
+  const [memeErr, setMemeErr] = useState<string | null>(null)
+  const [memeTallies, setMemeTallies] = useState<Record<string, Cell>>({})
+
   // Current vote (config/ticker.vote)
   useEffect(() => {
     return onSnapshot(doc(db, 'config', 'ticker'), (snap) => {
@@ -59,6 +66,14 @@ export default function Participate() {
           : null,
       )
     })
+  }, [])
+
+  // Live meme-100 community tally (world-readable public/memeVote).
+  useEffect(() => {
+    return onSnapshot(doc(db, 'public', 'memeVote'), (snap) => {
+      const t = snap.exists() ? (snap.data().tallies as Record<string, Cell> | undefined) : undefined
+      setMemeTallies(t && typeof t === 'object' ? t : {})
+    }, () => {})
   }, [])
 
   // Live tally for the current vote — derived so switching votes needs no
@@ -156,6 +171,31 @@ export default function Participate() {
     setSpotBusy(false)
   }
   const canBurnSpotlight = balance != null && balance >= burnCost
+
+  const doVoteMeme = async () => {
+    setMemeErr(null); setMemeMsg(null)
+    const symbol = memeSymbol.trim().toUpperCase()
+    if (!/^[A-Z0-9$]{2,12}$/.test(symbol)) { setMemeErr('Enter a valid ticker symbol (2–12 characters).'); return }
+    setMemeBusy(true)
+    try {
+      const addr = await ensureWallet()
+      const proof = await proveWallet(addr, signMessage)
+      const res = await api.voteMeme(proof, symbol)
+      setMemeMsg(`Vote counted — ${fmtToken(res.weight)} $CSGN of power behind $${symbol}.`)
+      setMemeSymbol('')
+      loadBalance(addr)
+    } catch (e) {
+      setMemeErr(e instanceof Error ? e.message : 'Meme vote failed.')
+    }
+    setMemeBusy(false)
+  }
+  // Community power ranking (by token weight); the ticker blends this with each
+  // coin's live volume + market cap for the on-air pick.
+  const memeRanked = Object.entries(memeTallies)
+    .map(([sym, c]) => ({ sym, tokens: c?.tokens || 0, wallets: c?.wallets || 0 }))
+    .filter((r) => r.tokens > 0)
+    .sort((a, b) => b.tokens - a.tokens)
+    .slice(0, 5)
 
   const options = vote?.options ?? []
   const cells = options.map((_, i) => tally[String(i)] || { tokens: 0, wallets: 0 })
@@ -352,6 +392,43 @@ export default function Participate() {
 
           {spotMsg && <p className="text-sm text-emerald-400 flex items-center gap-1.5"><Check className="w-4 h-4" /> {spotMsg}</p>}
           {spotErr && <p className="text-sm text-red-400 flex items-center gap-1.5"><AlertCircle className="w-4 h-4" /> {spotErr}</p>}
+        </Card>
+      </section>
+
+      {/* Meme-100 community vote (token-weighted, no burn) */}
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <VoteIcon className="w-5 h-5 text-cyan-400" />
+          <h2 className="text-lg font-display font-bold uppercase tracking-wide">Vote the Meme 100</h2>
+        </div>
+        <Card hover={false} className="p-5 space-y-3">
+          <p className="text-sm text-gray-400">
+            Back a memecoin with your <span className="text-cyan-300 font-semibold">$CSGN voting power</span> — no burn, no stake, nothing leaves your wallet. Your weight = your balance. The board blends the community vote with each coin’s live <span className="text-cyan-300 font-semibold">volume + market cap</span> and airs the pick.
+          </p>
+
+          {memeRanked.length > 0 && (
+            <div className="rounded-xl bg-white/[0.03] border border-white/[0.08] p-3 space-y-1.5">
+              {memeRanked.map((r, i) => (
+                <div key={r.sym} className="flex items-center justify-between text-sm">
+                  <span className="text-gray-300"><span className="text-gray-500 font-mono mr-2">{i + 1}</span>${r.sym}</span>
+                  <span className="font-mono text-gray-400" title={`${Math.round(r.tokens).toLocaleString('en-US')} $CSGN · ${r.wallets} wallets`}>{fmtToken(r.tokens)} · {r.wallets}w</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!walletAddress ? (
+            <Button onClick={() => void connect()} isLoading={isConnecting} leftIcon={<Wallet className="w-4 h-4" />}>Connect Phantom to vote</Button>
+          ) : (
+            <div className="flex gap-2">
+              <input value={memeSymbol} onChange={(e) => setMemeSymbol(e.target.value.slice(0, 12))} placeholder="Memecoin ticker — e.g. WIF" className="flex-1 rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-cyan-500/60 outline-none px-3 py-2 text-sm uppercase" />
+              <Button size="sm" isLoading={memeBusy} onClick={() => void doVoteMeme()} leftIcon={<VoteIcon className="w-4 h-4" />}>Cast vote</Button>
+            </div>
+          )}
+          <p className="text-xs text-gray-500">One vote per wallet — re-voting moves your full weight. {balance != null && `Your power: ${fmtFull(balance)} $CSGN.`}</p>
+
+          {memeMsg && <p className="text-sm text-emerald-400 flex items-center gap-1.5"><Check className="w-4 h-4" /> {memeMsg}</p>}
+          {memeErr && <p className="text-sm text-red-400 flex items-center gap-1.5"><AlertCircle className="w-4 h-4" /> {memeErr}</p>}
         </Card>
       </section>
     </motion.main>
