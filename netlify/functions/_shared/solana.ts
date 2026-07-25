@@ -85,6 +85,54 @@ export async function verifyCsgnBurn(signature: string, wallet: string, minUiAmo
   return burned
 }
 
+const CSGN_TREASURY = 'CSGNUgUpBqTNM7EBZSMeA5jzPLFNR2hELhLjbHLpbEY4'
+export const CSGN_TREASURY_ADDRESS = CSGN_TREASURY
+
+/**
+ * Verify `signature` is a CONFIRMED transfer of at least `minLamports` SOL from
+ * `wallet` to the CSGN treasury — the trust boundary for the SOL "jukebox"
+ * spotlight. Returns the lamports paid; throws unless it's a real, successful,
+ * wallet-signed transfer to the treasury of >= the minimum. (A plain SOL
+ * transfer is far simpler to construct + verify than an SPL burn.)
+ *
+ * NOTE: dry-run against a tiny real payment on mainnet before going public.
+ */
+export async function verifySolPayment(signature: string, wallet: string, minLamports: number): Promise<number> {
+  const res = await fetch(RPC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0', id: 1, method: 'getTransaction',
+      params: [signature, { encoding: 'jsonParsed', commitment: 'confirmed', maxSupportedTransactionVersion: 0 }],
+    }),
+  })
+  if (!res.ok) throw new Error(`Solana RPC error ${res.status}`)
+  const data = (await res.json()) as TxResponse
+  if (data.error) throw new Error(`Solana RPC: ${data.error.message || 'error'}`)
+  const tx = data.result
+  if (!tx) throw new Error('Payment transaction not found or not yet confirmed.')
+  if (tx.meta?.err) throw new Error('The payment transaction failed on-chain.')
+
+  const keys = tx.transaction?.message?.accountKeys || []
+  if (!keys.some((k) => k.pubkey === wallet && k.signer)) throw new Error('The payment was not signed by this wallet.')
+
+  const all: ParsedInstr[] = [
+    ...(tx.transaction?.message?.instructions || []),
+    ...(tx.meta?.innerInstructions || []).flatMap((g) => g.instructions || []),
+  ]
+  let paid = 0
+  for (const ix of all) {
+    if (ix.program !== 'system') continue
+    if (ix.parsed?.type !== 'transfer') continue
+    const info = ix.parsed?.info || {}
+    if (info.source !== wallet || info.destination !== CSGN_TREASURY) continue
+    paid += Number(info.lamports) || 0
+  }
+  if (paid <= 0) throw new Error('No SOL payment from this wallet to the treasury found in that transaction.')
+  if (paid < minLamports) throw new Error(`Payment of ${(paid / 1e9).toFixed(4)} SOL is below the required ${(minLamports / 1e9).toFixed(4)} SOL.`)
+  return paid
+}
+
 /** UI-amount CSGN held by a wallet (sums every token account for the mint). */
 export async function getCsgnBalance(walletAddress: string): Promise<number> {
   const res = await fetch(RPC_URL, {

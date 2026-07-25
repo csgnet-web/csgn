@@ -5,7 +5,7 @@ import { Wallet, Megaphone, Check, Trophy, AlertCircle, Vote as VoteIcon, Flame 
 import { db } from '@/config/firebase'
 import { api } from '@/lib/api'
 import { proveWallet } from '@/lib/walletProof'
-import { burnCsgn } from '@/lib/spotlightBurn'
+import { paySpotlight } from '@/lib/spotlightPay'
 import { fetchCsgnBalance, CSGN_RIGHT_NOW_MIN } from '@/lib/csgnBalance'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { Button } from '@/components/ui/Button'
@@ -22,7 +22,7 @@ const fmtToken = (n: number): string =>
 const fmtFull = (n: number): string => Math.round(n).toLocaleString('en-US')
 
 export default function Participate() {
-  const { walletAddress, connect, signMessage, isConnecting } = usePhantomWallet()
+  const { walletAddress, connect, signMessage, isConnecting, balance: solBalance } = usePhantomWallet()
   const [balanceState, setBalanceState] = useState<number | null>(null)
   const [balanceLoading, setBalanceLoading] = useState(false)
 
@@ -37,8 +37,8 @@ export default function Participate() {
   const [rnMsg, setRnMsg] = useState<string | null>(null)
   const [rnErr, setRnErr] = useState<string | null>(null)
 
-  // Buy-and-burn coin spotlight
-  const [burnCost, setBurnCost] = useState(500_000)
+  // Coin Jukebox — pay SOL to spotlight a coin (TouchTunes-style)
+  const [spotSol, setSpotSol] = useState(0.1)
   const [spotSymbol, setSpotSymbol] = useState('')
   const [spotPair, setSpotPair] = useState('')
   const [spotNote, setSpotNote] = useState('')
@@ -57,8 +57,8 @@ export default function Participate() {
   useEffect(() => {
     return onSnapshot(doc(db, 'config', 'ticker'), (snap) => {
       const data = snap.exists() ? snap.data() : {}
-      const cost = Number(data.spotlightBurnCsgn)
-      if (cost > 0) setBurnCost(cost)
+      const sol = Number(data.spotlightSol)
+      if (sol > 0) setSpotSol(sol)
       const v = data.vote as Record<string, unknown> | undefined
       setVote(
         v && v.id && Array.isArray(v.options)
@@ -153,24 +153,23 @@ export default function Participate() {
     setSpotBusy(true)
     try {
       const addr = await ensureWallet()
-      // Prove the wallet first so a later-rejected burn wastes no on-chain action.
+      // Prove the wallet first so a later-rejected payment wastes no on-chain action.
       const proof = await proveWallet(addr, signMessage)
-      // Burn on-chain (Phantom prompts + signs), then redeem the signature.
-      const signature = await burnCsgn(addr, burnCost)
-      const res = await api.burnSpotlight(proof, signature, {
+      // Pay SOL to the treasury (Phantom prompts + signs), then redeem the signature.
+      const signature = await paySpotlight(addr, spotSol)
+      const res = await api.jukeboxSpotlight(proof, signature, {
         symbol,
         dexPair: extractPair(spotPair) || undefined,
         note: spotNote.trim() || undefined,
       })
-      setSpotMsg(`🔥 Burned ${fmtFull(res.burned)} $CSGN — ${symbol} rises in the broadcast spotlight within a minute.`)
+      setSpotMsg(`🎶 Paid ${res.sol} SOL — ${symbol} rises in the broadcast spotlight within a minute.`)
       setSpotSymbol(''); setSpotPair(''); setSpotNote('')
-      loadBalance(addr)
     } catch (e) {
       setSpotErr(e instanceof Error ? e.message : 'Spotlight failed.')
     }
     setSpotBusy(false)
   }
-  const canBurnSpotlight = balance != null && balance >= burnCost
+  const canBurnSpotlight = solBalance != null && solBalance >= spotSol
 
   const doVoteMeme = async () => {
     setMemeErr(null); setMemeMsg(null)
@@ -357,24 +356,24 @@ export default function Participate() {
         </Card>
       </section>
 
-      {/* Buy-and-burn coin spotlight */}
+      {/* Coin Jukebox — pay SOL to spotlight your coin (TouchTunes-style) */}
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <Flame className="w-5 h-5 text-amber-400" />
-          <h2 className="text-lg font-display font-bold uppercase tracking-wide">Spotlight Your Coin</h2>
+          <h2 className="text-lg font-display font-bold uppercase tracking-wide">Coin Jukebox</h2>
         </div>
         <Card hover={false} className="p-5 space-y-3">
           <p className="text-sm text-gray-400">
-            Burn <span className="text-amber-300 font-semibold">{fmtFull(burnCost)} $CSGN</span> to raise your coin into the broadcast’s{' '}
-            <span className="text-amber-300 font-semibold">crypto spotlight</span> — it rises on air within a minute, and the burn permanently removes $CSGN from supply.
+            Pay <span className="text-amber-300 font-semibold">{spotSol} SOL</span> to play your coin into the broadcast’s{' '}
+            <span className="text-amber-300 font-semibold">crypto spotlight</span> — like a jukebox for crypto TV. It rises on air within a minute, and the treasury uses the SOL to <span className="text-amber-300 font-semibold">buy&nbsp;&amp;&nbsp;burn $CSGN</span>.
           </p>
 
           {!walletAddress ? (
-            <Button onClick={() => void connect()} isLoading={isConnecting} leftIcon={<Wallet className="w-4 h-4" />}>Connect Phantom to spotlight a coin</Button>
+            <Button onClick={() => void connect()} isLoading={isConnecting} leftIcon={<Wallet className="w-4 h-4" />}>Connect Phantom to play a coin</Button>
           ) : !canBurnSpotlight ? (
             <div className="flex items-start gap-2 text-sm text-amber-300/90 bg-amber-500/[0.06] border border-amber-500/20 rounded-xl p-3">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>You hold {balance != null ? fmtFull(balance) : '—'} $CSGN. You need {fmtFull(burnCost)} to buy a spotlight.</span>
+              <span>You have {solBalance != null ? solBalance.toFixed(3) : '—'} SOL. You need {spotSol} SOL to play a spotlight.</span>
             </div>
           ) : (
             <>
@@ -384,8 +383,8 @@ export default function Participate() {
               </div>
               <input value={spotNote} onChange={(e) => setSpotNote(e.target.value.slice(0, 90))} placeholder="Spotlight note (optional) — shown under the price" className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-amber-500/60 outline-none px-3 py-2 text-sm" />
               <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">Burns {fmtFull(burnCost)} $CSGN · you sign in Phantom · deflationary</span>
-                <Button size="sm" variant="gold" isLoading={spotBusy} onClick={() => void doSpotlight()} leftIcon={<Flame className="w-4 h-4" />}>Burn to Spotlight</Button>
+                <span className="text-xs text-gray-500">Pays {spotSol} SOL · you sign in Phantom · funds a $CSGN buy &amp; burn</span>
+                <Button size="sm" variant="gold" isLoading={spotBusy} onClick={() => void doSpotlight()} leftIcon={<Flame className="w-4 h-4" />}>Play to Spotlight</Button>
               </div>
             </>
           )}

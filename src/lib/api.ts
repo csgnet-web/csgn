@@ -29,4 +29,6 @@ export const api = {
   voteMeme: (proofToken: string, symbol: string) => functionFetch<{ ok: boolean; symbol: string; weight: number; tallies: Record<string, { tokens: number; wallets: number }> }>('voteMeme', { method: 'POST', body: JSON.stringify({ proofToken, symbol }) }),
   burnSpotlight: (proofToken: string, signature: string, coin: { symbol: string; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }) =>
     functionFetch<{ ok: boolean; symbol: string; burned: number; required: number }>('burnSpotlight', { method: 'POST', body: JSON.stringify({ proofToken, signature, ...coin }) }),
+  jukeboxSpotlight: (proofToken: string, signature: string, coin: { symbol: string; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }) =>
+    functionFetch<{ ok: boolean; symbol: string; sol: number; requiredSol: number }>('jukeboxSpotlight', { method: 'POST', body: JSON.stringify({ proofToken, signature, ...coin }) }),
 }
