@@ -79,8 +79,13 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
+    // Written ONLY by the logAuthEvent function (firebase-admin bypasses rules).
+    // Browser writes are off: the events worth having fire before a session
+    // exists (signin-start / signin-failure / signup-email-start), so a
+    // `create: if isSignedIn()` rule silently dropped exactly those and left the
+    // admin's Auth Events tab looking empty during failed sign-ups.
     match /auth_events/{eventId} {
-      allow create: if isSignedIn();
+      allow create: if false;
       allow read: if isAdmin();
       allow update, delete: if false;
     }
