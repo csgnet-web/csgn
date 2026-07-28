@@ -37,12 +37,14 @@ that recycles revenue back into the network (including buying $CSGN to pay
 creators), and (c) the token being the unit of account for a compounding attention
 market.
 
-**Access is deliberately open.** Any verified user can claim up to 2 slots, free.
-The token is *not* the gate on getting on air — it governs **attention**
-(placement, promotion, spotlights), which is the genuinely scarce asset. Editorial
-control comes from CSGN's own **Originals slate** owning the tentpole hours, the
-way a broadcast network runs owned-and-operated programming alongside affiliates
-(§2A).
+**Access is deliberately open.** Any verified user can claim up to 2 slots, free,
+in one tap from `/schedule`. There are **no auctions**. The token's scope is
+narrow and fixed: it determines **promotion, whip-around mentions, the jukebox,
+sponsorships, and meme-100 voting** — never admission. Editorial control comes
+from the schedule's shape: **3 AM–7 PM ET is open, 7 PM–3 AM ET is the CSGN
+Originals network block**, the way a broadcast network runs owned-and-operated
+programming alongside affiliates. One admin toggle returns the whole block to
+open claiming (§2A).
 
 The product is roughly a year ahead of its audience. **The entire near-term game
 is distribution — a consistent Originals slate, a clip habit, a Discord "we're
@@ -125,6 +127,29 @@ Mechanically: creator channels → VOD library → auto-programmed reels/segment
 per-view attention accounting → treasury payouts in $CSGN. The token is how value
 moves between the audience, the creators, and the network.
 
+**Build order — the network block is phase 1.** The VOD system's first job is to
+fill 7 PM–3 AM ET reliably, because that block is now reserved and dead air there
+is worse than no block at all. Phases:
+
+1. **Network autopilot (next).** A playlist that programs the network block from
+   CSGN's own VOD library — Whiparound replays, Dynasty episodes, FPS highlights —
+   so the hours are always filled whether or not anyone is live. This extends the
+   intermission playlist that already exists rather than starting fresh.
+2. **Live pre-emption (same phase).** Founder goes live from the same PC at any
+   time → `/player` must cut to the live feed and return to the playlist when it
+   ends. **`/player`'s master-control state machine already does exactly this**
+   (LIVE / BRB / INTERMISSION with auto-return); the VOD system only has to supply
+   the intermission queue and let live always win.
+3. **Reels + attention accounting.** Segment VODs into reels, log per-view
+   attention, attribute views to the creator.
+4. **Open the platform.** Any creator gets a channel, a VOD library, and payouts.
+
+**The same-PC constraint is a feature, not a problem.** Because the network block
+is programmed rather than claimed, the founder can go live *whenever the mood
+strikes* without touching the schedule — the playlist is the floor, live is the
+ceiling, and the state machine handles the switch. That's the whole reason to
+reserve the block instead of claiming those slots manually.
+
 ### Prong 3 — Content & attention as capital
 The programming itself (the nightly show, the Live Coin Battle, the meme-100
 reveal, the game leagues) aggregates an audience whose attention is the ACM's raw
@@ -164,25 +189,40 @@ scarce, allocated good — with a broadcast-network twist.
 |---|---|---|---|
 | **1. Access** | Claiming a slot and going live | Open to any verified account, 2 concurrent slots | **Free** |
 | **2. Placement** | *Which* hour, promotion, whip-around mentions, reel rotation | Founder-curated now → holder-voted as it scales | **Earned / voted** |
-| **3. Amplification** | Coin Jukebox spotlight, sponsorships, priority reel placement | Market-priced | **SOL / $CSGN** |
+| **3. Amplification** | Coin Jukebox spotlight, sponsorships, priority reel placement, meme-100 voting | Market-priced / token-weighted | **SOL / $CSGN** |
+
+**The token's scope is now fixed and deliberately narrow.** $CSGN determines
+*promotion, whip-around mentions, the jukebox, sponsorships, and meme-100 voting*
+— and nothing else. It does not gate claiming a slot, creating an account, or
+going live. Any future mechanic that touches tier 1 is out of scope by default.
 
 Tier 1 grows supply. Tier 2 is the editorial spine. Tier 3 monetizes. The token
 is the remote for **tiers 2 and 3 — the scarce ones** — and never blocks tier 1.
 
-### 2A.3 How the founder keeps programming control (levers already built)
-Nothing new is needed to keep a firm hand on the schedule:
-- **The O&O anchor schedule.** CSGN's own original content owns the tentpole
-  hours; claimed slots fill in *around* it. This is exactly how real networks work
-  — **owned-and-operated programming plus affiliates.** Editorial identity comes
-  from the anchors, not from restricting affiliates.
-- **`isClaimable` per slot** (enforced in `claimSlot.ts`) — mark prime-time hours
-  un-claimable so they're reserved for anchors, tentpoles, and invited guests.
-  *(Gap: there's no admin UI toggle for this yet — it's server-enforced only.
-  Worth adding, since it's the single most useful editorial lever.)*
+### 2A.3 How the founder keeps programming control (levers, all shipped)
+The schedule is **two blocks**, and that alone carries the editorial identity:
+
+| Block | Hours (ET) | Who programs it |
+|---|---|---|
+| **Open** | 3 AM – 7 PM (8 slots) | Anyone with a verified account, one tap from `/schedule` |
+| **Network — CSGN Originals** | 7 PM – 3 AM (4 slots) | CSGN |
+
+- **The network block IS the control.** Prime time belongs to the Originals slate;
+  claimed slots fill in around it. Exactly how a real network runs —
+  **owned-and-operated programming plus affiliates.** Identity comes from the
+  anchors, not from restricting affiliates.
+- **Network block toggle** (`config/scheduleMeta.networkBlockEnabled`) — flip it
+  off and all 12 hours return to open claiming instantly, with no slot docs
+  rewritten. Flip it back on to reclaim prime time. Enforced server-side.
 - **`slotLimits.maxConcurrentClaims` per user** — a **merit ladder**, not a
   paywall. Default 2; raise it for creators who show up, hit their times, and
   bring an audience. Reward reliability with inventory.
+- **`isClaimable` per slot** — reserve a single hour (a guest, a tentpole)
+  without touching the whole block.
 - **Admin override + release** (`adminReleaseSlot`) — reclaim any slot.
+
+**No auctions, anywhere.** The auction/bid machinery is removed from the product;
+slots are claimed, not bid on, for the foreseeable future.
 
 ### 2A.4 Why open claims are themselves a growth engine
 Every creator who claims a slot brings their own (small) audience to a CSGN URL.
@@ -371,24 +411,44 @@ Originals (Whiparound / Dynasty / FPS)
    viewers  →  wallet connect  →  holders  →  on-air actions
 ```
 
-**Discord quick-notification system.** Discord is the *retention and re-attention*
-layer — the thing that converts a one-time clip viewer into a recurring viewer.
-Design it to do three jobs, and only three:
-1. **"We're live" ping** — role-mentionable, fires the second `/player` flips to
-   LIVE, with the show name and a deep link. This is the highest-value automation
-   CSGN can build; a channel without a "we're live" ping loses most of its
-   returning audience.
-2. **Clip drop** — every clip auto-posted so the community has something to share.
-3. **On-air action alerts** — a spotlight played, a vote opened, a battle starting.
-   This makes the token's powers *visible* to people who haven't used them yet.
+**Discord: the notification spine (concrete design).** Discord is the *retention
+and re-attention* layer — what turns a one-time clip viewer into a recurring one.
+Keep the server small and purpose-built; a sprawling server is a graveyard.
 
-Implementation note: fire these from the existing server side (the fee poller
-already detects live state and writes `streamActivity`), not from the browser — a
-Discord webhook call on the LIVE transition is a small, high-leverage addition.
+*Channel plan (7 channels, not 20):*
+
+| Channel | Purpose | Who posts |
+|---|---|---|
+| `#announcements` | Slate changes, big news | Founder |
+| `#live-now` | **Auto** "we're live" ping + deep link | Bot |
+| `#clips` | **Auto** clip drops | Bot |
+| `#on-air-actions` | **Auto** spotlight played / vote opened / meme-100 flip | Bot |
+| `#schedule` | **Auto** open-slot alerts + tonight's lineup | Bot |
+| `#general` | The third place | Everyone |
+| `#creators` | Onboarding + support for slot claimers | Creators |
+
+*Roles:* `@live-ping` (opt-in mention — never @everyone), `@creator` (has claimed
+a slot), `@holder` (wallet-verified), `@og` (first 100).
+
+*The four automations, in priority order:*
+1. **"We're live" ping** — fires the moment `/player` flips to LIVE, with the show
+   name + link. **Highest-value automation available**; a channel without it loses
+   most of its returning audience. Server-side off the existing live detection
+   (the fee poller already samples Twitch Helix and writes `streamActivity`), so
+   it's a webhook call on the transition — not a new service.
+2. **Open-slot alert** — a slot opens (or the network block is toggled off) →
+   post to `#schedule` with the claim link. Turns idle inventory into supply.
+3. **Clip drop** — every clip auto-posts to `#clips` so members have something to
+   share. Give them the asset; they do the distribution.
+4. **On-air action alert** — a spotlight plays, a vote opens. Makes the token's
+   powers *visible* to people who haven't used them yet.
+
+*Anti-patterns:* no @everyone (kills opt-in), no bot spam in `#general`, no
+duplicate posting of the same event to three channels, and **no making Discord the
+destination** — the channel is the destination.
 
 **Rule of thumb:** Discord notifies, X acquires, the channel retains. Don't invert
-those jobs — a Discord that becomes the destination is a Discord that starves the
-channel.
+those jobs.
 
 #### Social strategy & day-to-day execution
 The trap with a daily show + a dynasty series + FPS streams is producing a lot of
@@ -405,6 +465,42 @@ The trap with a daily show + a dynasty series + FPS streams is producing a lot o
 - **The Whiparound is the appointment** — same hour daily, announced the same way
   every day. Predictability is what makes a channel a habit.
 - **~30–45 min/day**, treated as non-negotiable operating time, not a project.
+
+#### The next 30 days — production calendar
+Committed slate: **a daily 30-minute Whiparound** + **4–5 CFB streams/week
+(1–4 hrs each)**. That is ~15 hrs/week of live production before clipping, which
+is a real load for one person — so the plan is built around protecting it.
+
+| | Mon | Tue | Wed | Thu | Fri | Sat | Sun |
+|---|---|---|---|---|---|---|---|
+| **Whiparound** (30 min) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **CFB Dynasty** (1–4 hr) | ✓ | — | ✓ | ✓ | — | ✓ | ✓ |
+| **Clips due** | 2 | 1 | 2 | 2 | 1 | 2 | 2 |
+
+*Rules that make it survivable:*
+- **The Whiparound is fixed-time and fixed-length.** 30 minutes, same hour, every
+  day. Never let it sprawl to 60 — the streak matters more than any single episode.
+- **Batch the prep.** One 20-minute block each morning collects the day's stories;
+  the show is the delivery, not the research.
+- **Dynasty days are flexible in length, fixed in existence.** A 1-hour Dynasty
+  night still counts; skipping does not. Length is the shock absorber.
+- **Bank a buffer.** Record two evergreen Whiparound-style segments in week 1 as
+  emergency fills so a sick day never breaks the streak (and the VOD autopilot has
+  something to play).
+- **Clip while you stream.** Mark timestamps live; harvesting later is what
+  actually kills the clip habit.
+- **One rest valve:** if a week goes sideways, drop a *Dynasty* stream, never the
+  Whiparound. Daily beats long.
+
+*Week-by-week:*
+- **Week 1** — Whiparound daily from day 1; Dynasty ep. 1–2; ship the Discord
+  live-ping; bank the two emergency segments.
+- **Week 2** — add clip cadence to X daily; Dynasty 3–4; open-slot alerts live;
+  first 10 hand-recruited creators contacted.
+- **Week 3** — first coin-community spotlight/sponsor on a Dynasty night; VOD
+  autopilot fills the network block on nights you don't stream.
+- **Week 4** — first Live Coin Battle inside a Dynasty night; publish month-1
+  numbers (holders-who-acted, clips shipped, streams hit vs. planned).
 
 ### 5.5 Operations & org
 Currently near-solo — the #1 operational risk. Near-term: one nightly show + the
@@ -571,9 +667,9 @@ number that doesn't compound.
 
 | When | Focus | Deliverables |
 |---|---|---|
-| **Weeks 1–2** | Activate + de-risk | **Launch the Originals slate** (Whiparound daily; Dynasty ep. 1; FPS block) — the schedule is the product; **Discord "we're live" ping**; verify the sign-up funnel end-to-end (Auth Events now logs failures) and **hand-recruit the first 10 creators**; mainnet dry-run the jukebox; rewrite homepage + pinned post; start the daily clip habit |
+| **Weeks 1–2** | Activate + de-risk | **Launch the Originals slate** — daily 30-min Whiparound + 4–5 CFB streams/week (§5.4 calendar); **Discord live-ping + open-slot alerts**; bank two emergency segments; verify the sign-up funnel end-to-end (Auth Events now logs failures) and **hand-recruit the first 10 creators**; mainnet dry-run the jukebox; rewrite homepage + pinned post; start the daily clip habit |
 | **Weeks 3–4** | First ignition | Ship + run **Live Coin Battle #1**; recruit the first 5–10 coin communities; first KOL segment; publish the first **treasury/State-of-the-Network report** |
-| **Month 2** | Retention loop | Game leagues (CFB 27 Dynasty with recruiting-by-vote + coin-team sponsorships); jukebox queue + dynamic pricing; begin Prong 2 (generalized creator channels + per-view payouts) |
+| **Month 2** | Retention loop | **VOD network autopilot** fills 7 PM–3 AM whether or not anyone is live (live always pre-empts); Dynasty recruiting-by-vote + coin-team sponsorships; jukebox queue + dynamic pricing |
 | **Month 3** | Scale | 10+ communities cycling; creator-channel beta; deepen liquidity; publish recurring treasury reports; remove single-operator risk |
 | **Quarters 2–4** | Platform | Open the creator-channel platform (Prong 2), migrate to a treasury DAO, external raise into proven traction |
 
@@ -595,11 +691,12 @@ market you for free. Everything else is amplification.
 5. **We never burn.** Revenue feeds the treasury, which recycles into distribution
    and creator payouts (including open-market $CSGN buys).
 6. **Access stays open; the token governs attention.** Slots are abundant, attention
-   is scarce — price the scarce thing. Open claiming is a free supply-side growth
-   engine; gating it would strangle the network before it starts.
-7. **Editorial control comes from the Originals slate** (Whiparound · Dynasty · FPS)
-   owning the tentpole hours — owned-and-operated programming alongside affiliates —
-   plus `isClaimable`, the `maxConcurrentClaims` merit ladder, and admin override.
+   is scarce — price the scarce thing. The token's scope is fixed: promotion,
+   whip-around mentions, jukebox, sponsorships, meme-100 voting. No auctions, and
+   never a gate on getting on air.
+7. **Editorial control is the schedule's shape** — 3 AM–7 PM open, 7 PM–3 AM the
+   CSGN Originals block (Whiparound · Dynasty · FPS), with one toggle to return it
+   all to open. Owned-and-operated programming alongside affiliates.
 8. The near-term game is distribution — a consistent slate, a daily clip habit, a
    Discord "we're live" ping, and hand-recruited creators and communities — not more
    features.
