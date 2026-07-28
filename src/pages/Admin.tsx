@@ -1040,13 +1040,10 @@ export default function Admin() {
               </div>
             </Card>
 
-            {/* Broadcast Ticker (config/ticker → OBS overlay) */}
-            <Card hover={false} className="overflow-hidden">
-              <div className="p-4 border-b border-white/[0.06] flex items-center gap-2">
-                <Megaphone className="w-5 h-5 text-amber-400" />
-                <h3 className="font-semibold text-white">Broadcast Ticker</h3>
-              </div>
-              <div className="p-4 space-y-4">
+            {/* Broadcast Control — one console; the rail + spotlight ride inside it
+                as the "Rail & Coins" module (state stays here). */}
+            <TickerControlsCard railModule={(
+              <div className="space-y-4">
                 <p className="text-xs text-gray-500 leading-relaxed">
                   Drives the OBS ticker overlay (<span className="font-mono text-primary-400">docs/obs/csgn-ticker.html</span>).
                   The overlay polls this config over the public Firestore REST API, so saves here reach the broadcast within ~60s — no OBS restart needed.
@@ -1223,9 +1220,7 @@ export default function Admin() {
                   </div>
                 </div>
               </div>
-            </Card>
-
-            <TickerControlsCard />
+            )} />
 
           </div>
         )}

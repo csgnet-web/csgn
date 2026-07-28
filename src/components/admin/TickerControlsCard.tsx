@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { doc, onSnapshot, setDoc } from 'firebase/firestore'
+import { Radio, Siren, Megaphone, Twitter, Vote, type LucideIcon } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { db } from '@/config/firebase'
+
+type ModuleId = 'onair' | 'breaking' | 'rail' | 'social' | 'vote'
 
 // Admin controls for the config/ticker fields beyond the RIGHT NOW rail and coin
 // spotlight: BREAKING, who's live / up next (also used by the over-live
@@ -48,7 +51,11 @@ const serializeTweets = (tweets: Tweet[]): string =>
 const fmtToken = (n: number): string =>
   n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(Math.round(n))
 
-export default function TickerControlsCard() {
+/** `railModule` lets the page inject its own Right Now / Spotlight controls as a
+ *  module inside this console, so Broadcast Control renders as ONE product
+ *  instead of two stacked cards with overlapping jobs. */
+export default function TickerControlsCard({ railModule }: { railModule?: ReactNode } = {}) {
+  const [activeModule, setActiveModule] = useState<ModuleId>('onair')
   const seeded = useRef(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -182,15 +189,68 @@ export default function TickerControlsCard() {
   const input = 'w-full rounded-lg bg-white/[0.04] border border-white/[0.1] focus:border-primary-500/60 outline-none px-3 py-2 text-sm'
   const label = 'block text-xs text-gray-400 font-medium mb-1'
 
+  // Module registry — each carries a live indicator so the operator can see what's
+  // on air without opening every panel.
+  const modules: Array<{ id: ModuleId; label: string; icon: LucideIcon; live?: boolean; hidden?: boolean }> = [
+    { id: 'onair', label: 'On Air', icon: Radio, live: !!(liveName || liveTitle) },
+    { id: 'breaking', label: 'Breaking & Chyron', icon: Siren, live: breakingOn || chyronOn },
+    { id: 'rail', label: 'Rail & Coins', icon: Megaphone },
+    { id: 'social', label: 'Social', icon: Twitter },
+    { id: 'vote', label: 'Vote', icon: Vote, live: !!currentVote && currentVote.status !== 'closed' },
+  ]
+
+  const statusPills: Array<{ label: string; on: boolean; tone: string }> = [
+    { label: 'BREAKING', on: breakingOn, tone: 'bg-red-500/15 text-red-300 border-red-500/30' },
+    { label: 'CHYRON', on: chyronOn, tone: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
+    { label: 'FAN COUNTER', on: showActions, tone: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' },
+    { label: 'VOTE OPEN', on: !!currentVote && currentVote.status !== 'closed', tone: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30' },
+  ]
+
   return (
     <Card hover={false} className="overflow-hidden">
-      <div className="p-4 border-b border-white/[0.06]">
-        <h3 className="font-semibold text-white">Broadcast Control — BREAKING · Live · Governance · Vote</h3>
-        <p className="text-xs text-gray-500 mt-0.5">Writes config/ticker → OBS ticker + over-live overlay pick it up within seconds.</p>
+      {/* ── Console header: what this controls + what is on air right now ── */}
+      <div className="p-4 sm:p-5 border-b border-white/[0.06] bg-gradient-to-r from-white/[0.04] to-transparent">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="font-semibold text-white text-lg">Broadcast Control</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Writes <span className="font-mono text-primary-400">config/ticker</span> → the OBS ticker + over-live overlay pick it up within seconds.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {statusPills.filter((p) => p.on).length === 0 && (
+              <span className="text-[10px] uppercase tracking-wider text-gray-600 border border-white/10 rounded-full px-2.5 py-1">Nothing overlaid</span>
+            )}
+            {statusPills.filter((p) => p.on).map((p) => (
+              <span key={p.label} className={`text-[10px] font-bold uppercase tracking-wider border rounded-full px-2.5 py-1 flex items-center gap-1.5 ${p.tone}`}>
+                <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />{p.label}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
+
+      {/* ── Module navigation ── */}
+      <div className="flex gap-1 px-2 sm:px-3 pt-2 border-b border-white/[0.06] overflow-x-auto">
+        {modules.filter((m) => !m.hidden).map((m) => (
+          <button
+            key={m.id}
+            onClick={() => setActiveModule(m.id)}
+            className={`relative flex items-center gap-2 px-3 sm:px-4 py-2.5 text-sm font-medium whitespace-nowrap rounded-t-lg transition-colors cursor-pointer ${
+              activeModule === m.id ? 'text-white bg-white/[0.06]' : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            <m.icon className="w-4 h-4" />
+            {m.label}
+            {m.live && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+            {activeModule === m.id && <span className="absolute left-2 right-2 -bottom-px h-0.5 bg-primary-500 rounded-full" />}
+          </button>
+        ))}
+      </div>
+
       <div className="p-4 sm:p-6 space-y-6">
-        {/* BREAKING */}
-        <div className="space-y-2">
+        {/* ══ MODULE: BREAKING & CHYRON ══ */}
+        <div className={`space-y-2 ${activeModule === 'breaking' ? '' : 'hidden'}`}>
           <label className={label}>BREAKING {breakingOn && <span className="text-red-400">● live now</span>}</label>
           <textarea value={breaking} onChange={(e) => setBreaking(e.target.value)} rows={2} placeholder="Headline — stays on air until cleared" className={input} />
           <input value={breaking2} onChange={(e) => setBreaking2(e.target.value)} placeholder="Second line (optional)" className={input} />
@@ -205,8 +265,8 @@ export default function TickerControlsCard() {
           </div>
         </div>
 
-        {/* Viewer → on-air action counter */}
-        <div className="space-y-2 rounded-xl bg-white/[0.03] border border-white/[0.08] p-3">
+        {/* ══ MODULE: ON AIR — fan-action counter + jukebox price ══ */}
+        <div className={`space-y-2 rounded-xl bg-white/[0.03] border border-white/[0.08] p-3 ${activeModule === 'onair' ? '' : 'hidden'}`}>
           <div className="flex items-center justify-between">
             <label className={label + ' mb-0'}>Fans on the board — viewer → on-air actions {showActions && <span className="text-emerald-400">● on air</span>}</label>
             <span className="text-2xl font-bold font-mono text-white tabular-nums">{actions.total.toLocaleString('en-US')}</span>
@@ -234,7 +294,7 @@ export default function TickerControlsCard() {
         </div>
 
         {/* Main chyron — full control of the three headline lines */}
-        <div className="space-y-2">
+        <div className={`space-y-2 ${activeModule === 'breaking' ? '' : 'hidden'}`}>
           <label className={label}>Main chyron — all three lines {chyronOn && <span className="text-emerald-400">● live now</span>}</label>
           <div className="grid sm:grid-cols-[1fr_auto] gap-2">
             <input value={chyKicker} onChange={(e) => setChyKicker(e.target.value)} placeholder="Kicker (small top line) — e.g. CSGN ALERT" className={input} />
@@ -249,7 +309,7 @@ export default function TickerControlsCard() {
         </div>
 
         {/* Now live + Up next */}
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className={`grid sm:grid-cols-2 gap-4 ${activeModule === 'onair' ? '' : 'hidden'}`}>
           <div className="space-y-2">
             <label className={label}>Live now (name · title)</label>
             <input value={liveName} onChange={(e) => setLiveName(e.target.value)} placeholder="Name" className={input} />
@@ -264,15 +324,18 @@ export default function TickerControlsCard() {
           </div>
         </div>
 
+        {/* ══ MODULE: RAIL & COINS — injected rail/spotlight + governance beats ══ */}
+        {railModule && <div className={activeModule === 'rail' ? '' : 'hidden'}>{railModule}</div>}
+
         {/* Governance beats */}
-        <div className="space-y-2">
+        <div className={`space-y-2 ${activeModule === 'rail' ? '' : 'hidden'}`}>
           <label className={label}>Governance beats (one per line · optional TAG | text)</label>
           <textarea value={govText} onChange={(e) => setGovText(e.target.value)} rows={3} placeholder={'Holders decide tonight’s stream\nTREASURY | 42 SOL routed to distribution'} className={input} />
           <Button size="sm" variant="secondary" isLoading={busy === 'gov'} onClick={saveGov}>Save governance</Button>
         </div>
 
-        {/* X post showcase */}
-        <div className="space-y-2">
+        {/* ══ MODULE: SOCIAL — X post showcase ══ */}
+        <div className={`space-y-2 ${activeModule === 'social' ? '' : 'hidden'}`}>
           <label className={label}>X posts — 30s showcase · one per line: <span className="text-gray-500">@handle | Name | tweet text</span> (prefix ! for verified)</label>
           <textarea value={tweetsText} onChange={(e) => setTweetsText(e.target.value)} rows={4} placeholder={'!@blknoiz06 | Ansem | CSGN is the ESPN of crypto\n@CSGNet | Holders pick tonight’s stream — vote at csgn.fun'} className={input} />
           <div className="flex items-center justify-between">
@@ -281,8 +344,8 @@ export default function TickerControlsCard() {
           </div>
         </div>
 
-        {/* Vote */}
-        <div className="space-y-3 border-t border-white/[0.06] pt-5">
+        {/* ══ MODULE: VOTE — token-weighted programming vote ══ */}
+        <div className={`space-y-3 ${activeModule === 'vote' ? '' : 'hidden'}`}>
           <div className="flex items-center justify-between">
             <label className={label + ' mb-0'}>Tonight’s vote (token-weighted)</label>
             {currentVote && <span className={`text-xs font-bold uppercase ${currentVote.status === 'closed' ? 'text-red-400' : 'text-emerald-400'}`}>{currentVote.status === 'closed' ? 'Closed' : 'Open'}</span>}
