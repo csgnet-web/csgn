@@ -10,7 +10,7 @@ const footerLinks = {
     { label: 'Watch Live', href: '/watch', external: false },
     { label: 'Schedule', href: '/schedule', external: false },
     { label: 'Apply to Stream', href: '/apply', external: false },
-    { label: 'Queue', href: '/queue', external: false },
+    { label: 'Schedule', href: '/schedule', external: false },
   ],
   Company: [
     { label: 'About', href: '/about', external: false },

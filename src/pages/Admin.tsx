@@ -4,7 +4,7 @@ import { Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   Shield, Users, Radio, Clock, X,
-  BarChart3, Plus, Gavel, Crown,
+  BarChart3, Plus, Crown,
   Trash2, UserCheck, AlertTriangle, Tv, DollarSign,
   Wallet, CheckCircle2, XCircle, RefreshCw, Link as LinkIcon, ExternalLink, Monitor, Activity,
   Megaphone, Flame,
@@ -25,25 +25,24 @@ import {
   appendNextThreeDays,
   wipeAndRegenerateSlots,
   syncSevenDaysFrom,
-  reseedNextSevenDaysAsCEO,
-  reseedNextYearAsCEO,
+  reseedNextSevenDays,
+  reseedNextYear,
   SLOTS_PER_DAY,
   fetchSlots,
-  assignCEOSlot,
+  assignNetworkSlot,
   assignSlot,
   updateSlotStreamUrl,
   updateSlotStatus,
   updateSlot,
-  resolveAuction,
   deleteSlot,
   acceptSlotRequest,
   declineSlotRequest,
   updateCreatorFees,
   markFeesPaid,
   declineFeesPayment,
-  getMinimumBid,
   formatESTRange,
-  isCeoCreator,
+  isNetworkSlot,
+  SLOT_STATUSES,
   DEFAULT_STREAM_URL,
   type Slot,
   type SlotType,
@@ -159,6 +158,8 @@ export default function Admin() {
   const [currentLiveStreamer, setCurrentLiveStreamer] = useState('')
   const [currentLiveTitle, setCurrentLiveTitle] = useState('')
   const [onAirActions, setOnAirActions] = useState({ total: 0, votes: 0, submissions: 0, spotlights: 0, buys: 0 })
+  const [networkBlockEnabled, setNetworkBlockEnabled] = useState(true)
+  const [togglingNetwork, setTogglingNetwork] = useState(false)
   const [pushingStream, setPushingStream] = useState(false)
   const [wipingSlots, setWipingSlots] = useState(false)
   const [confirmWipe, setConfirmWipe] = useState(false)
@@ -180,6 +181,25 @@ export default function Admin() {
   const [feeWallet, setFeeWallet] = useState('')
   const [feeDeclineReason, setFeeDeclineReason] = useState('')
   const [feeActionLoading, setFeeActionLoading] = useState<string | null>(null)
+
+  // Network block (7 PM–3 AM ET) on/off — off returns those hours to open claiming
+  useEffect(() => {
+    return onSnapshot(doc(db, 'config', 'scheduleMeta'), (snap) => {
+      const d = snap.exists() ? snap.data() : {}
+      setNetworkBlockEnabled(d.networkBlockEnabled !== false)
+    }, () => {})
+  }, [])
+
+  const handleToggleNetworkBlock = async () => {
+    setTogglingNetwork(true)
+    setActionError(null)
+    try {
+      await setDoc(doc(db, 'config', 'scheduleMeta'), { networkBlockEnabled: !networkBlockEnabled, updatedAt: new Date().toISOString() }, { merge: true })
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to toggle the network block.')
+    }
+    setTogglingNetwork(false)
+  }
 
   // Live fan-action counter for the dashboard hero
   useEffect(() => {
@@ -527,7 +547,7 @@ export default function Admin() {
       const [y, m, d] = syncStartDate.split('-').map((v) => parseInt(v, 10))
       const start = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
       await syncSevenDaysFrom(start)
-      const result = await reseedNextSevenDaysAsCEO(start)
+      const result = await reseedNextSevenDays(start)
       await loadSlots()
 
       if (result.conflicts.length > 0) {
@@ -563,7 +583,7 @@ export default function Admin() {
     try {
       const [y, m, d] = syncStartDate.split('-').map((v) => parseInt(v, 10))
       const start = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
-      const result = await reseedNextYearAsCEO(start)
+      const result = await reseedNextYear(start)
       await loadSlots()
       if (result.conflicts.length > 0) {
         setActionError(`365-day reseed completed with ${result.conflicts.length} conflict(s): ${result.conflicts[0]}`)
@@ -574,22 +594,12 @@ export default function Admin() {
     setSyncingYear(false)
   }
 
-  const handleResolveAuction = async (slotId: string) => {
-    setActionError(null)
-    try {
-      await resolveAuction(slotId)
-      await loadSlots()
-    } catch (err: any) {
-      setActionError(err?.message || 'Failed to resolve auction.')
-    }
-  }
-
   const handleAssignSlot = async () => {
     if (!assignModal || !assignUid.trim() || !assignName.trim()) return
     setActionError(null)
     try {
-      if (assignModal.type === 'ceo') {
-        await assignCEOSlot(assignModal.id, assignUid, assignName, assignStreamUrl || DEFAULT_STREAM_URL, assignStreamTitle)
+      if (assignModal.type === 'network') {
+        await assignNetworkSlot(assignModal.id, assignUid, assignName, assignStreamUrl || DEFAULT_STREAM_URL, assignStreamTitle)
       } else {
         await assignSlot(assignModal.id, assignUid, assignName, assignStreamUrl || DEFAULT_STREAM_URL, assignStreamTitle)
       }
@@ -763,16 +773,9 @@ export default function Admin() {
     { id: 'auth' as Tab, label: 'Auth Events', icon: Activity },
   ]
 
-  // Crown only for slots with CEO Creator branding ON (purely cosmetic toggle).
-  const typeIcon = (slot: Slot) => {
-    if (slot.type === 'auction') return <Gavel className="w-4 h-4" />
-    return isCeoCreator(slot) ? <Crown className="w-4 h-4" /> : <Radio className="w-4 h-4" />
-  }
-
-  const typeColor = (slot: Slot) => {
-    if (slot.type === 'auction') return 'text-cyan-400'
-    return isCeoCreator(slot) ? 'text-gold' : 'text-gray-400'
-  }
+  // Gold crown = the CSGN Originals (network) block; open slots read as neutral.
+  const typeIcon = (slot: Slot) => (isNetworkSlot(slot) ? <Crown className="w-4 h-4" /> : <Radio className="w-4 h-4" />)
+  const typeColor = (slot: Slot) => (isNetworkSlot(slot) ? 'text-gold' : 'text-blue-300')
 
   const scheduleDays = ['Today', 'Tomorrow', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7']
   const etDayKey = (date: Date) => date.toLocaleDateString('en-CA', {
@@ -1263,9 +1266,21 @@ export default function Admin() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold text-white">Scheduling Module</h3>
-                <p className="text-sm text-gray-400">Reseed tools maintain 12 ET slots/day. Use the 7-day action to force CEO Creator assignments (no auctions) for the selected week.</p>
+                <p className="text-sm text-gray-400">Reseed tools maintain 12 ET slots/day: 3 AM–7 PM open for anyone to claim, 7 PM–3 AM the CSGN Originals network block. No auctions.</p>
               </div>
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex gap-2 flex-wrap items-center">
+                <Button
+                  variant={networkBlockEnabled ? 'secondary' : 'gold'}
+                  size="sm"
+                  leftIcon={<Crown className="w-4 h-4" />}
+                  isLoading={togglingNetwork}
+                  onClick={handleToggleNetworkBlock}
+                  title={networkBlockEnabled
+                    ? 'Network block ON — 7 PM–3 AM ET is reserved for CSGN Originals. Click to open those hours to claiming.'
+                    : 'Network block OFF — every slot is open to claim. Click to reserve 7 PM–3 AM ET again.'}
+                >
+                  {networkBlockEnabled ? 'Network block: ON' : 'Network block: OFF — all open'}
+                </Button>
                 <Button variant="ghost" size="sm" leftIcon={<RefreshCw className="w-4 h-4" />} onClick={loadSlots}>
                   Refresh
                 </Button>
@@ -1377,8 +1392,6 @@ export default function Admin() {
                     const startTime = new Date(slot.startTime)
                     const nowMs = Date.now()
                     const isActive = nowMs >= startTime.getTime() && nowMs < new Date(slot.endTime).getTime()
-                    const hoursUntil = (startTime.getTime() - nowMs) / (1000 * 60 * 60)
-                    const canResolve = hoursUntil <= 2 && slot.status === 'open'
                     const pendingRequests = slot.requests?.filter((r) => r.status === 'pending') ?? []
 
                     return (
@@ -1403,10 +1416,10 @@ export default function Admin() {
                                     setActionError(err?.message || 'Failed to update slot type.')
                                   }
                                 }}
-                                className={`px-2 py-0.5 bg-white/5 border border-white/10 rounded text-xs focus:outline-none focus:border-primary-500/50 cursor-pointer appearance-none ${slot.type === 'ceo' ? 'text-gold' : 'text-blue-300'}`}
+                                className={`px-2 py-0.5 bg-white/5 border border-white/10 rounded text-xs focus:outline-none focus:border-primary-500/50 cursor-pointer appearance-none ${slot.type === 'network' ? 'text-gold' : 'text-blue-300'}`}
                               >
-                                <option value="ceo">Open Slot</option>
-                                <option value="auction">Auction</option>
+                                <option value="open">Open — anyone can claim</option>
+                                <option value="network">Network — CSGN Originals</option>
                               </select>
                               {/* Inline status selector */}
                               <select
@@ -1421,13 +1434,9 @@ export default function Admin() {
                                 }}
                                 className="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-xs text-white focus:outline-none focus:border-primary-500/50 cursor-pointer appearance-none"
                               >
-                                <option value="open">open</option>
-                                <option value="closing">closing</option>
-                                <option value="pending_deposit">pending_deposit</option>
-                                <option value="confirmed">confirmed</option>
-                                <option value="live">live</option>
-                                <option value="completed">completed</option>
-                                <option value="unfilled">unfilled</option>
+                                {SLOT_STATUSES.map((st) => (
+                                  <option key={st} value={st}>{st}</option>
+                                ))}
                               </select>
                               {pendingRequests.length > 0 && (
                                 <Badge variant="purple">{pendingRequests.length} request{pendingRequests.length !== 1 ? 's' : ''}</Badge>
@@ -1436,8 +1445,6 @@ export default function Admin() {
                             <p className="text-xs text-gray-500 mt-0.5">
                               {startTime.toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' })} {startTime.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}
                               {slot.assignedName && <span className="text-emerald-400"> — {slot.assignedName}</span>}
-                              {slot.type === 'auction' && ` — ${slot.bids.length} bid${slot.bids.length !== 1 ? 's' : ''}`}
-                              {slot.type === 'auction' && slot.bids.length > 0 && ` (top: ${Math.max(...slot.bids.map(b => b.amount)).toLocaleString()} CSGN, next: ${getMinimumBid(slot.bids.length).toLocaleString()} CSGN)`}
                             </p>
                             <p className="text-xs text-gray-600 font-mono truncate mt-0.5">
                               Stream: {slot.streamUrl || DEFAULT_STREAM_URL}
@@ -1445,35 +1452,9 @@ export default function Admin() {
                           </div>
 
                           <div className="flex items-center gap-2 flex-wrap justify-end">
-                            {slot.type === 'auction' && canResolve && slot.bids.length > 0 && (
-                              <Button variant="primary" size="sm" onClick={() => handleResolveAuction(slot.id)}>
-                                <Gavel className="w-3 h-3 mr-1" /> Resolve
-                              </Button>
-                            )}
                             {pendingRequests.length > 0 && (
                               <Button variant="secondary" size="sm" onClick={() => setRequestModal(slot)}>
                                 Requests ({pendingRequests.length})
-                              </Button>
-                            )}
-                            {/* CEO Creator branding toggle — cosmetic only:
-                                gold crown = ON, gray = OFF (no crown shown
-                                anywhere for this slot). No other logic reads it. */}
-                            {slot.type === 'ceo' && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className={isCeoCreator(slot) ? 'text-gold hover:text-yellow-300' : 'text-gray-500 hover:text-gray-300'}
-                                title={isCeoCreator(slot) ? 'CEO Creator branding ON — click to remove the crown' : 'CEO Creator branding OFF — click to restore the crown'}
-                                onClick={async () => {
-                                  try {
-                                    await updateSlot(slot.id, { ceoCreator: !isCeoCreator(slot) })
-                                    await loadSlots()
-                                  } catch (err: any) {
-                                    setActionError(err?.message || 'Failed to toggle CEO Creator branding.')
-                                  }
-                                }}
-                              >
-                                <Crown className="w-3 h-3" />
                               </Button>
                             )}
                             <Button
@@ -1519,7 +1500,7 @@ export default function Admin() {
                 >
                   <div className="p-6 border-b border-white/[0.06] flex items-center justify-between">
                     <h3 className="font-bold text-white">
-                      {assignModal.type === 'ceo' ? 'Assign Open Slot' : 'Switch Slot Assignment'}
+                      {assignModal.type === 'network' ? 'Assign Network Slot' : 'Switch Slot Assignment'}
                     </h3>
                     <button onClick={() => setAssignModal(null)} className="p-1 text-gray-400 hover:text-white cursor-pointer">
                       <X className="w-5 h-5" />

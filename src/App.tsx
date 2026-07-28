@@ -12,7 +12,6 @@ const Schedule = lazy(() => import('@/pages/Schedule'))
 const About = lazy(() => import('@/pages/About'))
 const StreamerQuickApply = lazy(() => import('@/pages/StreamerQuickApply'))
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
-const Queue = lazy(() => import('@/pages/Queue'))
 const Admin = lazy(() => import('@/pages/Admin'))
 const Player = lazy(() => import('@/pages/Player'))
 const Terms = lazy(() => import('@/pages/Terms'))
@@ -47,12 +46,12 @@ function AppContent() {
             <Route path="/" element={<Watch />} />
             <Route path="/watch" element={<Watch />} />
             <Route path="/schedule" element={<Schedule />} />
-            <Route path="/apply" element={<Navigate to="/queue" replace />} />
+            <Route path="/apply" element={<Navigate to="/schedule" replace />} />
             <Route path="/about" element={<About />} />
             <Route path="/about/streamer-quick-apply" element={<StreamerQuickApply />} />
             <Route path="/account" element={<Dashboard />} />
             <Route path="/dashboard" element={<Navigate to="/account" replace />} />
-            <Route path="/queue" element={<Queue />} />
+            <Route path="/queue" element={<Navigate to="/schedule" replace />} />
             <Route path="/vote" element={<Participate />} />
             <Route path="/participate" element={<Participate />} />
             <Route path="/admin" element={<Admin />} />

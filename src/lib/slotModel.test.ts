@@ -1,0 +1,71 @@
+import { describe, it, expect } from 'vitest'
+import { normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable, SLOT_STATUSES } from './slotModel'
+
+const HOUR = 60 * 60 * 1000
+const future = new Date(Date.now() + 4 * HOUR).toISOString()
+const past = new Date(Date.now() - 4 * HOUR).toISOString()
+
+type TestSlot = { type?: unknown; status?: unknown; assignedUid?: string | null; endTime: string }
+const slot = (over: Partial<TestSlot> = {}): TestSlot => ({
+  type: 'open', status: 'open', assignedUid: null, endTime: future, ...over,
+})
+
+describe('slot type normalization (legacy docs keep working)', () => {
+  it('maps the legacy CEO block onto network', () => {
+    expect(normalizeSlotType('ceo')).toBe('network')
+    expect(normalizeSlotType('network')).toBe('network')
+  })
+  it('maps legacy auction and anything unknown onto open', () => {
+    expect(normalizeSlotType('auction')).toBe('open')
+    expect(normalizeSlotType('open')).toBe('open')
+    expect(normalizeSlotType(undefined)).toBe('open')
+    expect(normalizeSlotType('nonsense')).toBe('open')
+  })
+})
+
+describe('slot status normalization', () => {
+  it('keeps the four real statuses', () => {
+    for (const s of SLOT_STATUSES) expect(normalizeSlotStatus(s)).toBe(s)
+    expect(SLOT_STATUSES).toEqual(['open', 'confirmed', 'live', 'completed'])
+  })
+  it('collapses every auction-era status back to open so the slot is claimable again', () => {
+    expect(normalizeSlotStatus('closing')).toBe('open')
+    expect(normalizeSlotStatus('pending_deposit')).toBe('open')
+    expect(normalizeSlotStatus('unfilled')).toBe('open')
+  })
+  it('normalizes a whole legacy doc in one pass', () => {
+    const s = normalizeSlot(slot({ type: 'ceo', status: 'pending_deposit' }))
+    expect(s.type).toBe('network')
+    expect(s.status).toBe('open')
+  })
+})
+
+describe('isNetworkSlot', () => {
+  it('is true for network and legacy ceo, false for open', () => {
+    expect(isNetworkSlot(slot({ type: 'network' }))).toBe(true)
+    expect(isNetworkSlot(slot({ type: 'ceo' }))).toBe(true)
+    expect(isNetworkSlot(slot({ type: 'open' }))).toBe(false)
+  })
+})
+
+describe('isSlotClaimable', () => {
+  it('an open, unassigned, future slot is claimable', () => {
+    expect(isSlotClaimable(slot({ type: 'open' }))).toBe(true)
+  })
+  it('a network slot is reserved while the block is on', () => {
+    expect(isSlotClaimable(slot({ type: 'network' }), true)).toBe(false)
+  })
+  it('turning the network block off returns those hours to open claiming', () => {
+    expect(isSlotClaimable(slot({ type: 'network' }), false)).toBe(true)
+    expect(isSlotClaimable(slot({ type: 'ceo' }), false)).toBe(true)
+  })
+  it('rejects assigned, past, and non-open slots', () => {
+    expect(isSlotClaimable(slot({ assignedUid: 'u1' }))).toBe(false)
+    expect(isSlotClaimable(slot({ endTime: past }))).toBe(false)
+    expect(isSlotClaimable(slot({ status: 'confirmed' }))).toBe(false)
+    expect(isSlotClaimable(slot({ status: 'live' }))).toBe(false)
+  })
+  it('a legacy auction-status slot becomes claimable again', () => {
+    expect(isSlotClaimable(slot({ type: 'auction', status: 'unfilled' }))).toBe(true)
+  })
+})

@@ -13,7 +13,6 @@ import { CSGN_MINT } from '@/lib/slots'
 const navLinks = [
   { href: '/watch', label: 'Watch Live', live: true },
   { href: '/schedule', label: 'Schedule' },
-  { href: '/queue', label: 'Queue', authOnly: true },
   { href: '/about', label: 'About' },
 ]
 
@@ -112,22 +111,13 @@ export function Header() {
             <nav className="hidden lg:flex items-center gap-0.5">
               {navLinks.map((link) => {
                 const isActive = location.pathname === link.href
-                const isLocked = !!link.authOnly && !user
 
                 return (
                   <Link
                     key={link.href}
-                    to={isLocked ? '#' : link.href}
-                    onClick={(e) => {
-                      if (isLocked) {
-                        e.preventDefault()
-                        openAuth('signup')
-                      }
-                    }}
+                    to={link.href}
                     className={`relative px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 ${
-                      isLocked
-                        ? 'text-gray-600 bg-white/[0.02] cursor-not-allowed'
-                        : isActive
+                      isActive
                         ? 'text-white bg-white/[0.07]'
                         : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
                     }`}
@@ -183,12 +173,12 @@ export function Header() {
                         </Link>
                         {profile?.role === 'admin' && (
                           <Link
-                            to="/queue"
+                            to="/schedule"
                             onClick={() => setProfileOpen(false)}
                             className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
                           >
                             <User className="w-4 h-4" />
-                            Queue
+                            Schedule
                           </Link>
                         )}
                         {profile?.role === 'admin' && (
@@ -251,23 +241,13 @@ export function Header() {
             >
               <div className="flex flex-col gap-1">
                 {navLinks.map((link) => {
-                  const isLocked = !!link.authOnly && !user
                   return (
                     <Link
                       key={link.href}
-                      to={isLocked ? '#' : link.href}
-                      onClick={(e) => {
-                        if (isLocked) {
-                          e.preventDefault()
-                          openAuth('signup')
-                          return
-                        }
-                        setMobileOpen(false)
-                      }}
+                      to={link.href}
+                      onClick={() => setMobileOpen(false)}
                       className={`flex items-center gap-3 px-4 py-3 text-base font-medium rounded-xl transition-all ${
-                        isLocked
-                          ? 'text-gray-600 bg-white/[0.02] cursor-not-allowed'
-                          : location.pathname === link.href
+                        location.pathname === link.href
                           ? 'text-white bg-white/[0.08]'
                           : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
                       }`}

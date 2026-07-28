@@ -20,7 +20,12 @@ type UserDoc = {
   walletAddress?: string
   socialLinks?: { twitch?: string }
 }
-type SlotDoc = { status?: string; isClaimable?: boolean; assignedUid?: string; startTime?: string; endTime?: string }
+type SlotDoc = { status?: string; type?: string; isClaimable?: boolean; assignedUid?: string; startTime?: string; endTime?: string }
+
+/** Legacy 'ceo' docs are the same 7 PM–3 AM block as the new 'network' type. */
+const isNetworkSlot = (slot: SlotDoc): boolean => slot.type === 'network' || slot.type === 'ceo'
+/** Auction-era statuses ('closing' | 'pending_deposit' | 'unfilled') collapse to open. */
+const isOpenStatus = (status?: string): boolean => status !== 'confirmed' && status !== 'live' && status !== 'completed'
 
 function twitchUsernameFromDefaultUrl(): string {
   const configured = process.env.CSGN_DEFAULT_STREAM_URL || ''
@@ -57,8 +62,16 @@ export const handler = withHttp(async (event) => {
   const slot = await getDoc<SlotDoc>(`slots/${slotId}`, transaction)
   if (!slot) throw notFound('Slot not found')
   const nowMs = Date.now()
-  if (slot.status !== 'open' || slot.assignedUid || slot.isClaimable === false) throw conflict('Slot is not available', 'slot_unavailable')
+  if (!isOpenStatus(slot.status) || slot.assignedUid || slot.isClaimable === false) throw conflict('Slot is not available', 'slot_unavailable')
   if (!slot.endTime || new Date(slot.endTime).getTime() <= nowMs) throw conflict('Past slots cannot be claimed', 'slot_past')
+  // The 7 PM–3 AM ET network block is CSGN Originals — unless an admin switches
+  // the block off globally, which hands those hours back to open claiming.
+  if (isNetworkSlot(slot)) {
+    const meta = await getDoc<{ networkBlockEnabled?: boolean }>('config/scheduleMeta', transaction)
+    if (meta?.networkBlockEnabled !== false) {
+      throw conflict('This is a CSGN Originals slot and is not open for claiming.', 'network_slot')
+    }
+  }
   const max = user.slotLimits?.maxConcurrentClaims || 2
   const allUserSlots = await queryCollection('slots', [fieldFilter('assignedUid', 'EQUAL', authUser.uid)], [], 20)
   const claimed = allUserSlots.filter((s) => {
