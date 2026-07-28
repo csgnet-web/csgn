@@ -37,9 +37,17 @@ that recycles revenue back into the network (including buying $CSGN to pay
 creators), and (c) the token being the unit of account for a compounding attention
 market.
 
+**Access is deliberately open.** Any verified user can claim up to 2 slots, free.
+The token is *not* the gate on getting on air — it governs **attention**
+(placement, promotion, spotlights), which is the genuinely scarce asset. Editorial
+control comes from CSGN's own **Originals slate** owning the tentpole hours, the
+way a broadcast network runs owned-and-operated programming alongside affiliates
+(§2A).
+
 The product is roughly a year ahead of its audience. **The entire near-term game
-is distribution and giving the token a legible reason to be held** — not more
-features, and definitely not burning supply.
+is distribution — a consistent Originals slate, a clip habit, a Discord "we're
+live" ping, and hand-recruited creators and coin communities** — plus giving the
+token a legible reason to be held. Not more features, and not burning supply.
 
 ---
 
@@ -83,6 +91,23 @@ curated VOD + a network board otherwise. Never dead air. This is the **spine**:
 the thing that makes CSGN a *channel*, not a website, and a 24/7 canvas for
 attention.
 
+**The O&O slate (CSGN Originals).** The anchor programming that gives the channel
+its identity and supplies the clip factory:
+
+| Show | Cadence | Job it does | Token hook |
+|---|---|---|---|
+| **The Whiparound** — daily crypto/news rundown | Daily, fixed ET hour | **The wedge.** Watching and trading in the same act; the appointment that makes CSGN a channel | Meme-100 reveal, Right Now rail, holder headlines |
+| **CFB 27 Online Dynasty** | Series, 2–3×/week | **Retention + narrative.** A multi-week story people follow; the ticker already renders CFB | Recruiting/4th-down votes; coin-community team sponsorships |
+| **Casual FPS block** (3–4 streams) | Rotating | **Personality + volume.** Fills hours, humanizes the network, low prep | Slate votes on what's played |
+
+The Whiparound is the tentpole — build the daily habit around it first; Dynasty
+is the serialized hook that gives people a *reason to come back on a schedule*;
+FPS is the connective tissue that keeps the channel warm and the clip supply high.
+
+**Sequencing note:** a daily show is the hardest commitment to keep and the
+easiest to under-deliver on. Start the Whiparound at a length you can sustain
+(15–20 min beats a 60-min show you skip twice a week) — consistency is the product.
+
 ### Prong 2 — The VOD / creator-channel system (the platform)
 The compounding prong. CSGN's internal VOD system is being generalized so **any
 user can create their own channel** and monetize the attention their content
@@ -109,6 +134,77 @@ it.**
 
 ---
 
+## 2A. Programming, access & editorial control
+
+### 2A.1 The core question: open claims *or* token-as-remote?
+Today any verified user can claim **up to 2 concurrent future/live slots**
+(`claimSlot.ts`; per-user override via `slotLimits.maxConcurrentClaims`, admins
+exempt). Zero people have signed up yet. The tempting "crypto" move is to gate
+slot access behind $CSGN — make the token the remote. **That would be a mistake
+right now, and the reason is a supply/demand asymmetry:**
+
+- **Slots are abundant.** 12 slots/day ≈ 84/week. Demand for them is currently
+  zero.
+- **Attention is scarce.** That's the thing everybody actually wants.
+
+**A token should price the scarce asset, not the abundant one.** Gating slots
+with $CSGN taxes the side of the market that is already empty — it suppresses the
+supply of creators (the only thing that grows the network) in exchange for
+trivial token demand. You'd be charging admission to an empty theater.
+
+So the resolution is not "open claims **vs.** token-as-remote." It's:
+
+> **Access stays open and free. The token governs *attention*.**
+
+This is the YouTube/TikTok structure — anyone may publish; *distribution* is the
+scarce, allocated good — with a broadcast-network twist.
+
+### 2A.2 The three tiers (where control actually lives)
+| Tier | What it is | How it's governed | Cost |
+|---|---|---|---|
+| **1. Access** | Claiming a slot and going live | Open to any verified account, 2 concurrent slots | **Free** |
+| **2. Placement** | *Which* hour, promotion, whip-around mentions, reel rotation | Founder-curated now → holder-voted as it scales | **Earned / voted** |
+| **3. Amplification** | Coin Jukebox spotlight, sponsorships, priority reel placement | Market-priced | **SOL / $CSGN** |
+
+Tier 1 grows supply. Tier 2 is the editorial spine. Tier 3 monetizes. The token
+is the remote for **tiers 2 and 3 — the scarce ones** — and never blocks tier 1.
+
+### 2A.3 How the founder keeps programming control (levers already built)
+Nothing new is needed to keep a firm hand on the schedule:
+- **The O&O anchor schedule.** CSGN's own original content owns the tentpole
+  hours; claimed slots fill in *around* it. This is exactly how real networks work
+  — **owned-and-operated programming plus affiliates.** Editorial identity comes
+  from the anchors, not from restricting affiliates.
+- **`isClaimable` per slot** (enforced in `claimSlot.ts`) — mark prime-time hours
+  un-claimable so they're reserved for anchors, tentpoles, and invited guests.
+  *(Gap: there's no admin UI toggle for this yet — it's server-enforced only.
+  Worth adding, since it's the single most useful editorial lever.)*
+- **`slotLimits.maxConcurrentClaims` per user** — a **merit ladder**, not a
+  paywall. Default 2; raise it for creators who show up, hit their times, and
+  bring an audience. Reward reliability with inventory.
+- **Admin override + release** (`adminReleaseSlot`) — reclaim any slot.
+
+### 2A.4 Why open claims are themselves a growth engine
+Every creator who claims a slot brings their own (small) audience to a CSGN URL.
+The network **aggregates many small audiences into one channel** — and that
+aggregate is what sponsors pay for and what the token governs. Open claiming is
+the cheapest supply-side growth CSGN has: it converts other people's audiences
+into network inventory at zero CAC. Gate it and that engine never starts.
+
+**Keep it open and balanced** (2 slots) for now. The moment slots become
+genuinely contested — more claim demand than hours — *that* is when scarcity is
+real and token-weighted priority for the contested hours becomes fair rather than
+extractive. Ship the mechanic when the constraint binds, not before.
+
+### 2A.5 Right now: the constraint is demand, not access
+Nobody has signed up. That is **not** evidence the claim rules are wrong; it's
+evidence nobody has been *asked*. Before touching the mechanic, verify the funnel
+works end-to-end (the Auth Events log now captures failed attempts, which it
+previously dropped) and then go recruit the first ten creators by hand. Ten
+booked creators is a schedule; a schedule is a channel.
+
+---
+
 ## 3. Token structure (rebuilt from first principles — no burn)
 
 ### 3.1 What $CSGN is *for*
@@ -118,9 +214,12 @@ does three jobs:
    shows (the remote control): the slate, the meme-100 ranking, the crawl, the
    game-league decisions. *Balance-weighted and non-custodial* — you keep your
    tokens and still wield power.
-2. **Gate access** — thresholds/tiers unlock creating a channel, better
-   revenue-share rates, priority reel placement, and submission rights. Demand
-   that rises structurally with the creator base.
+2. **Tier the scarce goods** — thresholds unlock *upgrades*, never basic entry:
+   better revenue-share rates, priority reel placement, creator-channel tooling,
+   and submission rights. Demand that rises structurally with the creator base.
+   **Note the boundary (§2A):** getting on air at all — claiming a slot on the
+   24/7 channel — stays open and free. The token tiers *attention and upside*, not
+   admission; gating admission would strangle the supply side we're trying to grow.
 3. **Settle payouts** — the treasury pays creators and the network in $CSGN, so
    value earned from attention is denominated in the token.
 
@@ -253,8 +352,59 @@ Distribution-first (the product is ahead of the audience). The engine:
 - **Borrow audiences** — grade every move by "whose followers does this reach":
   coin communities (jukebox/sponsorships/battles), KOL segments, creators on the
   fee share.
-- **Daily clips to X** from the 24/7 board — the cheapest top-of-funnel there is.
+- **Daily clips to X** from the 24/7 board — the cheapest top-of-funnel there is,
+  now fed by the Originals slate (§2, Prong 1).
+- **Discord as the notification spine** (below).
 - Full agency-grade plan in §7 (folded in from the former marketing audit).
+
+#### The content → clip → notify loop (the actual daily machine)
+The Originals slate exists to feed this loop; the loop is what compounds.
+
+```
+Originals (Whiparound / Dynasty / FPS)
+      ↓  produce
+   live show  →  VOD  →  1–3 clips/day
+      ↓                        ↓
+ Discord ping            X / TikTok / YT Shorts
+ ("live now")            (discovery)
+      ↓                        ↓
+   viewers  →  wallet connect  →  holders  →  on-air actions
+```
+
+**Discord quick-notification system.** Discord is the *retention and re-attention*
+layer — the thing that converts a one-time clip viewer into a recurring viewer.
+Design it to do three jobs, and only three:
+1. **"We're live" ping** — role-mentionable, fires the second `/player` flips to
+   LIVE, with the show name and a deep link. This is the highest-value automation
+   CSGN can build; a channel without a "we're live" ping loses most of its
+   returning audience.
+2. **Clip drop** — every clip auto-posted so the community has something to share.
+3. **On-air action alerts** — a spotlight played, a vote opened, a battle starting.
+   This makes the token's powers *visible* to people who haven't used them yet.
+
+Implementation note: fire these from the existing server side (the fee poller
+already detects live state and writes `streamActivity`), not from the browser — a
+Discord webhook call on the LIVE transition is a small, high-leverage addition.
+
+**Rule of thumb:** Discord notifies, X acquires, the channel retains. Don't invert
+those jobs — a Discord that becomes the destination is a Discord that starves the
+channel.
+
+#### Social strategy & day-to-day execution
+The trap with a daily show + a dynasty series + FPS streams is producing a lot of
+*content* and no *distribution*. Bind them:
+- **One clip per show, minimum, same day.** Not "when there's a good one." The
+  habit is the asset; quality averages up over weeks.
+- **Every clip names a coin or a person.** Degens share what makes their bag or
+  their name look important — a clip about "CSGN" gets ignored; a clip about
+  *$WIF hitting the board* gets reposted by the $WIF community.
+- **Post into other people's attention.** Reply to live CT threads with a relevant
+  ticker/board clip. You have the best-looking visual asset in any thread.
+- **Dynasty is the serialized hook** — post the cliffhanger, not the recap
+  ("holders vote the 4th-and-1 tonight").
+- **The Whiparound is the appointment** — same hour daily, announced the same way
+  every day. Predictability is what makes a channel a habit.
+- **~30–45 min/day**, treated as non-negotiable operating time, not a project.
 
 ### 5.5 Operations & org
 Currently near-solo — the #1 operational risk. Near-term: one nightly show + the
@@ -366,14 +516,63 @@ community re-share). ~30 min/day as a habit.
 counter), not market cap. Reach → interest (concurrent viewers) → wallet connect →
 **hold** → **act** → advocate.
 
+### 7.1 How CSGN grows *as a crypto project* (not just as a channel)
+
+A media brand grows on audience. A crypto project grows on **holders with a
+reason to stay**. CSGN has to do both, and the mistake would be running the token
+playbook (announcements, partnerships, price talk) instead of the media playbook.
+The order that works:
+
+**1. Content earns the audience; the token converts it.** Never lead with the
+token to a cold viewer. Lead with the show, the clip, the coin on the board — then
+the token is the obvious next step ("you can *decide* what's on this thing"). A
+crypto project that markets its token to people who don't consume its product is
+just asking for exit liquidity, and CT can smell it.
+
+**2. Make holders visible on screen.** The single most under-used asset is that
+CSGN can *show* participation: the fan-action counter, the holder headline on the
+crawl, the vote result changing the schedule. **Being seen is the reward.** This
+is why the on-air action counter matters more than any airdrop — it converts
+holding into status, and status is what people actually buy in crypto.
+
+**3. Recruit communities, not followers.** One coin community with 3,000 holders
+is worth more than 3,000 individual followers, because it comes with a Telegram, a
+mod who will raid, and a reason to care (their coin on the board). Every
+spotlight, battle, and dynasty sponsorship should be sold as *"your community gets
+airtime"* — they do the distribution for you. **Target: 10 activated communities
+before worrying about anything else.**
+
+**4. Let creators be the growth loop.** Open claiming (§2A) means every creator
+you onboard imports their audience. Ten reliable creators × a few hundred viewers
+each is a real channel, and it costs nothing. Treat creator recruiting as the
+primary growth channel, not a side feature — and use the merit ladder
+(`maxConcurrentClaims`) to reward the ones who show up.
+
+**5. Ship proof, not promises.** In this niche, credibility comes from things that
+visibly *work*: a channel that's actually always on, a jukebox play that actually
+appears on air in 60 seconds, a vote that actually changes tonight's game, a
+treasury report with real numbers. Every one of those is a marketing asset. The
+roadmap-and-partnership style of crypto marketing is dead weight here.
+
+**6. Be honest about the phase.** At a ~$4k cap with no audience, the goal is not
+price — it's **proof of format**. Publish the audience and participation numbers
+even while they're small; being early and transparent builds the exact trust that
+lets the token re-rate when the meta arrives. Manage to holders-who-acted, say so
+publicly, and let the cap follow.
+
+**What to explicitly NOT do:** paid engagement pods, generic "crypto influencer"
+promos, airdrop farming, price-prediction posting, or token-gating the parts of
+the product that are supposed to be growing (see §2A). Each of these buys a
+number that doesn't compound.
+
 ---
 
 ## 8. Roadmap / activation
 
 | When | Focus | Deliverables |
 |---|---|---|
-| **Weeks 1–2** | Activate + de-risk | Mainnet dry-run the jukebox; publish the first **treasury/State-of-the-Network report**; rewrite homepage + pinned post to "Crypto has a TV channel now / remote control for crypto TV / claim on a growing treasury"; instrument holders-who-acted as the North Star; start the daily clip habit |
-| **Weeks 3–4** | First ignition | Ship + run **Live Coin Battle #1**; recruit the first 5–10 coin communities; first KOL segment |
+| **Weeks 1–2** | Activate + de-risk | **Launch the Originals slate** (Whiparound daily; Dynasty ep. 1; FPS block) — the schedule is the product; **Discord "we're live" ping**; verify the sign-up funnel end-to-end (Auth Events now logs failures) and **hand-recruit the first 10 creators**; mainnet dry-run the jukebox; rewrite homepage + pinned post; start the daily clip habit |
+| **Weeks 3–4** | First ignition | Ship + run **Live Coin Battle #1**; recruit the first 5–10 coin communities; first KOL segment; publish the first **treasury/State-of-the-Network report** |
 | **Month 2** | Retention loop | Game leagues (CFB 27 Dynasty with recruiting-by-vote + coin-team sponsorships); jukebox queue + dynamic pricing; begin Prong 2 (generalized creator channels + per-view payouts) |
 | **Month 3** | Scale | 10+ communities cycling; creator-channel beta; deepen liquidity; publish recurring treasury reports; remove single-operator risk |
 | **Quarters 2–4** | Platform | Open the creator-channel platform (Prong 2), migrate to a treasury DAO, external raise into proven traction |
@@ -385,7 +584,7 @@ market you for free. Everything else is amplification.
 
 ---
 
-## 9. First-principles summary (the whole thesis in six lines)
+## 9. First-principles summary (the whole thesis in eight lines)
 1. Attention is the next asset crypto financializes → **Attention Capital Markets.**
 2. CSGN produces, prices, allocates, and pays out attention as a real broadcast → it
    is the flagship, not a tool.
@@ -395,4 +594,12 @@ market you for free. Everything else is amplification.
    a **productive treasury.**
 5. **We never burn.** Revenue feeds the treasury, which recycles into distribution
    and creator payouts (including open-market $CSGN buys).
-6. The near-term game is distribution + a legible buy reason — not more features.
+6. **Access stays open; the token governs attention.** Slots are abundant, attention
+   is scarce — price the scarce thing. Open claiming is a free supply-side growth
+   engine; gating it would strangle the network before it starts.
+7. **Editorial control comes from the Originals slate** (Whiparound · Dynasty · FPS)
+   owning the tentpole hours — owned-and-operated programming alongside affiliates —
+   plus `isClaimable`, the `maxConcurrentClaims` merit ladder, and admin override.
+8. The near-term game is distribution — a consistent slate, a daily clip habit, a
+   Discord "we're live" ping, and hand-recruited creators and communities — not more
+   features.
