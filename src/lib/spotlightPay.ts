@@ -2,10 +2,10 @@ import { Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } f
 import { CSGN_TREASURY } from './slots'
 
 // Client side of the Coin Jukebox: pay SOL to the CSGN treasury to put your coin
-// in the broadcast spotlight (TouchTunes-style). A plain SystemProgram transfer —
-// far simpler + safer than an SPL burn — returned as a confirmed signature that
-// jukeboxSpotlight then re-verifies on-chain before granting the spotlight. The
-// treasury uses the SOL to buy-and-burn $CSGN, so the token still accrues value.
+// in the broadcast spotlight (TouchTunes-style). A plain SystemProgram transfer,
+// returned as a confirmed signature that jukeboxSpotlight then re-verifies
+// on-chain before granting the spotlight. The treasury recycles the SOL into
+// distribution / creator payouts / liquidity — nothing is burned.
 //
 // ⚠️ Not yet exercised against a live mainnet transaction — dry-run with a tiny
 //    amount before enabling the jukebox publicly.

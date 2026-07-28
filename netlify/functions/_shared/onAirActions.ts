@@ -1,6 +1,6 @@
 // Live "viewer → on-air action" counter. Every time a holder does something that
 // can reach the broadcast — casts a token-weighted vote, submits a Right Now
-// item, or buys-and-burns a coin spotlight — we bump a world-readable tally at
+// item, or plays a coin spotlight on the jukebox — we bump a world-readable tally at
 // public/onAirActions. The OBS ticker polls it and the admin can flash it on air
 // ("847 fan actions on the board tonight"). Best-effort: a counter hiccup must
 // never fail the primary action, so callers await it inside their own try/catch

@@ -1,10 +1,10 @@
-// Coin Jukebox — the SOL "bribe" spotlight (TouchTunes for crypto TV). Anyone
-// pays SOL to put their coin in the broadcast's rising spotlight; no need to hold
-// $CSGN. The SOL lands in the CSGN treasury, which uses the proceeds to BUY AND
-// BURN $CSGN — so the token still accrues value while the user experience is
-// dead simple ("pay SOL, my coin goes on TV"). This endpoint is the trust
-// boundary: it re-reads the confirmed on-chain payment before granting anything,
-// and each payment signature is redeemable once.
+// Coin Jukebox — the SOL spotlight (TouchTunes for crypto TV). Anyone pays SOL to
+// put their coin in the broadcast's rising spotlight; no need to hold or burn
+// $CSGN. The SOL lands in the CSGN treasury, which recycles it into distribution,
+// creator payouts and liquidity — nothing is burned. Dead simple for the user
+// ("pay SOL, my coin goes on TV"). This endpoint is the trust boundary: it
+// re-reads the confirmed on-chain payment before granting anything, and each
+// payment signature is redeemable once.
 //
 // ⚠️  The on-chain payment + verification have not been run against a live mainnet
 //     transaction in this repo — dry-run with a tiny payment before going public.

@@ -68,7 +68,7 @@ export default function TickerControlsCard() {
   // Viewer → on-air action counter (public/onAirActions) + its on-air toggle
   const [actions, setActions] = useState({ total: 0, votes: 0, submissions: 0, spotlights: 0, buys: 0 })
   const [showActions, setShowActions] = useState(false)
-  const [burnCost, setBurnCost] = useState('') // SOL a holder pays (Coin Jukebox) to spotlight a coin
+  const [jukeboxSol, setJukeboxSol] = useState('') // SOL a holder pays (Coin Jukebox) to spotlight a coin — proceeds to treasury
   // Now live / up next
   const [liveName, setLiveName] = useState('')
   const [liveTitle, setLiveTitle] = useState('')
@@ -104,7 +104,7 @@ export default function TickerControlsCard() {
         setBreaking2(brkObj ? String(brkObj.text2 || '') : '')
         setBreakingRow(brkObj ? String(brkObj.mode || '') === 'row' : false)
         if (chy) { setChyKicker(String(chy.kicker || '')); setChyTitle(String(chy.title || '')); setChySub(String(chy.subtitle || '')); setChyPill(String(chy.pill || '')) }
-        if (Number(d.spotlightSol) > 0) setBurnCost(String(d.spotlightSol))
+        if (Number(d.spotlightSol) > 0) setJukeboxSol(String(d.spotlightSol))
         if (d.nowLive) { setLiveName(String(d.nowLive.name || '')); setLiveTitle(String(d.nowLive.title || '')) }
         if (d.upNext) { setNextName(String(d.upNext.name || '')); setNextStart(String(d.upNext.startET || '')) }
         if (Array.isArray(d.governance)) setGovText(d.governance.map((g: Beat) => (g.tag && g.tag !== 'CSGN GOVERNANCE' ? `${g.tag} | ${g.text}` : g.text)).join('\n'))
@@ -154,8 +154,8 @@ export default function TickerControlsCard() {
   const clearChyron = () => run('chyClear', async () => { await write({ chyron: null }); setChyKicker(''); setChyTitle(''); setChySub(''); setChyPill('') }, 'Main chyron cleared.')
   const toggleActions = () => run('actToggle', () => write({ showActions: !showActions }), !showActions ? 'Fan-action counter is now on air.' : 'Fan-action counter hidden from air.')
   const resetActions = () => run('actReset', () => setDoc(doc(db, 'public', 'onAirActions'), { total: 0, votes: 0, submissions: 0, spotlights: 0, buys: 0, since: new Date().toISOString(), updatedAt: new Date().toISOString() }), 'Fan-action counter reset for a new session.')
-  const saveBurnCost = () => run('burnCost', () => {
-    const n = Number(burnCost)
+  const saveJukebox = () => run('jukebox', () => {
+    const n = Number(jukeboxSol)
     if (!(n > 0)) throw new Error('Enter a positive SOL amount.')
     return write({ spotlightSol: n })
   }, 'Coin Jukebox price updated.')
@@ -223,13 +223,13 @@ export default function TickerControlsCard() {
             <Button size="sm" variant={showActions ? 'secondary' : 'gold'} isLoading={busy === 'actToggle'} onClick={toggleActions}>{showActions ? 'Hide from air' : 'Show on air'}</Button>
             <Button size="sm" variant="ghost" isLoading={busy === 'actReset'} onClick={resetActions}>Reset session</Button>
           </div>
-          <p className="text-xs text-gray-500">Counts every token-weighted vote, holder headline, and coin-spotlight burn as it lands. Auto-increments server-side; flip it on air whenever you want to show the crowd steering the broadcast.</p>
+          <p className="text-xs text-gray-500">Counts every token-weighted vote, holder headline, and coin-spotlight play as it lands. Auto-increments server-side; flip it on air whenever you want to show the crowd steering the broadcast.</p>
           <div className="flex items-end gap-2 pt-1 border-t border-white/[0.06] mt-1">
             <div className="flex-1">
               <label className={label}>Coin Jukebox price (SOL a holder pays to spotlight a coin)</label>
-              <input value={burnCost} onChange={(e) => setBurnCost(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.1" inputMode="decimal" className={input} />
+              <input value={jukeboxSol} onChange={(e) => setJukeboxSol(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.1" inputMode="decimal" className={input} />
             </div>
-            <Button size="sm" variant="secondary" isLoading={busy === 'burnCost'} onClick={saveBurnCost}>Save</Button>
+            <Button size="sm" variant="secondary" isLoading={busy === 'jukebox'} onClick={saveJukebox}>Save</Button>
           </div>
         </div>
 
@@ -267,7 +267,7 @@ export default function TickerControlsCard() {
         {/* Governance beats */}
         <div className="space-y-2">
           <label className={label}>Governance beats (one per line · optional TAG | text)</label>
-          <textarea value={govText} onChange={(e) => setGovText(e.target.value)} rows={3} placeholder={'Holders decide tonight’s stream\nBURN | 2.1M $CSGN burned this week'} className={input} />
+          <textarea value={govText} onChange={(e) => setGovText(e.target.value)} rows={3} placeholder={'Holders decide tonight’s stream\nTREASURY | 42 SOL routed to distribution'} className={input} />
           <Button size="sm" variant="secondary" isLoading={busy === 'gov'} onClick={saveGov}>Save governance</Button>
         </div>
 

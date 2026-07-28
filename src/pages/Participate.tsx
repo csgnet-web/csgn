@@ -365,7 +365,7 @@ export default function Participate() {
         <Card hover={false} className="p-5 space-y-3">
           <p className="text-sm text-gray-400">
             Pay <span className="text-amber-300 font-semibold">{spotSol} SOL</span> to play your coin into the broadcast’s{' '}
-            <span className="text-amber-300 font-semibold">crypto spotlight</span> — like a jukebox for crypto TV. It rises on air within a minute, and the treasury uses the SOL to <span className="text-amber-300 font-semibold">buy&nbsp;&amp;&nbsp;burn $CSGN</span>.
+            <span className="text-amber-300 font-semibold">crypto spotlight</span> — like a jukebox for crypto TV. It rises on air within a minute, and the SOL goes to the <span className="text-amber-300 font-semibold">CSGN treasury</span> (creator payouts + distribution).
           </p>
 
           {!walletAddress ? (
@@ -383,7 +383,7 @@ export default function Participate() {
               </div>
               <input value={spotNote} onChange={(e) => setSpotNote(e.target.value.slice(0, 90))} placeholder="Spotlight note (optional) — shown under the price" className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-amber-500/60 outline-none px-3 py-2 text-sm" />
               <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">Pays {spotSol} SOL · you sign in Phantom · funds a $CSGN buy &amp; burn</span>
+                <span className="text-xs text-gray-500">Pays {spotSol} SOL · you sign in Phantom · goes to the CSGN treasury</span>
                 <Button size="sm" variant="gold" isLoading={spotBusy} onClick={() => void doSpotlight()} leftIcon={<Flame className="w-4 h-4" />}>Play to Spotlight</Button>
               </div>
             </>
