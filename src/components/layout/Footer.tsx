@@ -8,15 +8,7 @@ import { X_HANDLE, X_PROFILE_URL } from '@/lib/social'
 const footerLinks = {
   Platform: [
     { label: 'Watch Live', href: '/watch', external: false },
-    { label: 'Schedule', href: '/schedule', external: false },
-    { label: 'Apply to Stream', href: '/apply', external: false },
-    { label: 'Schedule', href: '/schedule', external: false },
-  ],
-  Company: [
-    { label: 'About', href: '/about', external: false },
-    { label: 'Team', href: '/about#team', external: false },
-    { label: 'Terms', href: '/terms', external: false },
-    { label: 'Contact', href: '/about#contact', external: false },
+    { label: 'Schedule & Claim a Slot', href: '/schedule', external: false },
   ],
   Community: [
     { label: `@${X_HANDLE} on X`, href: X_PROFILE_URL, external: true },

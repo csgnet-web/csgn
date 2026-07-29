@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, no-empty */
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Navigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
 import {
   Shield, Users, Radio, Clock, X,
   BarChart3, Plus, Crown,
@@ -15,6 +14,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { api } from '@/lib/api'
+import { Modal } from '@/components/ui/Modal'
 import { useAuth } from '@/contexts/useAuth'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -31,6 +31,7 @@ import {
   SLOTS_PER_DAY,
   fetchSlots,
   assignNetworkSlot,
+  buildTwitchStreamUrl,
   assignSlot,
   updateSlotStreamUrl,
   updateSlotStatus,
@@ -63,12 +64,20 @@ interface AuthEventData {
   ua: string | null
 }
 
+/** Pull the Twitch login out of a stored stream URL (empty for a non-Twitch URL). */
+function twitchHandleFromUrl(url?: string): string {
+  const m = String(url || '').match(/twitch\.tv\/([^/?#]+)/i)
+  return m ? m[1].replace(/^@/, '') : ''
+}
+
 interface UserData {
   uid: string
   displayName: string
   email: string
   role: string
   walletAddress?: string
+  /** Linked Twitch login, used to auto-fill the assign modal. */
+  twitchUsername?: string
   createdAt: any
 }
 
@@ -142,7 +151,7 @@ export default function Admin() {
   const [assignUid, setAssignUid] = useState('')
   const [assignName, setAssignName] = useState('')
   const [assignStreamTitle, setAssignStreamTitle] = useState('')
-  const [assignStreamUrl, setAssignStreamUrl] = useState('')
+  const [assignTwitch, setAssignTwitch] = useState('') // handle only — URL is built from it
   const [actionError, setActionError] = useState<string | null>(null)
 
   // Slot stream URL override
@@ -615,15 +624,15 @@ export default function Admin() {
     setActionError(null)
     try {
       if (assignModal.type === 'network') {
-        await assignNetworkSlot(assignModal.id, assignUid, assignName, assignStreamUrl || DEFAULT_STREAM_URL, assignStreamTitle)
+        await assignNetworkSlot(assignModal.id, assignUid, assignName, buildTwitchStreamUrl(assignTwitch), assignStreamTitle)
       } else {
-        await assignSlot(assignModal.id, assignUid, assignName, assignStreamUrl || DEFAULT_STREAM_URL, assignStreamTitle)
+        await assignSlot(assignModal.id, assignUid, assignName, buildTwitchStreamUrl(assignTwitch), assignStreamTitle)
       }
       setAssignModal(null)
       setAssignUid('')
       setAssignName('')
       setAssignStreamTitle('')
-      setAssignStreamUrl('')
+      setAssignTwitch('')
       await loadSlots()
     } catch (err: any) {
       setActionError(err?.message || 'Failed to assign slot.')
@@ -1496,7 +1505,7 @@ export default function Admin() {
                             </Button>
                             <Button variant="secondary" size="sm" onClick={() => {
                               setAssignModal(slot)
-                              setAssignStreamUrl(slot.streamUrl || '')
+                              setAssignTwitch(twitchHandleFromUrl(slot.streamUrl))
                               setAssignName(slot.assignedName || '')
                               setAssignUid(slot.assignedUid || '')
                               setAssignStreamTitle(slot.streamTitle || '')
@@ -1517,108 +1526,89 @@ export default function Admin() {
 
             {/* Assign / Switch Slot Modal */}
             {assignModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setAssignModal(null)} />
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="relative w-full max-w-md bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
-                >
-                  <div className="p-6 border-b border-white/[0.06] flex items-center justify-between">
-                    <h3 className="font-bold text-white">
-                      {assignModal.type === 'network' ? 'Assign Network Slot' : 'Switch Slot Assignment'}
-                    </h3>
-                    <button onClick={() => setAssignModal(null)} className="p-1 text-gray-400 hover:text-white cursor-pointer">
-                      <X className="w-5 h-5" />
-                    </button>
+              <Modal
+                open
+                onClose={() => setAssignModal(null)}
+                title={assignModal.type === 'network' ? 'Assign Network Slot' : 'Switch Slot Assignment'}
+              >
+                <div className="space-y-4">
+                  <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] px-3 py-2">
+                    <p className="text-white font-medium text-sm">{assignModal.label}</p>
+                    <p className="text-xs text-gray-500">{new Date(assignModal.startTime).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} ET</p>
                   </div>
-                  <div className="p-6 space-y-4">
-                    <div>
-                      <p className="text-sm text-gray-400 mb-1">Slot</p>
-                      <p className="text-white font-medium">{assignModal.label}</p>
-                      <p className="text-xs text-gray-500">{new Date(assignModal.startTime).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}</p>
-                    </div>
 
-                    <div>
-                      <label className="block text-sm text-gray-300 mb-1">Streamer</label>
-                      <select
-                        value={assignUid}
-                        onChange={(e) => {
-                          setAssignUid(e.target.value)
-                          const u = users.find((u) => u.uid === e.target.value)
-                          if (u) setAssignName(u.displayName)
-                        }}
-                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50 appearance-none cursor-pointer"
-                      >
-                        <option value="">Select a streamer...</option>
-                        {users.filter((u) => u.role === 'streamer' || u.role === 'admin').map((u) => (
-                          <option key={u.uid} value={u.uid}>{u.displayName} ({u.email})</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm text-gray-300 mb-1">Display Name</label>
-                      <input
-                        type="text"
-                        value={assignName}
-                        onChange={(e) => setAssignName(e.target.value)}
-                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50"
-                        placeholder="Streamer name"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm text-gray-300 mb-1">Stream URL</label>
-                      <input
-                        type="text"
-                        value={assignStreamUrl}
-                        onChange={(e) => setAssignStreamUrl(e.target.value)}
-                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono text-xs focus:outline-none focus:border-primary-500/50"
-                        placeholder={DEFAULT_STREAM_URL}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm text-gray-300 mb-1">Stream Title <span className="text-gray-500 text-xs">(shown on /watch)</span></label>
-                      <input
-                        type="text"
-                        value={assignStreamTitle}
-                        onChange={(e) => setAssignStreamTitle(e.target.value)}
-                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50"
-                        placeholder="e.g. Crypto Drama Roundup"
-                      />
-                    </div>
-
-                    <Button
-                      variant="primary"
-                      size="md"
-                      className="w-full"
-                      disabled={!assignName.trim()}
-                      onClick={handleAssignSlot}
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">Streamer</label>
+                    <select
+                      value={assignUid}
+                      onChange={(e) => {
+                        setAssignUid(e.target.value)
+                        const u = users.find((u) => u.uid === e.target.value)
+                        // Auto-fill the name and Twitch handle from the account.
+                        if (u) {
+                          setAssignName(u.displayName)
+                          if (u.twitchUsername) setAssignTwitch(u.twitchUsername)
+                        }
+                      }}
+                      className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50"
                     >
-                      Assign & Notify
-                    </Button>
+                      <option value="">Select a streamer…</option>
+                      {users.filter((u) => u.role === 'streamer' || u.role === 'admin').map((u) => (
+                        <option key={u.uid} value={u.uid}>{u.displayName} ({u.email})</option>
+                      ))}
+                    </select>
                   </div>
-                </motion.div>
-              </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">Twitch username</label>
+                    <div className="flex items-stretch rounded-xl bg-white/5 border border-white/10 focus-within:border-primary-500/50 overflow-hidden">
+                      <span className="px-3 flex items-center text-xs text-gray-500 font-mono bg-white/[0.03] border-r border-white/10 shrink-0">twitch.tv/</span>
+                      <input
+                        type="text"
+                        value={assignTwitch}
+                        onChange={(e) => setAssignTwitch(e.target.value.replace(/^@/, '').trim())}
+                        className="flex-1 min-w-0 px-3 py-2.5 bg-transparent text-sm text-white font-mono focus:outline-none"
+                        placeholder="csgnet"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                      />
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-1">Just the username — we build the link.</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">Display name</label>
+                    <input
+                      type="text"
+                      value={assignName}
+                      onChange={(e) => setAssignName(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50"
+                      placeholder="Streamer name"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">Stream title <span className="text-gray-500 text-xs">(shows on /watch + /schedule)</span></label>
+                    <input
+                      type="text"
+                      value={assignStreamTitle}
+                      onChange={(e) => setAssignStreamTitle(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50"
+                      placeholder="e.g. Crypto Drama Roundup"
+                    />
+                  </div>
+
+                  <Button variant="primary" size="md" className="w-full" disabled={!assignName.trim()} onClick={handleAssignSlot}>
+                    Assign & Notify
+                  </Button>
+                </div>
+              </Modal>
             )}
 
             {/* Stream URL Override Modal */}
             {streamOverrideModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setStreamOverrideModal(null)} />
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="relative w-full max-w-md bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
-                >
-                  <div className="p-6 border-b border-white/[0.06] flex items-center justify-between">
-                    <h3 className="font-bold text-white">Override Stream URL</h3>
-                    <button onClick={() => setStreamOverrideModal(null)} className="p-1 text-gray-400 hover:text-white cursor-pointer">
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
+              <Modal open onClose={() => setStreamOverrideModal(null)} title={"Override Stream URL"} maxWidth="max-w-md">
                   <div className="p-6 space-y-4">
                     <div>
                       <p className="text-sm text-gray-400 mb-1">Slot: {streamOverrideModal.label}</p>
@@ -1638,25 +1628,12 @@ export default function Admin() {
                       Save URL
                     </Button>
                   </div>
-                </motion.div>
-              </div>
+              </Modal>
             )}
 
             {/* Slot Requests Modal */}
             {requestModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setRequestModal(null)} />
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="relative w-full max-w-lg bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden max-h-[80vh] overflow-y-auto"
-                >
-                  <div className="p-6 border-b border-white/[0.06] flex items-center justify-between sticky top-0 bg-[#0c0c1a]">
-                    <h3 className="font-bold text-white">Slot Requests — {requestModal.label}</h3>
-                    <button onClick={() => setRequestModal(null)} className="p-1 text-gray-400 hover:text-white cursor-pointer">
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
+              <Modal open onClose={() => setRequestModal(null)} title={<>Slot Requests — {requestModal.label}</>} maxWidth="max-w-lg">
                   <div className="p-6 space-y-4">
                     {(requestModal.requests ?? []).length === 0 ? (
                       <p className="text-sm text-gray-500">No requests for this slot.</p>
@@ -1711,8 +1688,7 @@ export default function Admin() {
                       ))
                     )}
                   </div>
-                </motion.div>
-              </div>
+              </Modal>
             )}
           </div>
         )}
@@ -1940,19 +1916,7 @@ export default function Admin() {
 
             {/* Fee Entry Modal */}
             {feeModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setFeeModal(null)} />
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="relative w-full max-w-md bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
-                >
-                  <div className="p-6 border-b border-white/[0.06] flex items-center justify-between">
-                    <h3 className="font-bold text-white">Enter Fee Data — {feeModal.label}</h3>
-                    <button onClick={() => setFeeModal(null)} className="p-1 text-gray-400 hover:text-white cursor-pointer">
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
+              <Modal open onClose={() => setFeeModal(null)} title={<>Enter Fee Data — {feeModal.label}</>} maxWidth="max-w-md">
                   <div className="p-6 space-y-4">
                     <div>
                       <p className="text-sm text-gray-400">Streamer: <span className="text-white">{feeModal.assignedName}</span></p>
@@ -2037,8 +2001,7 @@ export default function Admin() {
                       </div>
                     </div>
                   </div>
-                </motion.div>
-              </div>
+              </Modal>
             )}
           </div>
         )}

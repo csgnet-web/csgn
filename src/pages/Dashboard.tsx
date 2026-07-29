@@ -15,6 +15,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import MemeVoteCard from '@/components/MemeVoteCard'
+import { Modal } from '@/components/ui/Modal'
 
 export default function Dashboard() {
   const { user, profile, signIn, resendVerification, refreshProfile } = useAuth()
@@ -430,10 +431,8 @@ Use your email/username and password to access your account.
         </div>
       </div>
       {slotInfo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/70" onClick={() => setSlotInfo(null)} />
-          <div className="relative w-full max-w-md bg-[#0c0c1a] border border-white/10 rounded-xl p-5">
-            <h4 className="text-white font-semibold">Fee Calculation</h4>
+        <Modal open onClose={() => setSlotInfo(null)} title="Fee Calculation">
+          <div>
             <p className="text-xs text-gray-400 mt-2">Slot: {slotInfo.label}</p>
             <p className="text-xs text-gray-400">Volume (SOL): {(slotInfo.creatorFees?.tradingVolumeSOL || 0).toFixed(6)}</p>
             <p className="text-xs text-gray-400">Volume (USD): ${(slotInfo.creatorFees?.tradingVolumeUSD || 0).toFixed(2)}</p>
@@ -461,7 +460,7 @@ Use your email/username and password to access your account.
             </p>
             <Button variant="secondary" size="sm" className="mt-4" onClick={() => setSlotInfo(null)}>Close</Button>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   )

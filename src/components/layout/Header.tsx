@@ -9,6 +9,7 @@ import { AuthModal } from '@/components/auth/AuthModal'
 import { useAuth } from '@/contexts/useAuth'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
 import { CSGN_MINT } from '@/lib/slots'
+import { useScrollLock } from '@/hooks/useScrollLock'
 
 const navLinks = [
   { href: '/watch', label: 'Watch Live', live: true },
@@ -49,6 +50,7 @@ function TokenPriceChip() {
 export function Header() {
   const [scrolled, setScrolled]     = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  useScrollLock(mobileOpen)
   const [profileOpen, setProfileOpen] = useState(false)
   const [authModal, setAuthModal]   = useState<{ open: boolean; mode: 'login' | 'signup' }>({
     open: false,
