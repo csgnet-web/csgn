@@ -260,6 +260,9 @@ const spotHtml = __csgn.renderSpotlight({ symbol: 'ANSEM', note: 'Partner token'
 check('Spotlight: promoted coin card with SPOTLIGHT tag, symbol, LED, note', spotHtml.includes('c-tag spot') && spotHtml.includes('SPOTLIGHT') && spotHtml.includes('ANSEM') && spotHtml.includes('digit') && spotHtml.includes('Partner token') && spotHtml.includes('▲'))
 const spotNoPx = __csgn.renderSpotlight({ symbol: 'XYZ' }, { price: null, chg: null })
 check('Spotlight without price shows dashes, never $0.00', spotNoPx.includes('c-dash') && !spotNoPx.includes('0.00'))
+// A jukebox play is bought airtime — it must always disclose itself as paid.
+const spotPaid = __csgn.renderSpotlight({ symbol: 'ANSEM', paid: true, note: 'Coin Jukebox' }, { price: 0.0421, chg: 12.4 })
+check('Paid jukebox play discloses PAID SPOTLIGHT; an editorial one does not', spotPaid.includes('PAID SPOTLIGHT') && !spotHtml.includes('PAID SPOTLIGHT') && spotHtml.includes('SPOTLIGHT'))
 
 // ── $CSGN buy toast (rises green, reuses the coin-card shape) ────────────────
 const buyHtml = __csgn.renderBuyCard({ usd: 1234, by: '@degen' })

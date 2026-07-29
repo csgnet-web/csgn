@@ -51,6 +51,9 @@ export const handler = withHttp(async (event) => {
 
   const spotlight = {
     symbol,
+    // A jukebox play is bought airtime, not an endorsement — the ticker renders
+    // this as "PAID SPOTLIGHT" so a paid placement is never mistaken for a pick.
+    paid: true,
     coingeckoId: String(body.coingeckoId || '').slice(0, 80),
     dexPair: String(body.dexPair || '').slice(0, 80),
     dexChain: String(body.dexChain || 'solana').toLowerCase().slice(0, 20),

@@ -1796,7 +1796,7 @@ function renderSpotlight(cfg,px){
   return `<div class="c-top"><div class="c-id"><span class="c-rank spot">◆</span><span class="c-sym">${esc(cfg.symbol)}</span></div>
       <span class="c-delta ${up?"up":"down"}">(24h) ${up?"▲":"▼"} ${px.chg!=null?Math.abs(px.chg).toFixed(2):"–"}%</span></div>
     <div class="c-led">${renderLed(formatLedPrice(px.price))}</div>
-    <div class="c-bot"><span class="c-tag spot">SPOTLIGHT</span><span class="c-mv">${esc(cfg.note||"Featured on CSGN · csgn.fun")}</span></div>`;
+    <div class="c-bot"><span class="c-tag spot">${cfg.paid?"PAID SPOTLIGHT":"SPOTLIGHT"}</span><span class="c-mv">${esc(cfg.note||"Featured on CSGN · csgn.fun")}</span></div>`;
 }
 async function startSpotlight(cfg){
   if(spotPending)return; // guard the async price fetch against a double-fire

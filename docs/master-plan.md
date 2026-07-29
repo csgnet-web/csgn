@@ -9,7 +9,7 @@
 
 ---
 
-## 1. What CSGN is
+## 1. Who we are — and how to say it
 
 **A 24/7 crypto-native TV network for young men who trade, watch sports, and game.**
 
@@ -21,6 +21,57 @@ jukebox. Three parts:
 3. **The token** — $CSGN, which decides what gets *promoted*, never who gets *in*.
 
 **One line:** *The only network where crypto, sports, and gaming are the same show.*
+
+### 1.1 What's actually unique — lead with this
+
+Every other crypto social product sells a **feed or a feature**. CSGN sells
+**scheduled time on a channel.** That single difference cascades into everything:
+
+| | A crypto social app | CSGN |
+|---|---|---|
+| What's for sale | usage | **inventory — twelve 2-hour slots a day** |
+| Scarcity | none; posts are infinite | **real; a day has 24 hours** |
+| Revenue on day one | usually none but the token | slot fees, ticker cells, paid spotlights, sponsorships |
+| With zero users online | an empty room | **still broadcasting** |
+| What compounds | followers | **a library — every show leaves a VOD and clips** |
+
+**The fourth row is the whole thesis.** A feed with nobody in it is dead. A channel
+with nobody in it is still a channel. That is why a network can be built by one
+person starting from 300 followers, and a social app cannot.
+
+The entertainment version of the same gap is just as clean: public-access cable had
+open time and no audience. Twitch has audience and no schedule. ESPN has schedule
+and audience but no way in. **CSGN is the first thing with a schedule, an open
+door, and an ownership layer at the same time.**
+
+And the business version: this cycle's scarce asset is attention, and everyone else
+is selling *engagement*. We sell **airtime** — finite, priced, schedulable. We
+already run the inventory (a real schedule), the billing (creator-fee splits, paid
+spotlights), and the distribution (a broadcast ticker other streams can embed).
+**A network with a token, not a token looking for a product.**
+
+### 1.2 How to explain it — four scripts, by audience
+
+**Lead with one comparison. The five-way analogy is a closer, not an opener** —
+five comparisons at a cold listener is noise; one comparison plus one concrete
+detail is a hook.
+
+- **5 seconds · anyone:** *"It's ESPN for crypto — and anyone can get on it."*
+- **15 seconds · a crypto native:** *"24/7 crypto TV. Twelve two-hour slots a day.
+  Claim one, go live, and you earn 30% of the token's trading fees the whole time
+  you're on air. The token gates nothing — it decides what gets promoted."*
+- **30 seconds · a normie or a business person:** *"Public-access cable rebuilt for
+  the internet. A channel that never stops, a schedule anyone can claim a slot on,
+  a real broadcast ticker so it looks like television, and a token that works like
+  a remote control for the audience — they vote on what airs and pay to put coins
+  on screen."*
+- **60 seconds · a partner or an investor:** the airtime-vs-engagement argument
+  above, then the proof: the schedule, the fee split, the ticker, and the fact that
+  the thing is already on the air.
+
+**Then land the stack:** *"Public access cable meets TouchTunes meets Twitch meets
+Pump.fun meets ESPN."* It's a great line — **once they already want to understand
+it.** Used as an opener it makes a simple idea sound complicated.
 
 ---
 
@@ -154,9 +205,9 @@ promotion · whip-around mentions · the jukebox · sponsorships · meme-100 vot
 
 **It never gates** claiming a slot, making an account, or going live.
 
-**We never burn it.** Every $CSGN or SOL the network receives goes to a
-**productive treasury** that funds distribution, creator payouts, and liquidity. A
-burn destroys capital; a treasury deploys it. Value accrues three ways:
+**We never burn it.** Everything the network receives goes to a productive
+treasury under published rules — the full policy, including which treasury receives
+what, is §11.1. Value accrues three ways:
 
 1. **Governance demand** — holding = steering what airs (balance-weighted and
    non-custodial; you keep your tokens).
@@ -291,7 +342,37 @@ Be honest about the starting point: **at ~300 followers, distribution is
 effectively zero.** Nothing compounds yet. So the strategy is entirely about
 *borrowing* reach until the base is big enough to compound on its own.
 
-### 7.1 The five things that actually move it
+### 7.1 The strategy in one move: be the scoreboard, not another voice
+
+The next cycle's crypto social apps all compete on the same axis — more posting,
+more tipping, more tokenized engagement. Every one of them is trying to be **a
+louder voice.** Voices compete for attention and split it.
+
+**Scoreboards get cited by everyone competing for it.**
+
+If CSGN keeps the numbers the niche argues about, every argument routes through
+CSGN's numbers. That is the only mechanism by which a 300-follower account gets
+quoted by a 300,000-follower account without asking for a favor — you don't ask,
+you publish the standings and they cite you because they need the number.
+
+**The scoreboards to own:**
+
+| Scoreboard | Status | Why it travels |
+|---|---|---|
+| **Meme-100** — top 100 memecoins by volume, market cap, social, and holder token-votes | built | every coin community has a reason to check it, screenshot it, and campaign in it |
+| **Caller Standings** — public calls from big crypto accounts tracked like a stat line: entry, current, ROI, hit rate, W–L | **build next** | flattering at the top, brutal at the bottom, quotable by everyone in between |
+| **League tables** — CFB 27 dynasty, Rocket League, CS:GO standings and power rankings | in flight | turns a game night into a recurring publication |
+| **Weekly power rankings** — L1s, launchpads, whatever's hot, ranked like a CFB poll | free | the collision format (§7.2) in scoreboard form |
+
+Each is a **recurring artifact other people share on your behalf.** That's the
+difference between content (you push it) and a scoreboard (they pull it).
+
+**Why CSGN specifically can do this:** it takes the sports instinct to think in
+standings, and a broadcast ticker to render them like they're official. You have
+both. A feed can't show a standings table that feels authoritative — a lower-third
+can.
+
+### 7.2 The five things that actually move it
 
 **1. Post takes, not updates.** "CSGN is live" reaches nobody. "Ohio State is a
 fraud and so is your bag" gets argued with — and arguments are distribution. Your
@@ -320,12 +401,12 @@ of solo posting. Go on other people's streams and spaces. Invite mid-tier creato
 onto yours. Recruit coin communities with "your coin gets airtime." Every league
 participant is a node. **Grade every move by: whose followers does this reach?**
 
-### 7.2 What not to do
+### 7.3 What not to do
 Paid engagement pods · generic crypto-influencer promos · airdrop farming · price
 posting · buying followers · the same "we're live" tweet every day. All of it buys
 numbers that don't compound.
 
-### 7.3 The numbers to manage
+### 7.4 The numbers to manage
 **Not market cap.** Weekly:
 1. Followers (the base)
 2. Clips shipped (the input you control)
@@ -428,12 +509,14 @@ destination. *Discord notifies, X acquires, the channel retains.*
 
 ## 10. Business model
 
-**Revenue** (all → treasury):
-1. Coin Jukebox spotlights (SOL per play)
+**Revenue** (all → treasury, per the rules in §11.1):
+1. Coin Jukebox spotlights — flat price per play, any accepted currency (§11.2)
 2. Sponsorships — coin communities sponsoring shows, segments, league teams
-3. Creator-channel take-rate (once the VOD platform opens)
-4. Ad/placement inventory — lower-thirds, ticker slots
-5. Creator-fee flywheel — trading volume the content drives
+3. **Partner-token tenancy** — a flat fee per tenant surface (§11.3), the piece that
+   makes the partner surface a product line instead of a one-off favor
+4. Creator-channel take-rate (once the VOD platform opens)
+5. Ad/placement inventory — lower-thirds, ticker slots
+6. Creator-fee flywheel — trading volume the content drives
 
 **Costs** are low — infra, RPC, a data feed, hosting: hundreds a month, not
 thousands. **This is a distribution problem, not a burn-rate problem.**
@@ -445,8 +528,8 @@ makes the treasury self-funding.
 - **Irrelevance** (the real one) → the daily streak, clips, borrowed reach.
 - **Solo burnout** → the shock-absorber rules above; a co-host when affordable.
 - **Platform dependency** (Twitch/X/ESPN/RPC) → own-ingest path, caches, paid RPC.
-- **Token distrust** → no burn gimmicks, transparent treasury reports,
-  non-custodial governance.
+- **Token distrust** → no burn gimmicks; a public treasury address with published
+  hold and drip rules (§11.1), transparent reporting, non-custodial governance.
 
 **Build order once the slate is running:** VOD network autopilot (fills 7 PM–3 AM;
 live from the same PC always pre-empts and auto-returns — `/player` already does
@@ -454,68 +537,176 @@ this) → reels + per-view attention accounting → open the creator platform.
 
 ---
 
-## 11. Partner tokens — how to integrate $ANSEM without losing autonomy
+## 11. The partner-token surface — and what the jukebox actually is
 
-Ansem wants his token in novel apps. There's a version of this that's great for
-CSGN and a version that quietly makes you a subsidiary. The difference is framing.
+Two things kept getting tangled together, and they need separating because one is a
+**business model** and the other is a **product mechanic**:
 
-### 11.1 The move: don't build an "Ansem integration" — build a **partner-token surface**
-Make it a *product* that any partner token can plug into, and make $ANSEM the
-first and flagship one.
+- **The partner-token surface** — how another project's token rides on CSGN.
+- **The Coin Jukebox** — how anyone pays to put a coin on screen.
 
-This is strictly better on every axis:
-- **Same effort** — the work is identical.
-- **Autonomy preserved** — you're not married to one token; you've built a slot any
-  partner can fill. If the relationship cools, the surface stays and someone else
-  fills it.
-- **It's repeatable revenue** — the partner surface becomes a sponsorship tier you
-  can sell again and again, instead of a one-off favor.
-- **It's a better pitch to Ansem, not worse.** "You're the flagship partner on a
-  surface built for partners" is a stronger, more legitimate offer than "we bolted
-  your token onto our app."
+They meet at exactly one place: **the treasury rule.** Start there, because it's
+the part that was never actually written down.
 
-### 11.2 What to actually integrate (ranked by effort-to-value)
+### 11.1 The treasury rule — what replaces burning
 
-**1. $ANSEM governance surface — do this first.** His holders get a
-balance-weighted vote over one specific, bounded thing: a weekly segment, a
-meme-100 wildcard entry, or which coin gets a spotlight on his night.
+**Nothing is ever burned. Not $CSGN, not SOL, not a partner's token.**
 
-*Why it's the right first move:* **the voting primitive already exists and is
-mint-agnostic in everything but one constant.** `getCsgnBalance(wallet)` is used in
-exactly three places and reads a single hardcoded mint. Generalizing to
-`getTokenBalance(wallet, mint)` plus a `config/partnerToken` doc is a genuinely
-small change — an afternoon, not a project. Everything downstream (signature proof,
-one-ballot-per-wallet, atomic tallies, the on-air result) is already built and
-tested.
+Be precise about what a burn is actually *for*: it buys **credibility** — proof
+that supply won't come back to hit the market. It buys that one thing by destroying
+capital, permanently, once. We buy the same credibility a better way.
 
-**2. Co-branded ticker + spotlight presence.** $ANSEM gets a permanent price cell
-in the crypto dock and a recurring spotlight. **Zero architecture** — it's config.
-Visible, immediate, and demoable on a call.
+**Every token the network receives goes to a treasury under published rules:**
 
-**3. $ANSEM as an alternate jukebox currency.** Pay in $ANSEM instead of SOL to
-play a coin. Treasury holds it. Small change to the payment verifier (same
-re-read-the-confirmed-tx pattern), and it creates real $ANSEM sink demand — which
-is the thing he actually wants.
+1. **A public address.** Anyone can watch the balance. No trust required.
+2. **A no-sell window** — a stated minimum hold on any partner token received.
+   Start at 180 days.
+3. **A drip cap** — if anything is ever sold, never more than a stated share of that
+   token's daily volume, and never more than a stated share of holdings per month.
+   Published up front, not promised in a DM.
+4. **A stated purpose** — the treasury funds distribution, creator payouts, and
+   liquidity. Working capital, not a pile.
 
-**4. A recurring show/segment.** The distribution win. Costs no code.
+A burn is a press release. **A rule-bound public treasury is a balance sheet** — it
+does the same reassurance job while the capital stays productive. That is the whole
+answer to "why don't you burn," and it's a stronger answer, not a weaker one.
 
-### 11.3 What to refuse
+**Which treasury receives — one sentence:**
+
+> **The treasury that receives is the treasury whose stage it is.**
+
+- Someone pays to put a coin on **CSGN's** ticker → **CSGN treasury.** We sold our
+  airtime, we get paid. Currency can be SOL, $CSGN, or any accepted partner token.
+- Someone pays into a **partner's own surface** — an $ANSEM-holders-only vote, an
+  $ANSEM night → **the partner's treasury.** CSGN bills a flat sponsorship fee in
+  SOL or USDC instead of taking a cut of the token flow.
+
+That second rule is deliberately generous, and it's why the pitch lands. On a
+surface built to serve *their* community, *they* own the sink — CSGN never looks
+like it's farming someone else's holders. It also keeps the books clean:
+sponsorship is revenue, partner tokens are an asset position, and the two never
+blur.
+
+### 11.2 What the Coin Jukebox actually is
+
+**A play is a purchase of airtime. It is not an endorsement.** Every rule below
+follows from that one sentence.
+
+- **A play** = one spotlight run — the coin rises from behind the crypto dock, holds
+  for the spotlight duration with the payer's note, then settles back. Price lives
+  in `config/ticker.spotlightSol`.
+- **Flat price, FIFO queue. No bidding, ever.** "Pay more to jump the queue" is an
+  auction in a costume, and auctions are out (§5). Flat price is also the honest
+  version: a whale and a group chat pay the same to get on TV.
+- **A per-wallet cap per hour**, so one buyer can't own the ticker. The broadcast's
+  credibility *is* the inventory's value — protecting it is protecting revenue.
+- **Any accepted currency.** SOL today; $CSGN and accepted partner tokens next.
+  Price is set in one currency and quoted in the others.
+- **Payment is verified on-chain before anything renders**, and each signature is
+  redeemable exactly once. Already how the endpoint works — it re-reads the
+  confirmed transaction rather than trusting the client.
+- **Every paid play is marked `PAID SPOTLIGHT` on screen.** Non-negotiable.
+  Unlabeled paid promotion of a financial asset is the single mistake that can
+  actually end a network. It also *raises* the value of the unpaid segments, because
+  it makes them credible by contrast.
+
+**One line:** *TouchTunes for crypto TV — put money in, your coin plays on
+television.*
+
+**Status, honestly:** on-chain verification, single-use signatures, the flat price
+and the `PAID SPOTLIGHT` disclosure are **built**. The **FIFO queue** and the
+**per-wallet hourly cap** are **specified here and not yet built** — today a play
+renders immediately and a determined buyer could dominate the lane. Build both
+before promoting the jukebox publicly; neither is large. (The payment path also
+still needs one live-mainnet dry run with a tiny amount.)
+
+### 11.3 The tenancy model — Ansem as flagship tenant, not landlord
+
+Don't build "an Ansem integration." Build a **partner-token surface** any token can
+plug into, and make $ANSEM the first and flagship tenant. Identical effort, and:
+
+- **Autonomy preserved** — you built a slot, not a marriage. If the relationship
+  cools, the surface stays and someone else fills it.
+- **Repeatable revenue** — it becomes a sponsorship tier you can sell again and
+  again instead of a one-off favor.
+- **It's a better offer to him, not worse.** "You're the flagship tenant on a
+  surface built for partners" is more legitimate than "we bolted your token on."
+
+### 11.4 The slate — what to build, ranked by effort-to-value
+
+**Tier 1 — ship these before the call (days, not weeks):**
+
+**1. Ticker presence.** A permanent $ANSEM cell in the crypto dock plus a recurring
+spotlight lane. **Zero architecture — it's config.** Visible, immediate, demoable on
+a screen-share.
+
+**2. An $ANSEM holder vote** over one specific, bounded thing: a weekly segment, a
+Meme-100 wildcard entry, or which coin gets the spotlight on his night. *Why it's
+cheap:* the voting primitive is already mint-agnostic in everything but one
+constant — `getCsgnBalance(wallet)` reads a single hardcoded mint in three places.
+Generalizing to `getTokenBalance(wallet, mint)` plus a `config/partnerToken` doc is
+an afternoon. Signature proof, one-ballot-per-wallet, atomic tallies and the on-air
+result are all built and tested already.
+
+**Tier 2 — the two that actually get a yes:**
+
+**3. The co-branded ticker as an OBS source he drops into his own stream.** Costs
+him nothing, instantly makes his stream look like a network broadcast, and carries
+his token cell. **This is the highest-leverage item on the entire list for CSGN** —
+it puts the CSGN ticker permanently in front of an audience hundreds of times
+larger than ours, and it reads as a gift rather than an ask. Distribution disguised
+as a favor. Offer it to every mid-tier creator too; the ticker is the product that
+travels.
+
+**4. The Caller Standings.** Track his public calls like a stat line — entry,
+current, ROI, hit rate, W–L — rendered as a broadcast stat card. His entire brand is
+being right about coins; a network that keeps his box score, on television,
+permanently, is flattering *and* screenshot-able. Then franchise it across every
+big caller and it becomes CSGN's single biggest mindshare asset (§7.1) — with him
+sitting at #1, which is exactly why he'll promote it.
+
+**Tier 3 — the follow-ups, once the relationship is real:**
+
+**5. $ANSEM as an alternate jukebox currency.** Pay in $ANSEM to play a coin;
+proceeds to the CSGN treasury under §11.1's published rules. Small change to the
+payment verifier (same re-read-the-confirmed-tx pattern) and it creates the real,
+recurring $ANSEM sink demand that a partner actually wants.
+
+**6. A community draft league.** His community drafts a portfolio against CSGN's,
+head-to-head, weekly standings on the ticker. Sports-native, costs nothing, and
+rivalry is the most reliable engagement engine there is.
+
+**7. Meme-100 wildcard.** A guaranteed slot for his community's pick.
+
+**8. A recurring segment designed to work whether or not he shows up.** His time is
+the scarce input, so never build anything whose value depends on a busy person's
+recurring attendance. Cover his calls, track his moves, name the segment after the
+franchise rather than the man. If he appears, it's a tentpole — not a dependency.
+
+### 11.5 What to refuse
+
 - **No token merge, no swap, no shared treasury.** Instant loss of autonomy.
 - **No equity or governance over CSGN itself.** Partner tokens govern *partner
   surfaces*, never the network.
-- **No exclusivity.** The surface must stay open to other partners — that clause is
-  what keeps this a product instead of a dependency.
+- **No exclusivity.** The surface stays open to other partners — that clause is what
+  keeps this a product instead of a dependency.
 - **No gating core access** behind $ANSEM. The token scope rule (§5) applies to
   partners too: promotion, never admission.
 
-### 11.4 The pitch, in one paragraph
-*"We built a partner-token surface into a live 24/7 broadcast: your holders get a
-real on-air vote, your token gets permanent ticker presence and a spotlight lane,
-and holders can spend it to put coins on TV. It's live inventory on a real network,
-it's demoable today, and you're the flagship partner. No merge, no swap — your
-token, our stage."*
+### 11.6 The pitch, in one paragraph
 
-Ship #1 and #2 for a call, keep #3 as the follow-up. Total build: days, not weeks.
+*"We built a partner-token surface into a live 24/7 broadcast. Your token gets a
+permanent cell on the ticker and a spotlight lane, your holders get a real
+balance-weighted vote that resolves on air, and we keep your call record as a stat
+line on television — your box score, permanently, on a network. Anything your
+holders spend on your own surface goes to your treasury, not ours; we bill a flat
+sponsorship fee. We never burn and we never dump — the treasury address is public
+and the hold rules are published. And here's a co-branded ticker you can drop
+straight into your own stream. No merge, no swap, no exclusivity: your token, our
+stage."*
+
+Ship #1 and #2 before the call. Lead the call with #3 and #4 — the gift and the
+flattery — and let #5 be the follow-up. Total build: days.
 
 ---
 
@@ -581,26 +772,36 @@ decides this.
 
 1. **The wedge is the intersection.** Gaming × sports × crypto × trading for young
    men. Not "better crypto content" — *the only show that's all four.*
-2. **Sports is the differentiator and the distribution.** It's what Ansem/ThreadGuy/
+2. **We sell airtime, not engagement.** Everyone else in crypto social sells a feed;
+   we sell twelve two-hour slots a day. A feed with nobody in it is dead — a channel
+   with nobody in it is still broadcasting. That's why one person can build this.
+3. **Be the scoreboard, not another voice.** Meme-100, Caller Standings, league
+   tables. Voices compete for attention; scoreboards get *cited* by everyone
+   competing for it — the only way a 300-follower account gets quoted by a
+   300,000-follower one.
+4. **Sports is the differentiator and the distribution.** It's what Ansem/ThreadGuy/
    Rasmr can't do, it keeps the show fun on red days, and sports takes travel.
-3. **The founder is the product for 90 days.** The platform is the moat later.
-4. **Stream as the Stickman.** It removes every excuse not to go live and is an
+5. **The founder is the product for 90 days.** The platform is the moat later.
+6. **Stream as the Stickman.** It removes every excuse not to go live and is an
    ownable network asset a face can't be. Face for tentpoles.
-5. **Leagues are content engines with a hard rule:** 30 min/week of admin max, or
+7. **Leagues are content engines with a hard rule:** 30 min/week of admin max, or
    it's a second job. Dynasty → Rocket League → CS:GO.
-6. **The daily Whiparound is non-negotiable.** Length is the shock absorber; the
+8. **The daily Whiparound is non-negotiable.** Length is the shock absorber; the
    streak is the asset.
-7. **1–3 clips a day, every day**, each naming a coin, team, or person.
-8. **Work both timelines and borrow audiences** — at 300 followers, one guest spot
-   beats a month of posting.
-9. **Access stays open and free; the token only governs promotion** — plus the
-   gated info pipeline. No auctions, no gates on getting on air, no burning.
-10. **Run both dynasties.** Offline/modded is the reliable engine; the 12-team
+9. **1–3 clips a day, every day**, each naming a coin, team, or person.
+10. **Work both timelines and borrow audiences** — at 300 followers, one guest spot
+    beats a month of posting.
+11. **Access stays open and free; the token only governs promotion** — plus the
+    gated info pipeline. No auctions, no gates on getting on air, and no burning:
+    the treasury receives, holds under published rules, and deploys (§11.1).
+12. **Run both dynasties.** Offline/modded is the reliable engine; the 12-team
     online league is the social one — and *coverage* (rankings, recaps, standings
     on the ticker) is its actual product, MFL-style.
-11. **Partner tokens are a surface, not a favor.** Build it once so $ANSEM is the
-    flagship tenant, not the landlord — same effort, keeps autonomy, resells.
-12. **The infrastructure is not the bottleneck** and won't be for a long time.
-    Two real blockers were found and fixed; go make content.
-13. **Manage to followers, clips shipped, streams hit, and holders-who-acted** —
+13. **Partner tokens are a surface, not a favor.** Build it once so $ANSEM is the
+    flagship tenant, not the landlord — same effort, keeps autonomy, resells. The
+    two things that get a yes: a co-branded ticker he drops into *his own* stream,
+    and a Caller Standings board that keeps his box score on television.
+14. **The infrastructure is not the bottleneck** and won't be for a long time.
+    Every real blocker found so far has been fixed; go make content.
+15. **Manage to followers, clips shipped, streams hit, and holders-who-acted** —
     not market cap. And know the real risk is stopping in week 6.
