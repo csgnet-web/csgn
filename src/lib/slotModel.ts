@@ -59,9 +59,16 @@ export function isSlotClaimable(
   slot: { type?: unknown; status?: unknown; assignedUid?: string | null; endTime: string },
   networkBlockEnabled = true,
 ): boolean {
-  if (normalizeSlotStatus(slot.status) !== 'open') return false
   if (slot.assignedUid) return false
   if (new Date(slot.endTime).getTime() <= Date.now()) return false
-  if (isNetworkSlot(slot) && networkBlockEnabled) return false
-  return true
+  const status = normalizeSlotStatus(slot.status)
+  if (isNetworkSlot(slot)) {
+    // Reserved while the block is on. Network slots seed as 'confirmed' (they're
+    // programmed, not claimed), so when the block is switched OFF an unassigned
+    // one is still claimable — 'confirmed' there means "held by the network",
+    // not "taken by a person".
+    if (networkBlockEnabled) return false
+    return status === 'open' || status === 'confirmed'
+  }
+  return status === 'open'
 }

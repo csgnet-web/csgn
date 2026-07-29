@@ -11,13 +11,15 @@ import { commitWrites, queryCollection, updateWrite, order } from './_shared/fir
 import { json, requireMethod, withHttp } from './_shared/http'
 import { slotTypeForStartTime } from './_shared/schedule'
 
-/** Auction-era statuses collapse to 'open'; the four real ones pass through. */
-function normalizeStatus(raw: unknown, assigned: boolean): string {
+/**
+ * Auction-era statuses collapse away; the four real ones pass through. Network
+ * slots are programmed rather than claimed, so an unassigned one is 'confirmed'
+ * (CSGN Originals), never "open".
+ */
+function normalizeStatus(raw: unknown, assigned: boolean, network: boolean): string {
   const v = String(raw || '')
   if (v === 'live' || v === 'completed') return v
-  if (v === 'confirmed' || v === 'claimed') return assigned ? 'confirmed' : 'open'
-  // 'open', 'closing', 'pending_deposit', 'unfilled', or anything unknown
-  return assigned ? 'confirmed' : 'open'
+  return assigned || network ? 'confirmed' : 'open'
 }
 
 export const handler = withHttp(async (event) => {
@@ -32,7 +34,7 @@ export const handler = withHttp(async (event) => {
     const data = slot.data as { startTime?: string; status?: unknown; assignedUid?: string | null; type?: unknown }
     const assigned = !!data.assignedUid
     const type = slotTypeForStartTime(String(data.startTime || ''))
-    const status = normalizeStatus(data.status, assigned)
+    const status = normalizeStatus(data.status, assigned, type === 'network')
     if (data.type !== type) retyped++
     return updateWrite(slot.path, {
       type,

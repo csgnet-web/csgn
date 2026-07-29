@@ -68,4 +68,13 @@ describe('isSlotClaimable', () => {
   it('a legacy auction-status slot becomes claimable again', () => {
     expect(isSlotClaimable(slot({ type: 'auction', status: 'unfilled' }))).toBe(true)
   })
+  it('network slots seed as confirmed but still open up when the block is off', () => {
+    // They're programmed, not claimed — 'confirmed' means held by the network.
+    const netSlot = slot({ type: 'network', status: 'confirmed' })
+    expect(isSlotClaimable(netSlot, true)).toBe(false)
+    expect(isSlotClaimable(netSlot, false)).toBe(true)
+  })
+  it('a network slot actually assigned to someone is never claimable', () => {
+    expect(isSlotClaimable(slot({ type: 'network', status: 'confirmed', assignedUid: 'u1' }), false)).toBe(false)
+  })
 })

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { doc, onSnapshot } from 'firebase/firestore'
-import { Radio, Crown, Check, Loader2, AlertCircle, CalendarPlus } from 'lucide-react'
+import { Radio, Crown, Check, Loader2, AlertCircle, CalendarPlus, Twitch } from 'lucide-react'
 import { db } from '@/config/firebase'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -16,6 +16,12 @@ import { useLiveSlot } from '@/contexts/useLiveSlot'
 // (config/scheduleMeta.networkBlockEnabled = false) returns those hours to open.
 
 const WEEK_SPAN = 7
+
+/** Pull the Twitch login out of a stored stream URL (empty for a non-Twitch URL). */
+function twitchHandleFromUrl(url?: string): string {
+  const m = String(url || '').match(/twitch\.tv\/([^/?#]+)/i)
+  return m ? m[1].replace(/^@/, '') : ''
+}
 
 function toMillis(value: unknown): number {
   if (typeof value === 'string' || value instanceof Date || typeof value === 'number') {
@@ -123,7 +129,12 @@ export default function Schedule() {
     [allSlots, networkBlockEnabled],
   )
 
-  /** One slot row — shared by the desktop grid and the mobile list. */
+  /**
+   * One slot card — shared by the desktop grid and the mobile list.
+   * Every card is the SAME HEIGHT regardless of type (fixed h-[112px] with the
+   * body flexed), so a week of mixed open/network/claimed slots reads as a clean
+   * grid instead of a ragged one.
+   */
   const SlotRow = ({ slot, compact }: { slot: Slot; compact?: boolean }) => {
     const isLive = nowMs >= toMillis(slot.startTime) && nowMs < toMillis(slot.endTime)
     const network = isNetworkSlot(slot) && networkBlockEnabled
@@ -131,37 +142,77 @@ export default function Schedule() {
     const mine = !!user && slot.assignedUid === user.uid
     const busy = claimingId === slot.id
     const justClaimed = claimedId === slot.id
-    const feeSOL = slot.creatorFees?.feeOwedSOL ?? 0
+    const twitch = twitchHandleFromUrl(slot.streamUrl)
+    const claimed = !!slot.assignedUid || justClaimed
 
     return (
-      <div className={`px-3 ${compact ? 'py-3' : 'py-2.5'} ${isLive ? 'bg-primary-500/10' : network ? 'bg-gold/[0.04]' : ''}`}>
-        <div className="flex items-center justify-between gap-2">
+      <div
+        className={`relative h-[112px] px-3 py-2.5 flex flex-col overflow-hidden transition-colors ${
+          isLive ? 'bg-primary-500/10'
+            : network ? 'bg-gradient-to-b from-gold/[0.07] to-transparent'
+            : claimable ? 'bg-primary-500/[0.03] hover:bg-primary-500/[0.08]'
+            : ''
+        }`}
+      >
+        {/* time + live badge */}
+        <div className="flex items-center justify-between gap-2 shrink-0">
           <p className="font-mono text-[11px] text-gray-400 whitespace-nowrap">
             {formatTimeET(slot.startTime)} – {formatTimeET(slot.endTime)}
           </p>
-          {isLive && <span className="text-[9px] font-bold uppercase tracking-wider text-red-300 bg-red-500/15 border border-red-500/30 rounded-full px-1.5 py-0.5 flex items-center gap-1"><span className="w-1 h-1 rounded-full bg-red-400 animate-pulse" />Live</span>}
+          {isLive && (
+            <span className="text-[9px] font-bold uppercase tracking-wider text-red-300 bg-red-500/15 border border-red-500/30 rounded-full px-1.5 py-0.5 flex items-center gap-1">
+              <span className="w-1 h-1 rounded-full bg-red-400 animate-pulse" />Live
+            </span>
+          )}
         </div>
 
-        <p className={`truncate mt-0.5 ${network ? 'text-gold font-semibold' : 'text-white'} ${compact ? 'text-sm' : 'text-xs'}`}>
-          {network && <Crown className="w-3 h-3 inline mr-1 -mt-0.5" />}
-          {slot.assignedName || (network ? 'CSGN Originals' : 'Open')}
-        </p>
+        {/* body — grows so the action always sits on the same baseline */}
+        <div className="flex-1 min-h-0 flex flex-col justify-center">
+          {network ? (
+            <>
+              <p className={`truncate text-gold font-bold flex items-center gap-1 ${compact ? 'text-sm' : 'text-[13px]'}`}>
+                <Crown className="w-3 h-3 shrink-0" />
+                {slot.assignedName || 'CSGN Originals'}
+              </p>
+              {slot.streamTitle && <p className="truncate text-[11px] text-gold/70 mt-0.5">{slot.streamTitle}</p>}
+            </>
+          ) : claimed ? (
+            <>
+              <p className={`truncate text-white font-bold ${compact ? 'text-sm' : 'text-[13px]'}`}>
+                {slot.assignedName || 'Claimed'}
+              </p>
+              {twitch && (
+                <p className="truncate text-[11px] text-purple-300 font-mono flex items-center gap-1 mt-0.5">
+                  <Twitch className="w-3 h-3 shrink-0" />{twitch}
+                </p>
+              )}
+              {slot.streamTitle && <p className="truncate text-[11px] text-gray-400 mt-0.5">{slot.streamTitle}</p>}
+            </>
+          ) : claimable ? (
+            <p className={`font-black uppercase tracking-tight text-primary-300 leading-tight ${compact ? 'text-base' : 'text-sm'}`}>
+              Your slot.<br />Take it.
+            </p>
+          ) : (
+            <p className="text-[11px] text-gray-600">—</p>
+          )}
+        </div>
 
-        {feeSOL > 0 && <p className="text-[11px] text-cyan-300 font-mono mt-0.5">{feeSOL.toFixed(4)} SOL</p>}
-
-        {mine ? (
-          <p className="mt-1.5 text-[11px] text-emerald-400 flex items-center gap-1"><Check className="w-3 h-3" /> Yours</p>
-        ) : justClaimed ? (
-          <p className="mt-1.5 text-[11px] text-emerald-400 flex items-center gap-1"><Check className="w-3 h-3" /> Claimed</p>
-        ) : claimable ? (
-          <button
-            onClick={() => void handleClaim(slot)}
-            disabled={busy}
-            className="mt-1.5 w-full rounded-lg bg-primary-500/15 hover:bg-primary-500/25 border border-primary-500/40 text-primary-200 text-[11px] font-semibold py-1.5 transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1"
-          >
-            {busy ? <><Loader2 className="w-3 h-3 animate-spin" /> Claiming…</> : <><CalendarPlus className="w-3 h-3" /> Claim</>}
-          </button>
-        ) : null}
+        {/* action — pinned to the bottom of every card */}
+        <div className="shrink-0 mt-1">
+          {mine ? (
+            <p className="text-[11px] text-emerald-400 flex items-center gap-1 font-semibold"><Check className="w-3 h-3" /> Yours</p>
+          ) : justClaimed ? (
+            <p className="text-[11px] text-emerald-400 flex items-center gap-1 font-semibold"><Check className="w-3 h-3" /> Claimed</p>
+          ) : claimable ? (
+            <button
+              onClick={() => void handleClaim(slot)}
+              disabled={busy}
+              className="w-full rounded-lg bg-primary-500 hover:bg-primary-400 text-white text-[11px] font-bold uppercase tracking-wide py-1.5 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1 shadow-lg shadow-primary-500/20 hover:shadow-primary-500/40 active:scale-[0.98]"
+            >
+              {busy ? <><Loader2 className="w-3 h-3 animate-spin" /> Claiming…</> : <><CalendarPlus className="w-3 h-3" /> Claim it</>}
+            </button>
+          ) : null}
+        </div>
       </div>
     )
   }

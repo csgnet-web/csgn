@@ -120,13 +120,16 @@ export function buildExpectedSlotsForDate(targetDate: Date): ExpectedSlot[] {
 
 /** Fresh open slot document for one expected template entry. */
 export function buildSlotDoc(exp: ExpectedSlot, defaultStreamUrl: string): Record<string, unknown> {
+  // Network slots are CSGN Originals — they're programmed, not claimed, so they
+  // seed as 'confirmed' rather than sitting in the schedule as "open".
+  const isNetwork = exp.type === 'network'
   return {
     id: exp.id,
     type: exp.type,
     label: exp.label,
     startTime: exp.startTime,
     endTime: exp.endTime,
-    status: 'open',
+    status: isNetwork ? 'confirmed' : 'open',
     streamUrl: defaultStreamUrl,
     streamTitle: '',
     assignedUid: null,

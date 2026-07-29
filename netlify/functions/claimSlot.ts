@@ -62,7 +62,7 @@ export const handler = withHttp(async (event) => {
   const slot = await getDoc<SlotDoc>(`slots/${slotId}`, transaction)
   if (!slot) throw notFound('Slot not found')
   const nowMs = Date.now()
-  if (!isOpenStatus(slot.status) || slot.assignedUid || slot.isClaimable === false) throw conflict('Slot is not available', 'slot_unavailable')
+  if (slot.assignedUid || slot.isClaimable === false) throw conflict('Slot is not available', 'slot_unavailable')
   if (!slot.endTime || new Date(slot.endTime).getTime() <= nowMs) throw conflict('Past slots cannot be claimed', 'slot_past')
   // The 7 PM–3 AM ET network block is CSGN Originals — unless an admin switches
   // the block off globally, which hands those hours back to open claiming.
@@ -71,6 +71,11 @@ export const handler = withHttp(async (event) => {
     if (meta?.networkBlockEnabled !== false) {
       throw conflict('This is a CSGN Originals slot and is not open for claiming.', 'network_slot')
     }
+    // Block is off: an UNASSIGNED network slot is claimable even though it seeds
+    // as 'confirmed' (that means "held by the network", not "taken by a person").
+    if (slot.status === 'live' || slot.status === 'completed') throw conflict('Slot is not available', 'slot_unavailable')
+  } else if (!isOpenStatus(slot.status)) {
+    throw conflict('Slot is not available', 'slot_unavailable')
   }
   const max = user.slotLimits?.maxConcurrentClaims || 2
   const allUserSlots = await queryCollection('slots', [fieldFilter('assignedUid', 'EQUAL', authUser.uid)], [], 20)
