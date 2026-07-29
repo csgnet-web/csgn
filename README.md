@@ -87,7 +87,7 @@ Simplified v1 flow. Mobile full-page Twitch OAuth redirect (replaces popup, work
 **Burn-free, treasury-first tokenomics + one consolidated strategy doc.**
 - Removed the coin-spotlight **burn** mechanic entirely (`burnSpotlight` function, `spotlightBurn` client, `verifyCsgnBurn`). **CSGN is never burned** — the **Coin Jukebox** (pay SOL to spotlight a coin, TouchTunes-style) routes all proceeds to the **CSGN treasury**, which recycles them into distribution, creator payouts and liquidity
 - Ticker/crypto upgrades: the dock chart is now the **last 24h** of price action (matches the 24h delta); the **Meme 100** is a live **power ranking** blending volume + market cap + social buzz + holder $CSGN votes, with a leaderboard card and a community pick; token voting is available from the **profile** as well as the Holder Zone
-- All scattered planning docs (forward-strategy, business-spec, founder-readout, consultant-review, token-design-space, marketing-audit) consolidated + rebuilt from first principles into a single **[`docs/master-plan.md`](docs/master-plan.md)** — the Attention Capital Markets thesis, the three product prongs (24/7 stream · creator-channel/VOD platform · content & attention), the full burn-free token structure + treasury model, a complete business plan, supporting research, and the agency-grade marketing plan
+- All scattered planning docs (forward-strategy, business-spec, founder-readout, consultant-review, token-design-space, marketing-audit) consolidated into a single **[`docs/master-plan.md`](docs/master-plan.md)** — since simplified and rewritten around the wedge (gaming × sports × crypto × trading for young men), the founder's show/league playbook, the burn-free treasury token model, and a 30-day production calendar
 
 ---
 
