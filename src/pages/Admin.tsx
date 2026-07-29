@@ -14,6 +14,7 @@ import {
   limit,
 } from 'firebase/firestore'
 import { db } from '@/config/firebase'
+import { api } from '@/lib/api'
 import { useAuth } from '@/contexts/useAuth'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -189,6 +190,21 @@ export default function Admin() {
       setNetworkBlockEnabled(d.networkBlockEnabled !== false)
     }, () => {})
   }, [])
+
+  const [normalizingSlots, setNormalizingSlots] = useState(false)
+
+  const handleNormalizeSlots = async () => {
+    setNormalizingSlots(true)
+    setActionError(null)
+    try {
+      const res = await api.normalizeSlots()
+      await loadSlots()
+      setActionError(`Re-typed ${res.retyped} of ${res.normalized} slots to the 7 PM–3 AM network / open split.`)
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to normalize slots.')
+    }
+    setNormalizingSlots(false)
+  }
 
   const handleToggleNetworkBlock = async () => {
     setTogglingNetwork(true)
@@ -1280,6 +1296,16 @@ export default function Admin() {
                     : 'Network block OFF — every slot is open to claim. Click to reserve 7 PM–3 AM ET again.'}
                 >
                   {networkBlockEnabled ? 'Network block: ON' : 'Network block: OFF — all open'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={<RefreshCw className="w-4 h-4" />}
+                  isLoading={normalizingSlots}
+                  onClick={handleNormalizeSlots}
+                  title="Re-type every existing and future slot by its ET airtime: 7 PM–3 AM becomes CSGN Originals, every other hour becomes open and claimable. Assignments are kept."
+                >
+                  Fix all slot types
                 </Button>
                 <Button variant="ghost" size="sm" leftIcon={<RefreshCw className="w-4 h-4" />} onClick={loadSlots}>
                   Refresh

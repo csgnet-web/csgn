@@ -47,6 +47,27 @@ function etToUTC(year: number, month: number, day: number, hourET: number): Date
   return candidate
 }
 
+/** The CSGN Originals block starts at these ET hours (7 PM – 3 AM = 19/21/23/1). */
+export const NETWORK_START_HOURS_ET = new Set([19, 21, 23, 1])
+
+/** ET hour (0–23) a timestamp falls on. h23 so midnight is 0, never 24. */
+export function etHour(date: Date): number {
+  return Number(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', hour: 'numeric', hourCycle: 'h23',
+  }).format(date))
+}
+
+/**
+ * The block a slot belongs to, derived purely from when it airs. This is the
+ * single rule for "existing and future" slots: 7 PM–3 AM ET is network, every
+ * other hour is open and claimable — regardless of what the doc currently says.
+ */
+export function slotTypeForStartTime(startTime: string | Date): SlotType {
+  const d = startTime instanceof Date ? startTime : new Date(startTime)
+  if (Number.isNaN(d.getTime())) return 'open'
+  return NETWORK_START_HOURS_ET.has(etHour(d)) ? 'network' : 'open'
+}
+
 export function utcToETComponents(date: Date): { year: number; month: number; day: number } {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
