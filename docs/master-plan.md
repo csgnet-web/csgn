@@ -181,6 +181,47 @@ means in practice:
 **Verdict: the infrastructure is not the bottleneck and won't be for a long time.
 Go make content.**
 
+### 3.5 Making it simple enough for a stranger
+
+The app works. The question this section answers is whether a stranger who lands on
+it can tell what to do — a different and harder bar.
+
+**What was actually confusing, and is now fixed:**
+- **The dashboard advertised mechanics that don't exist.** A signed-in user saw "My
+  Bids (CSGN)", "CEO Schedule Slots", and two buttons pointing at a route that
+  redirects elsewhere — all leftovers from the auction era. Replaced with one card
+  showing your real upcoming slots and a claim CTA. Dead auction code deleted.
+- **The hour on the air couldn't be claimed.** The most valuable slot on the
+  schedule — the one where you can go live *this second* — was the one being
+  refused. Fixed; it now reads "On air. Take it now."
+- **Three different surfaces disagreed about what was claimable.** `/watch`,
+  `/schedule` and the server each had their own rule. One rule now, shared.
+
+**What to fix next, in order:**
+
+**1. The funnel has three cliffs before the first action.** To claim a slot you need
+a verified email, a signature-proven Phantom wallet, and a linked Twitch account.
+Each is defensible on its own — email stops abuse, the wallet is how you get paid,
+Twitch is where the stream points — but three verifications before *any* payoff is
+where most people quit. **Don't remove them; show them.** A three-step progress
+strip with the claim waiting visibly at the end converts far better than three
+unexplained walls, because the reward stays in view the whole way.
+
+**2. The Holder Zone does four things on one page.** Governance vote, Right Now rail,
+Coin Jukebox, Meme-100 vote. Order it by *what you can do with what you hold right
+now* — the thing your balance already unlocks goes first, and anything above your
+balance shows the number you'd need. A page that leads with what you can't do reads
+as a paywall.
+
+**3. Say the payoff before the ask, everywhere.** "Claim a slot" is a task. "Go live
+and earn 30% of $CSGN's trading fees while you're on air" is a reason. The second
+one belongs on every claim surface, not just the schedule header.
+
+**4. One-line rule for anything new:** if a stranger can't tell what a screen is for
+in five seconds, the screen is wrong — not the stranger.
+
+---
+
 ## 4. The schedule (simple version)
 
 | Block | Hours (ET) | Who programs it |
@@ -220,6 +261,55 @@ claim on a treasury that grows every time the network sells attention."*
 
 *(Target allocation — community 55–65% · treasury 15–20% · creator rewards 8–12% ·
 team 8–12% (2–3y vest) · liquidity 3–5%. Set for real with counsel.)*
+
+### 5.1 Every use of $CSGN today — audited
+
+The token is only worth what it *does*, so here is the complete list of what it
+actually does in the shipped product, and how sound each one is.
+
+| # | Use | Where it lives | Gate | State |
+|---|---|---|---|---|
+| 1 | **Governance vote** — holders decide what airs | `castVote` → `votes/{id}` | any balance > 0; weight = balance | live, now settled against live balances |
+| 2 | **Meme-100 vote** — holders back a coin in the power ranking | `voteMeme` → `public/memeVote` | any balance > 0; weight = balance | live, re-settled every 30 min |
+| 3 | **Right Now rail** — put your own line on the broadcast ticker | `submitRightNow` | ≥ threshold in `config/tokenGates` | live, threshold now tunable |
+| 4 | **Creator-fee share** — 30% of $CSGN's pump.fun creator fees to whoever is on air | fee poller → Creator Fees | none — claim a slot and stream | live |
+| 5 | **Coin Jukebox** — pay to put a coin on screen | `jukeboxSpotlight` | SOL today | live in SOL; **$CSGN not accepted yet** |
+| 6 | **Gated information pipeline** | Discord (§9) | holding tier | **not built** |
+
+**Three things were wrong, and are fixed:**
+
+**The tally could be inflated without limit.** A ballot stored the weight held at
+cast time and the tally was incremented from it — so the weight never changed. Sell
+after voting and it still counted. Worse: vote, send the bag to a fresh wallet, vote
+again, and the same coins counted twice. Repeat for arbitrary inflation at the cost
+of gas. Both the governance vote and the Meme-100 were exposed. Tallies are now
+**settled against live on-chain balances** — tokens can only sit in one wallet at a
+time, so the cycling attack collapses to a single count and a seller drops to zero.
+Governance votes settle on close; the Meme-100 never closes, so it re-settles every
+30 minutes. A wallet whose balance can't be read keeps its stored weight rather than
+being zeroed, so an RPC hiccup can never silently delete someone's vote.
+
+**The Right Now threshold was hardcoded in two places.** 5,000,000 $CSGN is a fixed
+*token* count, which is a *moving dollar cost* — at 10× the price it's a wall nobody
+climbs, at 1/10th it's free. It now lives in `config/tokenGates`, is enforced from
+there, displayed from there, and tunable from Broadcast Control without a deploy.
+
+**The published number and the enforced number could drift.** Same fix: one source.
+
+**Two gaps remain, both worth closing:**
+
+1. **$CSGN can't pay for a jukebox play.** SOL works; the token doesn't. This is the
+   most natural sink the product has and it's the obvious next build — it needs SPL
+   transfer verification, where today only SOL transfers are verified.
+2. **No treasury surface anywhere in the product.** §11.1 says a public address with
+   published rules is what replaces burning — but nothing in the app shows it. A
+   `/treasury` readout (balance, inflows, the hold rules, the address) is the
+   highest-trust, lowest-effort token feature available and it is currently missing.
+
+**One thing to be honest about in public:** any wallet can vote with any balance, so
+the *wallet count* on a vote is trivially inflatable even after settling. **Tokens
+are the signal; wallets are decoration.** Lead with the token weight everywhere and
+never quote a wallet count as if it were turnout.
 
 ---
 
@@ -418,11 +508,58 @@ cap follows.
 
 ---
 
-## 8. The next 30 days
+### 7.5 Six cheap ways to boost reach, ranked by effort-to-value
 
-**Committed slate:** daily 30-min Whiparound + 4–5 CFB/league streams a week
-(1–4 hrs). ~15 hrs/week live before clipping — a real load solo, so the plan
-protects it.
+Not strategy — the specific, small things that are worth doing this week.
+
+**1. Put the ticker in every clip.** Free, already built, permanent. A clip with a
+broadcast ticker in frame looks like television and carries CSGN branding whether or
+not anyone says the name. Nothing else on this list costs zero and compounds forever.
+
+**2. Give the ticker away as an OBS source.** A co-branded ticker any streamer can
+drop into their own stream. It costs them nothing, makes their stream look like a
+network, and puts CSGN permanently in front of an audience larger than ours. It is
+**distribution disguised as a gift** — and the same asset works for the flagship
+partner (§11.4) and for every mid-tier creator.
+
+**3. Recruit slot claimants, not followers.** Every claimed slot is a creator
+promoting CSGN to *their* audience, on our schedule, with our ticker on screen.
+**Ten claimants beat a thousand followers.** The schedule is not inventory waiting to
+be filled — it is the growth engine, and hand-recruiting the first fifty people onto
+it is the highest-return time available.
+
+**4. Post the scoreboard daily.** One recurring artifact out-performs fifty posts,
+because people check back for it and quote it (§7.1). Start with the Meme-100 — it's
+already built — then Caller Standings.
+
+**5. Reply, don't broadcast.** At this follower count, a reply into a large thread
+reaches more people than an original post to your own timeline. This is the single
+biggest composition change available and it's free (§13.1).
+
+**6. Make every clip name someone.** A coin, a team, a person. **People share what
+makes their thing look important, never what makes yours look important.** A clip
+about "CSGN's new feature" travels nowhere; a clip ranking someone's coin travels
+through their whole community.
+
+---
+
+## 8. The next 180 days
+
+Six months is long enough to build something real and short enough that the crypto
+cycle still looks roughly like it does today. The shape of the plan follows one
+belief: **the first 90 days are entirely about the streak and the scoreboard; the
+second 90 are about turning attention into inventory that other people pay for.**
+
+Read this with §13 (the content plan) — that section sets the daily floor, this one
+sets what the months are for.
+
+### Phase 1 · Days 1–30 — go live and never miss
+
+**The only goal: the daily show exists and does not skip.** Nothing else in this
+document matters if that fails.
+
+**Committed slate:** daily 30-min Whiparound + 4–5 league streams a week (1–4 hrs).
+~15 hrs/week live before clipping.
 
 | | Mon | Tue | Wed | Thu | Fri | Sat | Sun |
 |---|---|---|---|---|---|---|---|
@@ -431,24 +568,93 @@ protects it.
 | **Clips due** | 2 | 1 | 2 | 2 | 1 | 2 | 2 |
 
 **Rules that make it survivable:**
-- **Whiparound is fixed-time, fixed-length.** Never let 30 min sprawl to 60. The
-  streak matters more than any single episode.
-- **Length is the shock absorber.** A 1-hour Dynasty night still counts; skipping
-  doesn't.
-- **Batch prep once a day** — 20 minutes collecting stories. The show is delivery,
-  not research.
+- **Whiparound is fixed-time, fixed-length.** Never let 30 min sprawl to 60.
+- **Length is the shock absorber.** A 1-hour Dynasty night still counts; skipping doesn't.
+- **Batch prep once a day** — 20 minutes collecting stories. The show is delivery, not research.
 - **Bank two evergreen segments in week 1** so a sick day never breaks the streak.
 - **One rest valve:** drop a league night before ever dropping the Whiparound.
 
 **Week by week:**
-- **Week 1** — Stickman rig running; Whiparound daily from day 1; Dynasty ep. 1–2;
-  Discord live-ping shipped; two emergency segments banked.
-- **Week 2** — daily clips to X; first collision-format post; Dynasty 3–4; first 10
-  creators hand-recruited; open-slot alerts live.
-- **Week 3** — first Rocket League one-night tournament; first coin-community
-  spotlight; VOD autopilot filling the network block.
-- **Week 4** — first guest appearance (theirs or yours); publish month-1 numbers;
-  first Live Coin Battle inside a league night.
+- **W1** — Stickman rig running; Whiparound daily from day 1; Dynasty ep. 1–2; two
+  emergency segments banked; ticker in frame on every clip.
+- **W2** — daily clips; first collision-format post; Dynasty 3–4; **Meme-100 posted
+  daily from @CSGN** (the first scoreboard, §7.1); Discord live-ping shipped.
+- **W3** — first Rocket League one-night tournament; first coin-community spotlight;
+  jukebox mainnet dry-run with a tiny payment; VOD autopilot filling the night block.
+- **W4** — first guest appearance; publish month-1 numbers publicly; first ten
+  creators hand-recruited to claim slots.
+
+**Exit test:** 30 consecutive Whiparounds, ~60 clips shipped, the Meme-100 posted
+every day, and at least 3 slots claimed by someone who isn't you.
+
+### Phase 2 · Days 31–90 — become the scoreboard
+
+Volume alone doesn't compound. Recurring artifacts do. This phase builds the things
+other people quote (§7.1).
+
+- **Ship Caller Standings.** Public calls from big accounts tracked like a stat line
+  — entry, current, ROI, hit rate, W–L — rendered on the ticker. This is the single
+  highest-leverage build in the whole 180 days: it's the mindshare asset *and* the
+  thing that makes a partner conversation easy.
+- **Ship the `/treasury` page.** Address, balance, inflows, published hold rules
+  (§11.1). This is what "we don't burn" means in practice, and right now it's a
+  claim with nothing behind it.
+- **Ship $CSGN as a jukebox currency.** The token's most natural sink, still missing.
+- **Recruit slot claimants relentlessly.** Every claimed slot is a creator promoting
+  CSGN to *their* audience. **Ten claimants is worth more than a thousand followers**
+  — reframe the schedule as the growth engine, not as inventory to be filled.
+- **League table for whichever league is running.** Standings on the ticker turn a
+  game night into a publication.
+- **First paid thing.** One coin community sponsors one segment. The number barely
+  matters; proving the inventory sells is what matters.
+
+**Exit test:** 90-day streak intact, Caller Standings live and cited by at least one
+account bigger than yours, treasury page public, one paid sponsor, 10+ distinct
+people have claimed a slot.
+
+### Phase 3 · Days 91–135 — sell the inventory
+
+The audience is now real enough that airtime has a price.
+
+- **Partner-token surface live**, with the tenancy terms in §11.3–11.6 written down
+  and repeatable. Approach the flagship tenant with **the ticker-as-a-gift and the
+  Caller Standings** (§11.4), not with a request.
+- **Sponsorship tiers published** — ticker cell, segment, league team, night. Real
+  prices, publicly listed. Published prices make a network look like a network.
+- **The VOD library becomes a product** — 30/60-min shows, consistently formatted
+  (§13.4), filling the night block automatically.
+- **Second league running** so there are two standings to publish.
+- **Open the creator platform** to the first cohort beyond hand-recruits.
+
+**Exit test:** one flagship tenant live, 3–5 paying sponsors, the night block filling
+itself, and creator payouts going out on time every week.
+
+### Phase 4 · Days 136–180 — make it not depend on you
+
+The failure mode of a founder-led network is that it *stays* founder-led.
+
+- **A second recurring host** — anyone whose slot is reliably good, promoted into a
+  named show.
+- **The gated information pipeline** (§9) — the sixth token use, and the one that
+  makes holding worth something between votes.
+- **Publish a real six-month report** — followers, clips, streams hit, holders who
+  acted, treasury balance, sponsors, payouts. Being the network that publishes its
+  own numbers is itself a positioning move nobody else in crypto makes.
+- **Decide the next cycle's bet** from evidence rather than vibes: whichever of
+  leagues / partner tenancy / creator platform actually produced, gets the next six
+  months.
+
+**Exit test:** the network airs a full week that the founder did not personally host,
+and the numbers don't collapse.
+
+### What would make me change this plan
+
+- **A slot-claim flood.** If claiming takes off, stop everything and make the creator
+  experience excellent — that's the network building itself.
+- **A partner saying yes early.** Pull Phase 3 forward; distribution beats sequencing.
+- **The streak breaking twice in a month.** Cut the slate, don't cut the streak.
+- **The market going risk-off hard.** Lean *harder* into sports — it's the half that
+  doesn't care what BTC did (§2.2), and it's why the wedge exists.
 
 ---
 
@@ -768,7 +974,103 @@ decides this.
 
 ---
 
-## 13. The whole thing on one page
+## 13. The content plan — an honest read
+
+The stated plan: start streaming immediately, cut 30/60-minute VODs, 5–10 clips a
+day, 50–75 posts a day from @CSGN and 100 a day from the personal account.
+
+**The instinct is right and the arithmetic is wrong.** High posting volume genuinely
+is how crypto Twitter is won — the accounts that own the timeline post dozens of
+times a day. But 175 posts is one every five and a half minutes across a sixteen-hour
+day, on top of streaming, on top of cutting ten clips, on top of editing a VOD. That
+is roughly a fourteen-hour day with no slack in it, and the plan already names week 6
+as the point where things break (§12.4).
+
+Four changes make the same ambition survivable.
+
+### 13.1 Change the composition, not the number
+
+Of 100 posts, maybe 10 should be original. **The other 90 are replies.**
+
+Replies take fifteen seconds, and at 300 followers they are where *all* the
+distribution is — you are borrowing someone else's audience every time. Original
+posts are the expensive ones: they need a take, a format, a reason to exist. Trying
+to write 175 originals a day is what burns people out by week three; writing 15
+originals and 160 replies is a completely different day and reaches more people.
+
+**Track replies-into-big-accounts as a weekly number.** It's the borrowed-reach
+input, it's fully in your control, and it's the one that moves followers early.
+
+### 13.2 Give the two accounts different jobs
+
+Two accounts both posting 75+ times a day will converge on saying the same things,
+which is the worst outcome: double the work, half the credibility, and X's spam
+heuristics notice duplicate text across accounts you control.
+
+| | Personal account | @CSGN |
+|---|---|---|
+| Role | **the human** | **the network** |
+| Volume | 100–150/day, mostly replies | **10–20/day, all production** |
+| Content | takes, fights, sports opinions, live reactions | scoreboards, clips, standings, results, "now live" |
+| Production | zero — thumbs, fast | high — every post is a finished artifact |
+| Goal | followers | subscribers |
+
+**People follow people and subscribe to networks.** A network account posting 75
+times a day reads as a bot and gets muted; a network account that publishes the
+Meme-100 every day and five great clips reads as ESPN. Dropping @CSGN from 75 to 20
+is not a reduction in ambition — it's what makes it look like a network.
+
+**Never post identical text from both.** Ever.
+
+### 13.3 Make the format manufacture the clips
+
+5–10 clips a day is the right target, but it only works if the stream reliably
+*produces* 5–10 clippable moments. Hoping for them doesn't scale. Build segments
+whose entire job is to generate a moment:
+
+- a ranking **reveal** (the Meme-100 top 3, live, with reactions)
+- a **hot-take round** with a timer
+- **worst take of the day**, read out loud
+- a **live grade** on something that just happened
+- the **standings update** for whichever league is running
+
+And the operational rule that already exists but is worth repeating because it's the
+one that actually fails: **mark the clip while streaming or it doesn't exist.**
+Harvesting later is what kills the habit.
+
+**One free multiplier: clip with the ticker in frame.** Every clip then carries CSGN
+branding automatically and looks like television instead of a webcam. It costs
+nothing, it's already built, and it's the cheapest brand asset available.
+
+### 13.4 Make the VOD a show, not a recording
+
+A three-hour stream doesn't become a 60-minute VOD by trimming the ends. The
+question is what the VOD *is* for someone who wasn't there. Same open, same
+segments, same close, every time — so it's watchable cold. That's what turns the
+back catalogue into the library that compounds (§1.1) instead of an archive nobody
+opens.
+
+### 13.5 Design the floor, not the ceiling
+
+The plan above is a ceiling. Ceilings get missed, and a missed ceiling feels like
+failure, and that's what ends streaks. So define the **minimum viable day** and treat
+it as the actual commitment:
+
+> **One stream · three clips · thirty replies · one scoreboard post.**
+
+That's maybe three hours. It is hittable on a sick day, a travel day, a red day. Do
+that and the streak survives; everything above it is upside. **The streak is the
+asset — not any individual day's volume.**
+
+Two more operational notes:
+- **Batch the posting.** Three blocks of 30–40 minutes beats being on X all day.
+  Being on X all day is what quietly destroys the streaming.
+- **Keep links out of most posts.** Link in a reply. High link ratio on a young
+  account is a reach-limiting signal, and it's an easy own goal.
+
+---
+
+## 14. The whole thing on one page
 
 1. **The wedge is the intersection.** Gaming × sports × crypto × trading for young
    men. Not "better crypto content" — *the only show that's all four.*
@@ -805,3 +1107,12 @@ decides this.
     Every real blocker found so far has been fixed; go make content.
 15. **Manage to followers, clips shipped, streams hit, and holders-who-acted** —
     not market cap. And know the real risk is stopping in week 6.
+16. **Post volume is right; the composition was wrong.** ~15 originals and ~160
+    replies, not 175 originals. The personal account is the human (high volume,
+    low production); @CSGN is the network (10–20/day, every post a finished
+    artifact). Never the same text from both.
+17. **Design the floor, not the ceiling.** One stream · three clips · thirty
+    replies · one scoreboard post. Hittable on a bad day — and the streak is the
+    asset, not any single day's volume.
+18. **Ten slot claimants beat a thousand followers.** Every claimed slot is a
+    creator promoting CSGN to their own audience, with our ticker on screen.
