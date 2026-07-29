@@ -24,8 +24,16 @@ type SlotDoc = { status?: string; type?: string; isClaimable?: boolean; assigned
 
 /** Legacy 'ceo' docs are the same 7 PM–3 AM block as the new 'network' type. */
 const isNetworkSlot = (slot: SlotDoc): boolean => slot.type === 'network' || slot.type === 'ceo'
-/** Auction-era statuses ('closing' | 'pending_deposit' | 'unfilled') collapse to open. */
-const isOpenStatus = (status?: string): boolean => status !== 'confirmed' && status !== 'live' && status !== 'completed'
+/**
+ * Mirrors isSlotClaimable in src/lib/slotModel.ts — assignment decides, not
+ * status. On an UNASSIGNED slot the status is bookkeeping that drifts (an admin
+ * flips the airing hour to 'live', a legacy doc says 'confirmed'), and none of it
+ * means a person took the hour. Only an explicit 'completed' stops a claim, so
+ * the hour currently on the air stays claimable — that's the most valuable one,
+ * since the claimant can go live right now. If you change this rule, change it in
+ * slotModel.ts too or the button and the server will disagree.
+ */
+const blocksClaim = (status?: string): boolean => status === 'completed'
 
 function twitchUsernameFromDefaultUrl(): string {
   const configured = process.env.CSGN_DEFAULT_STREAM_URL || ''
@@ -62,7 +70,10 @@ export const handler = withHttp(async (event) => {
   const slot = await getDoc<SlotDoc>(`slots/${slotId}`, transaction)
   if (!slot) throw notFound('Slot not found')
   const nowMs = Date.now()
-  if (slot.assignedUid || slot.isClaimable === false) throw conflict('Slot is not available', 'slot_unavailable')
+  // assignedUid is the real "someone took this". `isClaimable` is a denormalized
+  // mirror written by the seeders — it goes stale the moment a status is edited
+  // by hand, so it is kept up to date but never used to veto a claim.
+  if (slot.assignedUid) throw conflict('Slot is not available', 'slot_unavailable')
   if (!slot.endTime || new Date(slot.endTime).getTime() <= nowMs) throw conflict('Past slots cannot be claimed', 'slot_past')
   // The 7 PM–3 AM ET network block is CSGN Originals — unless an admin switches
   // the block off globally, which hands those hours back to open claiming.
@@ -71,12 +82,8 @@ export const handler = withHttp(async (event) => {
     if (meta?.networkBlockEnabled !== false) {
       throw conflict('This is a CSGN Originals slot and is not open for claiming.', 'network_slot')
     }
-    // Block is off: an UNASSIGNED network slot is claimable even though it seeds
-    // as 'confirmed' (that means "held by the network", not "taken by a person").
-    if (slot.status === 'live' || slot.status === 'completed') throw conflict('Slot is not available', 'slot_unavailable')
-  } else if (!isOpenStatus(slot.status)) {
-    throw conflict('Slot is not available', 'slot_unavailable')
   }
+  if (blocksClaim(slot.status)) throw conflict('Slot is not available', 'slot_unavailable')
   const max = user.slotLimits?.maxConcurrentClaims || 2
   const allUserSlots = await queryCollection('slots', [fieldFilter('assignedUid', 'EQUAL', authUser.uid)], [], 20)
   const claimed = allUserSlots.filter((s) => {

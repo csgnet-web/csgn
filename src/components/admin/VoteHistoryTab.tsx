@@ -19,9 +19,11 @@ interface VoteHistoryTabProps {
   votesLoading: boolean
   closingId: string | null
   onCloseVote: (vote: VoteRecord) => void
+  /** Recompute the tally from live balances without closing the vote. */
+  onResettleVote: (vote: VoteRecord) => void
 }
 
-export function VoteHistoryTab({ votes, votesLoading, closingId, onCloseVote }: VoteHistoryTabProps) {
+export function VoteHistoryTab({ votes, votesLoading, closingId, onCloseVote, onResettleVote }: VoteHistoryTabProps) {
   const open = votes.filter(isVoteOpen)
   const closed = votes.filter((v) => !isVoteOpen(v))
   const allTokens = votes.reduce((sum, v) => sum + standings(v).totalTokens, 0)
@@ -39,10 +41,18 @@ export function VoteHistoryTab({ votes, votesLoading, closingId, onCloseVote }: 
               {compactTokens(totalTokens)} $CSGN · {totalWallets} wallet{totalWallets !== 1 ? 's' : ''}
               {vote.createdAt && ` · opened ${new Date(vote.createdAt).toLocaleString()}`}
             </p>
+            <p className="text-[11px] text-amber-400/80 mt-0.5">
+              Running total — weights are from when each ballot was cast. Closing settles it against live balances.
+            </p>
           </div>
-          <Button variant="secondary" size="sm" isLoading={closingId === vote.id} onClick={() => onCloseVote(vote)}>
-            Close voting
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button variant="ghost" size="sm" className="text-gray-400" isLoading={closingId === vote.id} onClick={() => onResettleVote(vote)}>
+              Refresh weights
+            </Button>
+            <Button variant="secondary" size="sm" isLoading={closingId === vote.id} onClick={() => onCloseVote(vote)}>
+              Close &amp; settle
+            </Button>
+          </div>
         </div>
 
         <div className="mt-3 space-y-1.5">
@@ -79,6 +89,7 @@ export function VoteHistoryTab({ votes, votesLoading, closingId, onCloseVote }: 
           ) : (
             <Badge variant="default">no ballots</Badge>
           )}
+          {vote.settledAt && <Badge variant="green">settled</Badge>}
           <span className="ml-auto text-xs text-gray-500 font-mono">{compactTokens(totalTokens)} $CSGN · {totalWallets}w</span>
         </summary>
         <div className="px-4 sm:px-5 pb-3 space-y-1">

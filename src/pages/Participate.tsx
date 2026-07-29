@@ -6,7 +6,8 @@ import { db } from '@/config/firebase'
 import { api } from '@/lib/api'
 import { proveWallet } from '@/lib/walletProof'
 import { paySpotlight } from '@/lib/spotlightPay'
-import { fetchCsgnBalance, CSGN_RIGHT_NOW_MIN } from '@/lib/csgnBalance'
+import { fetchCsgnBalance } from '@/lib/csgnBalance'
+import { DEFAULT_TOKEN_GATES, normalizeTokenGates } from '@/lib/tokenGates'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -25,6 +26,15 @@ export default function Participate() {
   const { walletAddress, connect, signMessage, isConnecting, balance: solBalance } = usePhantomWallet()
   const [balanceState, setBalanceState] = useState<number | null>(null)
   const [balanceLoading, setBalanceLoading] = useState(false)
+
+  // The Right Now threshold is server-owned (config/tokenGates) so the number on
+  // screen is always the number the server will actually enforce.
+  const [rightNowMin, setRightNowMin] = useState(DEFAULT_TOKEN_GATES.rightNowMinCsgn)
+  useEffect(() => {
+    return onSnapshot(doc(db, 'config', 'tokenGates'), (snap) => {
+      setRightNowMin(normalizeTokenGates(snap.exists() ? snap.data() : null).rightNowMinCsgn)
+    }, () => {})
+  }, [])
 
   const [vote, setVote] = useState<VoteCfg | null>(null)
   const [tallyState, setTallyState] = useState<{ id: string; tally: Tally }>({ id: '', tally: {} })
@@ -203,7 +213,7 @@ export default function Participate() {
   const leadIdx = cells.length ? cells.reduce((best, c, i) => (c.tokens > cells[best].tokens ? i : best), 0) : -1
   const hasVotes = totalTokens > 0
   const closed = vote?.status === 'closed'
-  const canPostRightNow = balance != null && balance >= CSGN_RIGHT_NOW_MIN
+  const canPostRightNow = balance != null && balance >= rightNowMin
 
   return (
     <motion.main
@@ -215,7 +225,7 @@ export default function Participate() {
         <h1 className="text-3xl sm:text-4xl font-display font-black uppercase tracking-tight">Holder Zone</h1>
         <p className="text-gray-400 text-sm sm:text-base">
           Your $CSGN is your voice. Vote tonight’s programming — weighted by the tokens you hold — and, at{' '}
-          {fmtFull(CSGN_RIGHT_NOW_MIN)} $CSGN, put your own message on the live broadcast ticker.
+          {fmtFull(rightNowMin)} $CSGN, put your own message on the live broadcast ticker.
         </p>
       </header>
 
@@ -321,7 +331,7 @@ export default function Participate() {
         </div>
         <Card hover={false} className="p-5 space-y-3">
           <p className="text-sm text-gray-400">
-            Hold at least <span className="text-primary-300 font-semibold">{fmtFull(CSGN_RIGHT_NOW_MIN)} $CSGN</span> to push one message to the live{' '}
+            Hold at least <span className="text-primary-300 font-semibold">{fmtFull(rightNowMin)} $CSGN</span> to push one message to the live{' '}
             <span className="text-primary-300 font-semibold">RIGHT NOW</span> rail — once per day, kept clean for air.
           </p>
 
@@ -331,7 +341,7 @@ export default function Participate() {
             <div className="flex items-start gap-2 text-sm text-amber-300/90 bg-amber-500/[0.06] border border-amber-500/20 rounded-xl p-3">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
               <span>
-                You hold {balance != null ? fmtFull(balance) : '—'} $CSGN. You need {fmtFull(CSGN_RIGHT_NOW_MIN)} to post to the rail.
+                You hold {balance != null ? fmtFull(balance) : '—'} $CSGN. You need {fmtFull(rightNowMin)} to post to the rail.
               </span>
             </div>
           ) : (

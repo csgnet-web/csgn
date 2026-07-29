@@ -4,6 +4,7 @@ import { Radio, Siren, Megaphone, Twitter, Vote, type LucideIcon } from 'lucide-
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { db } from '@/config/firebase'
+import { DEFAULT_TOKEN_GATES } from '@/lib/tokenGates'
 
 type ModuleId = 'onair' | 'breaking' | 'rail' | 'social' | 'vote'
 
@@ -76,6 +77,9 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
   const [actions, setActions] = useState({ total: 0, votes: 0, submissions: 0, spotlights: 0, buys: 0 })
   const [showActions, setShowActions] = useState(false)
   const [jukeboxSol, setJukeboxSol] = useState('') // SOL a holder pays (Coin Jukebox) to spotlight a coin — proceeds to treasury
+  // $CSGN needed to push a message onto the Right Now rail. Config-driven so it
+  // can track the price — a fixed token count is a moving dollar cost.
+  const [rightNowMin, setRightNowMin] = useState('')
   // Now live / up next — auto-filled from the real schedule by the minute
   // poller unless the operator takes manual control (config/ticker.onAirAuto).
   const [onAirAuto, setOnAirAuto] = useState(true)
@@ -131,6 +135,13 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
   }, [])
 
   useEffect(() => {
+    return onSnapshot(doc(db, 'config', 'tokenGates'), (snap) => {
+      const n = Number(snap.exists() ? snap.data().rightNowMinCsgn : 0)
+      setRightNowMin(n > 0 ? String(Math.floor(n)) : String(DEFAULT_TOKEN_GATES.rightNowMinCsgn))
+    }, () => {})
+  }, [])
+
+  useEffect(() => {
     return onSnapshot(doc(db, 'public', 'onAirActions'), (snap) => {
       const d = snap.exists() ? snap.data() : {}
       const n = (k: string) => Number(d[k]) || 0
@@ -171,6 +182,12 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
   const clearChyron = () => run('chyClear', async () => { await write({ chyron: null }); setChyKicker(''); setChyTitle(''); setChySub(''); setChyPill('') }, 'Main chyron cleared.')
   const toggleActions = () => run('actToggle', () => write({ showActions: !showActions }), !showActions ? 'Fan-action counter is now on air.' : 'Fan-action counter hidden from air.')
   const resetActions = () => run('actReset', () => setDoc(doc(db, 'public', 'onAirActions'), { total: 0, votes: 0, submissions: 0, spotlights: 0, buys: 0, since: new Date().toISOString(), updatedAt: new Date().toISOString() }), 'Fan-action counter reset for a new session.')
+  const saveRightNowGate = () => run('rnGate', () => {
+    const n = Math.floor(Number(rightNowMin))
+    if (!(n > 0)) throw new Error('Enter a positive $CSGN amount.')
+    return setDoc(doc(db, 'config', 'tokenGates'), { rightNowMinCsgn: n, updatedAt: new Date().toISOString() }, { merge: true })
+  }, 'Right Now threshold updated — the server enforces this immediately.')
+
   const saveJukebox = () => run('jukebox', () => {
     const n = Number(jukeboxSol)
     if (!(n > 0)) throw new Error('Enter a positive SOL amount.')
@@ -311,6 +328,14 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
             </div>
             <Button size="sm" variant="secondary" isLoading={busy === 'jukebox'} onClick={saveJukebox}>Save</Button>
           </div>
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <label className={label}>Right Now rail — $CSGN needed to post</label>
+              <input value={rightNowMin} onChange={(e) => setRightNowMin(e.target.value.replace(/[^0-9]/g, ''))} placeholder="5000000" inputMode="numeric" className={input} />
+            </div>
+            <Button size="sm" variant="secondary" isLoading={busy === 'rnGate'} onClick={saveRightNowGate}>Save</Button>
+          </div>
+          <p className="text-xs text-gray-500">Retune this as the price moves — a fixed token count is a moving dollar cost, and a gate nobody can pass is a gate nobody uses.</p>
         </div>
 
         {/* Main chyron — full control of the three headline lines */}

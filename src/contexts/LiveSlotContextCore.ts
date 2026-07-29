@@ -29,6 +29,10 @@ export interface LiveSlotContextValue {
    *  is null because the data hasn't loaded — NOT because no slot is claimed —
    *  and consumers like /player must not fall back to the default channel. */
   slotsReady: boolean
+  /** config/scheduleMeta.networkBlockEnabled. Lives here so /watch, /schedule and
+   *  the schedule strip all decide claimability from the same answer, instead of
+   *  each rolling its own check that the server then contradicts. */
+  networkBlockEnabled: boolean
 }
 
 export const LiveSlotContext = createContext<LiveSlotContextValue>({
@@ -38,4 +42,5 @@ export const LiveSlotContext = createContext<LiveSlotContextValue>({
   tokenStats: null,
   nowMs: Date.now(),
   slotsReady: false,
+  networkBlockEnabled: true,
 })

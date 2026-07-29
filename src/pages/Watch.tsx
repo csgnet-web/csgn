@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Gamepad2, Grid3X3 } from 'lucide-react'
-import { formatESTRange, type Slot } from '@/lib/slots'
+import { formatESTRange, isSlotClaimable, type Slot } from '@/lib/slots'
 import { api } from '@/lib/api'
 import { parseXPostId } from '@/lib/xembed'
 import { useAuth } from '@/contexts/useAuth'
@@ -44,7 +44,7 @@ export default function Watch() {
   }, [showSignupNotice, navigate, location.pathname])
 
   const { user, profile } = useAuth()
-  const { currentSlot, allSlots, manualOverride } = useLiveSlot()
+  const { currentSlot, allSlots, manualOverride, networkBlockEnabled } = useLiveSlot()
   const [claiming, setClaiming] = useState(false)
   const [claimError, setClaimError] = useState('')
   const [showWipe, setShowWipe] = useState(false)
@@ -92,10 +92,10 @@ export default function Watch() {
   // so the OFFLINE→LIVE flip tracks the slot status automatically.
   const slotLive = Boolean(currentSlot && (currentSlot.status === 'confirmed' || currentSlot.status === 'live'))
 
-  const canClaimCurrent =
-    Boolean(currentSlot) &&
-    currentSlot?.status === 'open' &&
-    !currentSlot?.assignedUid
+  // One rule, shared with /schedule and the server. The old hand-rolled check
+  // (status === 'open') hid the button on the airing hour the moment its status
+  // drifted, and offered it on network hours the server would then reject.
+  const canClaimCurrent = !!currentSlot && isSlotClaimable(currentSlot, networkBlockEnabled)
 
   const handleClaimSlot = useCallback(async (slot: Slot) => {
     if (!user || !profile) {

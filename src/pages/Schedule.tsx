@@ -189,8 +189,8 @@ export default function Schedule() {
               {slot.streamTitle && <p className="truncate text-[11px] text-gray-400 mt-0.5">{slot.streamTitle}</p>}
             </>
           ) : claimable ? (
-            <p className={`font-black uppercase tracking-tight text-primary-300 leading-tight ${compact ? 'text-base' : 'text-sm'}`}>
-              Your slot.<br />Take it.
+            <p className={`font-black uppercase tracking-tight leading-tight ${isLive ? 'text-emerald-300' : 'text-primary-300'} ${compact ? 'text-base' : 'text-sm'}`}>
+              {isLive ? <>On air.<br />Take it now.</> : <>Your slot.<br />Take it.</>}
             </p>
           ) : (
             <p className="text-[11px] text-gray-600">—</p>
@@ -209,7 +209,7 @@ export default function Schedule() {
               disabled={busy}
               className="w-full rounded-lg bg-primary-500 hover:bg-primary-400 text-white text-[11px] font-bold uppercase tracking-wide py-1.5 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1 shadow-lg shadow-primary-500/20 hover:shadow-primary-500/40 active:scale-[0.98]"
             >
-              {busy ? <><Loader2 className="w-3 h-3 animate-spin" /> Claiming…</> : <><CalendarPlus className="w-3 h-3" /> Claim it</>}
+              {busy ? <><Loader2 className="w-3 h-3 animate-spin" /> Claiming…</> : <><CalendarPlus className="w-3 h-3" /> {isLive ? 'Go live now' : 'Claim it'}</>}
             </button>
           ) : null}
         </div>

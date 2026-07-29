@@ -1,4 +1,4 @@
-import { isNetworkSlot } from '@/lib/slots'
+import { isNetworkSlot, isSlotClaimable } from '@/lib/slots'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight } from 'lucide-react'
@@ -104,7 +104,7 @@ export default function ScheduleStrip({
   claiming: boolean
   onClaimSlot: (slot: Slot) => void
 }) {
-  const { allSlots, nowMs } = useLiveSlot()
+  const { allSlots, nowMs, networkBlockEnabled } = useLiveSlot()
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
 
   const todaySlots = useMemo(() => {
@@ -161,7 +161,8 @@ export default function ScheduleStrip({
               const slotStart = toMillis(slot.startTime)
               const slotEnd = toMillis(slot.endTime)
               const isCurrent = nowMs >= slotStart && nowMs < slotEnd
-              const claimable = slot.status === 'open' && !slot.assignedUid && slotEnd > nowMs
+              // Same shared rule as /schedule and the server — see isSlotClaimable.
+              const claimable = isSlotClaimable(slot, networkBlockEnabled)
               return (
                 <div key={slot.id} className="flex flex-col gap-1.5">
                   <TodaySlotCard slot={slot} isCurrent={isCurrent} />

@@ -6,6 +6,7 @@
 import { queryCollection, countCollection, getDoc, writeDoc, commitWrites, createWrite, updateWrite, fieldFilter, order } from './_shared/firebaseAdmin'
 import { buildExpectedSlotsForDate, buildSlotDoc } from './_shared/schedule'
 import { deriveNowLive, deriveUpNext, type OnAirSlot } from './_shared/onAir'
+import { readLiveWeights, settleTally, type BallotRow } from './_shared/settleVotes'
 import {
   buildTokenStatsDoc,
   fetchDexData,
@@ -250,16 +251,20 @@ async function topUpSchedule(): Promise<void> {
     const writes = [...expected.values()]
       .filter((slot) => !existingIds.has(slot.id))
       .map((slot) => createWrite(`slots/${slot.id}`, buildSlotDoc(slot, DEFAULT_STREAM_URL)))
-    // Self-heal legacy types. Docs seeded before the Open/Network split carry
-    // 'ceo' or 'auction'; 'ceo' normalizes to the RESERVED network block, so a
-    // stale daytime slot would be permanently unclaimable and a new user would
-    // find nothing to claim. Only legacy values are repaired — a deliberate
-    // admin 'open'/'network' choice is never overwritten.
+    // Self-heal the block type against the hour the slot actually airs. The type
+    // is fully derivable from the start time — 7 PM–3 AM ET is network, every
+    // other hour is open — so any disagreement is corruption, not a preference.
+    // This used to only repair the legacy 'ceo'/'auction' values, which left the
+    // real failure uncovered: a reseed bug stamped literal 'network' onto daytime
+    // slots, they looked like a deliberate choice, and the entire schedule went
+    // permanently unclaimable with nothing to tell anyone why. A daytime
+    // Originals hour is expressed by ASSIGNING the slot, never by re-typing it.
     const repairs = existing.flatMap((row) => {
       const id = row.path.split('/').pop()!
       const exp = expected.get(id)
+      if (!exp) return []
       const current = String((row.data as { type?: unknown }).type || '')
-      if (!exp || (current !== 'ceo' && current !== 'auction')) return []
+      if (current === exp.type) return []
       return [updateWrite(`slots/${id}`, { type: exp.type, updatedAt: new Date() }, true)]
     })
 
@@ -345,6 +350,45 @@ async function advanceSlotLifecycles(): Promise<SlotRow[]> {
   } catch (err) {
     console.error('[feePoller] advanceSlotLifecycles error:', err)
     return []
+  }
+}
+
+/**
+ * The Meme-100 vote never closes, so it can't be settled at a close. Left alone
+ * its tally only ever grows: a wallet that sold still counts, and the same coins
+ * counted twice if they were moved to a fresh wallet and voted again. So it gets
+ * re-settled against live balances on a slow cadence — infrequent enough to cost
+ * almost nothing, often enough that the on-air power ranking reflects real,
+ * currently-held conviction rather than everything anyone ever felt.
+ */
+const MEME_SETTLE_INTERVAL_MS = 30 * 60 * 1000
+const MEME_SETTLE_MAX_BALLOTS = 150
+
+async function settleMemeVote(): Promise<void> {
+  try {
+    const current = await getDoc<{ settledAt?: string }>('public/memeVote')
+    const last = current?.settledAt ? Date.parse(current.settledAt) : 0
+    if (Number.isFinite(last) && Date.now() - last < MEME_SETTLE_INTERVAL_MS) return
+
+    const rows = await queryCollection('memeBallots', [], [], MEME_SETTLE_MAX_BALLOTS)
+    if (rows.length === 0) return
+    const ballots: Array<BallotRow & { storedWeight?: number }> = rows.flatMap((row) => {
+      const d = row.data as { wallet?: unknown; symbol?: unknown; weight?: unknown }
+      const wallet = String(d.wallet || row.path.split('/').pop() || '')
+      const key = String(d.symbol || '')
+      return wallet && key ? [{ wallet, key, storedWeight: Number(d.weight) || 0 }] : []
+    })
+    const live = await readLiveWeights(ballots.map((b) => b.wallet))
+    const settled = settleTally(ballots, live)
+    await writeDoc('public/memeVote', {
+      tallies: settled.tally,
+      settledAt: new Date().toISOString(),
+      settledCounts: { counted: settled.counted, dropped: settled.dropped, unread: settled.unread, ballots: ballots.length },
+      updatedAt: new Date().toISOString(),
+    }, { merge: true })
+    console.log(`[feePoller] meme vote settled: ${settled.counted} counted, ${settled.dropped} dropped, ${settled.unread} unread`)
+  } catch (err) {
+    console.error('[feePoller] settleMemeVote error:', err)
   }
 }
 
@@ -503,6 +547,9 @@ export const handler = async () => {
   // Sample real Twitch activity for the active slot (1 Helix call/min) so the
   // Creator Fees log can prove the streamer was actually live, not intermission.
   await logSlotActivity(active)
+
+  // Re-anchor the Meme-100 to what voters actually still hold (every 30 min).
+  await settleMemeVote()
 
   let tokenStatsWritten = false
   let lastDex: DexData | null = null

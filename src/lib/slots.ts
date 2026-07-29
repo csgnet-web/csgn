@@ -433,7 +433,11 @@ export async function reseedNextDays(startDate: Date, dayCount: number): Promise
       if (!current) {
         const slot: Slot = {
           id: exp.id,
-          type: 'network',
+          // The template decides the block — 3 AM–7 PM open, 7 PM–3 AM network.
+          // This used to hardcode 'network', so a full reseed from the admin
+          // panel dropped EVERY hour into the reserved block and nothing on the
+          // schedule was claimable.
+          type: exp.type,
           label: exp.label,
           startTime: exp.startTime,
           endTime: exp.endTime,

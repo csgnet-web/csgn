@@ -9,7 +9,7 @@ import {
   Megaphone, Flame, Vote,
 } from 'lucide-react'
 import {
-  collection, query, getDoc, getDocs, doc, setDoc, onSnapshot, orderBy,
+  collection, query, getDocs, doc, setDoc, onSnapshot, orderBy,
   limit,
 } from 'firebase/firestore'
 import { db } from '@/config/firebase'
@@ -583,21 +583,24 @@ export default function Admin() {
     setVotesLoading(false)
   }, [])
 
-  /** Closing from here also freezes the on-air card, so the overlay and the
-   *  ledger can never disagree about whether voting is still live. */
-  const handleCloseVote = async (vote: VoteRecord) => {
+  /**
+   * Closing settles the vote against LIVE on-chain balances before freezing it.
+   * The running tally is incremental, so a wallet that sold — or that moved its
+   * bag to a second wallet and voted twice — is still counted in it. The settle
+   * pass rebuilds the tally from what each voter actually holds, which is what
+   * makes the published result trustworthy. It also closes the on-air card so
+   * the overlay and the ledger never disagree.
+   */
+  const handleCloseVote = async (vote: VoteRecord, close = true) => {
     setClosingVoteId(vote.id)
     setActionError(null)
     try {
-      await setDoc(doc(db, 'votes', vote.id), { status: 'closed', updatedAt: new Date().toISOString() }, { merge: true })
-      const snap = await getDoc(doc(db, 'config', 'ticker'))
-      const current = snap.exists() ? (snap.data().vote as { id?: string } | null) : null
-      if (current?.id === vote.id) {
-        await setDoc(doc(db, 'config', 'ticker'), { vote: { ...current, status: 'closed' }, updatedAt: new Date().toISOString() }, { merge: true })
-      }
+      const res = await api.settleVote(vote.id, close)
       await loadVotes()
+      const moved = res.dropped > 0 ? `, ${res.dropped} wallet${res.dropped !== 1 ? 's' : ''} dropped to zero` : ''
+      setActionError(`${close ? 'Closed' : 'Re-settled'} — ${res.counted} of ${res.ballots} ballots still hold $CSGN${moved}.`)
     } catch (err: any) {
-      setActionError(err?.message || 'Failed to close the vote.')
+      setActionError(err?.message || 'Failed to settle the vote.')
     }
     setClosingVoteId(null)
   }
@@ -1908,7 +1911,8 @@ export default function Admin() {
               votes={votes}
               votesLoading={votesLoading}
               closingId={closingVoteId}
-              onCloseVote={handleCloseVote}
+              onCloseVote={(vote) => void handleCloseVote(vote, true)}
+              onResettleVote={(vote) => void handleCloseVote(vote, false)}
             />
           </div>
         )}

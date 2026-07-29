@@ -10,6 +10,10 @@ export interface VoteRecord {
   tally?: Record<string, { tokens?: number; wallets?: number }>
   createdAt?: string
   updatedAt?: string
+  /** Set once the tally has been rebuilt from live on-chain balances. Until
+   *  then the tally is a running total of weights as-cast, not as-held. */
+  settledAt?: string
+  settledCounts?: { counted?: number; dropped?: number; unread?: number; ballots?: number }
 }
 
 /** Open until an admin closes it — that's the decision the tab badge counts. */

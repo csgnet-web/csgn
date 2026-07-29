@@ -51,8 +51,18 @@ export function isNetworkSlot(slot: { type?: unknown }): boolean {
 
 /**
  * Can a viewer claim this slot right now?
- * Open slots are claimable when unassigned and still in the future. Network
- * slots are reserved for CSGN Originals — unless the network block is switched
+ *
+ * **Assignment decides, not status.** On an unassigned slot the status field is
+ * bookkeeping — it drifts (an admin sets the airing hour to 'live' to push a
+ * stream, a legacy doc says 'confirmed', the clock advances it) and none of that
+ * means a person took the hour. What means the hour is taken is `assignedUid`.
+ *
+ * So: an unassigned slot that hasn't ended is claimable, including **the hour
+ * that is on the air right now** — which is the single most valuable slot to
+ * claim, because the claimant can go live immediately. Only an explicit
+ * 'completed' marker stops it, since that's a deliberate "this one is finished".
+ *
+ * Network slots are reserved for CSGN Originals — unless the block is switched
  * off globally, which hands those hours back to open claiming.
  */
 export function isSlotClaimable(
@@ -61,14 +71,7 @@ export function isSlotClaimable(
 ): boolean {
   if (slot.assignedUid) return false
   if (new Date(slot.endTime).getTime() <= Date.now()) return false
-  const status = normalizeSlotStatus(slot.status)
-  if (isNetworkSlot(slot)) {
-    // Reserved while the block is on. Network slots seed as 'confirmed' (they're
-    // programmed, not claimed), so when the block is switched OFF an unassigned
-    // one is still claimable — 'confirmed' there means "held by the network",
-    // not "taken by a person".
-    if (networkBlockEnabled) return false
-    return status === 'open' || status === 'confirmed'
-  }
-  return status === 'open'
+  if (normalizeSlotStatus(slot.status) === 'completed') return false
+  if (isNetworkSlot(slot) && networkBlockEnabled) return false
+  return true
 }

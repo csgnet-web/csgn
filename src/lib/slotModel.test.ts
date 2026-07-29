@@ -59,11 +59,25 @@ describe('isSlotClaimable', () => {
     expect(isSlotClaimable(slot({ type: 'network' }), false)).toBe(true)
     expect(isSlotClaimable(slot({ type: 'ceo' }), false)).toBe(true)
   })
-  it('rejects assigned, past, and non-open slots', () => {
+  it('rejects a slot someone already holds, and one that has ended', () => {
     expect(isSlotClaimable(slot({ assignedUid: 'u1' }))).toBe(false)
     expect(isSlotClaimable(slot({ endTime: past }))).toBe(false)
-    expect(isSlotClaimable(slot({ status: 'confirmed' }))).toBe(false)
-    expect(isSlotClaimable(slot({ status: 'live' }))).toBe(false)
+  })
+  // The bug this replaced: the hour ON THE AIR is the one you most want someone
+  // to take (they can go live this second), and it was the one being refused
+  // because its status had drifted off 'open'.
+  it('the hour currently on the air is claimable while nobody holds it', () => {
+    const airing = { type: 'open', status: 'live', assignedUid: null, endTime: future }
+    expect(isSlotClaimable(airing)).toBe(true)
+  })
+  it('status drift on an unassigned open slot never blocks a claim', () => {
+    for (const status of ['open', 'confirmed', 'live', 'closing', 'pending_deposit', undefined]) {
+      expect(isSlotClaimable(slot({ status }))).toBe(true)
+    }
+  })
+  it('an explicit completed marker still stops a claim', () => {
+    expect(isSlotClaimable(slot({ status: 'completed' }))).toBe(false)
+    expect(isSlotClaimable(slot({ type: 'network', status: 'completed' }), false)).toBe(false)
   })
   it('a legacy auction-status slot becomes claimable again', () => {
     expect(isSlotClaimable(slot({ type: 'auction', status: 'unfilled' }))).toBe(true)

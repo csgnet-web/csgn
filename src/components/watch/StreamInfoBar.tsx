@@ -53,7 +53,7 @@ export default function StreamInfoBar({
               className="inline-flex items-center justify-center gap-2 px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 rounded-lg text-xs font-bold text-emerald-200 uppercase tracking-wider transition-colors disabled:opacity-60 disabled:cursor-wait cursor-pointer"
             >
               <Radio className="w-3.5 h-3.5" />
-              {claiming ? 'Claiming…' : 'Take this slot'}
+              {claiming ? 'Claiming…' : 'This hour is open — go live now'}
             </button>
             {claimError && <span className="text-[11px] text-red-300">{claimError}</span>}
           </div>
