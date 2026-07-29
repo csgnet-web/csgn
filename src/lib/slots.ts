@@ -14,7 +14,6 @@ export const DEFAULT_STREAM_URL = 'https://twitch.tv/csgnet'
  *
  * Phase 1: pre-launch — now through April 5, 2026 11:59 AM ET
  * Phase 2: launch week — April 5 noon ET through April 12 noon ET
- * Phase 3+: normal bid logic (not yet built)
  *
  * Both April dates fall in EDT (UTC-4), so noon ET = 16:00 UTC.
  */
@@ -309,7 +308,7 @@ export interface SyncScheduleResult {
 
 /**
  * Sync one ET schedule day so it always contains the canonical 12 slots
- * (3 AM–7 PM auction, 7 PM–3 AM CEO) with no duplicate/overlapping stray slots.
+ * (3 AM–7 PM open, 7 PM–3 AM CSGN Originals) with no duplicate/overlapping strays.
  */
 export async function syncSlotsForDate(targetDate: Date): Promise<SyncScheduleResult> {
   const expected = buildExpectedSlotsForDate(targetDate)
@@ -612,7 +611,7 @@ export async function fetchSlotsByAssignee(uid: string, max = 50): Promise<Slot[
   return snap.docs.map((d) => normalizeSlot(d.data() as Slot))
 }
 
-/** Place a bid on an auction slot using CSGN tokens. */
+/** Ask the network for a slot you can't self-claim (a network hour). */
 export async function requestSlot(slotId: string, request: Omit<SlotRequest, 'id' | 'status'>): Promise<void> {
   const ref = doc(db, SLOTS_COLLECTION, slotId)
   const snap = await getDoc(ref)
@@ -868,39 +867,3 @@ export async function addUserNotification(
   await updateDoc(userRef, { notifications: [newNotification, ...existing] })
 }
 
-/** Resolve an auction slot: pick highest bidder, notify them. */
-export async function resolveAuction(slotId: string): Promise<{ winnerUid: string; amount: number } | null> {
-  const ref = doc(db, SLOTS_COLLECTION, slotId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) return null
-
-  const slot = snap.data() as Slot
-  if (slot.bids.length === 0) {
-    await updateDoc(ref, { status: 'unfilled', streamUrl: DEFAULT_STREAM_URL })
-    return null
-  }
-
-  // Highest bid wins
-  const sorted = [...slot.bids].sort((a, b) => b.amount - a.amount)
-  const winner = sorted[0]
-
-  const depositDeadline = new Date(new Date(slot.startTime).getTime() - 60 * 60 * 1000).toISOString()
-
-  await updateDoc(ref, {
-    status: 'pending_deposit',
-    assignedUid: winner.uid,
-    assignedName: winner.displayName,
-    // streamUrl remains the default (csgnet) until confirmed
-  })
-
-  await addUserNotification(winner.uid, {
-    type: 'auction_won',
-    slotId: slot.id,
-    slotLabel: slot.label,
-    slotStart: slot.startTime,
-    message: `You won the auction for ${slot.label} with a bid of ${formatCSGN(winner.amount)}! Your slot has been confirmed.`,
-    depositDeadline,
-  })
-
-  return { winnerUid: winner.uid, amount: winner.amount }
-}

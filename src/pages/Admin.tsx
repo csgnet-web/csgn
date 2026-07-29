@@ -677,7 +677,7 @@ export default function Admin() {
     setWipingSlots(false)
   }
 
-  const handleReseedYearAsCEO = async () => {
+  const handleReseedYear = async () => {
     setSyncingYear(true)
     setActionError(null)
     try {
@@ -1179,7 +1179,7 @@ export default function Admin() {
                       rightNowDirtyRef.current = true
                     }}
                     rows={5}
-                    placeholder={'BREAKING | SOL flips $300\nCSGN auction closes 9PM ET\nMARKETS | BTC reclaims $120K'}
+                    placeholder={'BREAKING | SOL flips $300\nCSGN | Open stage claimed — live at 9PM ET\nMARKETS | BTC reclaims $120K'}
                     className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:border-primary-500/50 resize-y"
                   />
                   <p className="text-xs text-gray-500 leading-relaxed">
@@ -1420,7 +1420,7 @@ export default function Admin() {
                     isLoading={syncingWeek}
                     onClick={handleSyncSevenDays}
                   >
-                    Reseed 7 Days (CEO)
+                    Reseed 7 Days
                   </Button>
                 </div>
                 <Button
@@ -1437,9 +1437,9 @@ export default function Admin() {
                   size="sm"
                   leftIcon={<Plus className="w-4 h-4" />}
                   isLoading={syncingYear}
-                  onClick={handleReseedYearAsCEO}
+                  onClick={handleReseedYear}
                 >
-                  Reseed 365 Days (CEO)
+                  Reseed 365 Days
                 </Button>
 
                 {!confirmWipe ? (

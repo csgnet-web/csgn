@@ -2,14 +2,13 @@ import { useMemo, useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Mail, Wallet, Trophy, Lock,
-  CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Crown, Twitch, X as XIcon, Info,
+  CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Twitch, X as XIcon, Info,
   ChevronLeft, ChevronRight, Radio,
 } from 'lucide-react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { useAuth } from '@/contexts/useAuth'
 import type { UserNotification } from '@/contexts/AuthContext'
-import { queueStore } from '@/lib/queue'
 import { fetchSlotsByAssignee, type Slot } from '@/lib/slots'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -30,8 +29,10 @@ export default function Dashboard() {
   const [liveVolumeSOL, setLiveVolumeSOL] = useState(0)
   const [slotInfo, setSlotInfo] = useState<Slot | null>(null)
   const [feePage, setFeePage] = useState(0)
-  const bids = useMemo(() => user ? queueStore.getBids().filter((bid) => bid.uid === user.uid) : [], [user])
-  const assigned = useMemo(() => user ? queueStore.getAssignedSlots().filter((slot) => slot.uid === user.uid) : [], [user])
+  const upcomingSlots = useMemo(
+    () => slotHistory.filter((s) => new Date(s.endTime).getTime() > Date.now()).slice(0, 6),
+    [slotHistory],
+  )
 
   const notifications: UserNotification[] = profile?.notifications || []
   const unreadCount = notifications.filter((n) => !n.read).length
@@ -192,7 +193,7 @@ Use your email/username and password to access your account.
               <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
               <div className="flex-1">
                 <p className="text-sm text-white font-medium">Email not verified</p>
-                <p className="text-xs text-gray-400">Please verify your email to bid on auction slots and submit CEO Schedule requests.</p>
+                <p className="text-xs text-gray-400">Verify your email to claim a slot and get paid your creator-fee share.</p>
               </div>
               <Button
                 variant="secondary"
@@ -384,51 +385,33 @@ Use your email/username and password to access your account.
           </Card>
         )}
 
-        <div className="grid lg:grid-cols-2 gap-6">
-          {/* My Bids */}
-          <Card hover={false} className="p-5">
-            <h3 className="text-white font-semibold flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-red-400" /> My Bids (CSGN)
-            </h3>
-            <div className="mt-3 space-y-2">
-              {bids.length === 0 ? (
-                <p className="text-sm text-gray-500">No bids yet. Place bids from Queue.</p>
-              ) : (
-                bids.slice(0, 6).map((bid) => (
-                  <div key={bid.id} className="text-sm text-gray-300 border border-white/10 rounded-lg p-2">
-                    <p className="text-white">{bid.slotLabel}</p>
-                    <p>{bid.amount.toLocaleString()} CSGN · {bid.status}</p>
-                  </div>
-                ))
-              )}
-            </div>
-            <Link to="/queue" className="inline-block mt-3">
-              <Button variant="secondary" size="sm">Go to Queue</Button>
-            </Link>
-          </Card>
-
-          {/* CEO Schedule / Assigned Slots */}
-          <Card hover={false} className="p-5">
-            <h3 className="text-white font-semibold flex items-center gap-2">
-              <Crown className="w-4 h-4 text-yellow-400" /> CEO Schedule Slots
-            </h3>
-            <div className="mt-3 space-y-2">
-              {assigned.length === 0 ? (
-                <p className="text-sm text-gray-500">No assigned slots. Submit a CEO Schedule request from Queue.</p>
-              ) : (
-                assigned.slice(0, 6).map((slot) => (
-                  <div key={slot.id} className="text-sm text-gray-300 border border-white/10 rounded-lg p-2">
-                    <p className="text-white">{slot.slotLabel}</p>
-                    <p>{new Date(slot.slotStart).toLocaleString()}</p>
-                  </div>
-                ))
-              )}
-            </div>
-            <Link to="/queue" className="inline-block mt-3">
-              <Button variant="secondary" size="sm">Request a Slot</Button>
-            </Link>
-          </Card>
-        </div>
+        {/* Your claimed slots — real data, straight from the schedule. This
+            replaced two dead cards (auction bids, "CEO Schedule requests") that
+            described mechanics the network no longer has. */}
+        <Card hover={false} className="p-5">
+          <h3 className="text-white font-semibold flex items-center gap-2">
+            <Radio className="w-4 h-4 text-primary-400" /> Your upcoming slots
+          </h3>
+          <div className="mt-3 space-y-2">
+            {upcomingSlots.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                You don't have a slot booked. Every hour from 3 AM to 7 PM ET is open — claim one and you
+                earn 30% of $CSGN's trading fees the whole time you're on air.
+              </p>
+            ) : (
+              upcomingSlots.map((slot) => (
+                <div key={slot.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border border-white/10 rounded-lg p-2.5">
+                  <span className="text-sm text-white font-medium">{slot.label}</span>
+                  <span className="text-xs text-gray-400">{new Date(slot.startTime).toLocaleDateString()}</span>
+                  {slot.streamTitle && <span className="text-xs text-primary-300 truncate">"{slot.streamTitle}"</span>}
+                </div>
+              ))
+            )}
+          </div>
+          <Link to="/schedule" className="inline-block mt-3">
+            <Button variant="secondary" size="sm">{upcomingSlots.length === 0 ? 'Claim a slot' : 'Claim another'}</Button>
+          </Link>
+        </Card>
       </div>
       {slotInfo && (
         <Modal open onClose={() => setSlotInfo(null)} title="Fee Calculation">
