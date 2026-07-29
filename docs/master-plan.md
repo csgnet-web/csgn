@@ -65,8 +65,11 @@ platform are the **moat later**; the founder on camera is the **growth now**.
 
 ---
 
-## 3. What's already built (stop rebuilding it)
+## 3. Is the app actually ready for real users?
 
+Short answer: **yes for the first few hundred, with two caveats.** The honest audit:
+
+### 3.1 What's built and solid
 | Piece | State |
 |---|---|
 | 24/7 stream + master control (`/player`) | Live — LIVE/BRB/intermission, ad-masking, auto-recovery |
@@ -74,15 +77,58 @@ platform are the **moat later**; the founder on camera is the **growth now**.
 | Over-live notices (lower-thirds) | Live |
 | Admin console | Live — modular Broadcast Control |
 | Schedule + one-tap claiming | Live |
-| Coin Jukebox (SOL → treasury) | Built — needs a tiny mainnet dry-run |
 | Meme-100 token voting | Live |
 | Creator fee tracking | Live |
+| Coin Jukebox (SOL → treasury) | Built — **needs a tiny mainnet dry-run** |
 | VOD network autopilot | Next build |
 
-**The product is roughly a year ahead of the audience. Nothing on this list is the
-bottleneck.** The bottleneck is that ~300 people know CSGN exists.
+**Sign-up path is genuinely production-grade.** Uniqueness is enforced on four
+axes (email, username, wallet, Twitch) in a single atomic commit; wallet and
+Twitch ownership are signature/OAuth-proven server-side; every endpoint is
+per-IP rate-limited; slot claiming is transactional so two people can't take the
+same hour. The 2-slot limit is a per-user field, so raising it for a good creator
+is a one-field edit.
 
----
+**Inventory is self-maintaining.** The fee poller keeps a rolling 7-day horizon of
+slots seeded automatically — nobody has to remember to create the schedule.
+
+### 3.2 The two things that were actually broken (both now fixed)
+Worth naming, because they're exactly what "does it work when someone signs up"
+means in practice:
+
+1. **Auth Events was hiding failed sign-ups.** Events fired *before* a session
+   exists (`signin-start`, `signup-email-start`, and any failure) were rejected by
+   the Firestore rule and the error was swallowed. The admin log recorded wins and
+   hid every loss — so "nobody has signed up" and "everybody bounced off a broken
+   form" looked identical. Now logged server-side.
+2. **Every auto-seeded slot was landing in the reserved block.** The seeder
+   hardcoded the old `'ceo'` type, which maps to the network block — so a new user
+   would have opened `/schedule` and found **zero Claim buttons**. Fixed, plus the
+   sweep now self-heals legacy slots, and 8 tests pin the shape.
+
+### 3.3 Where it breaks at scale (and when to care)
+- **Firestore reads are the cost ceiling.** Each browser session opens 3 listeners,
+  one covering ~110 slot docs. That's ~110 reads per visitor on connect. Fine at
+  hundreds of concurrent users; at ~10k concurrent it's real money. **Fix when it
+  matters:** collapse the schedule into a single pre-computed `public/schedule`
+  doc the client reads instead of the collection. Don't do it yet.
+- **Netlify function concurrency** is fine — claims are rare, single-digit
+  writes.
+- **Single RPC endpoint** (public Solana) for balance checks. Move to a paid RPC
+  before any promotion that could spike wallet verification.
+- **Twitch Helix polling** is one call/minute — nowhere near limits.
+
+### 3.4 Do these before/around launch
+1. **Dry-run the Coin Jukebox with a tiny mainnet payment** (the one untested
+   on-chain path).
+2. **Run one real sign-up yourself, end to end,** on a fresh email + wallet. Then
+   check Auth Events — it will now show the whole funnel.
+3. **Paid RPC key** in env.
+4. **Seed the network block with real show names** so `/schedule` reads as a
+   programmed lineup, not a generic block.
+
+**Verdict: the infrastructure is not the bottleneck and won't be for a long time.
+Go make content.**
 
 ## 4. The schedule (simple version)
 
@@ -102,8 +148,9 @@ bottleneck.** The bottleneck is that ~300 people know CSGN exists.
 
 ## 5. The token — deliberately narrow
 
-**$CSGN determines exactly five things:**
-promotion · whip-around mentions · the jukebox · sponsorships · meme-100 voting.
+**$CSGN determines exactly six things:**
+promotion · whip-around mentions · the jukebox · sponsorships · meme-100 voting ·
+**access to the gated information pipeline** (§9).
 
 **It never gates** claiming a slot, making an account, or going live.
 
@@ -162,9 +209,34 @@ fixed length, every day. Its whole advantage over Ansem/ThreadGuy is that it's *
 just crypto* — the sports segment is the differentiator, not a side dish. Lead with
 it some days.
 
-**B. CFB 27 Dynasty — 4–5×/week, 1–4 hours.** Serialized narrative. People come
-back for a *story*, and a dynasty is the cheapest story engine in existence: stakes,
-recurring characters, and cliffhangers with no writing required. This is retention.
+**B. Two dynasties — they do different jobs. Run both.**
+
+| | **Offline Dynasty** (yours, modded) | **Online Dynasty** (12 teams, weekly) |
+|---|---|---|
+| **Job** | Daily/most-days content engine | Weekly appointment + community |
+| **Cadence** | 3–4×/week, whenever you want | One fixed night, weekly |
+| **Depends on** | Nobody | 11 other humans showing up |
+| **Content type** | Your narrative, your rules, mod chaos | Rivalries, drama, other people's teams |
+| **Risk** | None | No-shows, scheduling, dead weeks |
+
+The offline dynasty is the **reliable** one — no coordination, full mod control,
+and you can stream it any night the schedule needs filling. The online 12-team
+league is the **social** one: it manufactures rivalries and gives 11 other people
+a reason to post about CSGN every week. **The MFL model (@thereal.mfl) is exactly
+right** — the value isn't the games, it's the *coverage*: standings graphics,
+power rankings, weekly recaps, trash talk, storylines. That coverage is what's
+clippable and what makes participants feel televised.
+
+**Run the online league like a broadcast, not a game night:**
+- **One fixed night, always.** Advance the week on schedule whether or not
+  everyone played — a league that waits for stragglers dies.
+- **Coverage is the product.** Weekly power rankings post, a standings graphic on
+  the ticker, one recap clip per week. This is what MFL actually sells.
+- **12 teams, but recruit 16 interested people.** Attrition is guaranteed; a
+  waitlist means a no-show is replaced, not a hole.
+- **Deadline, not a schedule.** "Games due by Sunday 8 PM ET" beats trying to
+  coordinate 12 calendars. You broadcast the recap; they play on their own time.
+- **Sim the missing.** Publicly, no drama. Nobody holds up the league.
 
 **C. Casual FPS / Rocket League — rotating.** Fills hours, keeps the channel warm,
 low prep, high clip yield.
@@ -187,8 +259,10 @@ Start in this order, by effort-to-content ratio:
 | **CS:GO** | High — 10 players, long matches, no-shows | Medium | **Last / occasional event** |
 
 Practical design:
-- **Run leagues as events, not seasons, at first.** A one-night tournament has no
-  ongoing management. Seasons only once people reliably show up.
+- **Run Rocket League and CS:GO as one-night events, not seasons.** A tournament
+  has no ongoing management. Seasons only once people reliably show up. (The CFB
+  online league is the exception — it's a season by nature, which is why it needs
+  the deadline discipline above.)
 - **The broadcast is the league's record.** The ticker already renders sports
   scoreboards and standings — put league results on it. Zero extra tooling, and it
   makes participants feel *televised*, which is the actual product.
@@ -196,6 +270,18 @@ Practical design:
   host. Don't become the scheduler.
 - **League nights ride existing hours.** Leagues shouldn't add streaming hours;
   they should *upgrade* hours you were already streaming.
+
+**Rewarding participation (without inventing a new economy).** Use what's already
+built — the point is recognition and access, not payouts:
+1. **Airtime.** Winners get named on the ticker and in the recap clip. Being on TV
+   is the prize; it costs nothing and is the thing people screenshot.
+2. **A slot.** Winners get a claimable slot promoted on the schedule — the merit
+   ladder (`maxConcurrentClaims`) raised for people who show up and perform.
+3. **Roles + access.** A `@champion` Discord role and access to the gated
+   information pipeline (§9). Status is the reward.
+4. **$CSGN from the treasury**, modestly, once the treasury is real. Keep it a
+   *bonus on top of status*, never the reason people show up — a league that pays
+   attracts people farming it, and they leave the moment it stops.
 
 ---
 
@@ -299,7 +385,33 @@ Small and purpose-built. Seven channels, not twenty.
 | `#leagues` | Sign-ups, brackets, results | Everyone |
 | `#general` | The third place | Everyone |
 
-**Roles:** `@live-ping` (opt-in), `@creator`, `@holder`, `@og`.
+**Roles:** `@live-ping` (opt-in), `@creator`, `@holder`, `@og`, `@champion`.
+
+### The gated information pipeline — a real sixth use for $CSGN
+This is the best token utility available that doesn't touch access to the product:
+**hold $CSGN → get the information edge.** It's cheap to run, genuinely valuable,
+and it's the one thing a trading-adjacent audience will actually pay attention for.
+
+| Tier | Channel | What's in it |
+|---|---|---|
+| Public | `#general`, `#clips` | Everything after it airs |
+| **Holder** (`@holder`) | `#the-wire` | The raw feed *before* it's on air: what's about to be spotlighted, the news the Whiparound is about to cover, on-chain alerts from our own poller, early league lines |
+| **Creator** (`@creator`) | `#creators` | Slot/booking coordination, fee questions |
+
+Why this works: **the network already generates the feed** — the fee poller watches
+Helix and DexScreener, the ticker ingests news, you're prepping a rundown daily
+anyway. Piping that into a holder channel a few minutes early costs nothing and is
+the exact thing this audience values. It also keeps you on top of everything,
+because the pipeline you build for them *is* your own dashboard.
+
+**Verification:** wallet-connect grants `@holder` — the balance check
+(`getCsgnBalance`) and the signature-proof flow already exist; a small bot ties the
+proven wallet to a Discord ID and syncs the role. Re-check periodically so the role
+reflects current holdings.
+
+**Keep it honest:** it's an *information* edge, not financial advice or a signal
+group. Frame it as "the newsroom feed," and never let it become a call channel —
+that's a different, worse business with real liability.
 
 **Automations, in priority order:**
 1. **"We're live" ping** — the single highest-value automation available. Fires off
@@ -342,7 +454,130 @@ this) → reels + per-view attention accounting → open the creator platform.
 
 ---
 
-## 11. The whole thing on one page
+## 11. Partner tokens — how to integrate $ANSEM without losing autonomy
+
+Ansem wants his token in novel apps. There's a version of this that's great for
+CSGN and a version that quietly makes you a subsidiary. The difference is framing.
+
+### 11.1 The move: don't build an "Ansem integration" — build a **partner-token surface**
+Make it a *product* that any partner token can plug into, and make $ANSEM the
+first and flagship one.
+
+This is strictly better on every axis:
+- **Same effort** — the work is identical.
+- **Autonomy preserved** — you're not married to one token; you've built a slot any
+  partner can fill. If the relationship cools, the surface stays and someone else
+  fills it.
+- **It's repeatable revenue** — the partner surface becomes a sponsorship tier you
+  can sell again and again, instead of a one-off favor.
+- **It's a better pitch to Ansem, not worse.** "You're the flagship partner on a
+  surface built for partners" is a stronger, more legitimate offer than "we bolted
+  your token onto our app."
+
+### 11.2 What to actually integrate (ranked by effort-to-value)
+
+**1. $ANSEM governance surface — do this first.** His holders get a
+balance-weighted vote over one specific, bounded thing: a weekly segment, a
+meme-100 wildcard entry, or which coin gets a spotlight on his night.
+
+*Why it's the right first move:* **the voting primitive already exists and is
+mint-agnostic in everything but one constant.** `getCsgnBalance(wallet)` is used in
+exactly three places and reads a single hardcoded mint. Generalizing to
+`getTokenBalance(wallet, mint)` plus a `config/partnerToken` doc is a genuinely
+small change — an afternoon, not a project. Everything downstream (signature proof,
+one-ballot-per-wallet, atomic tallies, the on-air result) is already built and
+tested.
+
+**2. Co-branded ticker + spotlight presence.** $ANSEM gets a permanent price cell
+in the crypto dock and a recurring spotlight. **Zero architecture** — it's config.
+Visible, immediate, and demoable on a call.
+
+**3. $ANSEM as an alternate jukebox currency.** Pay in $ANSEM instead of SOL to
+play a coin. Treasury holds it. Small change to the payment verifier (same
+re-read-the-confirmed-tx pattern), and it creates real $ANSEM sink demand — which
+is the thing he actually wants.
+
+**4. A recurring show/segment.** The distribution win. Costs no code.
+
+### 11.3 What to refuse
+- **No token merge, no swap, no shared treasury.** Instant loss of autonomy.
+- **No equity or governance over CSGN itself.** Partner tokens govern *partner
+  surfaces*, never the network.
+- **No exclusivity.** The surface must stay open to other partners — that clause is
+  what keeps this a product instead of a dependency.
+- **No gating core access** behind $ANSEM. The token scope rule (§5) applies to
+  partners too: promotion, never admission.
+
+### 11.4 The pitch, in one paragraph
+*"We built a partner-token surface into a live 24/7 broadcast: your holders get a
+real on-air vote, your token gets permanent ticker presence and a spotlight lane,
+and holders can spend it to put coins on TV. It's live inventory on a real network,
+it's demoable today, and you're the flagship partner. No merge, no swap — your
+token, our stage."*
+
+Ship #1 and #2 for a call, keep #3 as the follow-up. Total build: days, not weeks.
+
+---
+
+## 12. Honest odds — can this be crypto's entertainment flagship?
+
+You asked directly, so here's a direct answer rather than a pep talk.
+
+### 12.1 The assessment
+**Base rate for "small crypto media project becomes the category flagship" is
+low — low single-digit percent.** Most die of obscurity, not of bad product.
+Against that base rate, CSGN has three genuinely unusual advantages and two
+genuinely hard problems.
+
+**What's unusually strong (rare, hard to copy):**
+1. **The product is years ahead of the audience.** Broadcast-grade infrastructure
+   at a $4k cap is not normal. Most competitors will never build this.
+2. **The wedge is real and unoccupied.** Gaming × sports × crypto for young men
+   isn't a crowded lane — it's an *empty* one, and the founder credibly occupies it.
+   This is the single best thing about the project.
+3. **Cost base is near zero.** You can't be forced to quit by a burn rate. Time is
+   the only currency, which means the runway is "as long as you keep going."
+
+**What's genuinely hard:**
+1. **Distribution from ~300 followers is brutal**, and it's the only thing that
+   matters. There is no clever substitute for months of showing up.
+2. **Solo operator.** Every projection assumes one person sustains ~15 hrs/week of
+   live production plus clipping plus community plus dev. Burnout is the most
+   likely cause of death, not competition.
+
+### 12.2 Realistic outcome bands (12 months, if the slate is actually run)
+| Outcome | Odds | What it looks like |
+|---|---|---|
+| **Quit / fade** | ~45% | The streak breaks in month 2–3, the channel goes quiet |
+| **Real niche channel** | ~35% | 5–20k followers, a real community, modest token, sustainable side income |
+| **Category-relevant** | ~15% | 50k+, known in CT and gaming, real sponsors, token with an actual market |
+| **The flagship** | ~5% | The default answer to "where do I watch crypto" |
+
+**The 5% is not the plan — the 35–50% is.** And notice: the difference between
+"fade" and "niche channel" is almost entirely *consistency*, not strategy. The
+difference between "niche" and "flagship" is one breakout moment plus being
+positioned to catch it — which is exactly what the infrastructure buys you.
+
+### 12.3 What most changes the odds
+1. **Hitting the daily streak for 90 days.** Nothing else comes close. This single
+   variable moves you between bands.
+2. **The 12-team online league actually running weekly.** It's 11 other people with
+   a reason to post — the highest-leverage distribution asset in the plan.
+3. **One partner/KOL relationship landing** (§11) — borrowed reach compresses
+   months into weeks.
+4. **Being live and good when the crypto-streaming meta returns.** You can't time
+   it; you can only already be there. That's the whole bet, and it's a sound one.
+
+### 12.4 The honest risk to name out loud
+**The most likely failure is not competition — it's the founder quietly stopping
+in week 6.** Every rule in §8 (fixed length, length as shock absorber, banked
+segments, drop the league before the Whiparound) exists for that reason. Build for
+the version of you who doesn't feel like streaming, because that's the one who
+decides this.
+
+---
+
+## 13. The whole thing on one page
 
 1. **The wedge is the intersection.** Gaming × sports × crypto × trading for young
    men. Not "better crypto content" — *the only show that's all four.*
@@ -358,7 +593,14 @@ this) → reels + per-view attention accounting → open the creator platform.
 7. **1–3 clips a day, every day**, each naming a coin, team, or person.
 8. **Work both timelines and borrow audiences** — at 300 followers, one guest spot
    beats a month of posting.
-9. **Access stays open and free; the token only governs promotion.** No auctions,
-   no gates, no burning.
-10. **Manage to followers, clips shipped, streams hit, and holders-who-acted** —
-    not market cap.
+9. **Access stays open and free; the token only governs promotion** — plus the
+   gated info pipeline. No auctions, no gates on getting on air, no burning.
+10. **Run both dynasties.** Offline/modded is the reliable engine; the 12-team
+    online league is the social one — and *coverage* (rankings, recaps, standings
+    on the ticker) is its actual product, MFL-style.
+11. **Partner tokens are a surface, not a favor.** Build it once so $ANSEM is the
+    flagship tenant, not the landlord — same effort, keeps autonomy, resells.
+12. **The infrastructure is not the bottleneck** and won't be for a long time.
+    Two real blockers were found and fixed; go make content.
+13. **Manage to followers, clips shipped, streams hit, and holders-who-acted** —
+    not market cap. And know the real risk is stopping in week 6.
