@@ -3,7 +3,7 @@
 // Writes live creatorFees to the active slot doc in Firestore.
 // Browser clients NEVER call DexScreener — they read from the single Firestore listener.
 
-import { queryCollection, countCollection, getDoc, writeDoc, commitWrites, createWrite, fieldFilter, order } from './_shared/firebaseAdmin'
+import { queryCollection, countCollection, getDoc, writeDoc, commitWrites, createWrite, updateWrite, fieldFilter, order } from './_shared/firebaseAdmin'
 import { buildExpectedSlotsForDate, buildSlotDoc } from './_shared/schedule'
 import {
   buildTokenStatsDoc,
@@ -178,11 +178,14 @@ const SCHEDULE_META_PATH = 'config/scheduleMeta'
  * The fill covers EVERY missing template slot in the window, not just the
  * tail, so each of the next 7 days always carries its full 12 slots.
  *
- * The fill is strictly CREATE-ONLY (Firestore create preconditions): existing
- * slots — including any the admin retyped, assigned, or hand-edited — are
- * never patched or deleted here. Deterministic doc IDs make the fill
- * idempotent, so a racing admin reseed at worst fails one commit and the next
- * minute's run picks it back up.
+ * The fill is CREATE-ONLY for content (Firestore create preconditions): existing
+ * slots — assigned, retyped, or hand-edited — are never overwritten or deleted.
+ * The single exception is a LEGACY TYPE REPAIR: docs still carrying the
+ * pre-Open/Network values ('ceo' / 'auction') are patched to the template's
+ * type, because 'ceo' normalizes to the reserved network block and would leave
+ * a daytime slot permanently unclaimable. Deliberate 'open'/'network' choices
+ * are left alone. Deterministic doc IDs make the fill idempotent, so a racing
+ * admin reseed at worst fails one commit and the next minute's run picks it up.
  */
 async function topUpSchedule(): Promise<void> {
   try {
@@ -246,10 +249,23 @@ async function topUpSchedule(): Promise<void> {
     const writes = [...expected.values()]
       .filter((slot) => !existingIds.has(slot.id))
       .map((slot) => createWrite(`slots/${slot.id}`, buildSlotDoc(slot, DEFAULT_STREAM_URL)))
-    if (writes.length === 0) return
+    // Self-heal legacy types. Docs seeded before the Open/Network split carry
+    // 'ceo' or 'auction'; 'ceo' normalizes to the RESERVED network block, so a
+    // stale daytime slot would be permanently unclaimable and a new user would
+    // find nothing to claim. Only legacy values are repaired — a deliberate
+    // admin 'open'/'network' choice is never overwritten.
+    const repairs = existing.flatMap((row) => {
+      const id = row.path.split('/').pop()!
+      const exp = expected.get(id)
+      const current = String((row.data as { type?: unknown }).type || '')
+      if (!exp || (current !== 'ceo' && current !== 'auction')) return []
+      return [updateWrite(`slots/${id}`, { type: exp.type, updatedAt: new Date() }, true)]
+    })
 
-    await commitWrites(writes)
-    console.log(`[feePoller] topUpSchedule created ${writes.length} slots (horizon was ${((latestStartMs - nowMs) / 86_400_000).toFixed(1)}d)`)
+    if (writes.length === 0 && repairs.length === 0) return
+
+    await commitWrites([...writes, ...repairs])
+    console.log(`[feePoller] topUpSchedule created ${writes.length} slots, repaired ${repairs.length} legacy types (horizon was ${((latestStartMs - nowMs) / 86_400_000).toFixed(1)}d)`)
   } catch (err) {
     console.error('[feePoller] topUpSchedule error:', err)
   }
