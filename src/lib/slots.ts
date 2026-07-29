@@ -74,10 +74,16 @@ export interface CreatorFees {
   paymentStatus: FeePaymentStatus
   streamerWalletAddress: string
   paidAt?: string
+  declinedAt?: string
   declineReason?: string
   snapshotLockedAt?: unknown
   updatedAt: string
 }
+
+/** A completed slot is still open business until an admin marks its creator-fee
+ *  payout paid or declined. Drives the "Creator Fees (6)" badge. */
+export const isFeePending = (slot: { creatorFees?: { paymentStatus?: FeePaymentStatus } }): boolean =>
+  (slot.creatorFees?.paymentStatus ?? 'pending') === 'pending'
 
 /**
  * Per-slot Twitch live-activity log, written by the server fee poller once a
@@ -812,6 +818,7 @@ export async function declineFeesPayment(slotId: string, reason: string): Promis
   const updatedFees: CreatorFees = {
     ...fees,
     paymentStatus: 'declined',
+    declinedAt: new Date().toISOString(),
     declineReason: reason,
     updatedAt: new Date().toISOString(),
   }

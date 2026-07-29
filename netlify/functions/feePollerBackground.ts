@@ -5,6 +5,7 @@
 
 import { queryCollection, countCollection, getDoc, writeDoc, commitWrites, createWrite, updateWrite, fieldFilter, order } from './_shared/firebaseAdmin'
 import { buildExpectedSlotsForDate, buildSlotDoc } from './_shared/schedule'
+import { deriveNowLive, deriveUpNext, type OnAirSlot } from './_shared/onAir'
 import {
   buildTokenStatsDoc,
   fetchDexData,
@@ -288,6 +289,22 @@ export function pickActiveSlot(rows: SlotRow[], nowMs = Date.now()): SlotRow | n
 }
 
 /**
+ * The slot on the clock right now, claimed or not. `pickActiveSlot` only counts
+ * confirmed/live slots because fee polling needs a real streamer — but the
+ * ticker's Live Now card should still name the hour when it's sitting open, so
+ * viewers see "Open Stage" instead of a blank card.
+ */
+export function pickCurrentSlot(rows: SlotRow[], nowMs = Date.now()): SlotRow | null {
+  return (
+    rows.find((r) => {
+      const start = r.data.startTime ? new Date(r.data.startTime).getTime() : 0
+      const end = r.data.endTime ? new Date(r.data.endTime).getTime() : 0
+      return nowMs >= start && nowMs < end
+    }) ?? null
+  )
+}
+
+/**
  * Advance assigned slots through their clock-driven lifecycle so every surface
  * (admin, /schedule, /queue, /player) sees the same status:
  *   confirmed → live       (once the slot's start time arrives)
@@ -328,6 +345,24 @@ async function advanceSlotLifecycles(): Promise<SlotRow[]> {
   } catch (err) {
     console.error('[feePoller] advanceSlotLifecycles error:', err)
     return []
+  }
+}
+
+/** The next slot to start. One tiny query so the ticker's Up Next card tracks
+ *  the real schedule instead of whatever an operator last typed. */
+async function fetchNextSlot(): Promise<SlotRow | null> {
+  try {
+    const nowISO = new Date().toISOString()
+    const rows = await queryCollection(
+      'slots',
+      [fieldFilter('startTime', 'GREATER_THAN', nowISO)],
+      [order('startTime', 'ASCENDING')],
+      1,
+    )
+    return (rows[0] as SlotRow) ?? null
+  } catch (err) {
+    console.error('[feePoller] fetchNextSlot error:', err)
+    return null
   }
 }
 
@@ -500,6 +535,23 @@ export const handler = async () => {
   tickerPatch.liveFee = liveAssigned
     ? { name: active!.data.assignedName, usd: Math.max(0, active!.data.creatorFees?.feeOwedUSD ?? 0), sinceISO: active!.data.startTime ?? '' }
     : null
+
+  // Live now / Up next follow the real schedule — unless an operator has taken
+  // manual control (config/ticker.onAirAuto === false), in which case their
+  // typed cards stay exactly as they left them.
+  try {
+    const ticker = await getDoc<{ onAirAuto?: boolean }>('config/ticker')
+    if (ticker?.onAirAuto !== false) {
+      const next = await fetchNextSlot()
+      const current = pickCurrentSlot(rows)
+      tickerPatch.nowLive = deriveNowLive(current?.data as OnAirSlot | undefined)
+      tickerPatch.upNext = deriveUpNext(next?.data as OnAirSlot | undefined)
+      tickerPatch.onAirAuto = true
+    }
+  } catch (err) {
+    console.error('[feePoller] on-air auto-fill error:', err)
+  }
+
   try {
     await writeDoc('config/ticker', tickerPatch, { merge: true })
   } catch (err) {

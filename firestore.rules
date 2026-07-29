@@ -53,7 +53,9 @@ service cloud.firestore {
     // ballots (votes/{id}/ballots/{wallet}) have no rule → server-only.
     match /votes/{voteId} {
       allow get: if true;
-      allow list: if false;
+      // Public reads are per-vote (the live scoreboard knows its own id).
+      // Only the admin panel enumerates the collection, for vote history.
+      allow list: if isAdmin();
       allow write: if isAdmin();
     }
 

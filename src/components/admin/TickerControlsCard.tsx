@@ -76,7 +76,9 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
   const [actions, setActions] = useState({ total: 0, votes: 0, submissions: 0, spotlights: 0, buys: 0 })
   const [showActions, setShowActions] = useState(false)
   const [jukeboxSol, setJukeboxSol] = useState('') // SOL a holder pays (Coin Jukebox) to spotlight a coin — proceeds to treasury
-  // Now live / up next
+  // Now live / up next — auto-filled from the real schedule by the minute
+  // poller unless the operator takes manual control (config/ticker.onAirAuto).
+  const [onAirAuto, setOnAirAuto] = useState(true)
   const [liveName, setLiveName] = useState('')
   const [liveTitle, setLiveTitle] = useState('')
   const [nextName, setNextName] = useState('')
@@ -105,6 +107,16 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
         ? { id: String(d.vote.id), question: String(d.vote.question || ''), options: Array.isArray(d.vote.options) ? d.vote.options.map(String) : [], status: d.vote.status ? String(d.vote.status) : 'open' }
         : null
       setCurrentVote(v)
+      // While auto-fill is on, these two cards are a live readout of the
+      // schedule, so they re-sync on every write instead of seeding once.
+      const auto = d.onAirAuto !== false
+      setOnAirAuto(auto)
+      if (auto || !seeded.current) {
+        setLiveName(d.nowLive ? String(d.nowLive.name || '') : '')
+        setLiveTitle(d.nowLive ? String(d.nowLive.title || '') : '')
+        setNextName(d.upNext ? String(d.upNext.name || '') : '')
+        setNextStart(d.upNext ? String(d.upNext.startET || '') : '')
+      }
       if (!seeded.current) {
         seeded.current = true
         setBreaking(brk)
@@ -112,8 +124,6 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
         setBreakingRow(brkObj ? String(brkObj.mode || '') === 'row' : false)
         if (chy) { setChyKicker(String(chy.kicker || '')); setChyTitle(String(chy.title || '')); setChySub(String(chy.subtitle || '')); setChyPill(String(chy.pill || '')) }
         if (Number(d.spotlightSol) > 0) setJukeboxSol(String(d.spotlightSol))
-        if (d.nowLive) { setLiveName(String(d.nowLive.name || '')); setLiveTitle(String(d.nowLive.title || '')) }
-        if (d.upNext) { setNextName(String(d.upNext.name || '')); setNextStart(String(d.upNext.startET || '')) }
         if (Array.isArray(d.governance)) setGovText(d.governance.map((g: Beat) => (g.tag && g.tag !== 'CSGN GOVERNANCE' ? `${g.tag} | ${g.text}` : g.text)).join('\n'))
         if (Array.isArray(d.tweets)) setTweetsText(serializeTweets(d.tweets as Tweet[]))
       }
@@ -166,8 +176,18 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
     if (!(n > 0)) throw new Error('Enter a positive SOL amount.')
     return write({ spotlightSol: n })
   }, 'Coin Jukebox price updated.')
-  const saveLive = () => run('live', () => write({ nowLive: liveName.trim() || liveTitle.trim() ? { name: liveName.trim(), title: liveTitle.trim() } : null }), 'Live-now updated.')
-  const saveNext = () => run('next', () => write({ upNext: nextName.trim() || nextStart.trim() ? { name: nextName.trim(), startET: nextStart.trim() } : null }), 'Up-next updated.')
+  // Saving either card is how you take the wheel — auto-fill stops overwriting
+  // until you hand it back.
+  const saveLive = () => run('live', () => write({
+    nowLive: liveName.trim() || liveTitle.trim() ? { name: liveName.trim(), title: liveTitle.trim() } : null,
+    onAirAuto: false,
+  }), 'Live-now pinned manually — auto-fill from the schedule is off.')
+  const saveNext = () => run('next', () => write({
+    upNext: nextName.trim() || nextStart.trim() ? { name: nextName.trim(), startET: nextStart.trim() } : null,
+    onAirAuto: false,
+  }), 'Up-next pinned manually — auto-fill from the schedule is off.')
+  const toggleOnAirAuto = () => run('onAirAuto', () => write({ onAirAuto: !onAirAuto }),
+    onAirAuto ? 'Manual control — these two cards stay exactly as you set them.' : 'Auto-fill on — both cards track the schedule within a minute.')
   const saveGov = () => run('gov', () => write({ governance: parseBeatLines(govText, 'CSGN GOVERNANCE') }), 'Governance beats updated.')
   const saveTweets = () => run('tweets', () => write({ tweets: parseTweetLines(tweetsText) }), 'X post rotation updated — 30s per card on the ticker.')
 
@@ -308,19 +328,39 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
           </div>
         </div>
 
-        {/* Now live + Up next */}
-        <div className={`grid sm:grid-cols-2 gap-4 ${activeModule === 'onair' ? '' : 'hidden'}`}>
-          <div className="space-y-2">
-            <label className={label}>Live now (name · title)</label>
-            <input value={liveName} onChange={(e) => setLiveName(e.target.value)} placeholder="Name" className={input} />
-            <input value={liveTitle} onChange={(e) => setLiveTitle(e.target.value)} placeholder="Show title" className={input} />
-            <Button size="sm" variant="secondary" isLoading={busy === 'live'} onClick={saveLive}>Save live now</Button>
+        {/* Now live + Up next — schedule-driven by default, manual on demand */}
+        <div className={`space-y-3 ${activeModule === 'onair' ? '' : 'hidden'}`}>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-sm text-white font-medium">
+                Live now &amp; Up next{' '}
+                <span className={onAirAuto ? 'text-emerald-400' : 'text-amber-400'}>
+                  {onAirAuto ? '● auto from schedule' : '● manual override'}
+                </span>
+              </p>
+              <p className="text-xs text-gray-500">
+                {onAirAuto
+                  ? 'Both cards track the real schedule every minute — claimed slots show the streamer, open hours read “Open Stage”.'
+                  : 'Pinned to what you typed. Turn auto back on to follow the schedule again.'}
+              </p>
+            </div>
+            <Button size="sm" variant={onAirAuto ? 'ghost' : 'gold'} isLoading={busy === 'onAirAuto'} onClick={toggleOnAirAuto}>
+              {onAirAuto ? 'Take manual control' : 'Resume auto-fill'}
+            </Button>
           </div>
-          <div className="space-y-2">
-            <label className={label}>Up next (name · start ET)</label>
-            <input value={nextName} onChange={(e) => setNextName(e.target.value)} placeholder="Name" className={input} />
-            <input value={nextStart} onChange={(e) => setNextStart(e.target.value)} placeholder="10:00 PM ET" className={input} />
-            <Button size="sm" variant="secondary" isLoading={busy === 'next'} onClick={saveNext}>Save up next</Button>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className={label}>Live now (name · title)</label>
+              <input value={liveName} onChange={(e) => setLiveName(e.target.value)} placeholder="Name" className={input} />
+              <input value={liveTitle} onChange={(e) => setLiveTitle(e.target.value)} placeholder="Show title" className={input} />
+              <Button size="sm" variant="secondary" isLoading={busy === 'live'} onClick={saveLive}>Save live now</Button>
+            </div>
+            <div className="space-y-2">
+              <label className={label}>Up next (name · start ET)</label>
+              <input value={nextName} onChange={(e) => setNextName(e.target.value)} placeholder="Name" className={input} />
+              <input value={nextStart} onChange={(e) => setNextStart(e.target.value)} placeholder="10:00 PM ET" className={input} />
+              <Button size="sm" variant="secondary" isLoading={busy === 'next'} onClick={saveNext}>Save up next</Button>
+            </div>
           </div>
         </div>
 

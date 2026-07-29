@@ -6,20 +6,24 @@ import {
   BarChart3, Plus, Crown,
   Trash2, UserCheck, AlertTriangle, Tv, DollarSign,
   Wallet, CheckCircle2, XCircle, RefreshCw, Link as LinkIcon, ExternalLink, Monitor, Activity,
-  Megaphone, Flame,
+  Megaphone, Flame, Vote,
 } from 'lucide-react'
 import {
-  collection, query, getDocs, doc, setDoc, onSnapshot, orderBy,
+  collection, query, getDoc, getDocs, doc, setDoc, onSnapshot, orderBy,
   limit,
 } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { api } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
+import { logAuthEvent } from '@/lib/authEvents'
 import { useAuth } from '@/contexts/useAuth'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import TickerControlsCard from '@/components/admin/TickerControlsCard'
+import { CreatorFeesTab } from '@/components/admin/CreatorFeesTab'
+import { VoteHistoryTab } from '@/components/admin/VoteHistoryTab'
+import { isVoteOpen, type VoteRecord } from '@/lib/votes'
 import { PUMP_FUN_FEE_TIERS, estimateCreatorFeeSOL, formatTierRange, resolvePumpFeeTier } from '@/lib/dexscreener'
 import { parseXPostId, isBroadcastUrl } from '@/lib/xembed'
 import {
@@ -44,6 +48,7 @@ import {
   declineFeesPayment,
   formatESTRange,
   isNetworkSlot,
+  isFeePending,
   SLOT_STATUSES,
   DEFAULT_STREAM_URL,
   type Slot,
@@ -52,7 +57,7 @@ import {
   type CreatorFees,
 } from '@/lib/slots'
 
-type Tab = 'overview' | 'streamers' | 'schedule' | 'fees' | 'auth'
+type Tab = 'overview' | 'streamers' | 'schedule' | 'fees' | 'votes' | 'auth'
 
 interface AuthEventData {
   id: string
@@ -141,6 +146,7 @@ export default function Admin() {
   const { profile, loading } = useAuth()
   const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [users, setUsers] = useState<UserData[]>([])
+  const [usersLoaded, setUsersLoaded] = useState(false)
 
   // Schedule state
   const [slots, setSlots] = useState<Slot[]>([])
@@ -189,8 +195,12 @@ export default function Admin() {
   const [feeVolume, setFeeVolume] = useState('')
   const [feeMarketCap, setFeeMarketCap] = useState('')
   const [feeWallet, setFeeWallet] = useState('')
-  const [feeDeclineReason, setFeeDeclineReason] = useState('')
   const [feeActionLoading, setFeeActionLoading] = useState<string | null>(null)
+
+  // Vote history tab state
+  const [votes, setVotes] = useState<VoteRecord[]>([])
+  const [votesLoading, setVotesLoading] = useState(false)
+  const [closingVoteId, setClosingVoteId] = useState<string | null>(null)
 
   // Network block (7 PM–3 AM ET) on/off — off returns those hours to open claiming
   useEffect(() => {
@@ -466,6 +476,7 @@ export default function Admin() {
         const usersSnap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(500)))
         setUsers(usersSnap.docs.map((d) => ({ ...d.data() } as UserData)))
       } catch {}
+      setUsersLoaded(true)
     }
     fetchData()
   }, [])
@@ -488,11 +499,12 @@ export default function Admin() {
 
   const loadFeeSlots = useCallback(async () => {
     setFeeSlotsLoading(true)
-    // Fetch completed slots from the past 14 days
+    // 60 days back — enough completed slots for the day/week/month history
+    // ledger to actually have something in every bucket.
     const now = new Date()
-    const past = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
+    const past = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000)
     try {
-      const data = await fetchSlots(past, now, 200)
+      const data = await fetchSlots(past, now, 800)
       const completedWithStreamer = data.filter((s) => s.assignedUid && (s.status === 'completed' || new Date(s.endTime).getTime() < Date.now()))
 
       // Backfill missing creatorFees, then merge locally instead of re-reading
@@ -524,6 +536,23 @@ export default function Admin() {
     setFeeSlotsLoading(false)
   }, [users])
 
+  const [testingAuthLog, setTestingAuthLog] = useState(false)
+
+  /** Write a real event through the same server path the app uses, then reload —
+   *  proves the whole pipeline (function → Firestore → admin read) in one click. */
+  const handleTestAuthEvent = async () => {
+    setTestingAuthLog(true)
+    setAuthEventsError(null)
+    try {
+      await logAuthEvent('signin-start', { meta: { source: 'admin-selftest' } })
+      await new Promise((r) => setTimeout(r, 900)) // let the write land
+      await loadAuthEvents()
+    } catch (err: any) {
+      setAuthEventsError(err?.message || 'Test event failed.')
+    }
+    setTestingAuthLog(false)
+  }
+
   const loadAuthEvents = useCallback(async () => {
     setAuthEventsLoading(true)
     setAuthEventsError(null)
@@ -541,11 +570,54 @@ export default function Admin() {
     setAuthEventsLoading(false)
   }, [])
 
+  /** Every vote ever run. Sorted client-side because the earliest docs predate
+   *  createdAt, and an orderBy would silently drop them from the history. */
+  const loadVotes = useCallback(async () => {
+    setVotesLoading(true)
+    try {
+      const snap = await getDocs(query(collection(db, 'votes'), limit(300)))
+      const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<VoteRecord, 'id'>) }))
+      rows.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime())
+      setVotes(rows)
+    } catch {}
+    setVotesLoading(false)
+  }, [])
+
+  /** Closing from here also freezes the on-air card, so the overlay and the
+   *  ledger can never disagree about whether voting is still live. */
+  const handleCloseVote = async (vote: VoteRecord) => {
+    setClosingVoteId(vote.id)
+    setActionError(null)
+    try {
+      await setDoc(doc(db, 'votes', vote.id), { status: 'closed', updatedAt: new Date().toISOString() }, { merge: true })
+      const snap = await getDoc(doc(db, 'config', 'ticker'))
+      const current = snap.exists() ? (snap.data().vote as { id?: string } | null) : null
+      if (current?.id === vote.id) {
+        await setDoc(doc(db, 'config', 'ticker'), { vote: { ...current, status: 'closed' }, updatedAt: new Date().toISOString() }, { merge: true })
+      }
+      await loadVotes()
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to close the vote.')
+    }
+    setClosingVoteId(null)
+  }
+
   useEffect(() => {
     if (activeTab === 'overview' || activeTab === 'schedule') loadSlots()
     if (activeTab === 'fees') loadFeeSlots()
+    if (activeTab === 'votes') loadVotes()
     if (activeTab === 'auth') loadAuthEvents()
-  }, [activeTab, loadSlots, loadFeeSlots, loadAuthEvents])
+  }, [activeTab, loadSlots, loadFeeSlots, loadVotes, loadAuthEvents])
+
+  // Load the fee + vote ledgers once on mount so their "needs a decision"
+  // counts can ride on the tab labels before you ever open those tabs.
+  const feePrimed = useRef(false)
+  useEffect(() => {
+    if (feePrimed.current || !usersLoaded) return
+    feePrimed.current = true
+    loadFeeSlots()
+    loadVotes()
+  }, [usersLoaded, loadFeeSlots, loadVotes])
 
   const handleGenerateThreeDays = async () => {
     setGenerating(true)
@@ -756,15 +828,14 @@ export default function Admin() {
     setFeeActionLoading(null)
   }
 
-  const handleDeclineFee = async (slot: Slot) => {
-    if (!feeDeclineReason.trim()) {
+  const handleDeclineFee = async (slot: Slot, reason: string) => {
+    if (!reason.trim()) {
       setActionError('Please provide a reason.')
       return
     }
     setFeeActionLoading(slot.id)
     try {
-      await declineFeesPayment(slot.id, feeDeclineReason)
-      setFeeDeclineReason('')
+      await declineFeesPayment(slot.id, reason.trim())
       await loadFeeSlots()
     } catch (err: any) {
       setActionError(err?.message || 'Failed to decline payment.')
@@ -790,11 +861,17 @@ export default function Admin() {
     return t >= new Date(s.startTime).getTime() && t < new Date(s.endTime).getTime() && (s.status === 'confirmed' || s.status === 'live')
   }).length
 
+  // Counts ride on the tab labels so an admin can see there's work waiting
+  // without opening anything — Creator Fees (6), Vote History (1).
+  const pendingFeeCount = feeSlots.filter(isFeePending).length
+  const openVoteCount = votes.filter(isVoteOpen).length
+
   const tabs = [
     { id: 'overview' as Tab, label: 'Overview', icon: BarChart3 },
     { id: 'streamers' as Tab, label: 'Streamers', icon: Users },
     { id: 'schedule' as Tab, label: 'Schedule', icon: Clock },
-    { id: 'fees' as Tab, label: 'Creator Fees', icon: DollarSign },
+    { id: 'fees' as Tab, label: 'Creator Fees', icon: DollarSign, count: pendingFeeCount, tone: 'amber' },
+    { id: 'votes' as Tab, label: 'Vote History', icon: Vote, count: openVoteCount, tone: 'cyan' },
     { id: 'auth' as Tab, label: 'Auth Events', icon: Activity },
   ]
 
@@ -859,6 +936,13 @@ export default function Admin() {
             >
               <tab.icon className="w-4 h-4" />
               {tab.label}
+              {!!tab.count && (
+                <span className={`px-1.5 py-0.5 rounded-full text-[11px] font-bold leading-none ${
+                  tab.tone === 'cyan' ? 'bg-cyan-500/20 text-cyan-300' : 'bg-amber-500/20 text-amber-300'
+                }`}>
+                  {tab.count}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -1698,221 +1782,25 @@ export default function Admin() {
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold text-white">Creator Fee Payouts</h3>
-                <p className="text-sm text-gray-400 mt-1">
-                Streamers earn 30% of pump.fun creator fees generated during their slot.
-                Fee records are auto-created when slots complete, including active channel duration.
+              <p className="text-sm text-gray-400 mt-1">
+                Undecided payouts sit up top. Once you mark one paid or declined it drops into the history ledger below.
               </p>
             </div>
 
-            <Card hover={false} className="p-4 bg-cyan-500/5 border-cyan-500/20">
-              <div className="flex items-start gap-3">
-                <DollarSign className="w-5 h-5 text-cyan-400 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-sm text-white font-medium">Fee Formula + Market Cap Tiering</p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    pump.fun creator fee changes by SOL market cap tier. Streamer payout is always 30% of creator fee:
-                    <span className="font-mono text-cyan-400"> Volume × tier creator fee × 0.30</span> (max streamer take is 0.27% of volume at 0.9% creator fee).
-                  </p>
-                </div>
-              </div>
-            </Card>
-
-            {feeSlotsLoading ? (
-              <div className="py-16 text-center">
-                <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                <p className="text-sm text-gray-500">Loading completed slots...</p>
-              </div>
-            ) : feeSlots.length === 0 ? (
-              <Card hover={false} className="p-8 text-center">
-                <DollarSign className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-white mb-2">No Completed Slots</h3>
-                <p className="text-sm text-gray-400 max-w-md mx-auto">
-                  Completed slots with assigned streamers will appear here for fee management.
-                </p>
-              </Card>
-            ) : (
-              <Card hover={false} className="overflow-hidden">
-                <div className="p-4 border-b border-white/[0.06]">
-                  <h3 className="font-semibold text-white">{feeSlots.length} completed slot{feeSlots.length !== 1 ? 's' : ''}</h3>
-                </div>
-                <div className="divide-y divide-white/[0.04]">
-                  {feeSlots.map((slot) => {
-                    const fees = slot.creatorFees
-                    const streamerUser = users.find((u) => u.uid === slot.assignedUid)
-
-                    return (
-                      <div key={slot.id} className="px-4 sm:px-6 py-4">
-                        <div className="flex items-start gap-4">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex flex-wrap items-center gap-2 mb-1">
-                              <span className="text-sm font-medium text-white">{slot.label}</span>
-                              <span className="text-xs text-gray-500">{new Date(slot.startTime).toLocaleDateString()}</span>
-                              {fees && (
-                                <Badge variant={fees.paymentStatus === 'paid' ? 'green' : fees.paymentStatus === 'declined' ? 'red' : 'gold'}>
-                                  {fees.paymentStatus}
-                                </Badge>
-                              )}
-                            </div>
-
-                            <p className="text-sm text-emerald-400 font-medium">{slot.assignedName}</p>
-
-                            {streamerUser?.walletAddress && (
-                              <div className="flex items-center gap-1 mt-1">
-                                <Wallet className="w-3 h-3 text-gray-500" />
-                                <span className="text-xs text-gray-400 font-mono">{streamerUser.walletAddress}</span>
-                              </div>
-                            )}
-
-                            {fees ? (
-                              <div className="mt-2 p-3 bg-white/[0.03] border border-white/[0.06] rounded-lg space-y-1">
-                                <div className="flex items-center justify-between text-xs">
-                                  <span className="text-gray-500">Trading Volume</span>
-                                  <span className="text-white font-mono">{fees.tradingVolumeSOL.toFixed(4)} SOL</span>
-                                </div>
-                                <div className="flex items-center justify-between text-xs">
-                                  <span className="text-gray-500">Market Cap Tier</span>
-                                  <span className="text-white font-mono">{fees.marketCapTierLabel ?? 'n/a'}</span>
-                                </div>
-                                <div className="flex items-center justify-between text-xs">
-                                  <span className="text-gray-500">Creator Fee (tier)</span>
-                                  <span className="text-white font-mono">{(fees.tradingVolumeSOL * (fees.creatorFeeRate ?? 0.003)).toFixed(6)} SOL</span>
-                                </div>
-                                <div className="flex items-center justify-between text-sm font-semibold border-t border-white/[0.06] pt-1 mt-1">
-                                  <span className="text-gray-300">Owed to Streamer (30%)</span>
-                                  <span className="text-yellow-400 font-mono">{fees.feeOwedSOL.toFixed(6)} SOL</span>
-                                </div>
-                                {fees.streamerWalletAddress && (
-                                  <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
-                                    <Wallet className="w-3 h-3" />
-                                    <span className="font-mono truncate">{fees.streamerWalletAddress}</span>
-                                  </div>
-                                )}
-                                {fees.paymentStatus === 'declined' && fees.declineReason && (
-                                  <p className="text-xs text-red-400 mt-1">Declined: {fees.declineReason}</p>
-                                )}
-                                {fees.paidAt && (
-                                  <p className="text-xs text-emerald-400 mt-1">Paid: {new Date(fees.paidAt).toLocaleString()}</p>
-                                )}
-
-                                {fees.tierFeeBreakdown && fees.tierFeeBreakdown.length > 0 && (
-                                  <div className="mt-2 pt-2 border-t border-white/[0.06] space-y-1">
-                                    <p className="text-xs text-gray-500">Tier Breakdown</p>
-                                    {fees.tierFeeBreakdown.map((tier, idx) => (
-                                      <div key={`${slot.id}-${idx}`} className="text-xs text-gray-400">
-                                        {tier.marketCapRange} · Vol {tier.volumeSOL.toFixed(4)} SOL · Creator {(tier.creatorFeeRate * 100).toFixed(3)}% · Streamer {tier.streamerFeeSOL.toFixed(6)} SOL
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-
-                                {fees.activeChannels && fees.activeChannels.length > 0 && (
-                                  <div className="mt-2 pt-2 border-t border-white/[0.06] space-y-1">
-                                    <p className="text-xs text-gray-500">Active Channels</p>
-                                    {fees.activeChannels.map((channel) => (
-                                      <div key={`${slot.id}-${channel.name}`} className="flex items-center justify-between text-xs">
-                                        <span className="text-gray-300 truncate">{channel.name}</span>
-                                        <span className="text-gray-400 font-mono">{channel.durationMinutes}m</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <p className="text-xs text-gray-600 mt-1">No fee record — click "Enter Fees" to add.</p>
-                            )}
-
-                            {/* Twitch live-activity log — proves the slot was actually streaming */}
-                            {(() => {
-                              const activity = slot.streamActivity
-                              const liveMinutes = activity?.liveCheckCount ?? 0
-                              return (
-                                <div className={`mt-2 p-3 rounded-lg border text-xs space-y-1 ${liveMinutes > 0 ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-white/[0.02] border-white/[0.06]'}`}>
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-gray-400 flex items-center gap-1"><Activity className="w-3 h-3" /> Twitch Live Activity</span>
-                                    <span className={liveMinutes > 0 ? 'text-emerald-400 font-mono' : 'text-gray-500 font-mono'}>
-                                      {activity ? `~${liveMinutes} min live` : 'not logged'}
-                                    </span>
-                                  </div>
-                                  {activity?.channel && (
-                                    <p className="text-gray-500">Channel: <span className="font-mono text-gray-400">{activity.channel}</span></p>
-                                  )}
-                                  {activity?.firstLiveAt && (
-                                    <p className="text-gray-500">
-                                      First live {new Date(activity.firstLiveAt).toLocaleTimeString()} · last live {activity.lastLiveAt ? new Date(activity.lastLiveAt).toLocaleTimeString() : '—'}
-                                    </p>
-                                  )}
-                                  {activity && liveMinutes === 0 && (
-                                    <p className="text-amber-400">No live samples captured — channel appeared offline (possible intermission-only slot).</p>
-                                  )}
-                                  {activity?.checkpoints && activity.checkpoints.length > 0 && (
-                                    <details>
-                                      <summary className="text-gray-500 cursor-pointer">{activity.checkpoints.length} live timestamps</summary>
-                                      <div className="mt-1 max-h-24 overflow-auto space-y-0.5 pr-1">
-                                        {activity.checkpoints.map((ts, idx) => (
-                                          <p key={`${slot.id}-cp-${idx}`} className="text-[11px] text-gray-500 font-mono">{new Date(ts).toLocaleString()}</p>
-                                        ))}
-                                      </div>
-                                    </details>
-                                  )}
-                                </div>
-                              )
-                            })()}
-                          </div>
-
-                          <div className="flex flex-col gap-2 shrink-0">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-cyan-400 hover:text-cyan-300"
-                              onClick={() => {
-                                setFeeModal(slot)
-                                setFeeVolume(slot.creatorFees?.tradingVolumeSOL?.toString() ?? '')
-                                setFeeMarketCap(slot.creatorFees?.marketCapSOL?.toString() ?? '')
-                                setFeeWallet(slot.creatorFees?.streamerWalletAddress ?? streamerUser?.walletAddress ?? '')
-                              }}
-                            >
-                              <DollarSign className="w-3 h-3 mr-1" />
-                              {fees ? 'Edit' : 'Enter Fees'}
-                            </Button>
-                            {fees && fees.paymentStatus === 'pending' && (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-emerald-400 hover:text-emerald-300"
-                                  isLoading={feeActionLoading === slot.id}
-                                  onClick={() => handleMarkPaid(slot)}
-                                >
-                                  <CheckCircle2 className="w-3 h-3 mr-1" /> Mark Paid
-                                </Button>
-                                <div className="space-y-1">
-                                  <input
-                                    type="text"
-                                    placeholder="Decline reason..."
-                                    value={feeDeclineReason}
-                                    onChange={(e) => setFeeDeclineReason(e.target.value)}
-                                    className="w-36 px-2 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs text-white placeholder-gray-500 focus:outline-none"
-                                  />
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="w-full text-red-400 hover:text-red-300 text-xs"
-                                    isLoading={feeActionLoading === slot.id}
-                                    onClick={() => handleDeclineFee(slot)}
-                                  >
-                                    <XCircle className="w-3 h-3 mr-1" /> Decline
-                                  </Button>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </Card>
-            )}
+            <CreatorFeesTab
+              feeSlots={feeSlots}
+              feeSlotsLoading={feeSlotsLoading}
+              users={users}
+              feeActionLoading={feeActionLoading}
+              onEnterFees={(slot) => {
+                setFeeModal(slot)
+                setFeeVolume(slot.creatorFees?.tradingVolumeSOL?.toString() ?? '')
+                setFeeMarketCap(slot.creatorFees?.marketCapSOL?.toString() ?? '')
+                setFeeWallet(slot.creatorFees?.streamerWalletAddress ?? users.find((u) => u.uid === slot.assignedUid)?.walletAddress ?? '')
+              }}
+              onMarkPaid={handleMarkPaid}
+              onDecline={handleDeclineFee}
+            />
 
             {/* Fee Entry Modal */}
             {feeModal && (
@@ -2006,6 +1894,25 @@ export default function Admin() {
           </div>
         )}
 
+        {/* ── Vote History Tab ── */}
+        {activeTab === 'votes' && (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Vote History</h3>
+              <p className="text-sm text-gray-400 mt-1">
+                Every token-weighted vote the network has run. Open votes need closing; closed ones archive by day, week, and month.
+              </p>
+            </div>
+
+            <VoteHistoryTab
+              votes={votes}
+              votesLoading={votesLoading}
+              closingId={closingVoteId}
+              onCloseVote={handleCloseVote}
+            />
+          </div>
+        )}
+
         {activeTab === 'auth' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -2013,10 +1920,15 @@ export default function Admin() {
                 <h2 className="text-xl font-semibold text-white">Auth Events</h2>
                 <p className="text-sm text-gray-400">Latest 50 sign-up / sign-in / Twitch link attempts.</p>
               </div>
-              <Button onClick={loadAuthEvents} disabled={authEventsLoading} variant="secondary">
-                <RefreshCw className={`w-4 h-4 mr-2 ${authEventsLoading ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
+              <div className="flex gap-2">
+                <Button onClick={handleTestAuthEvent} isLoading={testingAuthLog} variant="ghost" title="Writes a real event through the server pipeline and reloads — proves logging works end to end.">
+                  Send test event
+                </Button>
+                <Button onClick={loadAuthEvents} disabled={authEventsLoading} variant="secondary">
+                  <RefreshCw className={`w-4 h-4 mr-2 ${authEventsLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              </div>
             </div>
 
             {authEventsError && (
@@ -2038,7 +1950,9 @@ export default function Admin() {
                 </thead>
                 <tbody>
                   {authEvents.length === 0 && !authEventsLoading && (
-                    <tr><td className="px-4 py-3 text-gray-500" colSpan={5}>No auth events yet.</td></tr>
+                    <tr><td className="px-4 py-3 text-gray-500" colSpan={5}>
+                      No auth events recorded yet. Events are written server-side on every sign-in/sign-up attempt — including failures. Hit <span className="text-gray-300">Send test event</span> to confirm the pipeline works.
+                    </td></tr>
                   )}
                   {authEvents.map((ev) => {
                     const tsDate = ev.ts && typeof ev.ts === 'object' && 'toDate' in ev.ts && typeof (ev.ts as { toDate: unknown }).toDate === 'function'
