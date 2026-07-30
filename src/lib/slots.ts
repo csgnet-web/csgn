@@ -14,7 +14,6 @@ export const DEFAULT_STREAM_URL = 'https://twitch.tv/csgnet'
  *
  * Phase 1: pre-launch — now through April 5, 2026 11:59 AM ET
  * Phase 2: launch week — April 5 noon ET through April 12 noon ET
- * Phase 3+: normal bid logic (not yet built)
  *
  * Both April dates fall in EDT (UTC-4), so noon ET = 16:00 UTC.
  */
@@ -32,16 +31,12 @@ export const CSGN_DECIMALS = 6
 
 /* ─── Types ─── */
 
-export type SlotType = 'auction' | 'ceo'
-
-export type SlotStatus =
-  | 'open'            // accepting bids
-  | 'closing'         // within 2h of airtime — bidding closed, winner notified
-  | 'pending_deposit' // auction winner must confirm within 1h
-  | 'confirmed'       // confirmed or CEO-assigned
-  | 'live'            // currently airing
-  | 'completed'       // finished airing
-  | 'unfilled'        // nobody won / deposited
+// Slot model (types + normalization + claimability) lives in slotModel.ts —
+// pure, Firestore-free, and unit-tested. Re-exported here so every existing
+// `from '@/lib/slots'` import keeps working.
+export type { SlotType, SlotStatus } from './slotModel'
+export { SLOT_STATUSES, normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable } from './slotModel'
+import { normalizeSlot, isNetworkSlot, type SlotType, type SlotStatus } from './slotModel'
 
 export type FeePaymentStatus = 'pending' | 'paid' | 'declined'
 
@@ -78,10 +73,16 @@ export interface CreatorFees {
   paymentStatus: FeePaymentStatus
   streamerWalletAddress: string
   paidAt?: string
+  declinedAt?: string
   declineReason?: string
   snapshotLockedAt?: unknown
   updatedAt: string
 }
+
+/** A completed slot is still open business until an admin marks its creator-fee
+ *  payout paid or declined. Drives the "Creator Fees (6)" badge. */
+export const isFeePending = (slot: { creatorFees?: { paymentStatus?: FeePaymentStatus } }): boolean =>
+  (slot.creatorFees?.paymentStatus ?? 'pending') === 'pending'
 
 /**
  * Per-slot Twitch live-activity log, written by the server fee poller once a
@@ -133,33 +134,12 @@ export interface Slot {
   requests: SlotRequest[]     // slot request queue
   creatorFees?: CreatorFees   // populated after slot completes
   streamActivity?: StreamActivity // server-logged Twitch live samples
-  /** "CEO Creator" branding (the gold crown/badge) for this slot. Purely
-   *  cosmetic — no scheduling/claim logic reads it. Absent = ON, so existing
-   *  slots keep their crown until an admin toggles it off. */
+  /** Legacy cosmetic flag from the "CEO Creator" era. No logic reads it. */
   ceoCreator?: boolean
   createdAt: unknown
 }
 
-/** Does this slot carry the gold "CEO Creator" crown branding? Default ON —
- *  only an explicit admin toggle-off (ceoCreator: false) hides it. */
-export function isCeoCreator(slot: Pick<Slot, 'ceoCreator'>): boolean {
-  return slot.ceoCreator !== false
-}
 
-/* ─── CSGN Quadratic bid pricing ─── */
-
-const BASE_BID_CSGN = 100_000   // 100,000 CSGN base bid
-
-/**
- * Quadratic pricing: y = 100000 + 10000 * x^2
- * where x = number of existing bids
- * Returns whole CSGN tokens.
- */
-export function getMinimumBid(existingBidCount: number): number {
-  return Math.round(BASE_BID_CSGN + 10_000 * Math.pow(existingBidCount, 2))
-}
-
-/** Format a CSGN amount for display (e.g. 100000 → "100,000 CSGN") */
 export function formatCSGN(amount: number): string {
   return amount.toLocaleString() + ' CSGN'
 }
@@ -175,24 +155,24 @@ interface TemplateSlot {
 
 /**
  * Schedule (ET, DST-aware):
- *  Slots 1-8:  3:00 AM – 7:00 PM (auction, 8 slots)
- *  Slots 9-12: 7:00 PM – 3:00 AM next day (CEO, 4 slots)
+ *  Slots 1-8:  3:00 AM – 7:00 PM — OPEN (anyone can claim)
+ *  Slots 9-12: 7:00 PM – 3:00 AM next day — NETWORK (CSGN Originals)
  */
 const SCHEDULE_TEMPLATE: TemplateSlot[] = [
-  // Auction block: 3 AM – 7 PM
-  { hourET: 3,  duration: 2, type: 'auction' },
-  { hourET: 5,  duration: 2, type: 'auction' },
-  { hourET: 7,  duration: 2, type: 'auction' },
-  { hourET: 9,  duration: 2, type: 'auction' },
-  { hourET: 11, duration: 2, type: 'auction' },
-  { hourET: 13, duration: 2, type: 'auction' },
-  { hourET: 15, duration: 2, type: 'auction' },
-  { hourET: 17, duration: 2, type: 'auction' },
-  // CEO Schedule block: 7 PM – 3 AM next day
-  { hourET: 19, duration: 2, type: 'ceo' },
-  { hourET: 21, duration: 2, type: 'ceo' },
-  { hourET: 23, duration: 2, type: 'ceo' },
-  { hourET: 1,  dayOffset: 1, duration: 2, type: 'ceo' },
+  // Open block: 3 AM – 7 PM
+  { hourET: 3,  duration: 2, type: 'open' },
+  { hourET: 5,  duration: 2, type: 'open' },
+  { hourET: 7,  duration: 2, type: 'open' },
+  { hourET: 9,  duration: 2, type: 'open' },
+  { hourET: 11, duration: 2, type: 'open' },
+  { hourET: 13, duration: 2, type: 'open' },
+  { hourET: 15, duration: 2, type: 'open' },
+  { hourET: 17, duration: 2, type: 'open' },
+  // Network block (CSGN Originals): 7 PM – 3 AM next day
+  { hourET: 19, duration: 2, type: 'network' },
+  { hourET: 21, duration: 2, type: 'network' },
+  { hourET: 23, duration: 2, type: 'network' },
+  { hourET: 1,  dayOffset: 1, duration: 2, type: 'network' },
 ]
 
 /* ─── Timezone helpers ─── */
@@ -296,10 +276,9 @@ function buildExpectedSlotsForDate(targetDate: Date, forcedType?: SlotType): Exp
     const endUTC = new Date(startUTC.getTime() + template.duration * 60 * 60 * 1000)
 
     // Operator directive: every slot instantiates as CEO Creator for now (no
-    // open auctions). Revert this to
-    //   forcedType ?? (startUTC.toISOString() < PHASE_2_END_UTC ? 'ceo' : template.type)
-    // to reopen the daytime auction block.
-    const effectiveType: SlotType = forcedType ?? 'ceo'
+    // Two blocks, no auctions: the template decides (open 3 AM–7 PM ET,
+    // network 7 PM–3 AM ET). `forcedType` still lets a reseed override it.
+    const effectiveType: SlotType = forcedType ?? template.type
 
     return {
       id: `slot-${String(slotDate.year).padStart(4, '0')}-${String(slotDate.month).padStart(2, '0')}-${String(slotDate.day).padStart(2, '0')}-${String(template.hourET).padStart(2, '0')}`,
@@ -329,7 +308,7 @@ export interface SyncScheduleResult {
 
 /**
  * Sync one ET schedule day so it always contains the canonical 12 slots
- * (3 AM–7 PM auction, 7 PM–3 AM CEO) with no duplicate/overlapping stray slots.
+ * (3 AM–7 PM open, 7 PM–3 AM CSGN Originals) with no duplicate/overlapping strays.
  */
 export async function syncSlotsForDate(targetDate: Date): Promise<SyncScheduleResult> {
   const expected = buildExpectedSlotsForDate(targetDate)
@@ -427,11 +406,11 @@ export async function syncSevenDaysFrom(startDate: Date): Promise<{ days: string
   return { days, created, updated, removed, conflicts }
 }
 
-export async function reseedNextSevenDaysAsCEO(startDate: Date): Promise<{ days: string[]; created: number; updated: number; removed: number; conflicts: string[] }> {
-  return reseedNextDaysAsCEO(startDate, 7)
+export async function reseedNextSevenDays(startDate: Date): Promise<{ days: string[]; created: number; updated: number; removed: number; conflicts: string[] }> {
+  return reseedNextDays(startDate, 7)
 }
 
-export async function reseedNextDaysAsCEO(startDate: Date, dayCount: number): Promise<{ days: string[]; created: number; updated: number; removed: number; conflicts: string[] }> {
+export async function reseedNextDays(startDate: Date, dayCount: number): Promise<{ days: string[]; created: number; updated: number; removed: number; conflicts: string[] }> {
   const days: string[] = []
   let created = 0
   let updated = 0
@@ -440,7 +419,7 @@ export async function reseedNextDaysAsCEO(startDate: Date, dayCount: number): Pr
 
   for (let i = 0; i < dayCount; i++) {
     const target = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000)
-    const expected = buildExpectedSlotsForDate(target, 'ceo')
+    const expected = buildExpectedSlotsForDate(target)
     const expectedById = new Map(expected.map((s) => [s.id, s]))
 
     const minStart = Math.min(...expected.map((s) => new Date(s.startTime).getTime()))
@@ -453,7 +432,11 @@ export async function reseedNextDaysAsCEO(startDate: Date, dayCount: number): Pr
       if (!current) {
         const slot: Slot = {
           id: exp.id,
-          type: 'ceo',
+          // The template decides the block — 3 AM–7 PM open, 7 PM–3 AM network.
+          // This used to hardcode 'network', so a full reseed from the admin
+          // panel dropped EVERY hour into the reserved block and nothing on the
+          // schedule was claimable.
+          type: exp.type,
           label: exp.label,
           startTime: exp.startTime,
           endTime: exp.endTime,
@@ -473,7 +456,7 @@ export async function reseedNextDaysAsCEO(startDate: Date, dayCount: number): Pr
       }
 
       const patch: Partial<Slot> = {}
-      if (current.type !== 'ceo') patch.type = 'ceo'
+      if (current.type !== exp.type) patch.type = exp.type
       if (current.label !== exp.label) patch.label = exp.label
       if (current.startTime !== exp.startTime) patch.startTime = exp.startTime
       if (current.endTime !== exp.endTime) patch.endTime = exp.endTime
@@ -506,8 +489,8 @@ export async function reseedNextDaysAsCEO(startDate: Date, dayCount: number): Pr
 }
 
 /** Force canonical CEO-only slots for the next 365 ET days starting from `startDate`. */
-export async function reseedNextYearAsCEO(startDate: Date): Promise<{ days: string[]; created: number; updated: number; removed: number; conflicts: string[] }> {
-  return reseedNextDaysAsCEO(startDate, 365)
+export async function reseedNextYear(startDate: Date): Promise<{ days: string[]; created: number; updated: number; removed: number; conflicts: string[] }> {
+  return reseedNextDays(startDate, 365)
 }
 
 /** Generate slot documents for a given calendar day in Eastern Time. */
@@ -587,31 +570,6 @@ export async function wipeAndRegenerateSlots(startDate: Date): Promise<{ generat
   return { generated }
 }
 
-/**
- * One-time migration: set type to 'ceo' on all existing Firestore slots
- * whose startTime falls within Phase 1 or Phase 2 (before April 12 noon ET).
- * Safe to re-run — skips slots already typed 'ceo'.
- */
-export async function migratePhaseSlotsToCEO(): Promise<{ updated: number }> {
-  const from = new Date('2026-04-01T00:00:00.000Z')
-  const to = new Date(PHASE_2_END_UTC)
-  const slots = await fetchSlots(from, to, 200)
-  let updated = 0
-  for (const slot of slots) {
-    if (slot.type !== 'ceo') {
-      await updateDoc(doc(db, SLOTS_COLLECTION, slot.id), { type: 'ceo' })
-      updated++
-    }
-  }
-  return { updated }
-}
-
-
-/**
- * Fetch all slots for a date range. `max` is required so every call site
- * declares an explicit read bound — firestore.rules rejects non-admin slots
- * queries without a limit.
- */
 export async function fetchSlots(from: Date, to: Date, max: number): Promise<Slot[]> {
   const q = query(
     collection(db, SLOTS_COLLECTION),
@@ -621,7 +579,7 @@ export async function fetchSlots(from: Date, to: Date, max: number): Promise<Slo
     limit(max),
   )
   const snap = await getDocs(q)
-  return snap.docs.map((d) => d.data() as Slot)
+  return snap.docs.map((d) => normalizeSlot(d.data() as Slot))
 }
 
 /** Subscribe to slots changes in real time. `max` is required — see fetchSlots. */
@@ -634,7 +592,7 @@ export function subscribeToSlots(from: Date, to: Date, callback: (slots: Slot[])
     limit(max),
   )
   return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => d.data() as Slot))
+    callback(snap.docs.map((d) => normalizeSlot(d.data() as Slot)))
   })
 }
 
@@ -650,39 +608,17 @@ export async function fetchSlotsByAssignee(uid: string, max = 50): Promise<Slot[
     limit(max),
   )
   const snap = await getDocs(q)
-  return snap.docs.map((d) => d.data() as Slot)
+  return snap.docs.map((d) => normalizeSlot(d.data() as Slot))
 }
 
-/** Place a bid on an auction slot using CSGN tokens. */
-export async function placeBid(slotId: string, bid: SlotBid): Promise<void> {
-  const ref = doc(db, SLOTS_COLLECTION, slotId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) throw new Error('Slot not found')
-
-  const slot = snap.data() as Slot
-  if (slot.status !== 'open') throw new Error('Bidding is closed for this slot')
-  if (slot.type !== 'auction') throw new Error('This slot is not an auction slot')
-
-  const minBid = getMinimumBid(slot.bids.length)
-  if (bid.amount < minBid) throw new Error(`Bid must be at least ${formatCSGN(minBid)}`)
-
-  // Each wallet can only bid once
-  if (bid.walletAddress && slot.bids.some((b) => b.walletAddress === bid.walletAddress)) {
-    throw new Error('You have already placed a bid on this slot')
-  }
-
-  const updatedBids = [...slot.bids, bid]
-  await updateDoc(ref, { bids: updatedBids })
-}
-
-/** Submit a slot request for a CEO slot. */
+/** Ask the network for a slot you can't self-claim (a network hour). */
 export async function requestSlot(slotId: string, request: Omit<SlotRequest, 'id' | 'status'>): Promise<void> {
   const ref = doc(db, SLOTS_COLLECTION, slotId)
   const snap = await getDoc(ref)
   if (!snap.exists()) throw new Error('Slot not found')
 
   const slot = snap.data() as Slot
-  if (slot.type !== 'ceo') throw new Error('Requests are only for Open Slots on the network schedule')
+  if (isNetworkSlot(slot)) throw new Error('Network slots are programmed by CSGN and cannot be requested')
   if (slot.status !== 'open') throw new Error('This slot is no longer accepting requests')
 
   // Prevent duplicate requests
@@ -786,7 +722,7 @@ export async function updateSlotStreamUrl(slotId: string, streamUrl: string): Pr
 }
 
 /** Admin: assign a user to a CEO slot. */
-export async function assignCEOSlot(
+export async function assignNetworkSlot(
   slotId: string,
   uid: string,
   displayName: string,
@@ -885,6 +821,7 @@ export async function declineFeesPayment(slotId: string, reason: string): Promis
   const updatedFees: CreatorFees = {
     ...fees,
     paymentStatus: 'declined',
+    declinedAt: new Date().toISOString(),
     declineReason: reason,
     updatedAt: new Date().toISOString(),
   }
@@ -930,39 +867,3 @@ export async function addUserNotification(
   await updateDoc(userRef, { notifications: [newNotification, ...existing] })
 }
 
-/** Resolve an auction slot: pick highest bidder, notify them. */
-export async function resolveAuction(slotId: string): Promise<{ winnerUid: string; amount: number } | null> {
-  const ref = doc(db, SLOTS_COLLECTION, slotId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) return null
-
-  const slot = snap.data() as Slot
-  if (slot.bids.length === 0) {
-    await updateDoc(ref, { status: 'unfilled', streamUrl: DEFAULT_STREAM_URL })
-    return null
-  }
-
-  // Highest bid wins
-  const sorted = [...slot.bids].sort((a, b) => b.amount - a.amount)
-  const winner = sorted[0]
-
-  const depositDeadline = new Date(new Date(slot.startTime).getTime() - 60 * 60 * 1000).toISOString()
-
-  await updateDoc(ref, {
-    status: 'pending_deposit',
-    assignedUid: winner.uid,
-    assignedName: winner.displayName,
-    // streamUrl remains the default (csgnet) until confirmed
-  })
-
-  await addUserNotification(winner.uid, {
-    type: 'auction_won',
-    slotId: slot.id,
-    slotLabel: slot.label,
-    slotStart: slot.startTime,
-    message: `You won the auction for ${slot.label} with a bid of ${formatCSGN(winner.amount)}! Your slot has been confirmed.`,
-    depositDeadline,
-  })
-
-  return { winnerUid: winner.uid, amount: winner.amount }
-}

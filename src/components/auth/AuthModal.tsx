@@ -8,6 +8,7 @@ import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { api, type TwitchProof } from '@/lib/api'
 import { clearTwitchProof, readTwitchProof } from '@/lib/twitchProof'
 import { clearRegisterDraft, readRegisterDraft, storeRegisterDraft } from '@/lib/registerDraft'
+import { useScrollLock } from '@/hooks/useScrollLock'
 
 interface AuthModalProps { isOpen: boolean; onClose: () => void; initialMode?: 'login' | 'signup' }
 
@@ -152,19 +153,21 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
     } finally { setLoading(false) }
   }
 
+  useScrollLock(isOpen)
+
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4" style={{ height: '100dvh' }}>
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={handleClose} />
-          <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="relative w-full max-w-md max-h-[92vh] bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative w-full max-w-md max-h-[92vh] bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
             <div className="relative px-6 sm:px-8 pt-6 sm:pt-8 pb-4">
               <button onClick={handleClose} className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-white/5 cursor-pointer"><X className="w-5 h-5" /></button>
               <img src="https://pbs.twimg.com/profile_images/1966988305255276544/3Qz3tNAa_200x200.jpg" alt="CSGN" className="w-12 h-12 rounded-xl object-cover mb-4 shadow-lg" />
               <h2 className="text-2xl font-bold font-display text-white">{isRegister ? 'Join CSGN' : 'Welcome back'}</h2>
               <p className="text-sm text-gray-400 mt-1">{isRegister ? 'Verify Phantom and Twitch, then create your CSGN account.' : 'Sign in with email/password.'}</p>
             </div>
-            <div className="px-6 sm:px-8 pb-8 sm:pb-10 space-y-4 overflow-y-auto max-h-[calc(92vh-120px)]">
+            <div className="px-6 sm:px-8 pb-8 sm:pb-10 space-y-4 overflow-y-auto max-h-[calc(100dvh-13rem)] overscroll-contain">
               <form onSubmit={handleSubmit} className="space-y-3">
                 {error && <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-300"><AlertCircle className="w-4 h-4 shrink-0" /> {error}</div>}
                 <label className="block text-sm font-medium text-gray-300 mb-1.5">Email</label>

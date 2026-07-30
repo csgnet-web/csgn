@@ -1,3 +1,4 @@
+import { isNetworkSlot } from '@/lib/slots'
 import { useEffect, useState } from 'react'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
 import { formatESTRange, CSGN_MINT, type Slot } from '@/lib/slots'
@@ -44,7 +45,7 @@ function UpNextPanel({ slots }: { slots: Slot[] }) {
           slots.map((s) => (
             <div key={s.id} className="flex items-baseline justify-center gap-6">
               <span className="text-4xl font-black font-display text-white">
-                {s.assignedName || (s.type === 'auction' ? 'Open Bid' : 'Open Slot')}
+                {s.assignedName || (isNetworkSlot(s) ? 'CSGN Originals' : 'Open Slot')}
               </span>
               <span className="text-2xl font-mono text-primary-300">{formatESTRange(s)}</span>
             </div>

@@ -13,8 +13,9 @@ import { requireString } from './_shared/validators'
 import { checkRateLimit, clientIp } from './_shared/rateLimit'
 import { getCsgnBalance } from './_shared/solana'
 import { containsProfanity } from './_shared/profanity'
+import { bumpOnAirAction } from './_shared/onAirActions'
+import { normalizeTokenGates } from './_shared/tokenGates'
 
-const MIN_CSGN = 5_000_000
 const MAX_LEN = 90
 const MIN_LEN = 3
 const MAX_ITEMS = 8
@@ -40,10 +41,13 @@ export const handler = withHttp(async (event) => {
   if (containsProfanity(text)) throw badRequest('That message contains language not allowed on air.', 'profanity')
 
   // On-chain balance gate — cannot be spoofed (wallet was signature-proven).
+  // The threshold is config-driven so it can be retuned as the price moves; a
+  // fixed token count is a moving dollar cost.
+  const { rightNowMinCsgn } = normalizeTokenGates(await getDoc('config/tokenGates'))
   const balance = await getCsgnBalance(wallet)
-  if (balance < MIN_CSGN) {
+  if (balance < rightNowMinCsgn) {
     throw forbidden(
-      `You need at least ${MIN_CSGN.toLocaleString('en-US')} $CSGN to post to the Right Now rail — you hold ${Math.floor(balance).toLocaleString('en-US')}.`,
+      `You need at least ${rightNowMinCsgn.toLocaleString('en-US')} $CSGN to post to the Right Now rail — you hold ${Math.floor(balance).toLocaleString('en-US')}.`,
     )
   }
 
@@ -67,5 +71,6 @@ export const handler = withHttp(async (event) => {
     { merge: true },
   )
 
+  await bumpOnAirAction('submission') // this Right Now item is now on the board
   return json(200, { ok: true, text, item, railSize: next.length })
 })

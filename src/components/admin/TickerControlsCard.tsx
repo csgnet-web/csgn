@@ -1,8 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { doc, onSnapshot, setDoc } from 'firebase/firestore'
+import { Radio, Siren, Megaphone, Twitter, Vote, type LucideIcon } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { db } from '@/config/firebase'
+import { DEFAULT_TOKEN_GATES } from '@/lib/tokenGates'
+
+type ModuleId = 'onair' | 'breaking' | 'rail' | 'social' | 'vote'
 
 // Admin controls for the config/ticker fields beyond the RIGHT NOW rail and coin
 // spotlight: BREAKING, who's live / up next (also used by the over-live
@@ -48,7 +52,11 @@ const serializeTweets = (tweets: Tweet[]): string =>
 const fmtToken = (n: number): string =>
   n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(Math.round(n))
 
-export default function TickerControlsCard() {
+/** `railModule` lets the page inject its own Right Now / Spotlight controls as a
+ *  module inside this console, so Broadcast Control renders as ONE product
+ *  instead of two stacked cards with overlapping jobs. */
+export default function TickerControlsCard({ railModule }: { railModule?: ReactNode } = {}) {
+  const [activeModule, setActiveModule] = useState<ModuleId>('onair')
   const seeded = useRef(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -56,8 +64,25 @@ export default function TickerControlsCard() {
 
   // BREAKING
   const [breaking, setBreaking] = useState('')
+  const [breaking2, setBreaking2] = useState('') // optional second line
+  const [breakingRow, setBreakingRow] = useState(false) // own row above the ticker vs. full takeover
   const [breakingOn, setBreakingOn] = useState(false)
-  // Now live / up next
+  // Main chyron — full control of the three headline lines (leads the rotation)
+  const [chyKicker, setChyKicker] = useState('')
+  const [chyTitle, setChyTitle] = useState('')
+  const [chySub, setChySub] = useState('')
+  const [chyPill, setChyPill] = useState('')
+  const [chyronOn, setChyronOn] = useState(false)
+  // Viewer → on-air action counter (public/onAirActions) + its on-air toggle
+  const [actions, setActions] = useState({ total: 0, votes: 0, submissions: 0, spotlights: 0, buys: 0 })
+  const [showActions, setShowActions] = useState(false)
+  const [jukeboxSol, setJukeboxSol] = useState('') // SOL a holder pays (Coin Jukebox) to spotlight a coin — proceeds to treasury
+  // $CSGN needed to push a message onto the Right Now rail. Config-driven so it
+  // can track the price — a fixed token count is a moving dollar cost.
+  const [rightNowMin, setRightNowMin] = useState('')
+  // Now live / up next — auto-filled from the real schedule by the minute
+  // poller unless the operator takes manual control (config/ticker.onAirAuto).
+  const [onAirAuto, setOnAirAuto] = useState(true)
   const [liveName, setLiveName] = useState('')
   const [liveTitle, setLiveTitle] = useState('')
   const [nextName, setNextName] = useState('')
@@ -76,20 +101,51 @@ export default function TickerControlsCard() {
   useEffect(() => {
     return onSnapshot(doc(db, 'config', 'ticker'), (snap) => {
       const d = snap.exists() ? snap.data() : {}
-      const brk = typeof d.breaking === 'string' ? d.breaking : (d.breaking && typeof d.breaking === 'object' ? String(d.breaking.text || '') : '')
+      const brkObj = d.breaking && typeof d.breaking === 'object' ? d.breaking : null
+      const brk = typeof d.breaking === 'string' ? d.breaking : (brkObj ? String(brkObj.text || '') : '')
       setBreakingOn(!!brk)
+      const chy = d.chyron && typeof d.chyron === 'object' ? d.chyron : null
+      setChyronOn(!!(chy && (String(chy.title || '').trim() || String(chy.kicker || '').trim())))
+      setShowActions(!!d.showActions)
       const v = d.vote && typeof d.vote === 'object' && d.vote.id
         ? { id: String(d.vote.id), question: String(d.vote.question || ''), options: Array.isArray(d.vote.options) ? d.vote.options.map(String) : [], status: d.vote.status ? String(d.vote.status) : 'open' }
         : null
       setCurrentVote(v)
+      // While auto-fill is on, these two cards are a live readout of the
+      // schedule, so they re-sync on every write instead of seeding once.
+      const auto = d.onAirAuto !== false
+      setOnAirAuto(auto)
+      if (auto || !seeded.current) {
+        setLiveName(d.nowLive ? String(d.nowLive.name || '') : '')
+        setLiveTitle(d.nowLive ? String(d.nowLive.title || '') : '')
+        setNextName(d.upNext ? String(d.upNext.name || '') : '')
+        setNextStart(d.upNext ? String(d.upNext.startET || '') : '')
+      }
       if (!seeded.current) {
         seeded.current = true
         setBreaking(brk)
-        if (d.nowLive) { setLiveName(String(d.nowLive.name || '')); setLiveTitle(String(d.nowLive.title || '')) }
-        if (d.upNext) { setNextName(String(d.upNext.name || '')); setNextStart(String(d.upNext.startET || '')) }
+        setBreaking2(brkObj ? String(brkObj.text2 || '') : '')
+        setBreakingRow(brkObj ? String(brkObj.mode || '') === 'row' : false)
+        if (chy) { setChyKicker(String(chy.kicker || '')); setChyTitle(String(chy.title || '')); setChySub(String(chy.subtitle || '')); setChyPill(String(chy.pill || '')) }
+        if (Number(d.spotlightSol) > 0) setJukeboxSol(String(d.spotlightSol))
         if (Array.isArray(d.governance)) setGovText(d.governance.map((g: Beat) => (g.tag && g.tag !== 'CSGN GOVERNANCE' ? `${g.tag} | ${g.text}` : g.text)).join('\n'))
         if (Array.isArray(d.tweets)) setTweetsText(serializeTweets(d.tweets as Tweet[]))
       }
+    })
+  }, [])
+
+  useEffect(() => {
+    return onSnapshot(doc(db, 'config', 'tokenGates'), (snap) => {
+      const n = Number(snap.exists() ? snap.data().rightNowMinCsgn : 0)
+      setRightNowMin(n > 0 ? String(Math.floor(n)) : String(DEFAULT_TOKEN_GATES.rightNowMinCsgn))
+    }, () => {})
+  }, [])
+
+  useEffect(() => {
+    return onSnapshot(doc(db, 'public', 'onAirActions'), (snap) => {
+      const d = snap.exists() ? snap.data() : {}
+      const n = (k: string) => Number(d[k]) || 0
+      setActions({ total: n('total'), votes: n('votes'), submissions: n('submissions'), spotlights: n('spotlights'), buys: n('buys') })
     })
   }, [])
 
@@ -108,10 +164,47 @@ export default function TickerControlsCard() {
   }
   const write = (data: Record<string, unknown>) => setDoc(doc(db, 'config', 'ticker'), { ...data, updatedAt: new Date().toISOString() }, { merge: true })
 
-  const saveBreaking = () => run('brk', () => write({ breaking: breaking.trim() || null }), breaking.trim() ? 'BREAKING is live on the ticker.' : 'BREAKING cleared.')
-  const clearBreaking = () => run('brkClear', async () => { await write({ breaking: null }); setBreaking('') }, 'BREAKING cleared.')
-  const saveLive = () => run('live', () => write({ nowLive: liveName.trim() || liveTitle.trim() ? { name: liveName.trim(), title: liveTitle.trim() } : null }), 'Live-now updated.')
-  const saveNext = () => run('next', () => write({ upNext: nextName.trim() || nextStart.trim() ? { name: nextName.trim(), startET: nextStart.trim() } : null }), 'Up-next updated.')
+  const saveBreaking = () => run('brk', () => {
+    const text = breaking.trim()
+    const payload = text
+      ? { text, text2: breaking2.trim(), mode: breakingRow ? 'row' : 'takeover' }
+      : null
+    return write({ breaking: payload })
+  }, breaking.trim() ? (breakingRow ? 'BREAKING live as its own row above the ticker.' : 'BREAKING is live on the ticker.') : 'BREAKING cleared.')
+  const clearBreaking = () => run('brkClear', async () => { await write({ breaking: null }); setBreaking(''); setBreaking2(''); setBreakingRow(false) }, 'BREAKING cleared.')
+  const saveChyron = () => run('chy', () => {
+    const title = chyTitle.trim(); const kicker = chyKicker.trim()
+    const payload = (title || kicker)
+      ? { kicker, title, subtitle: chySub.trim(), pill: chyPill.trim() }
+      : null
+    return write({ chyron: payload })
+  }, chyTitle.trim() || chyKicker.trim() ? 'Main chyron is live on the ticker.' : 'Main chyron cleared.')
+  const clearChyron = () => run('chyClear', async () => { await write({ chyron: null }); setChyKicker(''); setChyTitle(''); setChySub(''); setChyPill('') }, 'Main chyron cleared.')
+  const toggleActions = () => run('actToggle', () => write({ showActions: !showActions }), !showActions ? 'Fan-action counter is now on air.' : 'Fan-action counter hidden from air.')
+  const resetActions = () => run('actReset', () => setDoc(doc(db, 'public', 'onAirActions'), { total: 0, votes: 0, submissions: 0, spotlights: 0, buys: 0, since: new Date().toISOString(), updatedAt: new Date().toISOString() }), 'Fan-action counter reset for a new session.')
+  const saveRightNowGate = () => run('rnGate', () => {
+    const n = Math.floor(Number(rightNowMin))
+    if (!(n > 0)) throw new Error('Enter a positive $CSGN amount.')
+    return setDoc(doc(db, 'config', 'tokenGates'), { rightNowMinCsgn: n, updatedAt: new Date().toISOString() }, { merge: true })
+  }, 'Right Now threshold updated — the server enforces this immediately.')
+
+  const saveJukebox = () => run('jukebox', () => {
+    const n = Number(jukeboxSol)
+    if (!(n > 0)) throw new Error('Enter a positive SOL amount.')
+    return write({ spotlightSol: n })
+  }, 'Coin Jukebox price updated.')
+  // Saving either card is how you take the wheel — auto-fill stops overwriting
+  // until you hand it back.
+  const saveLive = () => run('live', () => write({
+    nowLive: liveName.trim() || liveTitle.trim() ? { name: liveName.trim(), title: liveTitle.trim() } : null,
+    onAirAuto: false,
+  }), 'Live-now pinned manually — auto-fill from the schedule is off.')
+  const saveNext = () => run('next', () => write({
+    upNext: nextName.trim() || nextStart.trim() ? { name: nextName.trim(), startET: nextStart.trim() } : null,
+    onAirAuto: false,
+  }), 'Up-next pinned manually — auto-fill from the schedule is off.')
+  const toggleOnAirAuto = () => run('onAirAuto', () => write({ onAirAuto: !onAirAuto }),
+    onAirAuto ? 'Manual control — these two cards stay exactly as you set them.' : 'Auto-fill on — both cards track the schedule within a minute.')
   const saveGov = () => run('gov', () => write({ governance: parseBeatLines(govText, 'CSGN GOVERNANCE') }), 'Governance beats updated.')
   const saveTweets = () => run('tweets', () => write({ tweets: parseTweetLines(tweetsText) }), 'X post rotation updated — 30s per card on the ticker.')
 
@@ -133,48 +226,181 @@ export default function TickerControlsCard() {
   const input = 'w-full rounded-lg bg-white/[0.04] border border-white/[0.1] focus:border-primary-500/60 outline-none px-3 py-2 text-sm'
   const label = 'block text-xs text-gray-400 font-medium mb-1'
 
+  // Module registry — each carries a live indicator so the operator can see what's
+  // on air without opening every panel.
+  const modules: Array<{ id: ModuleId; label: string; icon: LucideIcon; live?: boolean; hidden?: boolean }> = [
+    { id: 'onair', label: 'On Air', icon: Radio, live: !!(liveName || liveTitle) },
+    { id: 'breaking', label: 'Breaking & Chyron', icon: Siren, live: breakingOn || chyronOn },
+    { id: 'rail', label: 'Rail & Coins', icon: Megaphone },
+    { id: 'social', label: 'Social', icon: Twitter },
+    { id: 'vote', label: 'Vote', icon: Vote, live: !!currentVote && currentVote.status !== 'closed' },
+  ]
+
+  const statusPills: Array<{ label: string; on: boolean; tone: string }> = [
+    { label: 'BREAKING', on: breakingOn, tone: 'bg-red-500/15 text-red-300 border-red-500/30' },
+    { label: 'CHYRON', on: chyronOn, tone: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
+    { label: 'FAN COUNTER', on: showActions, tone: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' },
+    { label: 'VOTE OPEN', on: !!currentVote && currentVote.status !== 'closed', tone: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30' },
+  ]
+
   return (
     <Card hover={false} className="overflow-hidden">
-      <div className="p-4 border-b border-white/[0.06]">
-        <h3 className="font-semibold text-white">Broadcast Control — BREAKING · Live · Governance · Vote</h3>
-        <p className="text-xs text-gray-500 mt-0.5">Writes config/ticker → OBS ticker + over-live overlay pick it up within seconds.</p>
+      {/* ── Console header: what this controls + what is on air right now ── */}
+      <div className="p-4 sm:p-5 border-b border-white/[0.06] bg-gradient-to-r from-white/[0.04] to-transparent">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="font-semibold text-white text-lg">Broadcast Control</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Writes <span className="font-mono text-primary-400">config/ticker</span> → the OBS ticker + over-live overlay pick it up within seconds.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {statusPills.filter((p) => p.on).length === 0 && (
+              <span className="text-[10px] uppercase tracking-wider text-gray-600 border border-white/10 rounded-full px-2.5 py-1">Nothing overlaid</span>
+            )}
+            {statusPills.filter((p) => p.on).map((p) => (
+              <span key={p.label} className={`text-[10px] font-bold uppercase tracking-wider border rounded-full px-2.5 py-1 flex items-center gap-1.5 ${p.tone}`}>
+                <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />{p.label}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
+
+      {/* ── Module navigation ── */}
+      <div className="flex gap-1 px-2 sm:px-3 pt-2 border-b border-white/[0.06] overflow-x-auto">
+        {modules.filter((m) => !m.hidden).map((m) => (
+          <button
+            key={m.id}
+            onClick={() => setActiveModule(m.id)}
+            className={`relative flex items-center gap-2 px-3 sm:px-4 py-2.5 text-sm font-medium whitespace-nowrap rounded-t-lg transition-colors cursor-pointer ${
+              activeModule === m.id ? 'text-white bg-white/[0.06]' : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            <m.icon className="w-4 h-4" />
+            {m.label}
+            {m.live && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+            {activeModule === m.id && <span className="absolute left-2 right-2 -bottom-px h-0.5 bg-primary-500 rounded-full" />}
+          </button>
+        ))}
+      </div>
+
       <div className="p-4 sm:p-6 space-y-6">
-        {/* BREAKING */}
-        <div className="space-y-2">
+        {/* ══ MODULE: BREAKING & CHYRON ══ */}
+        <div className={`space-y-2 ${activeModule === 'breaking' ? '' : 'hidden'}`}>
           <label className={label}>BREAKING {breakingOn && <span className="text-red-400">● live now</span>}</label>
-          <textarea value={breaking} onChange={(e) => setBreaking(e.target.value)} rows={2} placeholder="Red takeover — stays on air until cleared" className={input} />
+          <textarea value={breaking} onChange={(e) => setBreaking(e.target.value)} rows={2} placeholder="Headline — stays on air until cleared" className={input} />
+          <input value={breaking2} onChange={(e) => setBreaking2(e.target.value)} placeholder="Second line (optional)" className={input} />
+          <label className="flex items-center gap-2 text-xs text-gray-300 select-none cursor-pointer">
+            <input type="checkbox" checked={breakingRow} onChange={(e) => setBreakingRow(e.target.checked)} className="accent-red-500 w-4 h-4" />
+            Show as its own row above the ticker (two rows) — the ticker keeps running below.
+            <span className="text-gray-500">Needs a taller OBS source (1930×240); at 110px it falls back to a full takeover.</span>
+          </label>
           <div className="flex gap-2">
             <Button size="sm" variant="danger" isLoading={busy === 'brk'} onClick={saveBreaking}>Set BREAKING</Button>
             <Button size="sm" variant="secondary" isLoading={busy === 'brkClear'} onClick={clearBreaking}>Clear</Button>
           </div>
         </div>
 
-        {/* Now live + Up next */}
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label className={label}>Live now (name · title)</label>
-            <input value={liveName} onChange={(e) => setLiveName(e.target.value)} placeholder="Name" className={input} />
-            <input value={liveTitle} onChange={(e) => setLiveTitle(e.target.value)} placeholder="Show title" className={input} />
-            <Button size="sm" variant="secondary" isLoading={busy === 'live'} onClick={saveLive}>Save live now</Button>
+        {/* ══ MODULE: ON AIR — fan-action counter + jukebox price ══ */}
+        <div className={`space-y-2 rounded-xl bg-white/[0.03] border border-white/[0.08] p-3 ${activeModule === 'onair' ? '' : 'hidden'}`}>
+          <div className="flex items-center justify-between">
+            <label className={label + ' mb-0'}>Fans on the board — viewer → on-air actions {showActions && <span className="text-emerald-400">● on air</span>}</label>
+            <span className="text-2xl font-bold font-mono text-white tabular-nums">{actions.total.toLocaleString('en-US')}</span>
           </div>
-          <div className="space-y-2">
-            <label className={label}>Up next (name · start ET)</label>
-            <input value={nextName} onChange={(e) => setNextName(e.target.value)} placeholder="Name" className={input} />
-            <input value={nextStart} onChange={(e) => setNextStart(e.target.value)} placeholder="10:00 PM ET" className={input} />
-            <Button size="sm" variant="secondary" isLoading={busy === 'next'} onClick={saveNext}>Save up next</Button>
+          <div className="grid grid-cols-4 gap-2 text-center">
+            {([['Votes', actions.votes], ['Headlines', actions.submissions], ['Spotlights', actions.spotlights], ['Buys', actions.buys]] as const).map(([k, v]) => (
+              <div key={k} className="rounded-lg bg-white/[0.03] py-1.5">
+                <div className="text-lg font-bold font-mono text-white tabular-nums">{v.toLocaleString('en-US')}</div>
+                <div className="text-[10px] uppercase tracking-wide text-gray-500">{k}</div>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant={showActions ? 'secondary' : 'gold'} isLoading={busy === 'actToggle'} onClick={toggleActions}>{showActions ? 'Hide from air' : 'Show on air'}</Button>
+            <Button size="sm" variant="ghost" isLoading={busy === 'actReset'} onClick={resetActions}>Reset session</Button>
+          </div>
+          <p className="text-xs text-gray-500">Counts every token-weighted vote, holder headline, and coin-spotlight play as it lands. Auto-increments server-side; flip it on air whenever you want to show the crowd steering the broadcast.</p>
+          <div className="flex items-end gap-2 pt-1 border-t border-white/[0.06] mt-1">
+            <div className="flex-1">
+              <label className={label}>Coin Jukebox price (SOL a holder pays to spotlight a coin)</label>
+              <input value={jukeboxSol} onChange={(e) => setJukeboxSol(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.1" inputMode="decimal" className={input} />
+            </div>
+            <Button size="sm" variant="secondary" isLoading={busy === 'jukebox'} onClick={saveJukebox}>Save</Button>
+          </div>
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <label className={label}>Right Now rail — $CSGN needed to post</label>
+              <input value={rightNowMin} onChange={(e) => setRightNowMin(e.target.value.replace(/[^0-9]/g, ''))} placeholder="5000000" inputMode="numeric" className={input} />
+            </div>
+            <Button size="sm" variant="secondary" isLoading={busy === 'rnGate'} onClick={saveRightNowGate}>Save</Button>
+          </div>
+          <p className="text-xs text-gray-500">Retune this as the price moves — a fixed token count is a moving dollar cost, and a gate nobody can pass is a gate nobody uses.</p>
+        </div>
+
+        {/* Main chyron — full control of the three headline lines */}
+        <div className={`space-y-2 ${activeModule === 'breaking' ? '' : 'hidden'}`}>
+          <label className={label}>Main chyron — all three lines {chyronOn && <span className="text-emerald-400">● live now</span>}</label>
+          <div className="grid sm:grid-cols-[1fr_auto] gap-2">
+            <input value={chyKicker} onChange={(e) => setChyKicker(e.target.value)} placeholder="Kicker (small top line) — e.g. CSGN ALERT" className={input} />
+            <input value={chyPill} onChange={(e) => setChyPill(e.target.value)} placeholder="Pill label (CSGN)" className={input + ' sm:w-40'} />
+          </div>
+          <input value={chyTitle} onChange={(e) => setChyTitle(e.target.value)} placeholder="Headline (big middle line) — auto-shrinks to fit, never clips" className={input} />
+          <input value={chySub} onChange={(e) => setChySub(e.target.value)} placeholder="Subline (bottom line)" className={input} />
+          <div className="flex gap-2">
+            <Button size="sm" variant="gold" isLoading={busy === 'chy'} onClick={saveChyron}>Set chyron</Button>
+            <Button size="sm" variant="secondary" isLoading={busy === 'chyClear'} onClick={clearChyron}>Clear</Button>
           </div>
         </div>
 
+        {/* Now live + Up next — schedule-driven by default, manual on demand */}
+        <div className={`space-y-3 ${activeModule === 'onair' ? '' : 'hidden'}`}>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-sm text-white font-medium">
+                Live now &amp; Up next{' '}
+                <span className={onAirAuto ? 'text-emerald-400' : 'text-amber-400'}>
+                  {onAirAuto ? '● auto from schedule' : '● manual override'}
+                </span>
+              </p>
+              <p className="text-xs text-gray-500">
+                {onAirAuto
+                  ? 'Both cards track the real schedule every minute — claimed slots show the streamer, open hours read “Open Stage”.'
+                  : 'Pinned to what you typed. Turn auto back on to follow the schedule again.'}
+              </p>
+            </div>
+            <Button size="sm" variant={onAirAuto ? 'ghost' : 'gold'} isLoading={busy === 'onAirAuto'} onClick={toggleOnAirAuto}>
+              {onAirAuto ? 'Take manual control' : 'Resume auto-fill'}
+            </Button>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className={label}>Live now (name · title)</label>
+              <input value={liveName} onChange={(e) => setLiveName(e.target.value)} placeholder="Name" className={input} />
+              <input value={liveTitle} onChange={(e) => setLiveTitle(e.target.value)} placeholder="Show title" className={input} />
+              <Button size="sm" variant="secondary" isLoading={busy === 'live'} onClick={saveLive}>Save live now</Button>
+            </div>
+            <div className="space-y-2">
+              <label className={label}>Up next (name · start ET)</label>
+              <input value={nextName} onChange={(e) => setNextName(e.target.value)} placeholder="Name" className={input} />
+              <input value={nextStart} onChange={(e) => setNextStart(e.target.value)} placeholder="10:00 PM ET" className={input} />
+              <Button size="sm" variant="secondary" isLoading={busy === 'next'} onClick={saveNext}>Save up next</Button>
+            </div>
+          </div>
+        </div>
+
+        {/* ══ MODULE: RAIL & COINS — injected rail/spotlight + governance beats ══ */}
+        {railModule && <div className={activeModule === 'rail' ? '' : 'hidden'}>{railModule}</div>}
+
         {/* Governance beats */}
-        <div className="space-y-2">
+        <div className={`space-y-2 ${activeModule === 'rail' ? '' : 'hidden'}`}>
           <label className={label}>Governance beats (one per line · optional TAG | text)</label>
-          <textarea value={govText} onChange={(e) => setGovText(e.target.value)} rows={3} placeholder={'Holders decide tonight’s stream\nBURN | 2.1M $CSGN burned this week'} className={input} />
+          <textarea value={govText} onChange={(e) => setGovText(e.target.value)} rows={3} placeholder={'Holders decide tonight’s stream\nTREASURY | 42 SOL routed to distribution'} className={input} />
           <Button size="sm" variant="secondary" isLoading={busy === 'gov'} onClick={saveGov}>Save governance</Button>
         </div>
 
-        {/* X post showcase */}
-        <div className="space-y-2">
+        {/* ══ MODULE: SOCIAL — X post showcase ══ */}
+        <div className={`space-y-2 ${activeModule === 'social' ? '' : 'hidden'}`}>
           <label className={label}>X posts — 30s showcase · one per line: <span className="text-gray-500">@handle | Name | tweet text</span> (prefix ! for verified)</label>
           <textarea value={tweetsText} onChange={(e) => setTweetsText(e.target.value)} rows={4} placeholder={'!@blknoiz06 | Ansem | CSGN is the ESPN of crypto\n@CSGNet | Holders pick tonight’s stream — vote at csgn.fun'} className={input} />
           <div className="flex items-center justify-between">
@@ -183,8 +409,8 @@ export default function TickerControlsCard() {
           </div>
         </div>
 
-        {/* Vote */}
-        <div className="space-y-3 border-t border-white/[0.06] pt-5">
+        {/* ══ MODULE: VOTE — token-weighted programming vote ══ */}
+        <div className={`space-y-3 ${activeModule === 'vote' ? '' : 'hidden'}`}>
           <div className="flex items-center justify-between">
             <label className={label + ' mb-0'}>Tonight’s vote (token-weighted)</label>
             {currentVote && <span className={`text-xs font-bold uppercase ${currentVote.status === 'closed' ? 'text-red-400' : 'text-emerald-400'}`}>{currentVote.status === 'closed' ? 'Closed' : 'Open'}</span>}

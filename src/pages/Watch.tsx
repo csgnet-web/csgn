@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Gamepad2, Grid3X3 } from 'lucide-react'
-import { formatESTRange, type Slot } from '@/lib/slots'
+import { formatESTRange, isSlotClaimable, type Slot } from '@/lib/slots'
 import { api } from '@/lib/api'
 import { parseXPostId } from '@/lib/xembed'
 import { useAuth } from '@/contexts/useAuth'
@@ -20,6 +20,15 @@ const bannerItems = [
   'Connect Your Twitch and Go Live on CSGN',
 ] as const
 
+/** When nobody holds the current slot, the banner sells the empty stage instead.
+ *  Kept at four faces because the banner is a 3D prism (rotateX every 90deg). */
+const openStageBanner = [
+  'STAGE IS OPEN! GO LIVE NOW!',
+  'Connect your Twitch/Phantom and earn fees!',
+  "CSGN: Crypto's Entertainment Flagship",
+  'Claim a slot at csgn.fun/schedule',
+] as const
+
 export default function Watch() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -35,7 +44,7 @@ export default function Watch() {
   }, [showSignupNotice, navigate, location.pathname])
 
   const { user, profile } = useAuth()
-  const { currentSlot, allSlots, manualOverride } = useLiveSlot()
+  const { currentSlot, allSlots, manualOverride, networkBlockEnabled } = useLiveSlot()
   const [claiming, setClaiming] = useState(false)
   const [claimError, setClaimError] = useState('')
   const [showWipe, setShowWipe] = useState(false)
@@ -72,18 +81,21 @@ export default function Watch() {
     const v = (value ?? '').trim()
     return v && !/^csgn/i.test(v) ? v : ''
   }
-  const streamerName = notNetworkBrand(currentSlot?.assignedName) || notNetworkBrand(manualOverride?.streamerName) || 'Open Slot'
+  const streamerName = notNetworkBrand(currentSlot?.assignedName) || notNetworkBrand(manualOverride?.streamerName) || 'THE STAGE IS OPEN'
   const streamTitle = notNetworkBrand(currentSlot?.streamTitle) || notNetworkBrand(manualOverride?.title) || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
+  // Nobody on the stage right now → sell the open stage rather than the coming-soons.
+  const stageOpen = !currentSlot?.assignedUid
+  const banner = stageOpen ? openStageBanner : bannerItems
 
   // Live once the current slot is confirmed or live (or an X broadcast is up),
   // so the OFFLINE→LIVE flip tracks the slot status automatically.
   const slotLive = Boolean(currentSlot && (currentSlot.status === 'confirmed' || currentSlot.status === 'live'))
 
-  const canClaimCurrent =
-    Boolean(currentSlot) &&
-    currentSlot?.status === 'open' &&
-    !currentSlot?.assignedUid
+  // One rule, shared with /schedule and the server. The old hand-rolled check
+  // (status === 'open') hid the button on the airing hour the moment its status
+  // drifted, and offered it on network hours the server would then reject.
+  const canClaimCurrent = !!currentSlot && isSlotClaimable(currentSlot, networkBlockEnabled)
 
   const handleClaimSlot = useCallback(async (slot: Slot) => {
     if (!user || !profile) {
@@ -140,7 +152,7 @@ export default function Watch() {
           </div>
           <div className="watch-roll-banner flex-1 min-w-0 sm:min-w-[240px] lg:flex-none lg:w-[520px] lg:ml-auto" aria-label="Live game updates">
             <div className="watch-roll-banner__inner">
-              {bannerItems.map((item, index) => (
+              {banner.map((item, index) => (
                 <span
                   key={item}
                   className="watch-roll-banner__face"

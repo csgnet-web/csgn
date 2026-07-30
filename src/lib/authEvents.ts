@@ -1,8 +1,14 @@
-import { Timestamp, addDoc, collection, serverTimestamp } from 'firebase/firestore'
-import { db } from '@/config/firebase'
-
-/** Admin auth-log retention; docs self-delete via the Firestore TTL policy on expiresAt. */
-const AUTH_EVENT_TTL_MS = 90 * 24 * 60 * 60 * 1000
+// Client-side auth audit logging.
+//
+// These events are written by the SERVER (netlify/functions/logAuthEvent), not
+// straight to Firestore. That's deliberate: the most valuable events fire before
+// a session exists (`signin-start`, `signin-failure`, `signup-email-start`, and a
+// `signup-email-failure` where account creation itself failed). Firestore's rule
+// for auth_events requires an authenticated caller, so browser-side writes for
+// those were silently rejected — the admin's Auth Events tab looked empty even
+// when people were trying and failing to sign up. Going through the function
+// (firebase-admin bypasses rules) captures the whole funnel, and lets the rule
+// stay server-only so the collection can't be spammed from a console.
 
 export type AuthEventKind =
   | 'twitch-callback-start'
@@ -28,15 +34,18 @@ export interface AuthEventFields {
 
 export async function logAuthEvent(kind: AuthEventKind, fields: AuthEventFields = {}): Promise<void> {
   try {
-    await addDoc(collection(db, 'auth_events'), {
-      kind,
-      ts: serverTimestamp(),
-      uid: fields.uid ?? null,
-      twitchUsername: fields.twitchUsername ?? null,
-      errorMessage: fields.errorMessage ?? null,
-      meta: fields.meta ?? null,
-      ua: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-      expiresAt: Timestamp.fromDate(new Date(Date.now() + AUTH_EVENT_TTL_MS)),
+    await fetch('/.netlify/functions/logAuthEvent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // keepalive so an event fired during a redirect/unload still ships.
+      keepalive: true,
+      body: JSON.stringify({
+        kind,
+        uid: fields.uid ?? null,
+        twitchUsername: fields.twitchUsername ?? null,
+        errorMessage: fields.errorMessage ?? null,
+        ua: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      }),
     })
   } catch {
     // Best-effort logging: never let an audit-write failure break auth.

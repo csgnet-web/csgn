@@ -83,6 +83,12 @@ Simplified v1 flow. Mobile full-page Twitch OAuth redirect (replaces popup, work
 - `?debug=1` panel adds a **`reveal`** row (`no-ads · 10s countdown` vs `ad-mask · 33s`); `?preview=countdown` rehearses the bumper; the reveal deadline no longer strips the gate's rebuild power from a feed that actually confirmed
 - Honest write-up of the **Twitch Turbo** question (Turbo only helps a session authenticated in the *embed's* context, which an OBS CEF source isn't by default — fragile to rely on) and a full **broadcast-graphics build plan** ([`docs/broadcast-graphics.md`](docs/broadcast-graphics.md)): code-driven lower thirds, bug/clock, crypto/headlines ticker, and the PIP whip-around (content square + 1–2 host side-screens), all Firestore-controlled the same way the intermission board and emergency override already are, with own-ingest RTMP as the "decentralized TV network" endgame
 
+### v1.5 — July 2026
+**Burn-free, treasury-first tokenomics + one consolidated strategy doc.**
+- Removed the coin-spotlight **burn** mechanic entirely (`burnSpotlight` function, `spotlightBurn` client, `verifyCsgnBurn`). **CSGN is never burned** — the **Coin Jukebox** (pay SOL to spotlight a coin, TouchTunes-style) routes all proceeds to the **CSGN treasury**, which recycles them into distribution, creator payouts and liquidity
+- Ticker/crypto upgrades: the dock chart is now the **last 24h** of price action (matches the 24h delta); the **Meme 100** is a live **power ranking** blending volume + market cap + social buzz + holder $CSGN votes, with a leaderboard card and a community pick; token voting is available from the **profile** as well as the Holder Zone
+- All scattered planning docs (forward-strategy, business-spec, founder-readout, consultant-review, token-design-space, marketing-audit) consolidated into a single **[`docs/master-plan.md`](docs/master-plan.md)** — since simplified and rewritten around the wedge (gaming × sports × crypto × trading for young men), the founder's show/league playbook, the burn-free treasury token model, and a 30-day production calendar
+
 ---
 
 ## Getting Started

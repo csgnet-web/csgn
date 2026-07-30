@@ -3,8 +3,10 @@
 // Writes live creatorFees to the active slot doc in Firestore.
 // Browser clients NEVER call DexScreener — they read from the single Firestore listener.
 
-import { queryCollection, countCollection, getDoc, writeDoc, commitWrites, createWrite, fieldFilter, order } from './_shared/firebaseAdmin'
+import { queryCollection, countCollection, getDoc, writeDoc, commitWrites, createWrite, updateWrite, fieldFilter, order } from './_shared/firebaseAdmin'
 import { buildExpectedSlotsForDate, buildSlotDoc } from './_shared/schedule'
+import { deriveNowLive, deriveUpNext, type OnAirSlot } from './_shared/onAir'
+import { readLiveWeights, settleTally, type BallotRow } from './_shared/settleVotes'
 import {
   buildTokenStatsDoc,
   fetchDexData,
@@ -178,11 +180,14 @@ const SCHEDULE_META_PATH = 'config/scheduleMeta'
  * The fill covers EVERY missing template slot in the window, not just the
  * tail, so each of the next 7 days always carries its full 12 slots.
  *
- * The fill is strictly CREATE-ONLY (Firestore create preconditions): existing
- * slots — including any the admin retyped, assigned, or hand-edited — are
- * never patched or deleted here. Deterministic doc IDs make the fill
- * idempotent, so a racing admin reseed at worst fails one commit and the next
- * minute's run picks it back up.
+ * The fill is CREATE-ONLY for content (Firestore create preconditions): existing
+ * slots — assigned, retyped, or hand-edited — are never overwritten or deleted.
+ * The single exception is a LEGACY TYPE REPAIR: docs still carrying the
+ * pre-Open/Network values ('ceo' / 'auction') are patched to the template's
+ * type, because 'ceo' normalizes to the reserved network block and would leave
+ * a daytime slot permanently unclaimable. Deliberate 'open'/'network' choices
+ * are left alone. Deterministic doc IDs make the fill idempotent, so a racing
+ * admin reseed at worst fails one commit and the next minute's run picks it up.
  */
 async function topUpSchedule(): Promise<void> {
   try {
@@ -246,10 +251,27 @@ async function topUpSchedule(): Promise<void> {
     const writes = [...expected.values()]
       .filter((slot) => !existingIds.has(slot.id))
       .map((slot) => createWrite(`slots/${slot.id}`, buildSlotDoc(slot, DEFAULT_STREAM_URL)))
-    if (writes.length === 0) return
+    // Self-heal the block type against the hour the slot actually airs. The type
+    // is fully derivable from the start time — 7 PM–3 AM ET is network, every
+    // other hour is open — so any disagreement is corruption, not a preference.
+    // This used to only repair the legacy 'ceo'/'auction' values, which left the
+    // real failure uncovered: a reseed bug stamped literal 'network' onto daytime
+    // slots, they looked like a deliberate choice, and the entire schedule went
+    // permanently unclaimable with nothing to tell anyone why. A daytime
+    // Originals hour is expressed by ASSIGNING the slot, never by re-typing it.
+    const repairs = existing.flatMap((row) => {
+      const id = row.path.split('/').pop()!
+      const exp = expected.get(id)
+      if (!exp) return []
+      const current = String((row.data as { type?: unknown }).type || '')
+      if (current === exp.type) return []
+      return [updateWrite(`slots/${id}`, { type: exp.type, updatedAt: new Date() }, true)]
+    })
 
-    await commitWrites(writes)
-    console.log(`[feePoller] topUpSchedule created ${writes.length} slots (horizon was ${((latestStartMs - nowMs) / 86_400_000).toFixed(1)}d)`)
+    if (writes.length === 0 && repairs.length === 0) return
+
+    await commitWrites([...writes, ...repairs])
+    console.log(`[feePoller] topUpSchedule created ${writes.length} slots, repaired ${repairs.length} legacy types (horizon was ${((latestStartMs - nowMs) / 86_400_000).toFixed(1)}d)`)
   } catch (err) {
     console.error('[feePoller] topUpSchedule error:', err)
   }
@@ -267,6 +289,22 @@ export function pickActiveSlot(rows: SlotRow[], nowMs = Date.now()): SlotRow | n
       const start = s.startTime ? new Date(s.startTime).getTime() : 0
       const end = s.endTime ? new Date(s.endTime).getTime() : 0
       return nowMs >= start && nowMs < end && (s.status === 'confirmed' || s.status === 'live')
+    }) ?? null
+  )
+}
+
+/**
+ * The slot on the clock right now, claimed or not. `pickActiveSlot` only counts
+ * confirmed/live slots because fee polling needs a real streamer — but the
+ * ticker's Live Now card should still name the hour when it's sitting open, so
+ * viewers see "Open Stage" instead of a blank card.
+ */
+export function pickCurrentSlot(rows: SlotRow[], nowMs = Date.now()): SlotRow | null {
+  return (
+    rows.find((r) => {
+      const start = r.data.startTime ? new Date(r.data.startTime).getTime() : 0
+      const end = r.data.endTime ? new Date(r.data.endTime).getTime() : 0
+      return nowMs >= start && nowMs < end
     }) ?? null
   )
 }
@@ -312,6 +350,63 @@ async function advanceSlotLifecycles(): Promise<SlotRow[]> {
   } catch (err) {
     console.error('[feePoller] advanceSlotLifecycles error:', err)
     return []
+  }
+}
+
+/**
+ * The Meme-100 vote never closes, so it can't be settled at a close. Left alone
+ * its tally only ever grows: a wallet that sold still counts, and the same coins
+ * counted twice if they were moved to a fresh wallet and voted again. So it gets
+ * re-settled against live balances on a slow cadence — infrequent enough to cost
+ * almost nothing, often enough that the on-air power ranking reflects real,
+ * currently-held conviction rather than everything anyone ever felt.
+ */
+const MEME_SETTLE_INTERVAL_MS = 30 * 60 * 1000
+const MEME_SETTLE_MAX_BALLOTS = 150
+
+async function settleMemeVote(): Promise<void> {
+  try {
+    const current = await getDoc<{ settledAt?: string }>('public/memeVote')
+    const last = current?.settledAt ? Date.parse(current.settledAt) : 0
+    if (Number.isFinite(last) && Date.now() - last < MEME_SETTLE_INTERVAL_MS) return
+
+    const rows = await queryCollection('memeBallots', [], [], MEME_SETTLE_MAX_BALLOTS)
+    if (rows.length === 0) return
+    const ballots: Array<BallotRow & { storedWeight?: number }> = rows.flatMap((row) => {
+      const d = row.data as { wallet?: unknown; symbol?: unknown; weight?: unknown }
+      const wallet = String(d.wallet || row.path.split('/').pop() || '')
+      const key = String(d.symbol || '')
+      return wallet && key ? [{ wallet, key, storedWeight: Number(d.weight) || 0 }] : []
+    })
+    const live = await readLiveWeights(ballots.map((b) => b.wallet))
+    const settled = settleTally(ballots, live)
+    await writeDoc('public/memeVote', {
+      tallies: settled.tally,
+      settledAt: new Date().toISOString(),
+      settledCounts: { counted: settled.counted, dropped: settled.dropped, unread: settled.unread, ballots: ballots.length },
+      updatedAt: new Date().toISOString(),
+    }, { merge: true })
+    console.log(`[feePoller] meme vote settled: ${settled.counted} counted, ${settled.dropped} dropped, ${settled.unread} unread`)
+  } catch (err) {
+    console.error('[feePoller] settleMemeVote error:', err)
+  }
+}
+
+/** The next slot to start. One tiny query so the ticker's Up Next card tracks
+ *  the real schedule instead of whatever an operator last typed. */
+async function fetchNextSlot(): Promise<SlotRow | null> {
+  try {
+    const nowISO = new Date().toISOString()
+    const rows = await queryCollection(
+      'slots',
+      [fieldFilter('startTime', 'GREATER_THAN', nowISO)],
+      [order('startTime', 'ASCENDING')],
+      1,
+    )
+    return (rows[0] as SlotRow) ?? null
+  } catch (err) {
+    console.error('[feePoller] fetchNextSlot error:', err)
+    return null
   }
 }
 
@@ -453,6 +548,9 @@ export const handler = async () => {
   // Creator Fees log can prove the streamer was actually live, not intermission.
   await logSlotActivity(active)
 
+  // Re-anchor the Meme-100 to what voters actually still hold (every 30 min).
+  await settleMemeVote()
+
   let tokenStatsWritten = false
   let lastDex: DexData | null = null
   for (let i = 0; i < 4; i++) {
@@ -484,6 +582,23 @@ export const handler = async () => {
   tickerPatch.liveFee = liveAssigned
     ? { name: active!.data.assignedName, usd: Math.max(0, active!.data.creatorFees?.feeOwedUSD ?? 0), sinceISO: active!.data.startTime ?? '' }
     : null
+
+  // Live now / Up next follow the real schedule — unless an operator has taken
+  // manual control (config/ticker.onAirAuto === false), in which case their
+  // typed cards stay exactly as they left them.
+  try {
+    const ticker = await getDoc<{ onAirAuto?: boolean }>('config/ticker')
+    if (ticker?.onAirAuto !== false) {
+      const next = await fetchNextSlot()
+      const current = pickCurrentSlot(rows)
+      tickerPatch.nowLive = deriveNowLive(current?.data as OnAirSlot | undefined)
+      tickerPatch.upNext = deriveUpNext(next?.data as OnAirSlot | undefined)
+      tickerPatch.onAirAuto = true
+    }
+  } catch (err) {
+    console.error('[feePoller] on-air auto-fill error:', err)
+  }
+
   try {
     await writeDoc('config/ticker', tickerPatch, { merge: true })
   } catch (err) {

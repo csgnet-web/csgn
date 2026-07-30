@@ -126,14 +126,23 @@ export function LiveSlotProvider({ children }: { children: React.ReactNode }) {
     return () => { clearTimeout(readyBackstop); unsub() }
   }, [])
 
+  // The 7 PM–3 AM network block on/off switch, shared by every claim surface.
+  const [networkBlockEnabled, setNetworkBlockEnabled] = useState(true)
+  useEffect(() => {
+    return onSnapshot(doc(db, 'config', 'scheduleMeta'), (snap) => {
+      const d = snap.exists() ? snap.data() : {}
+      setNetworkBlockEnabled(d.networkBlockEnabled !== false) // absent = on
+    }, () => {})
+  }, [])
+
   // Derive current slot from shared slots list
   const currentSlot = useMemo(() => {
     return allSlots.find((s) => nowMs >= toMillis(s.startTime) && nowMs < toMillis(s.endTime)) ?? null
   }, [allSlots, nowMs])
 
   const value = useMemo<LiveSlotContextValue>(
-    () => ({ currentSlot, allSlots, manualOverride, tokenStats, nowMs, slotsReady }),
-    [currentSlot, allSlots, manualOverride, tokenStats, nowMs, slotsReady],
+    () => ({ currentSlot, allSlots, manualOverride, tokenStats, nowMs, slotsReady, networkBlockEnabled }),
+    [currentSlot, allSlots, manualOverride, tokenStats, nowMs, slotsReady, networkBlockEnabled],
   )
 
   return <LiveSlotContext.Provider value={value}>{children}</LiveSlotContext.Provider>

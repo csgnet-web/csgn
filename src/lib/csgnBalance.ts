@@ -33,4 +33,6 @@ export async function fetchCsgnBalance(walletAddress: string): Promise<number> {
   }
 }
 
-export const CSGN_RIGHT_NOW_MIN = 5_000_000
+// The Right Now threshold now lives in src/lib/tokenGates.ts (and, live, in
+// config/tokenGates) so the client and the server can never drift apart.
+export { DEFAULT_TOKEN_GATES } from './tokenGates'

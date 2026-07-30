@@ -54,7 +54,12 @@ async function accessToken(): Promise<string> {
 function docUrl(path: string): string { return `https://firestore.googleapis.com/v1/projects/${projectId()}/databases/(default)/documents/${path}` }
 function commitUrl(): string { return `https://firestore.googleapis.com/v1/projects/${projectId()}/databases/(default)/documents:commit` }
 function beginUrl(): string { return `https://firestore.googleapis.com/v1/projects/${projectId()}/databases/(default)/documents:beginTransaction` }
-function runQueryUrl(): string { return `https://firestore.googleapis.com/v1/projects/${projectId()}/databases/(default)/documents:runQuery` }
+/** Root query, or scoped under a parent doc so subcollections are reachable
+ *  (e.g. parentPath 'votes/abc' + collectionId 'ballots'). */
+function runQueryUrl(parentPath?: string): string {
+  const base = `https://firestore.googleapis.com/v1/projects/${projectId()}/databases/(default)/documents`
+  return parentPath ? `${base}/${parentPath}:runQuery` : `${base}:runQuery`
+}
 function docName(path: string): string { return `projects/${projectId()}/databases/(default)/documents/${path}` }
 
 export function encodeValue(value: unknown): FirestoreValue {
@@ -120,13 +125,22 @@ export async function commitWrites(writes: unknown[], transaction?: string) {
   if (!res.ok) throw new Error(`Firestore commit failed: ${res.status} ${await res.text()}`)
 }
 
+/** Atomic field increments (Firestore transform): creates the doc if missing,
+ *  bumps each field by its delta, and stamps updatedAt server-side. Powers the
+ *  live "on-air actions" counter the OBS ticker polls. */
+export async function incrementDoc(path: string, fields: Record<string, number>, stampUpdatedAt = true) {
+  const fieldTransforms: unknown[] = Object.entries(fields).map(([fieldPath, n]) => ({ fieldPath, increment: { integerValue: String(n) } }))
+  if (stampUpdatedAt) fieldTransforms.push({ fieldPath: 'updatedAt', setToServerValue: 'REQUEST_TIME' })
+  await commitWrites([{ transform: { document: docName(path), fieldTransforms } }])
+}
+
 export function updateWrite(path: string, data: Record<string, unknown>, exists = true) { return { update: { name: docName(path), fields: encodeFields(data) }, updateMask: { fieldPaths: Object.keys(data) }, currentDocument: { exists } } }
 export function createWrite(path: string, data: Record<string, unknown>) { return { update: { name: docName(path), fields: encodeFields(data) }, currentDocument: { exists: false } } }
 export function deleteWrite(path: string) { return { delete: docName(path) } }
 
-export async function queryCollection(collectionId: string, where: unknown[], orderBy: unknown[] = [], limit = 50): Promise<Array<{ path: string; data: Record<string, unknown> }>> {
+export async function queryCollection(collectionId: string, where: unknown[], orderBy: unknown[] = [], limit = 50, parentPath?: string): Promise<Array<{ path: string; data: Record<string, unknown> }>> {
   const structuredQuery = { from: [{ collectionId }], where: where.length ? { compositeFilter: { op: 'AND', filters: where } } : undefined, orderBy, limit }
-  const res = await authedFetch(runQueryUrl(), { method: 'POST', body: JSON.stringify({ structuredQuery }) })
+  const res = await authedFetch(runQueryUrl(parentPath), { method: 'POST', body: JSON.stringify({ structuredQuery }) })
   if (!res.ok) throw new Error(`Firestore query failed: ${res.status} ${await res.text()}`)
   const rows = await res.json() as Array<{ document?: { name: string; fields?: Fields } }>
   return rows.filter((r) => r.document).map((r) => ({ path: r.document!.name.split('/documents/')[1], data: decodeFields(r.document!.fields || {}) }))

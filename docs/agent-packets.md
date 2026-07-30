@@ -3,12 +3,12 @@
 > Scoped, self-contained work packets for future engineering/ops agents (or the
 > founder). Each packet lists goal, context files, spec, and acceptance criteria
 > so an agent can start cold. Ordering within each lane ≈ recommended priority.
-> Companion strategy doc: [`business-spec.md`](./business-spec.md).
+> Companion strategy doc: [`master-plan.md`](./master-plan.md).
 
 Conventions for any agent picking one up: develop on the designated branch,
 never commit secrets, run `npx eslint src/ && npx tsc -b && npx vitest run &&
 npm run build` before finishing, and label anything user-visible with the
-built/planned honesty rule from `business-spec.md`.
+built/planned honesty rule from `master-plan.md`.
 
 ---
 
@@ -39,7 +39,7 @@ built/planned honesty rule from `business-spec.md`.
 ### A3. VOD Broadcast System, Phase 1 — scheduled playlist + real resume
 - **Goal:** make "resuming the previous VOD" true across encoder reloads
   (today `VodRotator` keeps its index in React state — lost on every reload).
-- **Context:** `business-spec.md` §3 (data model + acceptance tests, R1),
+- **Context:** `master-plan.md` §10 (VOD build order),
   `src/components/player/VodRotator.tsx`, `src/lib/masterControl.ts`.
 - **Spec:** `playback/vodState` doc `{ itemId, positionS, updatedAt }` written
   every ~15s while VOD plays; on INTERMISSION entry, resume from it if fresh;
@@ -52,7 +52,7 @@ built/planned honesty rule from `business-spec.md`.
 - **Goal:** the founder's full 24/7 VOD vision: Priority/Scheduled tier, Series
   tier, shuffled Rerun pool, National Anthem 3:59–4:00 AM ET nightly, and
   ~15-min "Claim Here" takeover windows weighted overnight.
-- **Context:** A3 shipped first; `business-spec.md` §3 tier table;
+- **Context:** A3 shipped first;
   `IntermissionBoard` open-stage panel (the Claim look exists).
 - **Spec:** extend `config/vodPlaylist` → `{ scheduled: [], series: [],
   rerunPool: [], specials: [{ type:'anthem', atET:'03:59' }] }`; deterministic
@@ -87,7 +87,7 @@ built/planned honesty rule from `business-spec.md`.
 ### B1. Partner daypart mechanism (`config/partnerBlock`)
 - **Goal:** the Ansem-class deal rail: a recurring daily window where the
   network runs a partner's branding + source, with a begin date.
-- **Context:** `business-spec.md` Track B; `Player.tsx` broadcast derivation
+- **Context:** `Player.tsx` broadcast derivation
   (the `emergencyOverride` pattern is the template); `masterControl.ts`.
 - **Spec:** `{ active, partner, streamUrl, windowET: { startHour, hours },
   beginDate, brand: { label, color }, token: { symbol, mint } }`; during the
@@ -110,7 +110,7 @@ built/planned honesty rule from `business-spec.md`.
 
 ### B3. Holder utility: wallet-gated badges & slots
 - **Goal:** $CSGN/$ANSEM holders get visible status + access — utility only,
-  no payouts (legal line per `business-spec.md` §5).
+  no payouts (legal line per `master-plan.md` §10).
 - **Context:** `src/hooks/usePhantomWallet.ts`, `src/lib/slots.ts`
   (`requestSlot`), `@solana/web3.js` already in deps.
 - **Spec:** read SPL balance for configured mints on wallet connect; threshold
@@ -119,19 +119,10 @@ built/planned honesty rule from `business-spec.md`.
 - **Accept:** below-threshold wallet sees a clear "requires N tokens" state;
   balances re-checked server-side at claim time (never trust the client).
 
-### B4. Marketplace re-open kit (post day-30 gate)
-- **Goal:** everything needed to flip auctions back on in one PR.
-- **Context:** `src/lib/slots.ts` (the two `'ceo'` operator overrides,
-  quadratic `getMinimumBid`), `netlify/functions/_shared/schedule.ts`.
-- **Spec:** revert instructions + a `SLOT_MODE` env/config switch instead of
-  code edits; bid-flow smoke tests; Admin toggle with confirm.
-- **Accept:** flipping the switch on a staging doc makes new daytime slots
-  auction-typed while existing assigned slots are untouched.
-
 ## Lane C — Growth / business ops
 
 ### C1. Clip engine ops rail (non-code or light-code)
-- **Goal:** the 10h/wk → clips pipeline from `business-spec.md` §2 as a
+- **Goal:** the clip pipeline from `master-plan.md` §7 (1–3 clips/day) as a
   repeatable checklist + folder/naming conventions + end-card template, so AI
   clippers (Opus/Klap/Vizard) slot in without decisions each day.
 - **Accept:** `docs/clip-pipeline.md` an operator can follow start-to-finish;
@@ -146,15 +137,15 @@ built/planned honesty rule from `business-spec.md`.
 - **Accept:** webhook posts land in the right channels; secrets via env only;
   a `docs/newsroom.md` runbook for the human war-room channels.
 
-### C3. Ansem pitch package
-- **Goal:** the outreach artifact for Track B: one-pager (daypart terms,
-  utility mechanics, screenshots of the spotlight/ticker with $ANSEM live) +
-  the 90-day pilot term sheet skeleton from `business-spec.md`.
+### C3. Partner/KOL pitch package
+- **Goal:** the outreach artifact for borrowed reach (`master-plan.md` §7.1):
+  one-pager (airtime terms, spotlight/sponsorship mechanics, screenshots of the
+  ticker with a partner coin live) + a short pilot term sheet.
 - **Accept:** founder can send it same-day; every claim in it is demoable in
   the product; day-14 gate fallback list (2–3 alt CT personalities) attached.
 
 ### C4. Metrics baseline
-- **Goal:** the KPI grid in `business-spec.md` §4 needs a source of truth.
+- **Goal:** the four weekly numbers in `master-plan.md` §7.3 needs a source of truth.
 - **Spec:** lightweight `docs/metrics.md` + a weekly template (shows shipped,
   clips posted, X followers, live concurrents, Discord members, slot claims);
   optional: a Netlify function snapshotting X follower count daily to
@@ -164,4 +155,4 @@ built/planned honesty rule from `business-spec.md`.
 ---
 
 *Maintenance note: keep this file pruned — delete packets when shipped, and
-mirror status into `business-spec.md`'s 30-day plan when a packet lands.*
+mirror status into `master-plan.md`'s 30-day plan when a packet lands.*

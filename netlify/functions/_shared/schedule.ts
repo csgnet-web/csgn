@@ -3,12 +3,12 @@
  * logic in src/lib/slots.ts (which is bound to the client Firebase SDK and so
  * can't be imported here). Keep the two templates in sync.
  *
- * Schedule (ET, DST-aware):
- *   Slots 1-8:  3:00 AM – 7:00 PM  (auction, 8 × 2h)
- *   Slots 9-12: 7:00 PM – 3:00 AM  (open slot — DB type 'ceo', 4 × 2h)
+ * Schedule (ET, DST-aware) — two blocks, no auctions:
+ *   Slots 1-8:  3:00 AM – 7:00 PM  — 'open'    (anyone can claim, 8 × 2h)
+ *   Slots 9-12: 7:00 PM – 3:00 AM  — 'network' (CSGN Originals, 4 × 2h)
  */
 
-export type SlotType = 'auction' | 'ceo'
+export type SlotType = 'open' | 'network'
 
 interface TemplateSlot {
   hourET: number
@@ -18,18 +18,18 @@ interface TemplateSlot {
 }
 
 const SCHEDULE_TEMPLATE: TemplateSlot[] = [
-  { hourET: 3, duration: 2, type: 'auction' },
-  { hourET: 5, duration: 2, type: 'auction' },
-  { hourET: 7, duration: 2, type: 'auction' },
-  { hourET: 9, duration: 2, type: 'auction' },
-  { hourET: 11, duration: 2, type: 'auction' },
-  { hourET: 13, duration: 2, type: 'auction' },
-  { hourET: 15, duration: 2, type: 'auction' },
-  { hourET: 17, duration: 2, type: 'auction' },
-  { hourET: 19, duration: 2, type: 'ceo' },
-  { hourET: 21, duration: 2, type: 'ceo' },
-  { hourET: 23, duration: 2, type: 'ceo' },
-  { hourET: 1, dayOffset: 1, duration: 2, type: 'ceo' },
+  { hourET: 3, duration: 2, type: 'open' },
+  { hourET: 5, duration: 2, type: 'open' },
+  { hourET: 7, duration: 2, type: 'open' },
+  { hourET: 9, duration: 2, type: 'open' },
+  { hourET: 11, duration: 2, type: 'open' },
+  { hourET: 13, duration: 2, type: 'open' },
+  { hourET: 15, duration: 2, type: 'open' },
+  { hourET: 17, duration: 2, type: 'open' },
+  { hourET: 19, duration: 2, type: 'network' },
+  { hourET: 21, duration: 2, type: 'network' },
+  { hourET: 23, duration: 2, type: 'network' },
+  { hourET: 1, dayOffset: 1, duration: 2, type: 'network' },
 ]
 
 /** Convert an ET wall-clock hour on a calendar date to UTC, DST-aware. */
@@ -45,6 +45,27 @@ function etToUTC(year: number, month: number, day: number, hourET: number): Date
     candidate = new Date(candidate.getTime() + (hourET - nyHour) * 60 * 60 * 1000)
   }
   return candidate
+}
+
+/** The CSGN Originals block starts at these ET hours (7 PM – 3 AM = 19/21/23/1). */
+export const NETWORK_START_HOURS_ET = new Set([19, 21, 23, 1])
+
+/** ET hour (0–23) a timestamp falls on. h23 so midnight is 0, never 24. */
+export function etHour(date: Date): number {
+  return Number(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', hour: 'numeric', hourCycle: 'h23',
+  }).format(date))
+}
+
+/**
+ * The block a slot belongs to, derived purely from when it airs. This is the
+ * single rule for "existing and future" slots: 7 PM–3 AM ET is network, every
+ * other hour is open and claimable — regardless of what the doc currently says.
+ */
+export function slotTypeForStartTime(startTime: string | Date): SlotType {
+  const d = startTime instanceof Date ? startTime : new Date(startTime)
+  if (Number.isNaN(d.getTime())) return 'open'
+  return NETWORK_START_HOURS_ET.has(etHour(d)) ? 'network' : 'open'
 }
 
 export function utcToETComponents(date: Date): { year: number; month: number; day: number } {
@@ -86,9 +107,10 @@ export function buildExpectedSlotsForDate(targetDate: Date): ExpectedSlot[] {
 
     return {
       id: `slot-${String(slotDate.year).padStart(4, '0')}-${String(slotDate.month).padStart(2, '0')}-${String(slotDate.day).padStart(2, '0')}-${String(template.hourET).padStart(2, '0')}`,
-      // Operator directive: the auto-seeder creates every slot as CEO Creator
-      // for now. Revert to `template.type` to reopen the auction block.
-      type: 'ceo',
+      // The template decides the block: 3 AM–7 PM open, 7 PM–3 AM network.
+      // (This used to hardcode 'ceo', which made every auto-seeded slot land in
+      // the reserved block — i.e. nothing was ever claimable.)
+      type: template.type,
       label: `${formatTimeLabel(template.hourET)} – ${formatTimeLabel(template.hourET + template.duration)}`,
       startTime: startUTC.toISOString(),
       endTime: endUTC.toISOString(),
@@ -98,13 +120,16 @@ export function buildExpectedSlotsForDate(targetDate: Date): ExpectedSlot[] {
 
 /** Fresh open slot document for one expected template entry. */
 export function buildSlotDoc(exp: ExpectedSlot, defaultStreamUrl: string): Record<string, unknown> {
+  // Network slots are CSGN Originals — they're programmed, not claimed, so they
+  // seed as 'confirmed' rather than sitting in the schedule as "open".
+  const isNetwork = exp.type === 'network'
   return {
     id: exp.id,
     type: exp.type,
     label: exp.label,
     startTime: exp.startTime,
     endTime: exp.endTime,
-    status: 'open',
+    status: isNetwork ? 'confirmed' : 'open',
     streamUrl: defaultStreamUrl,
     streamTitle: '',
     assignedUid: null,

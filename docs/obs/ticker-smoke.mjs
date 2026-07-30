@@ -61,7 +61,7 @@ const mlbEvent = {
 const [mlb] = __csgn.parseGameEvent(mlbLeague, mlbEvent)
 check('MLB live parsed with baseball situation', !!mlb.baseball && mlb.baseball.on1 && mlb.baseball.on3 && !mlb.baseball.on2 && mlb.baseball.outs === 2)
 const cell = __csgn.renderStatusCell(mlb)
-check('MLB cell shows diamond + count + inning, no 0:00', cell.includes('dia') && cell.includes('2-1') && cell.includes('Bot 5th') && !cell.includes('0:00'))
+check('MLB cell shows diamond + colon count + inning, no 0:00', cell.includes('dia') && cell.includes('2:1') && cell.includes('Bot 5th') && !cell.includes('0:00'))
 check('MLB cell marks 1B+3B occupied, 2B empty', cell.includes('base b1 on') && cell.includes('base b3 on') && !cell.includes('base b2 on'))
 const mlbItem = __csgn.renderItem(mlb)
 check('MLB item has a stats face (top performers)', mlbItem.hasStats && mlbItem.html.includes('A. Judge 2 HR'))
@@ -75,29 +75,36 @@ const [nfl] = __csgn.parseGameEvent(nflLeague, nflEvent)
 check('NFL live: down/distance + away possession + redzone', nfl.football?.dd === '3rd & 8' && nfl.football.redZone && nfl.possession === 'away')
 check('NFL cell renders down & distance', __csgn.renderStatusCell(nfl).includes('3rd &amp; 8'))
 
-// ── Golf: top-10 leaderboard ────────────────────────────────────────────────
+// ── Golf: ONE tournament item, static rail, internally-rotating sets of 3 ────
 const pga = __csgn.LEAGUES.find((l) => l.key === 'pga')
 const golfEvent = {
-  name: 'The Open Championship', shortName: 'The Open', date: new Date().toISOString(),
+  name: 'The Genesis Scottish Open', shortName: 'Scottish', date: new Date().toISOString(),
   status: { type: { state: 'in' } },
   competitions: [{
     status: { period: 2, type: { state: 'in', shortDetail: 'Round 2' } },
     competitors: Array.from({ length: 14 }, (_, i) => ({
       order: i + 1,
-      athlete: { shortName: `Player ${i + 1}` },
+      athlete: { shortName: `Player ${i + 1}`, flag: i < 2 ? { href: `https://a.espncdn.com/i/teamlogos/countries/500/usa.png` } : undefined },
       score: { displayValue: i === 0 ? '-12' : i < 5 ? `-${9 - i}` : `+${i - 4}` },
       status: { position: { displayName: i === 1 ? 'T2' : String(i + 1) }, thru: i < 3 ? 18 : 11 },
     })),
   }],
 }
-const [golf] = __csgn.parseGolfEvent(pga, golfEvent)
-check('Golf parsed as leaderboard with exactly 10 rows', golf.kind === 'golf' && golf.rows.length === 10)
-const board = __csgn.renderGolfBoard(golf)
-check('Golf board renders leader, T2, F-thru, round', board.includes('Player 1') && board.includes('T2') && board.includes('-12') && board.includes('>F<') && board.includes('R2'))
-check('Golf board colors under/over par', board.includes('sc under') && board.includes('sc over'))
-check('Golf renders 10 row nodes', (board.match(/golf-row/g) || []).length === 10)
-check('Golf table has POS/PLAYER/TOT/THRU headers per column', (board.match(/golf-hrow/g) || []).length === 2 && board.includes('POS') && board.includes('PLAYER') && board.includes('TOT') && board.includes('THRU'))
-check('Golf leader row highlighted exactly once', (board.match(/golf-row lead/g) || []).length === 1)
+const golfItems = __csgn.parseGolfEvent(pga, golfEvent)
+check('Golf = ONE tournament item carrying the whole field', golfItems.length === 1 && golfItems[0].kind === 'golf' && golfItems[0].rows.length === 9)
+check('Golf field split into 3 internal sets of 3, dwell scales', golfItems[0].golfGroups.length === 3 && golfItems[0].golfGroups.every((s) => s.length === 3) && golfItems[0].dwellMs === 3 * __csgn.CONFIG.GOLF_GROUP_MS)
+check('Golf uses full event name + "Round N · Live"', golfItems[0].title === 'The Genesis Scottish Open' && golfItems[0].round === 'Round 2 · Live')
+check('Golf row carries nationality flag + pos + score', golfItems[0].rows[0].flag.includes('countries') && golfItems[0].rows[0].score === '-12' && golfItems[0].rows[1].pos === 'T2')
+const board = __csgn.renderGolfBoard(golfItems[0])
+check('Golf board: static rail (full name + round) + first set of 3', board.includes('The Genesis Scottish Open') && board.includes('Round 2 · Live') && (board.match(/g3-card[ "]/g) || []).length === 3)
+check('Golf leader highlighted once; flag img + THRU + score', (board.match(/g3-card lead/g) || []).length === 1 && board.includes('g3-flag" src="https://a.espncdn.com') && board.includes('g3-flag ph') && board.includes('THRU') && board.includes('g3-score under'))
+// "End of Round N" for a completed round instead of "RN FINAL"
+const golfDone = JSON.parse(JSON.stringify(golfEvent))
+golfDone.status = { type: { state: 'post' } }
+golfDone.competitions[0].status = { period: 1, type: { state: 'post', shortDetail: 'Final' } }
+check('Golf completed round reads "End of Round 1"', __csgn.parseGolfEvent(pga, golfDone)[0].round === 'End of Round 1')
+// internal rotation helper renders a later set of 3 with the over-par colour
+check('golfCardsHtml renders a set of 3 (later set has over-par)', (__csgn.golfCardsHtml(golfItems[0].golfGroups[2]).match(/g3-card[ "]/g) || []).length === 3 && __csgn.golfCardsHtml(golfItems[0].golfGroups[2]).includes('g3-score over'))
 
 // ── Stacked main face: records on the game side, aligned scores ─────────────
 const mainFace = __csgn.renderMainFace(mlb)
@@ -156,8 +163,26 @@ finEvent.status = { type: { state: 'post' } }
 const [fin] = __csgn.parseGameEvent(mlbLeague, finEvent)
 check('Final parsed with W/L/SV decisions', fin.isFinal && fin.winner === 'home' && fin.decisions?.win?.name === 'C. Holmes' && fin.decisions.loss?.name === 'B. Bello' && fin.decisions.save?.name === 'E. Clase')
 const finStats = __csgn.renderStatsFace(fin)
-check('Final face is PITCHING DECISIONS (W/L/SV)', finStats.includes('Pitching decisions') && finStats.includes('W: C. Holmes') && finStats.includes('L: B. Bello') && finStats.includes('SV: E. Clase') && finStats.includes('(7-4)'))
+check('Final face: decisions + top bat, no SV', finStats.includes('Decisions') && finStats.includes('W: C. Holmes') && finStats.includes('L: B. Bello') && !finStats.includes('SV') && finStats.includes('A. Judge 2 HR') && finStats.includes('(7-4)'))
 check('Winner column leads the decisions face', finStats.indexOf('C. Holmes') < finStats.indexOf('B. Bello'))
+
+// MMA: weight class + title-fight flag
+const mmaLeague = __csgn.LEAGUES.find((l) => l.key === 'mma')
+const mmaEvent = {
+  name: 'UFC 300', date: new Date().toISOString(), status: { type: { state: 'post' } },
+  competitions: [{
+    date: new Date().toISOString(),
+    status: { type: { state: 'post', shortDetail: 'Final' } },
+    notes: [{ headline: 'Lightweight Title Bout' }],
+    competitors: [
+      { homeAway: 'home', id: 'a', winner: true, score: '1', athlete: { shortName: 'Makhachev' } },
+      { homeAway: 'away', id: 'b', score: '0', athlete: { shortName: 'Oliveira' } },
+    ],
+  }],
+}
+const [mma] = __csgn.parseGameEvent(mmaLeague, mmaEvent)
+check('MMA parses weight class + title flag', mma.titleFight === true && /lightweight/i.test(mma.subnote))
+check('MMA cell shows TITLE chip + weight class', __csgn.renderStatusCell(mma).includes('titlechip') && __csgn.renderStatusCell(mma).toLowerCase().includes('lightweight'))
 
 // ── US TV sourcing ──────────────────────────────────────────────────────────
 check('National broadcasts[] wins', mlb.tv === 'FOX')
@@ -235,10 +260,69 @@ const spotHtml = __csgn.renderSpotlight({ symbol: 'ANSEM', note: 'Partner token'
 check('Spotlight: promoted coin card with SPOTLIGHT tag, symbol, LED, note', spotHtml.includes('c-tag spot') && spotHtml.includes('SPOTLIGHT') && spotHtml.includes('ANSEM') && spotHtml.includes('digit') && spotHtml.includes('Partner token') && spotHtml.includes('▲'))
 const spotNoPx = __csgn.renderSpotlight({ symbol: 'XYZ' }, { price: null, chg: null })
 check('Spotlight without price shows dashes, never $0.00', spotNoPx.includes('c-dash') && !spotNoPx.includes('0.00'))
+// A jukebox play is bought airtime — it must always disclose itself as paid.
+const spotPaid = __csgn.renderSpotlight({ symbol: 'ANSEM', paid: true, note: 'Coin Jukebox' }, { price: 0.0421, chg: 12.4 })
+check('Paid jukebox play discloses PAID SPOTLIGHT; an editorial one does not', spotPaid.includes('PAID SPOTLIGHT') && !spotHtml.includes('PAID SPOTLIGHT') && spotHtml.includes('SPOTLIGHT'))
 
 // ── $CSGN buy toast (rises green, reuses the coin-card shape) ────────────────
 const buyHtml = __csgn.renderBuyCard({ usd: 1234, by: '@degen' })
 check('Buy toast: green BUY tag + amount + buyer', buyHtml.includes('c-tag buy') && buyHtml.includes('+$1,234') && buyHtml.includes('@degen') && buyHtml.includes('c-buyamt'))
+
+// ── Meme-100 power ranking: votes + volume + market cap + social/buzz ────────
+const memes = [
+  { sym: 'WIF', price: 2.1, chg: 5, vol: 1e8, mc: 2e9, tag: 'MEME 100' },
+  { sym: 'BONK', price: 0.00002, chg: 3, vol: 5e8, mc: 1.5e9, tag: 'MEME 100' }, // more volume
+  { sym: 'POPCAT', price: 1.2, chg: 8, vol: 2e7, mc: 1e9, tag: 'MEME 100' },
+]
+// No votes → ranking is pure market data; every coin carries a power + powerRank
+const rankedNoVotes = __csgn.rankMemes(memes, {})
+check('rankMemes returns the whole set, power-ranked', rankedNoVotes.length === 3 && rankedNoVotes[0].powerRank === 1 && rankedNoVotes[2].powerRank === 3 && rankedNoVotes.every((c) => typeof c.power === 'number'))
+// Heavy holder vote on WIF (weakest market metrics) lifts it to #1 on power score
+const ranked = __csgn.rankMemes(memes, { WIF: { tokens: 5e8, wallets: 42 } })
+check('Holder votes give real power: WIF ranks #1 despite lower vol/mcap', ranked[0].sym === 'WIF' && ranked[0].votesCell.wallets === 42)
+const mlBoard = __csgn.renderMemeLeaderboard(ranked)
+check('Meme leaderboard card: MEME 100 POWER RANK + top rows', mlBoard.includes('MEME 100') && mlBoard.includes('POWER RANK') && (mlBoard.match(/ml-row/g) || []).length === 3 && mlBoard.includes('COMMUNITY POWER RANKING'))
+const pickCard = __csgn.renderCommunityPick(ranked[0], ranked[0].votesCell)
+check('Community pick card: COMMUNITY PICK tag + backers + WIF', pickCard.includes('c-tag pick') && pickCard.includes('COMMUNITY PICK') && pickCard.includes('42 backers') && pickCard.includes('WIF'))
+check('compactNum abbreviates', __csgn.compactNum(1.5e6) === '1.5M' && __csgn.compactNum(2e9) === '2.0B')
+
+// ── Fans-on-the-board: the live viewer→on-air action counter card ───────────
+check('Actions card hidden unless shown + has actions', __csgn.buildActionsGroup({ total: 5 }, false) === null && __csgn.buildActionsGroup({ total: 0 }, true) === null)
+const actGrp = __csgn.buildActionsGroup({ total: 847, votes: 512, submissions: 300, spotlights: 35 }, true)
+check('Actions card: FAN POWER pill + total + breakdown', actGrp.league.label === 'FAN POWER' && actGrp.items[0].title.includes('847') && actGrp.items[0].subtitle.includes('512 VOTES') && actGrp.items[0].subtitle.includes('35 SPOTLIGHTS'))
+
+// ── Main chyron: admin-authored three lines, leads the rotation ─────────────
+check('Chyron group null when blank', __csgn.buildChyronGroup(null) === null && __csgn.buildChyronGroup({ title: '  ' }) === null)
+const chy = __csgn.buildChyronGroup({ kicker: 'CSGN ALERT', title: 'ANSEM JUST APED $50K INTO $CSGN', subtitle: 'watch it happen live · csgn.fun', pill: 'LIVE' })
+check('Chyron group: pill label + one event item with all three lines', chy.league.label === 'LIVE' && chy.items.length === 1 && chy.items[0].kicker === 'CSGN ALERT' && chy.items[0].title.includes('ANSEM') && chy.items[0].subtitle.includes('csgn.fun'))
+const chyCard = __csgn.renderEventCard(chy.items[0])
+check('Chyron renders as a three-line event card (kicker/title/sub)', chyCard.includes('CSGN ALERT') && chyCard.includes('ANSEM') && chyCard.includes('event sub'))
+
+// ── BREAKING normalize + two modes + optional second line ───────────────────
+const nb = __csgn.normalizeBreaking
+check('breaking: bare string → takeover, no 2nd line', JSON.stringify(nb('SEC sues X')) === JSON.stringify({ text: 'SEC sues X', text2: '', mode: 'takeover' }))
+check('breaking: {text,text2} → takeover with 2nd line', nb({ text: 'A', text2: 'B' }).text2 === 'B' && nb({ text: 'A', text2: 'B' }).mode === 'takeover')
+check('breaking: mode:"row" preserved', nb({ text: 'A', mode: 'row' }).mode === 'row')
+check('breaking: unknown mode → takeover', nb({ text: 'A', mode: 'banner' }).mode === 'takeover')
+check('breaking: empty/whitespace/no-text → null', nb('') === null && nb('  ') === null && nb({ text2: 'x' }) === null && nb(null) === null)
+// applyBreaking drives the DOM: jsdom has headroom (innerHeight 768) so row mode
+// lights the top bar and the second line lands; takeover fills both text + sub.
+__csgn.applyBreaking(nb({ text: 'HEAD', text2: 'SUBLINE', mode: 'takeover' }))
+check('applyBreaking takeover: overlay shown, both lines set, row hidden',
+  !dom.window.document.getElementById('breaking').hidden &&
+  dom.window.document.getElementById('brk-text').textContent === 'HEAD' &&
+  dom.window.document.getElementById('brk-sub').textContent === 'SUBLINE' &&
+  dom.window.document.getElementById('brk-row').hidden)
+check('hasHeadroom true when the source is taller than the band (jsdom 768)', __csgn.hasHeadroom() === true)
+__csgn.applyBreaking(nb({ text: 'ROWHEAD', text2: 'ROWSUB', mode: 'row' }))
+check('applyBreaking row: top bar shown with both lines, takeover overlay hidden',
+  !dom.window.document.getElementById('brk-row').hidden &&
+  dom.window.document.getElementById('brk-row-text').textContent === 'ROWHEAD' &&
+  dom.window.document.getElementById('brk-row-sub').textContent === 'ROWSUB' &&
+  dom.window.document.getElementById('breaking').hidden)
+__csgn.applyBreaking(null)
+check('applyBreaking null clears both the overlay and the top bar',
+  dom.window.document.getElementById('breaking').hidden && dom.window.document.getElementById('brk-row').hidden)
 
 // ── $CSGN network beat: price card + live creator-fee card ──────────────────
 const beat = __csgn.buildCsgnBeatGroup({ price: 0.0000038, chg: 5.2, mc: 3800, vol: 900 }, { name: 'CEO', usd: 42.5 }, { name: 'CEO' })

@@ -1,19 +1,20 @@
 import { useMemo, useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  User, Mail, Wallet, Trophy, Lock,
-  CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Crown, Twitch, X as XIcon, Info,
+  Mail, Wallet, Trophy, Lock,
+  CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Twitch, X as XIcon, Info,
   ChevronLeft, ChevronRight, Radio,
 } from 'lucide-react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { useAuth } from '@/contexts/useAuth'
 import type { UserNotification } from '@/contexts/AuthContext'
-import { queueStore } from '@/lib/queue'
 import { fetchSlotsByAssignee, type Slot } from '@/lib/slots'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import MemeVoteCard from '@/components/MemeVoteCard'
+import { Modal } from '@/components/ui/Modal'
 
 export default function Dashboard() {
   const { user, profile, signIn, resendVerification, refreshProfile } = useAuth()
@@ -28,8 +29,10 @@ export default function Dashboard() {
   const [liveVolumeSOL, setLiveVolumeSOL] = useState(0)
   const [slotInfo, setSlotInfo] = useState<Slot | null>(null)
   const [feePage, setFeePage] = useState(0)
-  const bids = useMemo(() => user ? queueStore.getBids().filter((bid) => bid.uid === user.uid) : [], [user])
-  const assigned = useMemo(() => user ? queueStore.getAssignedSlots().filter((slot) => slot.uid === user.uid) : [], [user])
+  const upcomingSlots = useMemo(
+    () => slotHistory.filter((s) => new Date(s.endTime).getTime() > Date.now()).slice(0, 6),
+    [slotHistory],
+  )
 
   const notifications: UserNotification[] = profile?.notifications || []
   const unreadCount = notifications.filter((n) => !n.read).length
@@ -54,6 +57,10 @@ export default function Dashboard() {
   const feePageCount = Math.max(1, Math.ceil(feeHistory.length / FEE_PAGE_SIZE))
   const safeFeePage = Math.min(feePage, feePageCount - 1)
   const pagedFees = feeHistory.slice(safeFeePage * FEE_PAGE_SIZE, safeFeePage * FEE_PAGE_SIZE + FEE_PAGE_SIZE)
+
+  // Social-profile stats (derived from the same slot history).
+  const totalFeesUSD = useMemo(() => feeHistory.reduce((s, x) => s + (x.creatorFees?.feeOwedUSD || 0), 0), [feeHistory])
+  const totalLiveMinutes = useMemo(() => feeHistory.reduce((s, x) => s + (x.streamActivity?.liveCheckCount || 0), 0), [feeHistory])
 
 
   useEffect(() => {
@@ -162,6 +169,18 @@ Use your email/username and password to access your account.
 
   const savedWallet = profile?.phantom?.walletAddress || profile?.walletAddress
   const twitchDisplay = profile?.twitch?.displayName || profile?.twitch?.username || profile?.twitchUsername
+  const displayName = profile?.displayName || profile?.username || 'CSGN Member'
+  const handle = profile?.username || (profile?.email ? profile.email.split('@')[0] : 'member')
+  const avatarUrl = profile?.twitch?.profileImageUrl || ''
+  const initial = (displayName || '?').trim().charAt(0).toUpperCase() || '?'
+  const role = profile?.role || 'viewer'
+  const xp = profile?.xp ?? 0
+  const stats: Array<[string, string]> = [
+    ['XP', xp.toLocaleString()],
+    ['Slots', String(feeHistory.length)],
+    ['Live min', totalLiveMinutes.toLocaleString()],
+    ['Fees', `$${totalFeesUSD.toFixed(totalFeesUSD >= 100 ? 0 : 2)}`],
+  ]
 
   return (
     <div className="min-h-screen pt-24 lg:pt-32 pb-24">
@@ -174,7 +193,7 @@ Use your email/username and password to access your account.
               <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
               <div className="flex-1">
                 <p className="text-sm text-white font-medium">Email not verified</p>
-                <p className="text-xs text-gray-400">Please verify your email to bid on auction slots and submit CEO Schedule requests.</p>
+                <p className="text-xs text-gray-400">Verify your email to claim a slot and get paid your creator-fee share.</p>
               </div>
               <Button
                 variant="secondary"
@@ -192,30 +211,51 @@ Use your email/username and password to access your account.
           </Card>
         )}
 
-        {/* Profile card */}
-        <Card hover={false} className="p-6 bg-white/[0.03] border-red-500/25">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-display font-bold text-white">Account Hub</h1>
-              <div className="mt-2 space-y-1 text-sm text-gray-300">
-                <p className="flex items-center gap-2"><User className="w-4 h-4 text-red-400" /> {profile?.username || profile?.displayName || 'User'}</p>
-                <p className="flex items-center gap-2"><Mail className="w-4 h-4 text-red-400" /> {profile?.email}</p>
-                <p className="flex items-center gap-2"><Crown className="w-4 h-4 text-cyan-400" /> XP {(profile?.xp ?? 0).toLocaleString()}</p>
+        {/* Social profile header — banner, avatar, handle, stat row, connections */}
+        <Card hover={false} className="overflow-hidden p-0 bg-white/[0.03] border-red-500/25">
+          <div className="h-28 sm:h-36 bg-gradient-to-r from-red-600/50 via-red-500/20 to-cyan-500/30 relative">
+            <div className="absolute inset-0 opacity-40" style={{ backgroundImage: 'radial-gradient(circle at 20% 30%, rgba(255,255,255,.14), transparent 45%), radial-gradient(circle at 80% 60%, rgba(60,180,255,.18), transparent 45%)' }} />
+          </div>
+          <div className="px-5 sm:px-7 pb-6 -mt-12 sm:-mt-14">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div className="flex items-end gap-4 min-w-0">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="" className="w-24 h-24 rounded-2xl border-4 border-[#0c0c1a] object-cover bg-[#0c0c1a] shrink-0" />
+                ) : (
+                  <div className="w-24 h-24 rounded-2xl border-4 border-[#0c0c1a] bg-gradient-to-br from-red-500/50 to-cyan-500/40 flex items-center justify-center text-4xl font-black text-white shrink-0">{initial}</div>
+                )}
+                <div className="pb-1 min-w-0">
+                  <h1 className="text-2xl sm:text-3xl font-display font-bold text-white leading-tight truncate">{displayName}</h1>
+                  <p className="text-sm text-gray-400 truncate">@{handle}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pb-1">
+                <Badge variant="blue">{role}</Badge>
+                <Link to="/queue"><Button size="sm" variant="secondary">Get a slot</Button></Link>
               </div>
             </div>
-            <Badge variant="blue">{profile?.role || 'viewer'}</Badge>
-          </div>
 
-          <div className="mt-4 space-y-3">
-            <div className="w-full rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-200 flex items-center gap-2">
-              <Twitch className="w-4 h-4" /> Twitch verified: {twitchDisplay || 'Connected'}
+            {/* Stat row (social "followers"-style) */}
+            <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {stats.map(([k, v]) => (
+                <div key={k} className="rounded-xl bg-white/[0.03] border border-white/[0.06] px-4 py-3">
+                  <div className="text-xl font-bold font-mono text-white tabular-nums">{v}</div>
+                  <div className="text-[11px] uppercase tracking-wide text-gray-500">{k}</div>
+                </div>
+              ))}
             </div>
-            <div className="w-full rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-200 flex items-center gap-2">
-              <Wallet className="w-4 h-4" /> Phantom verified
+
+            {/* Connection chips */}
+            <div className="mt-4 flex flex-wrap gap-2 text-sm">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-emerald-200"><Twitch className="w-4 h-4" /> {twitchDisplay || 'Twitch'}</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-emerald-200"><Wallet className="w-4 h-4" /> {savedWallet ? `${savedWallet.slice(0, 4)}…${savedWallet.slice(-4)}` : 'Phantom'}</span>
+              {profile?.email && <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-gray-300"><Mail className="w-4 h-4 text-gray-500" /> {profile.email}</span>}
             </div>
-            {savedWallet && <p className="text-xs text-gray-500 font-mono flex items-center gap-1"><Wallet className="w-3 h-3" /> Verified: {savedWallet.slice(0, 8)}...{savedWallet.slice(-6)}</p>}
           </div>
         </Card>
+
+        {/* Change your Meme-100 token vote from your profile, any time */}
+        <MemeVoteCard />
 
         <Card hover={false} className="p-5">
           <h3 className="text-white font-semibold flex items-center gap-2">
@@ -345,57 +385,37 @@ Use your email/username and password to access your account.
           </Card>
         )}
 
-        <div className="grid lg:grid-cols-2 gap-6">
-          {/* My Bids */}
-          <Card hover={false} className="p-5">
-            <h3 className="text-white font-semibold flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-red-400" /> My Bids (CSGN)
-            </h3>
-            <div className="mt-3 space-y-2">
-              {bids.length === 0 ? (
-                <p className="text-sm text-gray-500">No bids yet. Place bids from Queue.</p>
-              ) : (
-                bids.slice(0, 6).map((bid) => (
-                  <div key={bid.id} className="text-sm text-gray-300 border border-white/10 rounded-lg p-2">
-                    <p className="text-white">{bid.slotLabel}</p>
-                    <p>{bid.amount.toLocaleString()} CSGN · {bid.status}</p>
-                  </div>
-                ))
-              )}
-            </div>
-            <Link to="/queue" className="inline-block mt-3">
-              <Button variant="secondary" size="sm">Go to Queue</Button>
-            </Link>
-          </Card>
-
-          {/* CEO Schedule / Assigned Slots */}
-          <Card hover={false} className="p-5">
-            <h3 className="text-white font-semibold flex items-center gap-2">
-              <Crown className="w-4 h-4 text-yellow-400" /> CEO Schedule Slots
-            </h3>
-            <div className="mt-3 space-y-2">
-              {assigned.length === 0 ? (
-                <p className="text-sm text-gray-500">No assigned slots. Submit a CEO Schedule request from Queue.</p>
-              ) : (
-                assigned.slice(0, 6).map((slot) => (
-                  <div key={slot.id} className="text-sm text-gray-300 border border-white/10 rounded-lg p-2">
-                    <p className="text-white">{slot.slotLabel}</p>
-                    <p>{new Date(slot.slotStart).toLocaleString()}</p>
-                  </div>
-                ))
-              )}
-            </div>
-            <Link to="/queue" className="inline-block mt-3">
-              <Button variant="secondary" size="sm">Request a Slot</Button>
-            </Link>
-          </Card>
-        </div>
+        {/* Your claimed slots — real data, straight from the schedule. This
+            replaced two dead cards (auction bids, "CEO Schedule requests") that
+            described mechanics the network no longer has. */}
+        <Card hover={false} className="p-5">
+          <h3 className="text-white font-semibold flex items-center gap-2">
+            <Radio className="w-4 h-4 text-primary-400" /> Your upcoming slots
+          </h3>
+          <div className="mt-3 space-y-2">
+            {upcomingSlots.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                You don't have a slot booked. Every hour from 3 AM to 7 PM ET is open — claim one and you
+                earn 30% of $CSGN's trading fees the whole time you're on air.
+              </p>
+            ) : (
+              upcomingSlots.map((slot) => (
+                <div key={slot.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border border-white/10 rounded-lg p-2.5">
+                  <span className="text-sm text-white font-medium">{slot.label}</span>
+                  <span className="text-xs text-gray-400">{new Date(slot.startTime).toLocaleDateString()}</span>
+                  {slot.streamTitle && <span className="text-xs text-primary-300 truncate">"{slot.streamTitle}"</span>}
+                </div>
+              ))
+            )}
+          </div>
+          <Link to="/schedule" className="inline-block mt-3">
+            <Button variant="secondary" size="sm">{upcomingSlots.length === 0 ? 'Claim a slot' : 'Claim another'}</Button>
+          </Link>
+        </Card>
       </div>
       {slotInfo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/70" onClick={() => setSlotInfo(null)} />
-          <div className="relative w-full max-w-md bg-[#0c0c1a] border border-white/10 rounded-xl p-5">
-            <h4 className="text-white font-semibold">Fee Calculation</h4>
+        <Modal open onClose={() => setSlotInfo(null)} title="Fee Calculation">
+          <div>
             <p className="text-xs text-gray-400 mt-2">Slot: {slotInfo.label}</p>
             <p className="text-xs text-gray-400">Volume (SOL): {(slotInfo.creatorFees?.tradingVolumeSOL || 0).toFixed(6)}</p>
             <p className="text-xs text-gray-400">Volume (USD): ${(slotInfo.creatorFees?.tradingVolumeUSD || 0).toFixed(2)}</p>
@@ -423,7 +443,7 @@ Use your email/username and password to access your account.
             </p>
             <Button variant="secondary" size="sm" className="mt-4" onClick={() => setSlotInfo(null)}>Close</Button>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   )
