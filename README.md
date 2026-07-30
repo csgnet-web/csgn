@@ -89,6 +89,13 @@ Simplified v1 flow. Mobile full-page Twitch OAuth redirect (replaces popup, work
 - Ticker/crypto upgrades: the dock chart is now the **last 24h** of price action (matches the 24h delta); the **Meme 100** is a live **power ranking** blending volume + market cap + social buzz + holder $CSGN votes, with a leaderboard card and a community pick; token voting is available from the **profile** as well as the Holder Zone
 - All scattered planning docs (forward-strategy, business-spec, founder-readout, consultant-review, token-design-space, marketing-audit) consolidated into a single **[`docs/master-plan.md`](docs/master-plan.md)** — since simplified and rewritten around the wedge (gaming × sports × crypto × trading for young men), the founder's show/league playbook, the burn-free treasury token model, and a 30-day production calendar
 
+### v1.6 — July 2026
+**Programmed-vs-open, settled in one rule · a public treasury · $CSGN spends.**
+- One shared `slotIdentity()` rule (pure, unit-tested) now decides *who's on an hour, what to call it, and whether it's a claimable open stage* — so the `/watch` headline, schedule strip, up-next list and offline board can't disagree. Fixes a live network show ("CSGN @ NITE") reading "THE STAGE IS OPEN" and a claimed hour ("csgnet") reading "Open Slot"
+- `/player` never advertises a reserved **CSGN Originals** hour as claimable: the intermission billboard only features a genuinely open slot (shared `isSlotClaimable` rule), and a network hour gets its own **CSGN Originals** panel instead of the "Take This Slot" call-to-action
+- New **`/treasury`** page — the public balance sheet that replaces burning: live on-chain SOL + $CSGN balances (valued off the shared token price), the treasury address (copy + Solscan), and the four published rules (no burn · 180-day hold · drip cap · stated purpose)
+- **$CSGN is now a Coin Jukebox currency** alongside SOL. New server trust boundary `verifySplPayment` (pure + unit-tested: proves the treasury received the mint *and* the payer's balance dropped, defeating a co-sign attack); client `paySpotlightCsgn` (SPL transferChecked to the treasury); a SOL/$CSGN toggle in the Holder Zone and a `$CSGN` price field in Admin. Proceeds go to the treasury, never burned *(both on-chain payment paths still want one tiny mainnet dry-run before public promotion)*
+
 ---
 
 ## Getting Started

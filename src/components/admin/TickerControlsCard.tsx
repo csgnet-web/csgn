@@ -77,6 +77,7 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
   const [actions, setActions] = useState({ total: 0, votes: 0, submissions: 0, spotlights: 0, buys: 0 })
   const [showActions, setShowActions] = useState(false)
   const [jukeboxSol, setJukeboxSol] = useState('') // SOL a holder pays (Coin Jukebox) to spotlight a coin — proceeds to treasury
+  const [jukeboxCsgn, setJukeboxCsgn] = useState('') // $CSGN alternative price for the same spotlight (a token count)
   // $CSGN needed to push a message onto the Right Now rail. Config-driven so it
   // can track the price — a fixed token count is a moving dollar cost.
   const [rightNowMin, setRightNowMin] = useState('')
@@ -128,6 +129,7 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
         setBreakingRow(brkObj ? String(brkObj.mode || '') === 'row' : false)
         if (chy) { setChyKicker(String(chy.kicker || '')); setChyTitle(String(chy.title || '')); setChySub(String(chy.subtitle || '')); setChyPill(String(chy.pill || '')) }
         if (Number(d.spotlightSol) > 0) setJukeboxSol(String(d.spotlightSol))
+        if (Number(d.spotlightCsgn) > 0) setJukeboxCsgn(String(d.spotlightCsgn))
         if (Array.isArray(d.governance)) setGovText(d.governance.map((g: Beat) => (g.tag && g.tag !== 'CSGN GOVERNANCE' ? `${g.tag} | ${g.text}` : g.text)).join('\n'))
         if (Array.isArray(d.tweets)) setTweetsText(serializeTweets(d.tweets as Tweet[]))
       }
@@ -191,7 +193,13 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
   const saveJukebox = () => run('jukebox', () => {
     const n = Number(jukeboxSol)
     if (!(n > 0)) throw new Error('Enter a positive SOL amount.')
-    return write({ spotlightSol: n })
+    const patch: { spotlightSol: number; spotlightCsgn?: number } = { spotlightSol: n }
+    if (jukeboxCsgn.trim()) {
+      const c = Number(jukeboxCsgn)
+      if (!(c > 0)) throw new Error('Enter a positive $CSGN amount (or clear it).')
+      patch.spotlightCsgn = Math.round(c)
+    }
+    return write(patch)
   }, 'Coin Jukebox price updated.')
   // Saving either card is how you take the wheel — auto-fill stops overwriting
   // until you hand it back.
@@ -323,8 +331,12 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
           <p className="text-xs text-gray-500">Counts every token-weighted vote, holder headline, and coin-spotlight play as it lands. Auto-increments server-side; flip it on air whenever you want to show the crowd steering the broadcast.</p>
           <div className="flex items-end gap-2 pt-1 border-t border-white/[0.06] mt-1">
             <div className="flex-1">
-              <label className={label}>Coin Jukebox price (SOL a holder pays to spotlight a coin)</label>
+              <label className={label}>Jukebox price — SOL</label>
               <input value={jukeboxSol} onChange={(e) => setJukeboxSol(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.1" inputMode="decimal" className={input} />
+            </div>
+            <div className="flex-1">
+              <label className={label}>…or in $CSGN</label>
+              <input value={jukeboxCsgn} onChange={(e) => setJukeboxCsgn(e.target.value.replace(/[^0-9]/g, ''))} placeholder="1000000" inputMode="numeric" className={input} />
             </div>
             <Button size="sm" variant="secondary" isLoading={busy === 'jukebox'} onClick={saveJukebox}>Save</Button>
           </div>

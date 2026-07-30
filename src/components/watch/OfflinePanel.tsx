@@ -1,7 +1,6 @@
-import { isNetworkSlot } from '@/lib/slots'
 import { ExternalLink } from 'lucide-react'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
-import { formatESTRange } from '@/lib/slots'
+import { formatESTRange, slotIdentity } from '@/lib/slots'
 import { X_HANDLE, X_PROFILE_URL } from '@/lib/social'
 import { CsgnLogo } from '@/components/ui/CsgnLogo'
 
@@ -22,9 +21,12 @@ function toMillis(value: unknown): number {
  * surfaces the next scheduled slot.
  */
 export default function OfflinePanel() {
-  const { allSlots, currentSlot, nowMs } = useLiveSlot()
+  const { allSlots, currentSlot, nowMs, networkBlockEnabled } = useLiveSlot()
   const nextSlot = allSlots.find((s) => toMillis(s.startTime) > nowMs) ?? null
-  const upNow = currentSlot?.assignedName
+  // "On the schedule now" only when the current hour is actually programmed —
+  // an open hour has nobody on it, so fall through to the next slot instead.
+  const current = currentSlot ? slotIdentity(currentSlot, { networkBlockEnabled }) : null
+  const upNow = current && !current.isOpen ? current.name : null
 
   return (
     <div className="w-full max-w-[550px] rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-12 flex flex-col items-center gap-5 text-center">
@@ -49,7 +51,7 @@ export default function OfflinePanel() {
           {upNow ? (
             <>On the schedule now: <span className="text-gray-300 font-bold">{upNow}</span></>
           ) : nextSlot ? (
-            <>Up next: <span className="text-gray-300 font-bold">{nextSlot.assignedName || (isNetworkSlot(nextSlot) ? 'CSGN Originals' : 'Open Slot')}</span>{' '}<span className="font-mono normal-case">{formatESTRange(nextSlot)}</span></>
+            <>Up next: <span className="text-gray-300 font-bold">{slotIdentity(nextSlot, { networkBlockEnabled }).name}</span>{' '}<span className="font-mono normal-case">{formatESTRange(nextSlot)}</span></>
           ) : null}
         </div>
       )}

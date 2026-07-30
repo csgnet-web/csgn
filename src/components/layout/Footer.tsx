@@ -9,6 +9,7 @@ const footerLinks = {
   Platform: [
     { label: 'Watch Live', href: '/watch', external: false },
     { label: 'Schedule & Claim a Slot', href: '/schedule', external: false },
+    { label: 'Treasury', href: '/treasury', external: false },
   ],
   Community: [
     { label: `@${X_HANDLE} on X`, href: X_PROFILE_URL, external: true },
