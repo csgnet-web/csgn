@@ -754,6 +754,69 @@ Two things kept getting tangled together, and they need separating because one i
 They meet at exactly one place: **the treasury rule.** Start there, because it's
 the part that was never actually written down.
 
+### 11.0 What he actually asked for — read this before the rest of §11
+
+He said it publicly, in his own words:
+
+> *"need more devs experimenting onchain / need more novel mechanisms / need more
+> creative speculation games / we have the infra & we have the mobile apps in place
+> to onboard, need good coins & more fair launch startups / vibe shift 🔜"*
+
+And in the exchange that followed — *"pessimism is not a very useful trait to have…
+without the builders and speculators willing to try out new things all tech would
+remain stagnant"* → *"new protocols will build on the concepts we learned from these
+and realize the sustainable concepts"* → **"exactly."**
+
+**This inverts the entire approach.** Everything below in §11 was written as *"how
+do we integrate his token without losing autonomy"* — a favor request, however well
+dressed. That is not what he's asking for. He is publicly stating unmet demand:
+**novel onchain mechanisms, creative speculation games, and fair-launch startups
+actually shipping things.**
+
+So the pitch stops being *"will you let us use $ANSEM"* and becomes **"here is one
+of the things you said the space needs, it's live, come look."** That is a
+categorically stronger position: you are supplying his stated demand, not asking
+for a favor. And the token integration becomes something he might want, rather than
+something you're requesting.
+
+**What CSGN already is, restated in his vocabulary:**
+
+| He asked for | CSGN already is |
+|---|---|
+| a **fair launch startup** | launched on pump.fun, no VC, no presale, creator fees split with streamers |
+| a **novel onchain mechanism** | **airtime as a priced onchain good** — twelve finite two-hour slots a day, claimable by anyone, paid for in SOL, verified on-chain before anything renders |
+| a **creative speculation game** | the **Meme-100** — token-weighted voting that decides which coins get real broadcast airtime, settled against live balances |
+| **devs experimenting onchain** | the Coin Jukebox: pay-per-play for a scarce *non-financial* good (television time), which is genuinely not a thing anyone else is doing |
+| **good coins** | the network's whole job is surfacing them, on a scoreboard, on air |
+
+**The one thing missing from that list is a real speculation game with stakes**, and
+it's the obvious thing to build next — see §11.7.
+
+**How to approach him, concretely:**
+
+1. **Don't DM an ask.** He already replied to you in public and agreed with you.
+   That's warm, and the worst thing to do with warm is convert it into a request.
+2. **Ship, then show.** Build the mechanism, put it on air, post it. He told the
+   whole timeline what he's looking for; the winning move is to be an example of it
+   and let him find it.
+3. **When you do talk, lead with the mechanism, not the token.** "We turned
+   broadcast airtime into an onchain good and holders vote what airs" is
+   interesting to him. "Can we add $ANSEM" is the fourth thing you mention, not the
+   first.
+4. **Bring the gift** — the co-branded ticker he can drop into his own stream
+   (§11.4). It costs him nothing and it's the only part of this that's *for* him.
+5. **Be a builder in public about the failures too.** He explicitly said past
+   failures are prerequisites. Publishing what didn't work — a mechanic you killed,
+   a number that disappointed — is on-thesis for the exact person you're talking to,
+   and almost nobody in crypto does it.
+
+**On the other creator doing something similar:** correct instinct — it's fine, and
+it's arguably good. A category with one participant is a curiosity; a category with
+two is a **trend**, and trends get written about. Compete on the half they can't
+copy: **sports, the schedule, and the scoreboards** (§2.2, §7.1). Being the second
+crypto-TV project is a much better position than being the only one, provided you're
+the one that owns the standings everyone quotes.
+
 ### 11.1 The treasury rule — what replaces burning
 
 **Nothing is ever burned. Not $CSGN, not SOL, not a partner's token.**
@@ -901,18 +964,56 @@ franchise rather than the man. If he appears, it's a tentpole — not a dependen
 
 ### 11.6 The pitch, in one paragraph
 
-*"We built a partner-token surface into a live 24/7 broadcast. Your token gets a
-permanent cell on the ticker and a spotlight lane, your holders get a real
-balance-weighted vote that resolves on air, and we keep your call record as a stat
-line on television — your box score, permanently, on a network. Anything your
-holders spend on your own surface goes to your treasury, not ours; we bill a flat
-sponsorship fee. We never burn and we never dump — the treasury address is public
-and the hold rules are published. And here's a co-branded ticker you can drop
-straight into your own stream. No merge, no swap, no exclusivity: your token, our
-stage."*
+*"We turned broadcast airtime into an onchain good — twelve finite two-hour slots a
+day, anyone can claim one, holders vote on what airs, and you can pay to put a coin
+on television. It's a fair launch, it's live right now, and the creator fees go to
+whoever is on air. If you want in: your token gets a permanent ticker cell and a
+spotlight lane, your holders get a balance-weighted vote that resolves on air, and
+we keep your call record as a stat line on TV — your box score, permanently, on a
+network. Anything your holders spend on your own surface goes to your treasury, not
+ours; we bill a flat fee. We never burn and never dump — public address, published
+hold rules. And here's a co-branded ticker you can drop straight into your own
+stream. No merge, no swap, no exclusivity."*
 
-Ship #1 and #2 before the call. Lead the call with #3 and #4 — the gift and the
-flattery — and let #5 be the follow-up. Total build: days.
+**Order matters.** The mechanism comes first because that's what he said he's
+looking for (§11.0); the token integration is the offer, not the ask. Ship #1 and
+#2 before any call. Lead with #3 and #4 — the gift and the box score. #5 is the
+follow-up.
+
+---
+
+### 11.7 The missing piece: a real speculation game
+
+His ask names something CSGN doesn't have yet — a **speculation game**, not just a
+vote. The design that fits the network (sports-native, broadcastable, and honest)
+is a **draft league for coins**:
+
+- Wallets **draft a portfolio** of memecoins for the week — a fixed number of picks,
+  locked at a published time.
+- Performance is **scored like a fantasy league** off public prices, and the
+  **standings run on the ticker** all week.
+- **The prize is airtime and status**, not money: the winner's pick gets a spotlight,
+  the top of the table gets read out on air, and the standings are a permanent
+  scoreboard (§7.1).
+
+**Why this design specifically:**
+
+- **Nothing is escrowed and there are no entry fees**, so it's a leaderboard over
+  public data — not a pooled-stakes contest with payouts, which is a different and
+  much heavier thing legally. Keep it that way; the moment money is pooled and paid
+  out on price outcomes, it's a regulated activity in most places and worth real
+  legal advice before touching.
+- **The speculation is real anyway** — people buy their picks. That's the "creative
+  speculation game" without CSGN ever holding a stake or taking a rake.
+- **It's uniquely ours.** It needs the sports instinct to think in drafts and
+  standings, and a broadcast ticker to make the table look official. A feed can't
+  render a standings table that feels real. A lower-third can.
+- **It's a weekly content engine** — draft day, mid-week movers, Sunday final
+  standings. Three shows out of one mechanic.
+
+Build it after Caller Standings (they share the same scoring/rendering spine) and
+you have two things that are exactly what he said the space needs, both on air, both
+quotable, neither of them a favor.
 
 ---
 
@@ -1070,6 +1171,64 @@ Two more operational notes:
 
 ---
 
+### 13.6 The floor plan, as an actual daily schedule
+
+The floor (§13.5) is *one stream · three clips · thirty replies · one scoreboard
+post*. Here is what that looks like as hours, so it's a routine rather than an
+intention. Times are illustrative — the **shape** is the point: three posting
+blocks, one show, one clipping block, and a hard stop.
+
+| Block | Length | What happens |
+|---|---|---|
+| **Morning · reply block** | 30–40 min | 40–60 replies into whatever CT and sports Twitter are arguing about. No originals. Thumbs only. |
+| **Prep** | 20 min | Collect the day's stories. The show is delivery, not research. |
+| **Scoreboard post** | 5 min | The Meme-100 from @CSGN. Same time every day. This is the artifact. |
+| **The show** | 30 min fixed | Whiparound. Fixed time, fixed length, never sprawls. Mark clips **while live**. |
+| **Clip block** | 30–45 min | Cut the marked moments. 3 minimum, 5–10 on a good day. Ticker in frame on all of them. |
+| **Afternoon · reply block** | 30–40 min | Another 40–60 replies. Different timeline than the morning. |
+| **Long stream (some days)** | 1–4 hrs | League night, Dynasty, or hanging in someone else's chat (§13.7). |
+| **Evening · post block** | 20 min | 5–10 originals from the personal account: takes, clips, the collision format. |
+
+That's ~3 hours on a floor day and ~6 on a league day, and it hits ~150 posts
+without a single hour of "being on X." **The blocks are what protect the streaming.**
+Sprinkling posts across the whole day is what quietly eats it.
+
+**Weekly, not daily:** one collision-format post (§7.2), one guest appearance or
+space, and ten hand-recruited slot claimants. Those three are the growth; everything
+in the table above is the base.
+
+### 13.7 Streaming into other people's rooms — the highest-leverage hour you have
+
+Sitting in someone else's token Discord and talking is not a distraction from the
+plan. At this follower count **it may be the single best use of an hour**, for the
+same reason replies beat originals: you are in a room that someone else filled.
+
+Rules that make it work instead of wasting it:
+
+- **Stream it as CSGN.** You in a room is a conversation; you in a room *with the
+  CSGN ticker on screen* is a broadcast, and every clip that comes out of it carries
+  the network. This is the free-multiplier rule (§7.5) applied to borrowed rooms.
+- **Claim the slot.** If you're going to talk for two hours anyway, do it inside a
+  CSGN slot so it's on the schedule, it's on the ticker, and the fee accounting runs.
+  Nothing gets left as "just a Discord thing."
+- **Be a guest, not a promoter.** Say the network's name once, at the top or when
+  someone asks. Anyone who pitches in someone else's room gets remembered for
+  pitching. The ticker does the promoting for you, silently.
+- **Take the clips out.** Their room, your clips — the useful asymmetry. Three
+  clips from an hour in a big room out-reach a whole day of solo posting.
+- **Show up more than once.** One appearance is a novelty; being *the guy who's
+  always there and always has a take* is how you become a fixture, and fixtures get
+  invited to things.
+- **Never claim endorsement.** Being in someone's Discord is not a partnership, and
+  implying it is the fastest way to lose the room.
+
+**Where this compounds:** every big token community is a room, every room is a
+distribution node, and the network's whole pitch to those communities is *"your coin
+gets airtime."* Hanging in their chat is the free version of that pitch, delivered in
+person, before you ever ask for anything.
+
+---
+
 ## 14. The whole thing on one page
 
 1. **The wedge is the intersection.** Gaming × sports × crypto × trading for young
@@ -1114,5 +1273,12 @@ Two more operational notes:
 17. **Design the floor, not the ceiling.** One stream · three clips · thirty
     replies · one scoreboard post. Hittable on a bad day — and the streak is the
     asset, not any single day's volume.
-18. **Ten slot claimants beat a thousand followers.** Every claimed slot is a
+18. **The pitch is the mechanism, not the token.** He publicly asked for novel
+    onchain mechanisms, creative speculation games, and fair-launch startups
+    shipping things. CSGN is all three already — so ship, then show. Never
+    convert a warm public exchange into a DM'd request.
+19. **Hanging in someone else's room, streamed as CSGN and inside a claimed
+    slot, is the best hour available at 300 followers** — their room, your clips.
+    Say the network's name once; let the ticker do the promoting.
+20. **Ten slot claimants beat a thousand followers.** Every claimed slot is a
     creator promoting CSGN to their own audience, with our ticker on screen.

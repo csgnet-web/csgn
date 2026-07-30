@@ -21,6 +21,72 @@ Slot streamer (their Twitch channel)
 OBS Browser Source → NVENC encode → RTMPS → X Media Studio → live on @CSGNet
 ```
 
+## 0. The five-minute configuration check
+
+Run this against your live OBS before a broadcast. Every value is measured
+against the current files, not remembered. If a row disagrees with your scene,
+your scene is the thing that's out of date.
+
+**Settings → Video**
+
+| Setting | Value |
+|---|---|
+| Base (canvas) resolution | `1920 × 1080` |
+| Output (scaled) resolution | `1920 × 1080` |
+| FPS | `30` (or 60 — but then every Browser Source's custom FPS must match) |
+
+**One scene: `CSGN MASTER`. Three sources, in this order top to bottom:**
+
+| # | Source | Type | Width × Height | Position | Notes |
+|---|---|---|---|---|---|
+| 1 (top) | **Notices** | Browser · local file `docs/obs/csgn-lowerthirds.html` | `1920 × 1080` | `X 0, Y 0` | Transparent until the admin sets something |
+| 2 | **Ticker band** | Browser · local file `docs/obs/csgn-ticker.html` | `1930 × 240` | `X -5, Y 840` | Band = bottom 110px; 130px transparent headroom above |
+| 3 (bottom) | **Feed** | Browser · URL `https://csgn.fun/player` | `1724 × 970` | centred, `Y 0` | 16:9 so the Twitch feed never letterboxes |
+
+**Order matters.** The ticker must sit *above* the feed or the rising spotlight
+and the BREAKING row get painted over. Notices must sit above both.
+
+**Per-source settings (all three Browser Sources):**
+
+- ✅ **Use custom frame rate** → set to the same number as Settings → Video FPS.
+  Leaving CEF at 60 against a 30 fps output is the classic cause of ~50%
+  *skipped* frames.
+- ❌ **Shutdown source when not visible**
+- ❌ **Refresh browser when scene becomes active**
+- **Page permissions: Read and write to OBS** — required on the `/player` source
+  (it's how the page detects OBS and forces audio on). Harmless on the other two.
+- Custom CSS on the two overlays: `body { background: rgba(0,0,0,0); }`
+
+**Audio mixer:** `/player` fader at **0 dB**, monitoring **Monitor Off**. The
+ticker and notices sources produce no audio — mute them so a stray beep can
+never reach the encode.
+
+**Two checks that actually prove it works:**
+
+1. **The ad shield.** Point a throwaway source at
+   `https://csgn.fun/player?peek=1&debug=1` during a real streamer start and
+   watch the first ~35 seconds. You'll see whether a Twitch preroll is actually
+   running behind the curtain (§ "the `?peek` proof"). Never leave `?peek` on a
+   real broadcast source.
+2. **The notices path.** Load `csgn-lowerthirds.html?demo` in a normal browser —
+   if the sample cards render there, the file is fine and anything missing
+   on-air is a `config/ticker` content problem, not an OBS problem.
+
+**Common misconfigurations, in the order they actually happen:**
+
+| Symptom | Cause |
+|---|---|
+| Bottom edge of the ticker looks cut off | Ticker `Y` is 845 (old doc value). Use **840**. |
+| Right side of the crypto dock is clipped | Ticker `X` is 0. Use **-5**. |
+| Spotlight never rises / BREAKING takes the whole band | Ticker source is 110 tall, or it's *below* `/player` in the list |
+| ~50% skipped frames | Browser Source FPS ≠ output FPS |
+| Feed letterboxed inside the frame | `/player` source isn't 16:9. Height = 1080 − ticker band; width = height × 16⁄9 |
+| Intermission board headline clipped | `/player` source narrower than ~1600px |
+| No audio on stream | `/player` missing **Read and write to OBS** page permission |
+| Notices never appear | Nothing set in Admin → Broadcast Control → On Air (or the source is under the ticker) |
+
+---
+
 ## 1. Scene setup (one time)
 
 Create exactly one scene: **`CSGN MASTER`**, containing exactly one source:
@@ -71,15 +137,26 @@ One Browser Source renders the whole bottom band:
 ```
 
 - **Add it:** Browser Source → ✅ *Local file* → `csgn-ticker.html` → Width
-  `1930`, **Height `240`, position `X 0, Y 845`** (recommended). FPS 30 (match output).
+  `1930`, **Height `240`, position `X -5, Y 840`**. FPS 30 (match output).
+- **Why exactly those offsets.** Measured, not guessed: in a 1930×240 source the
+  band renders at y `130–240` — flush with the source's **bottom** edge (`.shell`
+  is `position:absolute; bottom:0`) and the full `1930` wide.
+  - **Y = 1080 − 240 = 840.** Any lower and the bottom of the band falls off the
+    canvas. *(Earlier revisions of this doc said `Y 845`, which clipped the
+    bottom 5px of the bar — including its lower edge. If your scene says 845,
+    change it to 840.)*
+  - **X = −5** splits the 10px of horizontal overscan (`1930` on a `1920`
+    canvas) evenly instead of cutting all 10px off the right — and the right end
+    is the 400px crypto dock, the busiest cell on the board. `X 0` works but
+    trims the dock's right edge.
 - **Why 240 tall.** The visible band is always the bottom **110px**; the extra
   height is transparent **headroom** above it. That headroom is what lets the
   **coin spotlight rise up out of the dock** (stacked above it) and a **BREAKING
   item run as its own row above the ticker**. Put this source **above** the
   `/player` source in the scene list so those pop-ups draw over the feed; the
-  headroom is otherwise fully transparent and crops nothing. At the old **Height
-  `110`, Y `975`** everything still works — the spotlight rises in-dock and
-  BREAKING takes over the band — so a 110px source keeps running unchanged.
+  headroom is otherwise fully transparent and crops nothing. A **Height `110`**
+  source still works — the spotlight rises in-dock and BREAKING takes over the
+  band — but then use **`Y 970`** (`1080 − 110`), not 975.
 - **Size the `/player` source:** `1724 × 970`, centered (16:9, ~98px brand
   gutters each side) so the 110px band never crops the live feed.
 - Broadcast features: fixed segment widths for every league; MLB live shows the
@@ -124,6 +201,49 @@ One Browser Source renders the whole bottom band:
     full-band red takeover *or*, with the "own row" toggle (and a 240px-tall
     source), as **its own red row above the ticker** so the rotation keeps
     running below it.
+
+### The notices overlay (`docs/obs/csgn-lowerthirds.html`)
+
+**This is the file you're looking for if you've ever wondered where the on-air
+notices live.** It was documented only in its own header comment, which is why it
+was hard to find.
+
+A transparent 1920×1080 overlay that reads the same world-readable `config/ticker`
+doc the ticker band reads, and breaks in with a broadcast lower-third every few
+minutes for ~12s:
+
+| Card | Shows | Fed by |
+|---|---|---|
+| **LIVE NOW** | who's on screen — name + show title | `config/ticker.nowLive` |
+| **UP NEXT** | who's next + the ET start time | `config/ticker.upNext` |
+| **HOLDERS VOTE** | tonight's vote, options, live countdown to 8 PM ET | `config/ticker.vote` |
+
+**Install:** Browser Source → ✅ *Local file* → `csgn-lowerthirds.html` → Width
+`1920`, Height `1080`, position `X 0, Y 0`, **top of the scene list**. Custom CSS
+`body { background: rgba(0,0,0,0); }`. Shutdown-when-not-visible **off**.
+
+**Nothing set → nothing shows.** The overlay is fully transparent when the doc is
+empty, so a clean feed is the default and you can leave it in the scene forever.
+
+**LIVE NOW and UP NEXT now fill themselves.** The minute poller derives both from
+the real schedule: a claimed hour shows the streamer and their stream title, a
+network hour reads *CSGN Originals*, an unclaimed hour reads *Open Stage* and sells
+the claim. You only type into those fields to override — and saving either one
+switches auto-fill off (Broadcast Control → On Air shows which mode you're in, and
+hands it back with **Resume auto-fill**).
+
+**Rehearse without waiting:** open the file in a normal browser with `?demo` to
+force sample cards immediately, or `?always` to show them back-to-back and judge
+the look. Both are diagnostics — don't leave them on the broadcast source.
+
+### Paid spotlights disclose themselves
+
+A spotlight bought through the Coin Jukebox renders as **`PAID SPOTLIGHT`**; one
+you feature editorially from the admin panel renders as **`SPOTLIGHT`**. That
+difference is automatic (the payment endpoint stamps the flag) and it is not
+optional — unlabeled paid promotion of a financial asset is the one mistake that
+can genuinely end a network, and the contrast is what makes the *unpaid* segments
+worth anything.
 
 ### On-air promos
 
