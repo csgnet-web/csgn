@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Gamepad2, Grid3X3 } from 'lucide-react'
-import { formatESTRange, isSlotClaimable, type Slot } from '@/lib/slots'
+import { formatESTRange, isSlotClaimable, slotIdentity, type Slot } from '@/lib/slots'
 import { api } from '@/lib/api'
 import { parseXPostId } from '@/lib/xembed'
 import { useAuth } from '@/contexts/useAuth'
@@ -72,20 +72,25 @@ export default function Watch() {
   const broadcastPostId = useMemo(() => (manualOverride?.url ? parseXPostId(manualOverride.url) : null), [manualOverride?.url])
   const broadcastUrl = manualOverride?.url && manualOverride.url.trim() ? manualOverride.url.trim() : null
 
-  // The current slot's assigned streamer is the source of truth for the name/
-  // title; a manual X-broadcast override only fills in when the slot is unnamed.
-  // The billing must always read as programming — the streamer's name or
-  // "Open Slot" — so any network self-branding ("CSGN", "csgnet", "CSGN 24/7")
-  // that leaks in from a slot default or a manual override is treated as empty.
+  // One rule for who's on this hour and whether it's a claimable open stage —
+  // shared with the schedule strip, the offline board and the server ticker, so
+  // a live "CSGN @ NITE" can never headline "THE STAGE IS OPEN" and a claimed
+  // hour can never read "Open Slot". The stage is "open" only when the current
+  // hour has no programming on it (see slotIdentity).
+  const identity = slotIdentity(currentSlot, { networkBlockEnabled, openName: 'THE STAGE IS OPEN' })
+  const stageOpen = identity.isOpen
+
+  // A manual X-broadcast override can still name the host when the slot itself is
+  // unbranded; a bare network self-brand ("csgn…") in the override is ignored so
+  // it can't masquerade as a booking and blank out the open-stage invite.
   const notNetworkBrand = (value?: string | null) => {
     const v = (value ?? '').trim()
     return v && !/^csgn/i.test(v) ? v : ''
   }
-  const streamerName = notNetworkBrand(currentSlot?.assignedName) || notNetworkBrand(manualOverride?.streamerName) || 'THE STAGE IS OPEN'
+  const streamerName = stageOpen ? (notNetworkBrand(manualOverride?.streamerName) || 'THE STAGE IS OPEN') : identity.name
   const streamTitle = notNetworkBrand(currentSlot?.streamTitle) || notNetworkBrand(manualOverride?.title) || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
   // Nobody on the stage right now → sell the open stage rather than the coming-soons.
-  const stageOpen = !currentSlot?.assignedUid
   const banner = stageOpen ? openStageBanner : bannerItems
 
   // Live once the current slot is confirmed or live (or an X broadcast is up),

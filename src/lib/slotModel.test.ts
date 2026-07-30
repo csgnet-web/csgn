@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable, SLOT_STATUSES } from './slotModel'
+import { normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable, slotIdentity, SLOT_STATUSES } from './slotModel'
 
 const HOUR = 60 * 60 * 1000
 const future = new Date(Date.now() + 4 * HOUR).toISOString()
@@ -90,5 +90,57 @@ describe('isSlotClaimable', () => {
   })
   it('a network slot actually assigned to someone is never claimable', () => {
     expect(isSlotClaimable(slot({ type: 'network', status: 'confirmed', assignedUid: 'u1' }), false)).toBe(false)
+  })
+})
+
+describe('slotIdentity — one source of truth for who is on an hour', () => {
+  it('a genuinely open hour is the only place the stage reads as open', () => {
+    const id = slotIdentity({ type: 'open', assignedUid: null, assignedName: null })
+    expect(id).toEqual({ name: 'Open Slot', kind: 'Open Slot', isOpen: true, isNetwork: false })
+  })
+
+  it('lets the caller relabel the open hour (the /watch headline)', () => {
+    const id = slotIdentity({ type: 'open' }, { openName: 'THE STAGE IS OPEN' })
+    expect(id.name).toBe('THE STAGE IS OPEN')
+    expect(id.isOpen).toBe(true)
+  })
+
+  // Bug 1: a live network show read "THE STAGE IS OPEN" because the heading
+  // blanked any name starting with "CSGN". A named network hour is programmed.
+  it('a named network show keeps its name and is never open', () => {
+    const id = slotIdentity({ type: 'network', assignedName: 'CSGN @ NITE' })
+    expect(id).toEqual({ name: 'CSGN @ NITE', kind: 'CSGN Originals', isOpen: false, isNetwork: true })
+  })
+
+  it('an unnamed reserved network hour is CSGN Originals, not open', () => {
+    const id = slotIdentity({ type: 'network', assignedName: null })
+    expect(id).toEqual({ name: 'CSGN Originals', kind: 'CSGN Originals', isOpen: false, isNetwork: true })
+  })
+
+  // Bug 2: a claimed open-block hour ("csgnet") read "Open Slot" as its subtitle
+  // because a non-network slot was assumed unclaimed.
+  it('a claimed open-block hour headlines the creator, never "Open Slot"', () => {
+    const id = slotIdentity({ type: 'open', assignedUid: 'u1', assignedName: 'csgnet' })
+    expect(id).toEqual({ name: 'csgnet', kind: 'Live on CSGN', isOpen: false, isNetwork: false })
+  })
+
+  it('a claimed hour with its own stream title shows that title as the kind', () => {
+    const id = slotIdentity({ type: 'open', assignedUid: 'u1', assignedName: 'ansem', streamTitle: 'Chart Talk' })
+    expect(id).toEqual({ name: 'ansem', kind: 'Chart Talk', isOpen: false, isNetwork: false })
+  })
+
+  it('an assignedName with no uid still counts as programmed (network self-booking)', () => {
+    expect(slotIdentity({ type: 'open', assignedName: 'csgnet' }).isOpen).toBe(false)
+  })
+
+  it('turning the network block off hands an unclaimed reserved hour back to open', () => {
+    const id = slotIdentity({ type: 'network', assignedName: null }, { networkBlockEnabled: false })
+    expect(id).toEqual({ name: 'Open Slot', kind: 'Open Slot', isOpen: true, isNetwork: false })
+  })
+
+  it('treats a null/absent slot as an open stage (defensive for the headline)', () => {
+    expect(slotIdentity(null, { openName: 'THE STAGE IS OPEN' })).toEqual({
+      name: 'THE STAGE IS OPEN', kind: 'Open Slot', isOpen: true, isNetwork: false,
+    })
   })
 })

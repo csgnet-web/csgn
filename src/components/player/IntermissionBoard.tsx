@@ -1,7 +1,6 @@
-import { isNetworkSlot } from '@/lib/slots'
 import { useEffect, useState } from 'react'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
-import { formatESTRange, CSGN_MINT, type Slot } from '@/lib/slots'
+import { formatESTRange, slotIdentity, CSGN_MINT, type Slot } from '@/lib/slots'
 import { X_HANDLE } from '@/lib/social'
 import { CsgnLogo } from '@/components/ui/CsgnLogo'
 
@@ -36,7 +35,7 @@ function formatPrice(price: number): string {
 
 const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 })
 
-function UpNextPanel({ slots }: { slots: Slot[] }) {
+function UpNextPanel({ slots, networkBlockEnabled }: { slots: Slot[]; networkBlockEnabled: boolean }) {
   return (
     <div className="flex flex-col items-center gap-8">
       <p className="text-2xl font-black tracking-[0.4em] uppercase text-gray-400">Tonight on CSGN</p>
@@ -45,7 +44,7 @@ function UpNextPanel({ slots }: { slots: Slot[] }) {
           slots.map((s) => (
             <div key={s.id} className="flex items-baseline justify-center gap-6">
               <span className="text-4xl font-black font-display text-white">
-                {s.assignedName || (isNetworkSlot(s) ? 'CSGN Originals' : 'Open Slot')}
+                {slotIdentity(s, { networkBlockEnabled }).name}
               </span>
               <span className="text-2xl font-mono text-primary-300">{formatESTRange(s)}</span>
             </div>
@@ -181,7 +180,7 @@ function TaglinePanel({ index }: { index: number }) {
  * backdrop behind BRB / starting-soon status cards.
  */
 export default function IntermissionBoard({ dimmed = false }: { dimmed?: boolean }) {
-  const { allSlots, currentSlot, nowMs } = useLiveSlot()
+  const { allSlots, currentSlot, nowMs, networkBlockEnabled } = useLiveSlot()
   const [panel, setPanel] = useState(0)
 
   useEffect(() => {
@@ -207,7 +206,7 @@ export default function IntermissionBoard({ dimmed = false }: { dimmed?: boolean
   // message is on screen half the time the network is between streamers.
   const panels = [
     <OpenStagePanel key="stage-a" slot={claimable} isCurrent={claimableIsCurrent} />,
-    <UpNextPanel key="next" slots={upcoming} />,
+    <UpNextPanel key="next" slots={upcoming} networkBlockEnabled={networkBlockEnabled} />,
     <OpenStagePanel key="stage-b" slot={claimable} isCurrent={claimableIsCurrent} />,
     <TokenPanelBoard key="token" />,
     <OpenStagePanel key="stage-c" slot={claimable} isCurrent={claimableIsCurrent} />,

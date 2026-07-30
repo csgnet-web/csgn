@@ -1,4 +1,4 @@
-import { isNetworkSlot, isSlotClaimable } from '@/lib/slots'
+import { isSlotClaimable, slotIdentity } from '@/lib/slots'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight } from 'lucide-react'
@@ -43,8 +43,11 @@ function formatCompactRange(slot: Pick<Slot, 'startTime' | 'endTime'>): string {
 }
 
 /* ── Schedule card for today's lineup ── */
-function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) {
-  const streamer = slot.assignedName || (isNetworkSlot(slot) ? 'CSGN Originals' : 'Open Slot')
+function TodaySlotCard({ slot, isCurrent, networkBlockEnabled }: { slot: Slot; isCurrent: boolean; networkBlockEnabled: boolean }) {
+  // Same programmed-vs-open rule as the /watch headline and /schedule, so a
+  // claimed hour reads as its creator (not "Open Slot") and a network hour reads
+  // as CSGN Originals.
+  const { name: streamer, kind } = slotIdentity(slot, { networkBlockEnabled })
   return (
     <div
       className={`relative rounded-xl overflow-hidden flex flex-col min-h-[89px] sm:min-h-[178px] lg:min-h-[88px] lg:h-[88px] transition-all duration-300 ${
@@ -86,7 +89,7 @@ function TodaySlotCard({ slot, isCurrent }: { slot: Slot; isCurrent: boolean }) 
 
       <div className="px-2 sm:px-3 lg:px-1 pb-1.5 sm:pb-3 lg:pb-0.5 pt-1 sm:pt-2.5 lg:pt-0 bg-gradient-to-t from-black/80 to-transparent space-y-0.5 sm:space-y-1 lg:space-y-0">
         <p className="text-white font-black font-display text-[10px] sm:text-sm lg:text-[8px] leading-tight break-words">{streamer}</p>
-        <p className="text-white/60 text-[9px] sm:text-[11px] lg:text-[7px] leading-snug break-words">{isNetworkSlot(slot) ? 'CSGN Originals' : 'Open Slot'}</p>
+        <p className="text-white/60 text-[9px] sm:text-[11px] lg:text-[7px] leading-snug break-words">{kind}</p>
         <p className="text-white/60 text-[8px] sm:text-[10px] lg:text-[7px] font-mono leading-none whitespace-nowrap">{formatCompactRange(slot)}</p>
       </div>
     </div>
@@ -144,7 +147,7 @@ export default function ScheduleStrip({
               <p className="text-[11px] text-gray-500 uppercase tracking-wider leading-none mb-1">Up Next</p>
               {upcomingSlots.slice(0, 3).map((s) => (
                 <p key={s.id} className="text-[10px] font-display font-bold text-white leading-snug whitespace-nowrap">
-                  {s.assignedName || (isNetworkSlot(s) ? 'CSGN Originals' : 'Open Slot')}{' '}
+                  {slotIdentity(s, { networkBlockEnabled }).name}{' '}
                   <span className="font-normal text-gray-400">{formatCompactRange(s)}</span>
                 </p>
               ))}
@@ -165,7 +168,7 @@ export default function ScheduleStrip({
               const claimable = isSlotClaimable(slot, networkBlockEnabled)
               return (
                 <div key={slot.id} className="flex flex-col gap-1.5">
-                  <TodaySlotCard slot={slot} isCurrent={isCurrent} />
+                  <TodaySlotCard slot={slot} isCurrent={isCurrent} networkBlockEnabled={networkBlockEnabled} />
                   {claimable && (
                     <button
                       type="button"

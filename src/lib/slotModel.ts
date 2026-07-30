@@ -75,3 +75,82 @@ export function isSlotClaimable(
   if (isNetworkSlot(slot) && networkBlockEnabled) return false
   return true
 }
+
+/**
+ * How a slot presents anywhere in the app — the single source of truth for "who
+ * is on this hour, what do we call it, and is it a claimable open stage." Every
+ * viewer surface (the /watch headline, the schedule strip, the up-next list, the
+ * offline + intermission boards) reads from this one function so they can never
+ * disagree.
+ *
+ * The bugs this fixes, both from each surface re-deriving the label off `type`
+ * alone:
+ *   - a LIVE network show ("CSGN @ NITE") that read "THE STAGE IS OPEN" because
+ *     the old heading blanked any name starting with "CSGN" and fell back to the
+ *     open-stage copy, and
+ *   - a claimed hour ("csgnet") that read "Open Slot" because a non-network slot
+ *     was assumed to be unclaimed.
+ *
+ * The whole model is **programmed vs. open**:
+ *   - a reserved CSGN Originals hour (network + block on), OR a slot a creator /
+ *     the network booked (by `assignedUid` or `assignedName`) → PROGRAMMED.
+ *     Headline the act; never say the stage is open, never say "Open Slot".
+ *   - anything else → OPEN. Only here do we sell the empty stage.
+ *
+ * Mirrors the server's ticker naming in netlify/functions/_shared/onAir.ts —
+ * keep the two in sync (that module can't import this one; it's bound to the
+ * client Firebase SDK-free build).
+ */
+export interface SlotIdentity {
+  /** Headline: the creator/show name, or the open-stage label. */
+  name: string
+  /** Secondary line: the stream title or the block — never "Open Slot" once programmed. */
+  kind: string
+  /** True only when nothing is programmed and the hour is a claimable open stage. */
+  isOpen: boolean
+  /** True when this is a CSGN Originals (network) hour. */
+  isNetwork: boolean
+}
+
+export interface SlotIdentityOptions {
+  networkBlockEnabled?: boolean
+  /** Headline for a genuinely open hour. Default 'Open Slot' (Watch passes 'THE STAGE IS OPEN'). */
+  openName?: string
+  /** Secondary line for an open hour. Default 'Open Slot'. */
+  openKind?: string
+  /** Secondary line for a claimed hour that has no stream title. Default 'Live on CSGN'. */
+  liveKind?: string
+}
+
+const CSGN_ORIGINALS = 'CSGN Originals'
+
+export function slotIdentity(
+  slot:
+    | { type?: unknown; status?: unknown; assignedUid?: string | null; assignedName?: string | null; streamTitle?: string | null }
+    | null
+    | undefined,
+  options: SlotIdentityOptions = {},
+): SlotIdentity {
+  const networkBlockEnabled = options.networkBlockEnabled ?? true
+  const openName = options.openName ?? 'Open Slot'
+  const openKind = options.openKind ?? 'Open Slot'
+  const liveKind = options.liveKind ?? 'Live on CSGN'
+
+  const assignedName = String(slot?.assignedName ?? '').trim()
+  const assignedUid = String(slot?.assignedUid ?? '').trim()
+  const streamTitle = String(slot?.streamTitle ?? '').trim()
+  const network = !!slot && isNetworkSlot(slot) && networkBlockEnabled
+
+  // Programmed = reserved network hour, or a slot someone booked (by uid or name).
+  const programmed = network || !!assignedName || !!assignedUid
+  if (!programmed) {
+    return { name: openName, kind: openKind, isOpen: true, isNetwork: false }
+  }
+  if (network) {
+    // A named network show (e.g. "CSGN @ NITE") keeps its name; an unnamed
+    // reserved hour is simply CSGN Originals. Either way the block is the kind.
+    return { name: assignedName || streamTitle || CSGN_ORIGINALS, kind: CSGN_ORIGINALS, isOpen: false, isNetwork: true }
+  }
+  // A creator holds an open-block hour — headline them, never "Open Slot".
+  return { name: assignedName || 'Claimed', kind: streamTitle || liveKind, isOpen: false, isNetwork: false }
+}

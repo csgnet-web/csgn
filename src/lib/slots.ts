@@ -34,8 +34,8 @@ export const CSGN_DECIMALS = 6
 // Slot model (types + normalization + claimability) lives in slotModel.ts —
 // pure, Firestore-free, and unit-tested. Re-exported here so every existing
 // `from '@/lib/slots'` import keeps working.
-export type { SlotType, SlotStatus } from './slotModel'
-export { SLOT_STATUSES, normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable } from './slotModel'
+export type { SlotType, SlotStatus, SlotIdentity, SlotIdentityOptions } from './slotModel'
+export { SLOT_STATUSES, normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable, slotIdentity } from './slotModel'
 import { normalizeSlot, isNetworkSlot, type SlotType, type SlotStatus } from './slotModel'
 
 export type FeePaymentStatus = 'pending' | 'paid' | 'declined'
