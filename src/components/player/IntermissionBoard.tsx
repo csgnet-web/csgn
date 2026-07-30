@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
-import { formatESTRange, slotIdentity, CSGN_MINT, type Slot } from '@/lib/slots'
+import { formatESTRange, isNetworkSlot, isSlotClaimable, slotIdentity, CSGN_MINT, type Slot } from '@/lib/slots'
 import { X_HANDLE } from '@/lib/social'
 import { CsgnLogo } from '@/components/ui/CsgnLogo'
 
@@ -113,6 +113,36 @@ function OpenStagePanel({ slot, isCurrent = false }: { slot: Slot | null; isCurr
   )
 }
 
+/**
+ * Shown on /player when the hour ON AIR is a reserved CSGN Originals (network)
+ * hour. It presents the block as programmed television, NOT a claimable stage —
+ * so a network hour never renders the "Take This Slot" billboard even while it's
+ * confirmed/live. Open hours are still advertised for claiming in the up-next
+ * panel and the ticker strip below.
+ */
+function NetworkNowPanel({ slot }: { slot: Slot | null }) {
+  const showName = slot ? slotIdentity(slot).name : 'CSGN Originals'
+  return (
+    <div className="flex flex-col items-center gap-10">
+      <div className="flex flex-col items-center gap-4">
+        <div className="flex items-center gap-3">
+          <span className="w-3 h-3 rounded-full bg-gold animate-live-pulse" />
+          <p className="text-2xl font-black tracking-[0.4em] uppercase text-gold">CSGN Originals</p>
+        </div>
+        <p className="text-7xl font-black font-display text-white text-center leading-tight">{showName}</p>
+        {slot && <p className="text-3xl font-mono text-primary-300">{formatESTRange(slot)}</p>}
+      </div>
+
+      <div className="stage-border-sweep rounded-3xl p-[2px]">
+        <div className="rounded-3xl bg-[#0a0a14] px-14 py-8 text-center max-w-[820px]">
+          <p className="text-xl text-gray-300">Network programming — streamed to X on <span className="text-white font-bold">@{X_HANDLE}</span></p>
+          <p className="text-lg text-gray-500 mt-3">The CSGN Originals block runs 7 PM–3 AM ET. The open hours are yours to claim at <span className="text-white font-bold">csgn.fun</span></p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TokenPanelBoard() {
   const { tokenStats } = useLiveSlot()
   const change = tokenStats?.priceChangeH24Pct ?? 0
@@ -191,27 +221,38 @@ export default function IntermissionBoard({ dimmed = false }: { dimmed?: boolean
 
   const upcoming = allSlots.filter((s) => toMillis(s.startTime) > nowMs).slice(0, 3)
 
-  // The open-stage billboard always reflects the slot ON AIR RIGHT NOW — its
-  // stage is empty during intermission (e.g. a streamer ended mid-slot), so the
-  // billboard shows THAT block, never a future one. Only when there is no
-  // current slot at all (dead air between scheduled blocks) does it fall back to
-  // advertising the next open slot.
+  // Is the hour on the air a reserved CSGN Originals (network) hour? If so the
+  // featured panel is the network billboard, never the "take this slot" one.
+  const currentIsNetwork = !!currentSlot && isNetworkSlot(currentSlot) && networkBlockEnabled
+
+  // The open-stage billboard only ever features a GENUINELY claimable hour: the
+  // one on the air if it's open (a streamer ended mid-slot → the stage is empty
+  // and takeable this second), else the next open slot. A reserved network hour
+  // is never advertised as claimable — the same isSlotClaimable rule /watch and
+  // /schedule use, so the three surfaces agree.
+  const currentClaimable = currentSlot && isSlotClaimable(currentSlot, networkBlockEnabled) ? currentSlot : null
   const claimable =
-    currentSlot
-      ?? allSlots.find((s) => toMillis(s.startTime) > nowMs && s.status === 'open' && !s.assignedUid)
+    currentClaimable
+      ?? allSlots.find((s) => toMillis(s.startTime) > nowMs && isSlotClaimable(s, networkBlockEnabled))
       ?? null
   const claimableIsCurrent = claimable != null && claimable === currentSlot
 
-  // The open-stage billboard alternates with the info panels, so the claim
-  // message is on screen half the time the network is between streamers.
+  // The featured panel alternates with the info panels. During a network hour it
+  // sells CSGN Originals; otherwise it sells the open stage. Either way the claim
+  // message for the OPEN hours still reaches viewers via up-next and the ticker.
+  const featured = (key: string) =>
+    currentIsNetwork
+      ? <NetworkNowPanel key={key} slot={currentSlot} />
+      : <OpenStagePanel key={key} slot={claimable} isCurrent={claimableIsCurrent} />
+
   const panels = [
-    <OpenStagePanel key="stage-a" slot={claimable} isCurrent={claimableIsCurrent} />,
+    featured('stage-a'),
     <UpNextPanel key="next" slots={upcoming} networkBlockEnabled={networkBlockEnabled} />,
-    <OpenStagePanel key="stage-b" slot={claimable} isCurrent={claimableIsCurrent} />,
+    featured('stage-b'),
     <TokenPanelBoard key="token" />,
-    <OpenStagePanel key="stage-c" slot={claimable} isCurrent={claimableIsCurrent} />,
+    featured('stage-c'),
     <FollowPanel key="follow" />,
-    <OpenStagePanel key="stage-d" slot={claimable} isCurrent={claimableIsCurrent} />,
+    featured('stage-d'),
     <TaglinePanel key="tag" index={Math.floor(panel / 8)} />,
   ]
 
@@ -230,10 +271,11 @@ export default function IntermissionBoard({ dimmed = false }: { dimmed?: boolean
         </span>
       </div>
 
-      {/* Live dot, top-right — the network never "pauses"; the stage is open */}
+      {/* Live dot, top-right — the network never "pauses". Reads CSGN Originals
+          on a reserved hour, Stage Open when the hour is claimable. */}
       <div className="absolute top-14 right-14 flex items-center gap-2.5">
-        <span className="w-2.5 h-2.5 rounded-full bg-primary-500 animate-live-pulse" />
-        <span className="text-sm font-bold tracking-[0.3em] uppercase text-gray-400">Stage Open</span>
+        <span className={`w-2.5 h-2.5 rounded-full animate-live-pulse ${currentIsNetwork ? 'bg-gold' : 'bg-primary-500'}`} />
+        <span className="text-sm font-bold tracking-[0.3em] uppercase text-gray-400">{currentIsNetwork ? 'CSGN Originals' : 'Stage Open'}</span>
       </div>
 
       {/* Center panel carousel */}
@@ -246,7 +288,9 @@ export default function IntermissionBoard({ dimmed = false }: { dimmed?: boolean
       {/* Bottom ticker strip */}
       <div className="absolute bottom-0 inset-x-0 h-16 bg-black/50 border-t border-white/[0.08] flex items-center px-14 justify-between">
         <span className="text-sm font-mono tracking-[0.2em] uppercase text-gray-500">
-          stage open · claim it at csgn.fun · live on X · @{X_HANDLE}
+          {currentIsNetwork
+            ? <>csgn originals · live on X · @{X_HANDLE} · claim the open hours at csgn.fun</>
+            : <>stage open · claim it at csgn.fun · live on X · @{X_HANDLE}</>}
         </span>
         <span className="text-sm font-mono text-gray-600">{CSGN_MINT}</span>
       </div>
