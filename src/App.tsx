@@ -17,6 +17,7 @@ const Player = lazy(() => import('@/pages/Player'))
 const Terms = lazy(() => import('@/pages/Terms'))
 const TwitchComplete = lazy(() => import('@/pages/TwitchComplete'))
 const Participate = lazy(() => import('@/pages/Participate'))
+const Treasury = lazy(() => import('@/pages/Treasury'))
 
 function Loading() {
   return (
@@ -54,6 +55,7 @@ function AppContent() {
             <Route path="/queue" element={<Navigate to="/schedule" replace />} />
             <Route path="/vote" element={<Participate />} />
             <Route path="/participate" element={<Participate />} />
+            <Route path="/treasury" element={<Treasury />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/player" element={<Player />} />
             <Route path="/terms" element={<Terms />} />
