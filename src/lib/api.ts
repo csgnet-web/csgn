@@ -35,6 +35,6 @@ export const api = {
   submitRightNow: (proofToken: string, text: string) => functionFetch<{ ok: boolean; text: string; railSize: number }>('submitRightNow', { method: 'POST', body: JSON.stringify({ proofToken, text }) }),
   castVote: (proofToken: string, voteId: string, option: number) => functionFetch<{ ok: boolean; option: number; weight: number }>('castVote', { method: 'POST', body: JSON.stringify({ proofToken, voteId, option }) }),
   voteMeme: (proofToken: string, symbol: string) => functionFetch<{ ok: boolean; symbol: string; weight: number; tallies: Record<string, { tokens: number; wallets: number }> }>('voteMeme', { method: 'POST', body: JSON.stringify({ proofToken, symbol }) }),
-  jukeboxSpotlight: (proofToken: string, signature: string, coin: { symbol: string; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }) =>
-    functionFetch<{ ok: boolean; symbol: string; sol: number; requiredSol: number }>('jukeboxSpotlight', { method: 'POST', body: JSON.stringify({ proofToken, signature, ...coin }) }),
+  jukeboxSpotlight: (proofToken: string, signature: string, coin: { symbol: string; currency?: 'SOL' | 'CSGN'; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }) =>
+    functionFetch<{ ok: boolean; symbol: string; currency: 'SOL' | 'CSGN'; amount: number; requiredAmount: number; sol?: number; requiredSol?: number }>('jukeboxSpotlight', { method: 'POST', body: JSON.stringify({ proofToken, signature, ...coin }) }),
 }

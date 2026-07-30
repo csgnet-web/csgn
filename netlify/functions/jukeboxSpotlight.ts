@@ -14,14 +14,19 @@ import { badRequest, conflict } from './_shared/errors'
 import { json, parseJson, requireMethod, withHttp } from './_shared/http'
 import { requireString } from './_shared/validators'
 import { checkRateLimit, clientIp } from './_shared/rateLimit'
-import { verifySolPayment } from './_shared/solana'
+import { verifySolPayment, verifySplPayment, CSGN_MINT_ADDRESS, CSGN_TOKEN_DECIMALS } from './_shared/solana'
 import { bumpOnAirAction } from './_shared/onAirActions'
 
 type WalletProof = { type: string; walletAddress: string; exp: number; iat: number; jti: string }
-type Body = { proofToken?: string; signature?: string; symbol?: string; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }
+type Currency = 'SOL' | 'CSGN'
+type Body = { proofToken?: string; signature?: string; symbol?: string; currency?: string; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }
 
 const DEFAULT_SOL = 0.1
 const LAMPORTS_PER_SOL = 1_000_000_000
+// Fallback $CSGN price of a spotlight when config/ticker.spotlightCsgn is unset.
+// A UI token count (not base units); tunable live from the admin panel, same as
+// spotlightSol — a fixed token count is a moving dollar cost.
+const DEFAULT_SPOTLIGHT_CSGN = 1_000_000
 
 export const handler = withHttp(async (event) => {
   requireMethod(event, 'POST')
@@ -34,17 +39,35 @@ export const handler = withHttp(async (event) => {
   const symbol = requireString(body.symbol, 'symbol').toUpperCase().slice(0, 12)
   if (!/^[A-Z0-9$]{2,12}$/.test(symbol)) throw badRequest('Enter a valid ticker symbol (2–12 chars).', 'bad_symbol')
 
+  const currency: Currency = String(body.currency || 'SOL').toUpperCase() === 'CSGN' ? 'CSGN' : 'SOL'
+
   if (await getDoc(`spotlightPays/${signature}`)) throw conflict('That payment has already been used for a spotlight.', 'signature_used')
 
-  const ticker = await getDoc<{ spotlightSol?: number }>('config/ticker')
-  const requiredSol = Number(ticker?.spotlightSol) > 0 ? Number(ticker!.spotlightSol) : DEFAULT_SOL
-  const minLamports = Math.round(requiredSol * LAMPORTS_PER_SOL)
+  const ticker = await getDoc<{ spotlightSol?: number; spotlightCsgn?: number }>('config/ticker')
 
-  // Trust boundary: re-read the confirmed on-chain SOL payment to the treasury.
-  const paidLamports = await verifySolPayment(signature, wallet, minLamports)
+  // Trust boundary: re-read the confirmed on-chain payment to the treasury. SOL
+  // is a plain system transfer; $CSGN is an SPL transfer of the mint. Either way
+  // the proceeds land in the CSGN treasury — nothing is burned (see /treasury).
+  let paidAmount: number
+  let requiredAmount: number
+  let payRecord: Record<string, unknown>
+
+  if (currency === 'CSGN') {
+    requiredAmount = Number(ticker?.spotlightCsgn) > 0 ? Number(ticker!.spotlightCsgn) : DEFAULT_SPOTLIGHT_CSGN
+    const minRaw = BigInt(Math.round(requiredAmount)) * 10n ** BigInt(CSGN_TOKEN_DECIMALS)
+    const { raw } = await verifySplPayment(signature, wallet, CSGN_MINT_ADDRESS, minRaw)
+    paidAmount = Number(raw) / 10 ** CSGN_TOKEN_DECIMALS
+    payRecord = { wallet, symbol, currency: 'CSGN', csgn: paidAmount, at: new Date().toISOString() }
+  } else {
+    requiredAmount = Number(ticker?.spotlightSol) > 0 ? Number(ticker!.spotlightSol) : DEFAULT_SOL
+    const minLamports = Math.round(requiredAmount * LAMPORTS_PER_SOL)
+    const paidLamports = await verifySolPayment(signature, wallet, minLamports)
+    paidAmount = paidLamports / LAMPORTS_PER_SOL
+    payRecord = { wallet, symbol, currency: 'SOL', lamports: paidLamports, at: new Date().toISOString() }
+  }
 
   try {
-    await writeDoc(`spotlightPays/${signature}`, { wallet, symbol, lamports: paidLamports, at: new Date().toISOString() }, { exists: false })
+    await writeDoc(`spotlightPays/${signature}`, payRecord, { exists: false })
   } catch {
     throw conflict('That payment is already being redeemed.', 'signature_used')
   }
@@ -62,5 +85,14 @@ export const handler = withHttp(async (event) => {
   await writeDoc('config/ticker', { spotlight, updatedAt: new Date().toISOString() }, { merge: true })
   await bumpOnAirAction('spotlight')
 
-  return json(200, { ok: true, symbol, sol: paidLamports / LAMPORTS_PER_SOL, requiredSol })
+  return json(200, {
+    ok: true,
+    symbol,
+    currency,
+    amount: paidAmount,
+    requiredAmount,
+    // Back-compat for existing clients that read `sol`/`requiredSol`.
+    sol: currency === 'SOL' ? paidAmount : undefined,
+    requiredSol: currency === 'SOL' ? requiredAmount : undefined,
+  })
 })
