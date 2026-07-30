@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { api } from '@/lib/api'
+import { detectStream } from '@/lib/player'
 import { Modal } from '@/components/ui/Modal'
 import { logAuthEvent } from '@/lib/authEvents'
 import { useAuth } from '@/contexts/useAuth'
@@ -37,6 +38,7 @@ import {
   assignNetworkSlot,
   assignmentStatus,
   buildTwitchStreamUrl,
+  buildKickStreamUrl,
   assignSlot,
   updateSlotStreamUrl,
   updateSlotStatus,
@@ -74,6 +76,16 @@ interface AuthEventData {
 function twitchHandleFromUrl(url?: string): string {
   const m = String(url || '').match(/twitch\.tv\/([^/?#]+)/i)
   return m ? m[1].replace(/^@/, '') : ''
+}
+
+/** Derive the assign modal's platform + input value from a stored stream URL, so
+ *  editing a Kick or YouTube slot reopens on the right platform, not blank Twitch. */
+function assignSourceFromUrl(url?: string): { platform: 'twitch' | 'kick' | 'youtube'; value: string } {
+  const detected = url ? detectStream(url) : null
+  if (detected?.type === 'kick') return { platform: 'kick', value: detected.id }
+  if (detected?.type === 'youtube') return { platform: 'youtube', value: url ?? '' }
+  if (detected?.type === 'twitch') return { platform: 'twitch', value: detected.id }
+  return { platform: 'twitch', value: twitchHandleFromUrl(url) }
 }
 
 interface UserData {
@@ -158,7 +170,8 @@ export default function Admin() {
   const [assignUid, setAssignUid] = useState('')
   const [assignName, setAssignName] = useState('')
   const [assignStreamTitle, setAssignStreamTitle] = useState('')
-  const [assignTwitch, setAssignTwitch] = useState('') // handle only — URL is built from it
+  const [assignTwitch, setAssignTwitch] = useState('') // handle (twitch/kick) or full URL (youtube)
+  const [assignPlatform, setAssignPlatform] = useState<'twitch' | 'kick' | 'youtube'>('twitch')
   const [actionError, setActionError] = useState<string | null>(null)
 
   // Slot stream URL override
@@ -702,16 +715,24 @@ export default function Admin() {
       // Assigning the hour on the air right now flips it live immediately; a
       // future hour parks as 'confirmed' until the clock reaches it.
       const status = assignmentStatus(assignModal, Date.now())
+      // The stream URL is built for the chosen platform: a handle for Twitch/Kick,
+      // a pasted watch/live link for YouTube. /player forwards Kick + YouTube as an
+      // override iframe and drives Twitch through its live-detection pipeline.
+      const streamUrl =
+        assignPlatform === 'kick' ? buildKickStreamUrl(assignTwitch)
+        : assignPlatform === 'youtube' ? (assignTwitch.trim() || DEFAULT_STREAM_URL)
+        : buildTwitchStreamUrl(assignTwitch)
       if (assignModal.type === 'network') {
-        await assignNetworkSlot(assignModal.id, assignUid, assignName, buildTwitchStreamUrl(assignTwitch), assignStreamTitle, status)
+        await assignNetworkSlot(assignModal.id, assignUid, assignName, streamUrl, assignStreamTitle, status)
       } else {
-        await assignSlot(assignModal.id, assignUid, assignName, buildTwitchStreamUrl(assignTwitch), assignStreamTitle, status)
+        await assignSlot(assignModal.id, assignUid, assignName, streamUrl, assignStreamTitle, status)
       }
       setAssignModal(null)
       setAssignUid('')
       setAssignName('')
       setAssignStreamTitle('')
       setAssignTwitch('')
+      setAssignPlatform('twitch')
       await loadSlots()
     } catch (err: any) {
       setActionError(err?.message || 'Failed to assign slot.')
@@ -1595,8 +1616,10 @@ export default function Admin() {
                               <LinkIcon className="w-3 h-3" />
                             </Button>
                             <Button variant="secondary" size="sm" onClick={() => {
+                              const src = assignSourceFromUrl(slot.streamUrl)
                               setAssignModal(slot)
-                              setAssignTwitch(twitchHandleFromUrl(slot.streamUrl))
+                              setAssignPlatform(src.platform)
+                              setAssignTwitch(src.value)
                               setAssignName(slot.assignedName || '')
                               setAssignUid(slot.assignedUid || '')
                               setAssignStreamTitle(slot.streamTitle || '')
@@ -1638,10 +1661,10 @@ export default function Admin() {
                         // Auto-fill the name and Twitch handle from the account.
                         if (u) {
                           setAssignName(u.displayName)
-                          if (u.twitchUsername) setAssignTwitch(u.twitchUsername)
+                          if (u.twitchUsername) { setAssignPlatform('twitch'); setAssignTwitch(u.twitchUsername) }
                         }
                       }}
-                      className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50"
+                      className="w-full px-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50"
                     >
                       <option value="">Select a streamer…</option>
                       {users.filter((u) => u.role === 'streamer' || u.role === 'admin').map((u) => (
@@ -1651,46 +1674,88 @@ export default function Admin() {
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-300 mb-1">Twitch username</label>
-                    <div className="flex items-stretch rounded-xl bg-white/5 border border-white/10 focus-within:border-primary-500/50 overflow-hidden">
-                      <span className="px-3 flex items-center text-xs text-gray-500 font-mono bg-white/[0.03] border-r border-white/10 shrink-0">twitch.tv/</span>
+                    <label className="block text-sm text-gray-300 mb-1.5">Stream source</label>
+                    {/* Platform picker — Twitch drives /player's live-detection pipeline;
+                        Kick + YouTube are forwarded as an override iframe. */}
+                    <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-white/[0.03] border border-white/10 mb-2">
+                      {([
+                        { id: 'twitch', label: 'Twitch' },
+                        { id: 'kick', label: 'Kick' },
+                        { id: 'youtube', label: 'YouTube' },
+                      ] as const).map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => { setAssignPlatform(p.id); setAssignTwitch('') }}
+                          className={`py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
+                            assignPlatform === p.id
+                              ? 'bg-primary-500 text-white'
+                              : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                    {assignPlatform === 'youtube' ? (
                       <input
                         type="text"
+                        inputMode="url"
                         value={assignTwitch}
-                        onChange={(e) => setAssignTwitch(e.target.value.replace(/^@/, '').trim())}
-                        className="flex-1 min-w-0 px-3 py-2.5 bg-transparent text-sm text-white font-mono focus:outline-none"
-                        placeholder="csgnet"
+                        onChange={(e) => setAssignTwitch(e.target.value.trim())}
+                        className="w-full px-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono focus:outline-none focus:border-primary-500/50"
+                        placeholder="https://youtube.com/watch?v=…"
                         autoCapitalize="none"
                         autoCorrect="off"
                         spellCheck={false}
                       />
-                    </div>
-                    <p className="text-[11px] text-gray-500 mt-1">Just the username — we build the link.</p>
+                    ) : (
+                      <div className="flex items-stretch rounded-xl bg-white/5 border border-white/10 focus-within:border-primary-500/50 overflow-hidden">
+                        <span className="px-3 flex items-center text-xs text-gray-500 font-mono bg-white/[0.03] border-r border-white/10 shrink-0">
+                          {assignPlatform === 'kick' ? 'kick.com/' : 'twitch.tv/'}
+                        </span>
+                        <input
+                          type="text"
+                          value={assignTwitch}
+                          onChange={(e) => setAssignTwitch(e.target.value.replace(/^@/, '').trim())}
+                          className="flex-1 min-w-0 px-3 py-3 bg-transparent text-sm text-white font-mono focus:outline-none"
+                          placeholder={assignPlatform === 'kick' ? 'trainwreckstv' : 'csgnet'}
+                          autoCapitalize="none"
+                          autoCorrect="off"
+                          spellCheck={false}
+                        />
+                      </div>
+                    )}
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      {assignPlatform === 'youtube'
+                        ? 'Paste the full watch / live link — /player forwards it as an override.'
+                        : `Just the username — we build the ${assignPlatform === 'kick' ? 'Kick' : 'Twitch'} link.`}
+                    </p>
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-300 mb-1">Display name</label>
+                    <label className="block text-sm text-gray-300 mb-1.5">Display name</label>
                     <input
                       type="text"
                       value={assignName}
                       onChange={(e) => setAssignName(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50"
+                      className="w-full px-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50"
                       placeholder="Streamer name"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-300 mb-1">Stream title <span className="text-gray-500 text-xs">(shows on /watch + /schedule)</span></label>
+                    <label className="block text-sm text-gray-300 mb-1.5">Stream title <span className="text-gray-500 text-xs">(shows on /watch + /schedule)</span></label>
                     <input
                       type="text"
                       value={assignStreamTitle}
                       onChange={(e) => setAssignStreamTitle(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50"
+                      className="w-full px-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50"
                       placeholder="e.g. Crypto Drama Roundup"
                     />
                   </div>
 
-                  <Button variant="primary" size="md" className="w-full" disabled={!assignName.trim()} onClick={handleAssignSlot}>
+                  <Button variant="primary" size="lg" className="w-full" disabled={!assignName.trim()} onClick={handleAssignSlot}>
                     Assign & Notify
                   </Button>
                 </div>
@@ -1700,22 +1765,26 @@ export default function Admin() {
             {/* Stream URL Override Modal */}
             {streamOverrideModal && (
               <Modal open onClose={() => setStreamOverrideModal(null)} title={"Override Stream URL"} maxWidth="max-w-md">
-                  <div className="p-6 space-y-4">
+                  <div className="space-y-4">
                     <div>
                       <p className="text-sm text-gray-400 mb-1">Slot: {streamOverrideModal.label}</p>
-                      <p className="text-xs text-gray-500">This URL will be auto-loaded when this slot goes live.</p>
+                      <p className="text-xs text-gray-500">This URL will be auto-loaded when this slot goes live. Twitch, Kick and YouTube links are all supported.</p>
                     </div>
                     <div>
-                      <label className="block text-sm text-gray-300 mb-1">Stream URL</label>
+                      <label className="block text-sm text-gray-300 mb-1.5">Stream URL</label>
                       <input
                         type="text"
+                        inputMode="url"
                         value={overrideUrl}
                         onChange={(e) => setOverrideUrl(e.target.value)}
-                        className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono focus:outline-none focus:border-primary-500/50"
+                        className="w-full px-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono focus:outline-none focus:border-primary-500/50"
                         placeholder={DEFAULT_STREAM_URL}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
                       />
                     </div>
-                    <Button variant="primary" size="md" className="w-full" onClick={handleStreamOverride}>
+                    <Button variant="primary" size="lg" className="w-full" onClick={handleStreamOverride}>
                       Save URL
                     </Button>
                   </div>
@@ -1725,7 +1794,7 @@ export default function Admin() {
             {/* Slot Requests Modal */}
             {requestModal && (
               <Modal open onClose={() => setRequestModal(null)} title={<>Slot Requests — {requestModal.label}</>} maxWidth="max-w-lg">
-                  <div className="p-6 space-y-4">
+                  <div className="space-y-4">
                     {(requestModal.requests ?? []).length === 0 ? (
                       <p className="text-sm text-gray-500">No requests for this slot.</p>
                     ) : (
@@ -1812,7 +1881,7 @@ export default function Admin() {
             {/* Fee Entry Modal */}
             {feeModal && (
               <Modal open onClose={() => setFeeModal(null)} title={<>Enter Fee Data — {feeModal.label}</>} maxWidth="max-w-md">
-                  <div className="p-6 space-y-4">
+                  <div className="space-y-4">
                     <div>
                       <p className="text-sm text-gray-400">Streamer: <span className="text-white">{feeModal.assignedName}</span></p>
                     </div>

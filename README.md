@@ -103,6 +103,13 @@ Simplified v1 flow. Mobile full-page Twitch OAuth redirect (replaces popup, work
 - **Admin: assigning the hour that's on the air right now sets it `live` immediately.** A new pure, unit-tested `assignmentStatus(slot, now)` decides the status at assign time — `live` for the current hour, `confirmed` for a future one, `completed` for a past one — so an admin dropping a streamer onto the live slot no longer waits up to a minute for the fee poller to promote `confirmed → live`
 - Product direction logged: [`docs/master-plan.md` §11.8](docs/master-plan.md) sketches the **"TV remote for crypto"** — a continuous token-as-weight vote over a curated 3–5-stream shortlist that forwards the winning stream live and accrues owed payouts to creators who can claim them once they make an account — with its owed-money and stream-rights risks named. Ideation only; the time-block schedule remains the shipping model
 
+### v1.8 — July 2026
+**Kick forwarding · mobile-first admin · a money-and-ecosystem strategy.**
+- **Kick forwarding.** `/player` now forwards **Kick** channels (alongside Twitch and YouTube): a `kick.com` / `player.kick.com` URL is detected (`parseKickChannel`, unit-tested — it never claims a bare word, which stays a Twitch channel) and played as an override iframe via `buildKickSrc`. CSP `frame-src` gains `player.kick.com` + `kick.com`
+- **Platform-aware admin assign.** The Schedule → Assign modal gains a **Twitch / Kick / YouTube** segmented picker: a username for Twitch/Kick (prefix shown, link built), a pasted watch/live link for YouTube. Editing a Kick/YouTube slot reopens on the right platform instead of a blank Twitch field
+- **No more mobile zoom-and-strand.** A global `@media (pointer: coarse)` rule forces form controls to 16px on touch devices, so focusing a field never triggers iOS's auto-zoom (scoped to touch so desktop keeps its compact sizing); tap-highlight flash removed for an app feel. The assign modal and other admin dialogs were reworked for thumbs (bigger tap targets, `inputMode`, no autocapitalize) and a double-padding bug in three modals was fixed
+- New **[`docs/ecosystem-strategy.md`](docs/ecosystem-strategy.md)** — a final analysis plus the strategy to work in tandem with Ansem / Bullpen / Solana·Base·Octra projects (CSGN as the ecosystem's broadcast layer), a money-in-pocket-ASAP plan ranked by speed to cash, the **CSGN-for-Venues** play (ChiveTV × TouchTunes × cable), and a 30-day sprint
+
 ---
 
 ## Getting Started

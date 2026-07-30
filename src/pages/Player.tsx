@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
-import { detectStream } from '@/lib/player'
+import { detectStream, buildKickSrc } from '@/lib/player'
 import {
   reduce,
   serverLiveSignal,
@@ -109,11 +109,20 @@ const FAST_TIMING: RevealTiming = {
   countdownS: FAST_COUNTDOWN_MS / 1_000,
 }
 
-function buildYouTubeOverrideSrc(url: string): string | null {
+/**
+ * Build the iframe src for an OVERRIDE (non-Twitch) broadcast — a YouTube video
+ * or a forwarded Kick channel. Twitch never reaches here: it's driven through the
+ * embed live-detection pipeline, not a raw iframe.
+ */
+function buildOverrideSrc(url: string): string | null {
   const stream = detectStream(url)
-  if (!stream || stream.type !== 'youtube') return null
-  const params = new URLSearchParams({ autoplay: '1', mute: '0', controls: '0', rel: '0', modestbranding: '1', iv_load_policy: '3', disablekb: '1', playsinline: '1' })
-  return `https://www.youtube-nocookie.com/embed/${stream.id}?${params.toString()}`
+  if (!stream) return null
+  if (stream.type === 'youtube') {
+    const params = new URLSearchParams({ autoplay: '1', mute: '0', controls: '0', rel: '0', modestbranding: '1', iv_load_policy: '3', disablekb: '1', playsinline: '1' })
+    return `https://www.youtube-nocookie.com/embed/${stream.id}?${params.toString()}`
+  }
+  if (stream.type === 'kick') return buildKickSrc(stream.id)
+  return null
 }
 
 /**
@@ -782,7 +791,7 @@ export default function Player() {
 
   const streamerName = currentSlot?.assignedName || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
-  const overrideSrc = state.mode === 'OVERRIDE' ? buildYouTubeOverrideSrc(state.url) : null
+  const overrideSrc = state.mode === 'OVERRIDE' ? buildOverrideSrc(state.url) : null
 
   // Operator preview: /player?preview=board|brb|starting|lastcall|wipe|countdown
   // forces a state so each look can be checked inside OBS before going live.

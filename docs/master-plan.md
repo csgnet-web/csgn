@@ -4,8 +4,10 @@
 > token works, and — most importantly — **what the founder actually does every
 > day.** Technical build docs (`obs-setup.md`, `broadcast-graphics.md`,
 > `agent-packets.md`, `env-setup.md`, `ops-cost-security-runbook.md`,
-> `v1-launch-checklist.md`) stay as operational references. If anything anywhere
-> disagrees with this file, this file wins.
+> `v1-launch-checklist.md`) stay as operational references, and
+> [`ecosystem-strategy.md`](ecosystem-strategy.md) is the money-and-relationships
+> companion (Ansem/Bullpen tandem, revenue-ASAP, the venue play). If anything
+> anywhere disagrees with this file, this file wins.
 
 ---
 

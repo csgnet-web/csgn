@@ -40,8 +40,27 @@
 *::-webkit-scrollbar-thumb { background: rgba(255, 35, 70, 0.3); border-radius: 4px; }
 *::-webkit-scrollbar-thumb:hover { background: rgba(255, 35, 70, 0.5); }
 ::selection { background: rgba(255, 35, 70, 0.3); color: white; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
 body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255, 255, .92); }
+
+/* App-feel on touch: kill the grey tap-flash that reads as "web page, not app". */
+button, a, [role="button"], input, select, textarea, label {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Stop mobile browsers auto-zooming when a form field focuses. iOS zooms into any
+   control whose font is under 16px and then strands the user zoomed-in — the exact
+   "I have to pinch back out" complaint. Forcing 16px on touch devices removes the
+   trigger entirely; it's scoped to coarse pointers so desktop keeps its compact,
+   designed sizing, and since every input here is ≤14px it only ever grows them.
+   !important is deliberate — it must beat Tailwind's text-sm/text-xs utilities. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
 
 /* ─── Backgrounds ─── */
 .csgn-bg {

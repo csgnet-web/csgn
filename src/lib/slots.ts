@@ -696,6 +696,12 @@ export function buildTwitchStreamUrl(twitchUsername: string): string {
   return cleaned ? `https://www.twitch.tv/${cleaned}` : DEFAULT_STREAM_URL
 }
 
+/** Build a canonical Kick URL from a username (Kick slugs keep their case + hyphens). */
+export function buildKickStreamUrl(kickUsername: string): string {
+  const cleaned = kickUsername.trim().replace(/^@/, '')
+  return cleaned ? `https://kick.com/${cleaned}` : DEFAULT_STREAM_URL
+}
+
 
 /** Admin: assign/switch a streamer on any slot. Assigning the hour that's on the
  *  air right now sets it live immediately (see `assignmentStatus`); a future hour
