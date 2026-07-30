@@ -35,7 +35,7 @@ export const CSGN_DECIMALS = 6
 // pure, Firestore-free, and unit-tested. Re-exported here so every existing
 // `from '@/lib/slots'` import keeps working.
 export type { SlotType, SlotStatus, SlotIdentity, SlotIdentityOptions } from './slotModel'
-export { SLOT_STATUSES, normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable, slotIdentity } from './slotModel'
+export { SLOT_STATUSES, normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable, slotIdentity, assignmentStatus } from './slotModel'
 import { normalizeSlot, isNetworkSlot, type SlotType, type SlotStatus } from './slotModel'
 
 export type FeePaymentStatus = 'pending' | 'paid' | 'declined'
@@ -697,13 +697,16 @@ export function buildTwitchStreamUrl(twitchUsername: string): string {
 }
 
 
-/** Admin: assign/switch a streamer on any slot. */
+/** Admin: assign/switch a streamer on any slot. Assigning the hour that's on the
+ *  air right now sets it live immediately (see `assignmentStatus`); a future hour
+ *  parks as 'confirmed' until the clock reaches it. */
 export async function assignSlot(
   slotId: string,
   uid: string,
   displayName: string,
   streamUrl: string,
   streamTitle: string,
+  status: SlotStatus = 'confirmed',
 ): Promise<void> {
   const ref = doc(db, SLOTS_COLLECTION, slotId)
   await updateDoc(ref, {
@@ -711,7 +714,7 @@ export async function assignSlot(
     assignedName: displayName,
     streamUrl: streamUrl || DEFAULT_STREAM_URL,
     streamTitle,
-    status: 'confirmed',
+    status,
   })
 }
 
@@ -721,13 +724,14 @@ export async function updateSlotStreamUrl(slotId: string, streamUrl: string): Pr
   await updateDoc(ref, { streamUrl: streamUrl || DEFAULT_STREAM_URL })
 }
 
-/** Admin: assign a user to a CEO slot. */
+/** Admin: assign a user to a CEO slot. Live now if it's the current hour. */
 export async function assignNetworkSlot(
   slotId: string,
   uid: string,
   displayName: string,
   streamUrl: string,
   streamTitle: string,
+  status: SlotStatus = 'confirmed',
 ): Promise<void> {
   const ref = doc(db, SLOTS_COLLECTION, slotId)
   await updateDoc(ref, {
@@ -735,7 +739,7 @@ export async function assignNetworkSlot(
     assignedName: displayName,
     streamUrl: streamUrl || DEFAULT_STREAM_URL,
     streamTitle,
-    status: 'confirmed',
+    status,
   })
 
   await addUserNotification(uid, {

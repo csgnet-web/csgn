@@ -35,6 +35,7 @@ import {
   SLOTS_PER_DAY,
   fetchSlots,
   assignNetworkSlot,
+  assignmentStatus,
   buildTwitchStreamUrl,
   assignSlot,
   updateSlotStreamUrl,
@@ -698,10 +699,13 @@ export default function Admin() {
     if (!assignModal || !assignUid.trim() || !assignName.trim()) return
     setActionError(null)
     try {
+      // Assigning the hour on the air right now flips it live immediately; a
+      // future hour parks as 'confirmed' until the clock reaches it.
+      const status = assignmentStatus(assignModal, Date.now())
       if (assignModal.type === 'network') {
-        await assignNetworkSlot(assignModal.id, assignUid, assignName, buildTwitchStreamUrl(assignTwitch), assignStreamTitle)
+        await assignNetworkSlot(assignModal.id, assignUid, assignName, buildTwitchStreamUrl(assignTwitch), assignStreamTitle, status)
       } else {
-        await assignSlot(assignModal.id, assignUid, assignName, buildTwitchStreamUrl(assignTwitch), assignStreamTitle)
+        await assignSlot(assignModal.id, assignUid, assignName, buildTwitchStreamUrl(assignTwitch), assignStreamTitle, status)
       }
       setAssignModal(null)
       setAssignUid('')

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable, slotIdentity, SLOT_STATUSES } from './slotModel'
+import { normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable, slotIdentity, assignmentStatus, SLOT_STATUSES } from './slotModel'
 
 const HOUR = 60 * 60 * 1000
 const future = new Date(Date.now() + 4 * HOUR).toISOString()
@@ -90,6 +90,29 @@ describe('isSlotClaimable', () => {
   })
   it('a network slot actually assigned to someone is never claimable', () => {
     expect(isSlotClaimable(slot({ type: 'network', status: 'confirmed', assignedUid: 'u1' }), false)).toBe(false)
+  })
+})
+
+describe('assignmentStatus — assigning the current hour goes live now', () => {
+  const NOW = 1_700_000_000_000
+  const at = (offsetH: number) => new Date(NOW + offsetH * HOUR).toISOString()
+
+  it('assigning the hour on the air right now sets it live', () => {
+    expect(assignmentStatus({ startTime: at(-1), endTime: at(1) }, NOW)).toBe('live')
+  })
+  it('assigning a future hour parks it as confirmed', () => {
+    expect(assignmentStatus({ startTime: at(2), endTime: at(4) }, NOW)).toBe('confirmed')
+  })
+  it('an already-ended hour is completed', () => {
+    expect(assignmentStatus({ startTime: at(-4), endTime: at(-2) }, NOW)).toBe('completed')
+  })
+  it('is live at the exact start instant, confirmed once ended (half-open window)', () => {
+    expect(assignmentStatus({ startTime: at(0), endTime: at(2) }, NOW)).toBe('live')
+    // end is exclusive: at the end instant the hour is over
+    expect(assignmentStatus({ startTime: at(-2), endTime: at(0) }, NOW)).toBe('completed')
+  })
+  it('falls back to confirmed on unparseable times', () => {
+    expect(assignmentStatus({ startTime: 'nope', endTime: 'nope' }, NOW)).toBe('confirmed')
   })
 })
 

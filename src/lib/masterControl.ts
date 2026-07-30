@@ -13,8 +13,16 @@ import { detectStream } from '@/lib/player'
 
 /** BRB card holds this long after a live feed drops, then intermission. */
 export const BRB_GRACE_MS = 120_000
-/** A slot streamer who never goes live gets this long before intermission. */
-export const STARTING_SOON_MAX_MS = 600_000
+/** Phase A of STARTING_SOON: the calm "goes live shortly" card, shown while we
+ *  wait for a just-claimed streamer to bring their feed up. */
+export const STARTING_SOON_QUIET_MS = 60_000
+/** Phase B of STARTING_SOON: after the calm window with still no feed, a last-call
+ *  countdown warning that the hour is about to revert to open-to-claim. Go live
+ *  before it ends or the stage opens for anyone. */
+export const STARTING_SOON_COUNTDOWN_MS = 120_000
+/** A slot streamer who never goes live gets this long before the stage reverts to
+ *  open-to-claim intermission — the calm window plus the last-call countdown. */
+export const STARTING_SOON_MAX_MS = STARTING_SOON_QUIET_MS + STARTING_SOON_COUNTDOWN_MS
 /** No ONLINE event this long after (re)mount ⇒ treat channel as offline. */
 export const MOUNT_TIMEOUT_MS = 15_000
 /** A server Helix sample older than this is ignored — the poller may be down. */

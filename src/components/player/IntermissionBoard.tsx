@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
-import { formatESTRange, isNetworkSlot, isSlotClaimable, slotIdentity, CSGN_MINT, type Slot } from '@/lib/slots'
+import { formatESTRange, isNetworkSlot, isSlotClaimable, normalizeSlotStatus, slotIdentity, CSGN_MINT, type Slot } from '@/lib/slots'
 import { X_HANDLE } from '@/lib/social'
 import { CsgnLogo } from '@/components/ui/CsgnLogo'
 
@@ -225,14 +225,22 @@ export default function IntermissionBoard({ dimmed = false }: { dimmed?: boolean
   // featured panel is the network billboard, never the "take this slot" one.
   const currentIsNetwork = !!currentSlot && isNetworkSlot(currentSlot) && networkBlockEnabled
 
-  // The open-stage billboard only ever features a GENUINELY claimable hour: the
-  // one on the air if it's open (a streamer ended mid-slot → the stage is empty
-  // and takeable this second), else the next open slot. A reserved network hour
-  // is never advertised as claimable — the same isSlotClaimable rule /watch and
-  // /schedule use, so the three surfaces agree.
-  const currentClaimable = currentSlot && isSlotClaimable(currentSlot, networkBlockEnabled) ? currentSlot : null
+  // The open-stage billboard resolves to the CURRENT actual hour whenever this
+  // board is showing. It only ever renders when nobody is live, so the hour on
+  // the clock is an open stage right now — even if a streamer who dropped mid-hour
+  // or never showed is still nominally assigned to it. That's what stops /player
+  // from "skipping to the next slot" the moment someone drops off live: the revert
+  // lands on the same correct time slot, offered up for anyone to take and go live
+  // on immediately. A reserved network hour (handled above via currentIsNetwork)
+  // and an explicitly completed hour are the only ones that fall through to the
+  // next open slot — which still uses the isSlotClaimable rule /watch and
+  // /schedule share, so the surfaces agree.
+  const currentOpenStage =
+    currentSlot && !currentIsNetwork && normalizeSlotStatus(currentSlot.status) !== 'completed'
+      ? currentSlot
+      : null
   const claimable =
-    currentClaimable
+    currentOpenStage
       ?? allSlots.find((s) => toMillis(s.startTime) > nowMs && isSlotClaimable(s, networkBlockEnabled))
       ?? null
   const claimableIsCurrent = claimable != null && claimable === currentSlot

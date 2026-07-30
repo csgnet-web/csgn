@@ -7,6 +7,8 @@ import {
   INITIAL_STATE,
   BRB_GRACE_MS,
   STARTING_SOON_MAX_MS,
+  STARTING_SOON_QUIET_MS,
+  STARTING_SOON_COUNTDOWN_MS,
   SERVER_FRESH_MS,
   SERVER_OFFLINE_CONFIRM_MS,
   type MasterState,
@@ -29,9 +31,16 @@ describe('masterControl reducer', () => {
     expect(INITIAL_STATE).toEqual({ mode: 'INTERMISSION', channel: null })
   })
 
-  it('claimed slot → STARTING_SOON with a 10-minute deadline', () => {
+  it('claimed slot → STARTING_SOON with the calm + countdown deadline', () => {
     const s = reduce(INITIAL_STATE, slotBroadcast())
     expect(s).toEqual({ mode: 'STARTING_SOON', channel: 'streamer_one', deadlineMs: T0 + STARTING_SOON_MAX_MS })
+  })
+
+  it('STARTING_SOON window is the calm phase plus the last-call countdown', () => {
+    expect(STARTING_SOON_MAX_MS).toBe(STARTING_SOON_QUIET_MS + STARTING_SOON_COUNTDOWN_MS)
+    // The card runs calm for a minute, then a two-minute last-call countdown.
+    expect(STARTING_SOON_QUIET_MS).toBe(60_000)
+    expect(STARTING_SOON_COUNTDOWN_MS).toBe(120_000)
   })
 
   it('default/fallback channel → INTERMISSION with the channel armed', () => {

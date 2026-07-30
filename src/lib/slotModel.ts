@@ -77,6 +77,27 @@ export function isSlotClaimable(
 }
 
 /**
+ * The status a slot should take the moment a streamer is assigned to it.
+ *
+ * Assigning someone to a FUTURE hour parks it as `confirmed`; the fee poller
+ * promotes it to `live` when the clock reaches its start. But assigning someone
+ * to the hour that is **on the air right now** should put it live immediately —
+ * an admin dropping a streamer onto the current slot means "you're on," not
+ * "you're on in up to a minute when the poller next runs." Anything already past
+ * its end is `completed`.
+ */
+export function assignmentStatus(
+  slot: { startTime: string; endTime: string },
+  nowMs: number = Date.now(),
+): SlotStatus {
+  const start = new Date(slot.startTime).getTime()
+  const end = new Date(slot.endTime).getTime()
+  if (Number.isFinite(end) && nowMs >= end) return 'completed'
+  if (Number.isFinite(start) && Number.isFinite(end) && nowMs >= start && nowMs < end) return 'live'
+  return 'confirmed'
+}
+
+/**
  * How a slot presents anywhere in the app — the single source of truth for "who
  * is on this hour, what do we call it, and is it a claimable open stage." Every
  * viewer surface (the /watch headline, the schedule strip, the up-next list, the
