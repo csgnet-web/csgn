@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
-import { detectStream, buildKickSrc } from '@/lib/player'
+import { detectStream, buildKickSrc, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
 import {
   reduce,
   serverLiveSignal,
@@ -117,10 +117,9 @@ const FAST_TIMING: RevealTiming = {
 function buildOverrideSrc(url: string): string | null {
   const stream = detectStream(url)
   if (!stream) return null
-  if (stream.type === 'youtube') {
-    const params = new URLSearchParams({ autoplay: '1', mute: '0', controls: '0', rel: '0', modestbranding: '1', iv_load_policy: '3', disablekb: '1', playsinline: '1' })
-    return `https://www.youtube-nocookie.com/embed/${stream.id}?${params.toString()}`
-  }
+  // Both builders live in lib/player.ts so the embed URLs have exactly one
+  // definition each — this used to re-spell the YouTube params inline.
+  if (stream.type === 'youtube') return buildYouTubeSrc(stream.id, false)
   if (stream.type === 'kick') return buildKickSrc(stream.id)
   return null
 }
@@ -856,7 +855,7 @@ export default function Player() {
             key={overrideSrc}
             src={overrideSrc}
             title="CSGN override"
-            allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+            allow={PLAYER_ALLOW}
             allowFullScreen
             style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, background: '#000' }}
           />

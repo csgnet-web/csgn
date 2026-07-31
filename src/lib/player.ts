@@ -113,24 +113,11 @@ export function buildYouTubeSrc(videoId: string, muted = true): string {
   return `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`
 }
 
-/**
- * Build a Twitch embed src that autoplays with audio unmuted.
- *
- * Key params:
- *   autoplay=true  — start playback immediately
- *   muted=false    — do NOT mute (audio on)
- *
- * The iframe MUST also carry allow="autoplay" for browsers to honour these.
- */
-export function buildTwitchSrc(channel: string, hostname: string, muted = false): string {
-  const params = new URLSearchParams({
-    channel,
-    parent: hostname,
-    autoplay: 'true',
-    muted: muted ? 'true' : 'false',
-  })
-  return `https://player.twitch.tv/?${params.toString()}`
-}
+// NOTE: there is deliberately no `buildTwitchSrc` here. Twitch is the one
+// platform /player does NOT drive with a raw iframe URL — it constructs the
+// Twitch Embed JS API player so it can read live/offline events and playback
+// progress (see masterControl.ts + FeedGate). A URL builder for it would be an
+// unused second way to do the same thing, and the wrong one.
 
 /**
  * Build a Kick embed src. Kick has no JS embed API on par with Twitch's, so on
@@ -149,5 +136,6 @@ export function buildKickSrc(channel: string, muted = false): string {
   return `https://player.kick.com/${channel}?${params.toString()}`
 }
 
-/** Required value for the iframe's `allow` attribute on both players. */
+/** Required value for the iframe's `allow` attribute on every embedded player —
+ *  without it the browser refuses the autoplay the params above request. */
 export const PLAYER_ALLOW = 'autoplay; fullscreen; encrypted-media; picture-in-picture'

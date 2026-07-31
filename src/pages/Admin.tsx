@@ -124,7 +124,7 @@ const DEFAULT_RIGHT_NOW_TAG = 'RIGHT NOW'
  *  rail in a fixed-width event cell that ellipsizes past roughly this many
  *  glyphs, so capping the input here is what stops a headline getting clipped on
  *  air — we never shrink the on-air text, we just don't accept more than fits. */
-const MAX_RIGHT_NOW_CHARS = 44
+const MAX_RIGHT_NOW_CHARS = 60
 
 /** Cap one textarea line's visible text (the part after an optional `TAG |`) to
  *  the ticker's safe width. The tag and `|` are preserved; only the text trims,

@@ -77,7 +77,7 @@ export default function Watch() {
   // a live "CSGN @ NITE" can never headline "THE STAGE IS OPEN" and a claimed
   // hour can never read "Open Slot". The stage is "open" only when the current
   // hour has no programming on it (see slotIdentity).
-  const identity = slotIdentity(currentSlot, { networkBlockEnabled, openName: 'THE STAGE IS OPEN' })
+  const identity = slotIdentity(currentSlot, { networkBlockEnabled, openName: 'Open Slot' })
   const stageOpen = identity.isOpen
 
   // A manual X-broadcast override can still name the host when the slot itself is
@@ -87,7 +87,7 @@ export default function Watch() {
     const v = (value ?? '').trim()
     return v && !/^csgn/i.test(v) ? v : ''
   }
-  const streamerName = stageOpen ? (notNetworkBrand(manualOverride?.streamerName) || 'THE STAGE IS OPEN') : identity.name
+  const streamerName = stageOpen ? (notNetworkBrand(manualOverride?.streamerName) || 'Open Slot') : identity.name
   const streamTitle = notNetworkBrand(currentSlot?.streamTitle) || notNetworkBrand(manualOverride?.title) || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
   // Nobody on the stage right now → sell the open stage rather than the coming-soons.
@@ -198,6 +198,7 @@ export default function Watch() {
           claiming={claiming}
           claimError={claimError}
           onClaimCurrent={() => void handleClaimCurrent()}
+          stageOpen={stageOpen}
         />
 
         {/* Today's schedule — on mobile this sits above the $CSGN panel; on

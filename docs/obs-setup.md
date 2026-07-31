@@ -35,16 +35,24 @@ your scene is the thing that's out of date.
 | Output (scaled) resolution | `1920 × 1080` |
 | FPS | `30` (or 60 — but then every Browser Source's custom FPS must match) |
 
-**One scene: `CSGN MASTER`. Three sources, in this order top to bottom:**
+**One scene: `CSGN MASTER`. Sources, in this order top to bottom:**
 
 | # | Source | Type | Width × Height | Position | Notes |
 |---|---|---|---|---|---|
 | 1 (top) | **Notices** | Browser · local file `docs/obs/csgn-lowerthirds.html` | `1920 × 1080` | `X 0, Y 0` | Transparent until the admin sets something |
-| 2 | **Ticker band** | Browser · local file `docs/obs/csgn-ticker.html` | `1930 × 240` | `X -5, Y 840` | Band = bottom 110px; 130px transparent headroom above |
-| 3 (bottom) | **Feed** | Browser · URL `https://csgn.fun/player` | `1724 × 970` | centred, `Y 0` | 16:9 so the Twitch feed never letterboxes |
+| 2 | **Now Watching bug** | Browser · local file `docs/obs/csgn-nowwatching.html` | `1920 × 1080` | `X 0, Y 0` | **Permanent** — always says what's on. Admin → Broadcast Control → Now Live |
+| 3 | **Ticker band** | Browser · local file `docs/obs/csgn-ticker.html` | `1930 × 240` | `X -5, Y 840` | Band = bottom 110px; 130px transparent headroom above |
+| 4 | **PIP frames** *(optional)* | Browser · local file `docs/obs/csgn-pip.html` | `1920 × 1080` | `X 0, Y 0` | Only when compositing your own sources — see [`obs/README.md` §4.2](./obs/README.md) |
+| 5 | **Your video sources** *(optional)* | Capture / Browser / Camera | per `?guide=1` | per `?guide=1` | Sit *behind* the PIP frames, inside the printed rectangles |
+| 6 (bottom) | **Feed** | Browser · URL `https://csgn.fun/player` | `1724 × 970` | centred, `Y 0` | 16:9 so the Twitch feed never letterboxes |
 
 **Order matters.** The ticker must sit *above* the feed or the rising spotlight
 and the BREAKING row get painted over. Notices must sit above both.
+
+> The simple 24/7 setup is sources **1, 2, 3 and 6** — `/player` fills the frame
+> and everything else draws over it. Add 4–5 only when you're compositing your
+> own multi-source layout (whip-around, co-stream, desk + gameplay).
+> **A complete index of every asset lives in [`docs/obs/README.md`](./obs/README.md).**
 
 **Per-source settings (all three Browser Sources):**
 

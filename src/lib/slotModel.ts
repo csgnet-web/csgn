@@ -9,6 +9,31 @@
 // networkBlockEnabled: false), which returns those hours to open claiming
 // without rewriting a single slot doc.
 
+/**
+ * Coerce any timestamp shape a slot doc can carry into epoch milliseconds.
+ *
+ * The same field arrives in three shapes depending on the write path: an ISO
+ * string (client writes + the server's `new Date().toISOString()`), a real
+ * `Date`, or a Firestore `Timestamp` (duck-typed by its `toDate()` so this
+ * module stays free of the Firebase SDK). Anything unparseable collapses to
+ * **0**, never `NaN` — every consumer compares these against `Date.now()`, and
+ * a `NaN` makes *both* sides of a comparison false, so a malformed timestamp
+ * would silently sort into an arbitrary position instead of being filtered out.
+ * Returning 0 makes it read as "the distant past", which every call site
+ * already handles.
+ */
+export function toMillis(value: unknown): number {
+  if (typeof value === 'string' || value instanceof Date || typeof value === 'number') {
+    const ms = new Date(value as string | Date | number).getTime()
+    return Number.isFinite(ms) ? ms : 0
+  }
+  if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate: unknown }).toDate === 'function') {
+    const ms = (value as { toDate: () => Date }).toDate().getTime()
+    return Number.isFinite(ms) ? ms : 0
+  }
+  return 0
+}
+
 export type SlotType = 'open' | 'network'
 
 export type SlotStatus =

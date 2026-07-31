@@ -5,7 +5,6 @@ import {
   parseKickChannel,
   detectStream,
   buildYouTubeSrc,
-  buildTwitchSrc,
   buildKickSrc,
   PLAYER_ALLOW,
 } from './player'
@@ -145,37 +144,6 @@ describe('buildYouTubeSrc', () => {
   })
   it('sets playsinline=1 (inline on iOS, no forced fullscreen)', () => {
     expect(url.searchParams.get('playsinline')).toBe('1')
-  })
-})
-
-// ── buildTwitchSrc ───────────────────────────────────────────────────────────
-//
-// TwitchPlayer uses the Twitch Embed JS API (Twitch.Embed) loaded dynamically,
-// not a raw iframe. The Embed instance is created with muted:false and
-// setMuted(false) + setVolume(1) are called in the VIDEO_READY event, which
-// fires after the player's JS has fully initialised — guaranteeing audio-on
-// autoplay regardless of browser autoplay policy.
-//
-// buildTwitchSrc remains useful for testing / server-side rendering contexts.
-
-describe('buildTwitchSrc', () => {
-  const src = buildTwitchSrc('xqc', 'localhost')
-  const url = new URL(src)
-
-  it('targets the Twitch player', () => {
-    expect(url.hostname).toBe('player.twitch.tv')
-  })
-  it('sets the channel', () => {
-    expect(url.searchParams.get('channel')).toBe('xqc')
-  })
-  it('sets the parent hostname', () => {
-    expect(url.searchParams.get('parent')).toBe('localhost')
-  })
-  it('sets autoplay=true (autoplay ON)', () => {
-    expect(url.searchParams.get('autoplay')).toBe('true')
-  })
-  it('sets muted=false (audio ON)', () => {
-    expect(url.searchParams.get('muted')).toBe('false')
   })
 })
 

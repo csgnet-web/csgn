@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
-import { formatESTRange, isNetworkSlot, isSlotClaimable, normalizeSlotStatus, slotIdentity, CSGN_MINT, type Slot } from '@/lib/slots'
+import { formatESTRange, isNetworkSlot, isSlotClaimable, normalizeSlotStatus, slotIdentity, toMillis, CSGN_MINT, type Slot } from '@/lib/slots'
 import { X_HANDLE } from '@/lib/social'
 import { CsgnLogo } from '@/components/ui/CsgnLogo'
+import { formatPrice, compactUsd } from '@/lib/format'
 
 const PANEL_INTERVAL_MS = 12_000
 
@@ -14,26 +15,8 @@ const TAGLINES = [
   'This stage could be yours — claim it at csgn.fun',
 ] as const
 
-function toMillis(value: unknown): number {
-  if (typeof value === 'string' || value instanceof Date || typeof value === 'number') {
-    const ms = new Date(value as string | Date | number).getTime()
-    return Number.isFinite(ms) ? ms : 0
-  }
-  if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate: unknown }).toDate === 'function') {
-    const ms = (value as { toDate: () => Date }).toDate().getTime()
-    return Number.isFinite(ms) ? ms : 0
-  }
-  return 0
-}
 
-function formatPrice(price: number): string {
-  if (price <= 0) return '—'
-  if (price >= 1) return `$${price.toFixed(2)}`
-  if (price >= 0.01) return `$${price.toFixed(4)}`
-  return `$${Number(price.toPrecision(3)).toFixed(Math.max(0, -Math.floor(Math.log10(price)) + 2))}`
-}
 
-const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 })
 
 function UpNextPanel({ slots, networkBlockEnabled }: { slots: Slot[]; networkBlockEnabled: boolean }) {
   return (
@@ -164,13 +147,13 @@ function TokenPanelBoard() {
         <div>
           <p className="text-lg uppercase tracking-[0.25em] text-gray-500">Market Cap</p>
           <p className="text-3xl font-black font-mono text-white mt-1">
-            {tokenStats?.marketCapUsd ? `$${compact.format(tokenStats.marketCapUsd)}` : '—'}
+            {compactUsd(tokenStats?.marketCapUsd)}
           </p>
         </div>
         <div>
           <p className="text-lg uppercase tracking-[0.25em] text-gray-500">24h Volume</p>
           <p className="text-3xl font-black font-mono text-white mt-1">
-            {tokenStats?.volumeH24Usd ? `$${compact.format(tokenStats.volumeH24Usd)}` : '—'}
+            {compactUsd(tokenStats?.volumeH24Usd)}
           </p>
         </div>
       </div>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
-import { subscribeToSlots, type Slot } from '@/lib/slots'
+import { subscribeToSlots, toMillis, type Slot } from '@/lib/slots'
 import { fetchTokenStats } from '@/lib/dexscreener'
 import {
   LiveSlotContext,
@@ -20,16 +20,6 @@ function tokenStatsFresh(stats: TokenStats | null): boolean {
   return Number.isFinite(t) && Date.now() - t < TOKEN_STATS_STALE_MS
 }
 
-function toMillis(value: unknown): number {
-  if (typeof value === 'string' || value instanceof Date || typeof value === 'number') {
-    const ms = new Date(value as string | Date | number).getTime()
-    return Number.isFinite(ms) ? ms : 0
-  }
-  if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate: unknown }).toDate === 'function') {
-    return (value as { toDate: () => Date }).toDate().getTime()
-  }
-  return 0
-}
 
 export function LiveSlotProvider({ children }: { children: React.ReactNode }) {
   const [allSlots, setAllSlots] = useState<Slot[]>([])

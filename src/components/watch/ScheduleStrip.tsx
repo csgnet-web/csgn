@@ -1,21 +1,10 @@
-import { isSlotClaimable, slotIdentity } from '@/lib/slots'
+import { isSlotClaimable, slotIdentity, toMillis } from '@/lib/slots'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
 import type { Slot } from '@/lib/slots'
 
-function toMillis(value: unknown): number {
-  if (typeof value === 'string' || value instanceof Date || typeof value === 'number') {
-    const ms = new Date(value as string | Date | number).getTime()
-    return Number.isFinite(ms) ? ms : 0
-  }
-  if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate: unknown }).toDate === 'function') {
-    const ms = (value as { toDate: () => Date }).toDate().getTime()
-    return Number.isFinite(ms) ? ms : 0
-  }
-  return 0
-}
 
 function etDayKeyFromMillis(ms: number): string {
   return new Date(ms).toLocaleDateString('en-CA', {

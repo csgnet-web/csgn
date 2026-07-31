@@ -10,9 +10,9 @@ import {
   fetchTreasuryBalances,
   type TreasuryBalances,
 } from '@/lib/treasury'
+import { compact } from '@/lib/format'
 
-const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 })
-const usd = (n: number) => `$${compact.format(n)}`
+const usd = (n: number) => `$${compact(n)}`
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -97,7 +97,7 @@ export default function Treasury() {
             />
             <Stat
               label="$CSGN"
-              value={balances.csgn != null ? compact.format(balances.csgn) : dash}
+              value={balances.csgn != null ? compact(balances.csgn) : dash}
               sub={csgnUsd != null ? usd(csgnUsd) : 'USD —'}
             />
             <Stat

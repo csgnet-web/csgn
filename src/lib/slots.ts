@@ -35,7 +35,7 @@ export const CSGN_DECIMALS = 6
 // pure, Firestore-free, and unit-tested. Re-exported here so every existing
 // `from '@/lib/slots'` import keeps working.
 export type { SlotType, SlotStatus, SlotIdentity, SlotIdentityOptions } from './slotModel'
-export { SLOT_STATUSES, normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable, slotIdentity, assignmentStatus } from './slotModel'
+export { SLOT_STATUSES, normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable, slotIdentity, assignmentStatus, toMillis } from './slotModel'
 import { normalizeSlot, isNetworkSlot, type SlotType, type SlotStatus } from './slotModel'
 
 export type FeePaymentStatus = 'pending' | 'paid' | 'declined'
