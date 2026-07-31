@@ -82,10 +82,27 @@ class FakeTwitchPlayer {
 
 // ── Module mocks ─────────────────────────────────────────────────────────────
 
-const harness = vi.hoisted(() => ({
-  obs: true,
-  loadPlayer: (): Promise<unknown> => Promise.reject(new Error('unset')),
-}))
+const harness = vi.hoisted(() => {
+  // A plain confirmed open-block slot, on the air right now. Rebuilt per test so
+  // a scenario can swap in a network slot / flip the block without leaking.
+  const defaultSlot = (): Record<string, unknown> => ({
+    id: 'slot-1',
+    type: 'open',
+    streamUrl: 'https://www.twitch.tv/teststreamer',
+    assignedUid: 'uid-1',
+    assignedName: 'Test Streamer',
+    status: 'confirmed',
+    startTime: new Date(Date.now() - 3_600_000).toISOString(),
+    endTime: new Date(Date.now() + 3_600_000).toISOString(),
+  })
+  return {
+    obs: true,
+    loadPlayer: (): Promise<unknown> => Promise.reject(new Error('unset')),
+    defaultSlot,
+    slot: defaultSlot() as Record<string, unknown> | null,
+    networkBlockEnabled: true,
+  }
+})
 
 vi.mock('@/lib/twitchEmbed', () => ({
   loadTwitchPlayer: () => harness.loadPlayer(),
@@ -102,23 +119,17 @@ vi.mock('firebase/firestore', () => ({
 vi.mock('@/lib/slots', () => ({
   DEFAULT_STREAM_URL: 'https://twitch.tv/csgnet',
   formatESTRange: () => '8:00 PM – 9:00 PM EST',
+  isNetworkSlot: (slot: { type?: unknown }) => String(slot?.type ?? '') === 'network',
 }))
 vi.mock('@/contexts/useLiveSlot', () => ({
   useLiveSlot: () => ({
-    currentSlot: {
-      id: 'slot-1',
-      streamUrl: 'https://www.twitch.tv/teststreamer',
-      assignedUid: 'uid-1',
-      assignedName: 'Test Streamer',
-      status: 'confirmed',
-      startTime: new Date(Date.now() - 3_600_000).toISOString(),
-      endTime: new Date(Date.now() + 3_600_000).toISOString(),
-    },
+    currentSlot: harness.slot,
     allSlots: [],
     manualOverride: null,
     tokenStats: null,
     nowMs: Date.now(),
     slotsReady: true,
+    networkBlockEnabled: harness.networkBlockEnabled,
   }),
 }))
 // Presentation components stubbed to sentinels — these tests are about what
@@ -191,6 +202,8 @@ beforeEach(() => {
   FakeTwitchPlayer.instances = []
   harness.obs = true
   harness.loadPlayer = () => Promise.resolve(FakeTwitchPlayer)
+  harness.slot = harness.defaultSlot()
+  harness.networkBlockEnabled = true
   // /player reads its flags (?noads, ?debug, …) from the URL at mount — reset to
   // a clean path so a mode test can't leak its query into the next test.
   window.history.replaceState({}, '', '/')
@@ -430,5 +443,59 @@ describe('/player in a normal browser tab (autoplay policy blocks unmute)', () =
     })
     expect(player.muted).toBe(false)
     expect(document.querySelector('button')).toBeNull()
+  })
+})
+
+describe('/player on a CSGN Originals (network) hour', () => {
+  // Healthy Twitch startup timeline, reused to prove the armed channel still
+  // cuts to the feed the moment the operator goes live.
+  const goLiveScript = (p: () => FakeTwitchPlayer) => (sec: number) => {
+    if (sec === 1) { p().fire(FakeTwitchPlayer.READY); p().fire(FakeTwitchPlayer.PLAYING) }
+    p().currentTime = Math.max(0, sec - 1)
+    if (sec >= 3) p().qualities = [{ group: 'chunked' }, { group: '720p60' }]
+  }
+
+  const networkSlot = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    id: 'slot-net',
+    type: 'network',
+    streamUrl: 'https://www.twitch.tv/csgnet',
+    assignedUid: null,
+    assignedName: 'CSGN @ NITE',
+    status: 'confirmed',
+    startTime: new Date(Date.now() - 3_600_000).toISOString(),
+    endTime: new Date(Date.now() + 3_600_000).toISOString(),
+    ...over,
+  })
+
+  it('skips the starting-soon countdown and sits on CSGN Originals until the feed cuts in', async () => {
+    harness.slot = networkSlot()
+    harness.networkBlockEnabled = true
+    await mountPlayer()
+
+    // No "next streamer goes live shortly" / last-call interstitial — an
+    // operator-controlled hour goes straight to the CSGN Originals board.
+    expect(document.querySelector('[data-testid="card-starting-soon"]')).toBeNull()
+    expect(document.querySelector('[data-testid="vod-rotator"]')).not.toBeNull()
+
+    // The channel is still armed, so the operator going live cuts to the feed.
+    const player = () => FakeTwitchPlayer.instances[0]
+    expect(FakeTwitchPlayer.instances).toHaveLength(1)
+    expect(player().opts.channel).toBe('csgnet')
+    await passSeconds(45, goLiveScript(player))
+    expect(coverUp()).toBe(false)
+    expect(player().muted).toBe(false)
+    expect(document.querySelector('[data-testid="card-starting-soon"]')).toBeNull()
+    expect(document.querySelector('[data-testid="card-brb"]')).toBeNull()
+  })
+
+  it('restores the normal starting-soon countdown once the network block is off', async () => {
+    // Block off → the hour is public again, so an assigned claimant gets the
+    // ordinary starting-soon card, not the bare board.
+    harness.slot = networkSlot({ assignedUid: 'uid-9', assignedName: 'Claimed It' })
+    harness.networkBlockEnabled = false
+    await mountPlayer()
+
+    expect(document.querySelector('[data-testid="card-starting-soon"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="vod-rotator"]')).toBeNull()
   })
 })

@@ -22,7 +22,7 @@ import IntermissionBoard from '@/components/player/IntermissionBoard'
 import StatusCard from '@/components/player/StatusCard'
 import VodRotator, { type VodItem } from '@/components/player/VodRotator'
 import FeedCover from '@/components/player/FeedCover'
-import { formatESTRange, DEFAULT_STREAM_URL } from '@/lib/slots'
+import { formatESTRange, isNetworkSlot, DEFAULT_STREAM_URL } from '@/lib/slots'
 
 interface EmergencyOverride { enabled?: boolean; streamUrl?: string }
 
@@ -172,7 +172,7 @@ export default function Player() {
     if (typeof window === 'undefined') return false
     return new URLSearchParams(window.location.search).has('peek')
   }, [])
-  const { currentSlot, slotsReady } = useLiveSlot()
+  const { currentSlot, slotsReady, networkBlockEnabled } = useLiveSlot()
   const [state, dispatch] = useReducer(reduce, INITIAL_STATE)
   const [vodItems, setVodItems] = useState<VodItem[]>([])
   const [emergency, setEmergency] = useState<EmergencyOverride | null>(null)
@@ -447,9 +447,19 @@ export default function Player() {
     }
     if (currentSlot) {
       const assigned = Boolean(currentSlot.assignedUid) || currentSlot.status === 'confirmed' || currentSlot.status === 'live'
+      // CSGN Originals (network) hours are operator-programmed: the operator
+      // brings the feed up by hand, so the "starting soon" courtesy window — and
+      // the last-call countdown that follows it to hand an unclaimed hour back to
+      // open — has no claimant to court and shouldn't run. Treat those hours like
+      // the default network channel: sit on the CSGN Originals board (Intermission
+      // already bills a network hour as CSGN Originals) with the channel armed, and
+      // cut to the feed the instant it comes online — no interstitial. Toggling the
+      // network block off returns these hours to public claiming, so an assigned
+      // claimant gets the normal starting-soon countdown again.
+      const operatorControlled = isNetworkSlot(currentSlot) && networkBlockEnabled
       return {
         streamUrl: currentSlot.streamUrl || DEFAULT_STREAM_URL,
-        source: assigned ? 'slot' : 'default',
+        source: assigned && !operatorControlled ? 'slot' : 'default',
         slotId: currentSlot.id,
       }
     }
@@ -459,7 +469,7 @@ export default function Player() {
     // mid-bootstrap — how a mistuned offline page ended up on-stream.
     if (!slotsReady) return { streamUrl: '', source: 'loading', slotId: null }
     return { streamUrl: DEFAULT_STREAM_URL, source: 'default', slotId: null }
-  }, [emergency, forcedChannel, currentSlot, slotsReady])
+  }, [emergency, forcedChannel, currentSlot, slotsReady, networkBlockEnabled])
 
   useEffect(() => {
     dispatch({ type: 'BROADCAST_CHANGED', broadcast, nowMs: Date.now() })
