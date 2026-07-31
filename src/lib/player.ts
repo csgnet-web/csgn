@@ -3,7 +3,7 @@
  * Extracted here so logic can be unit-tested independently of React.
  */
 
-export type StreamType = 'twitch' | 'youtube'
+export type StreamType = 'twitch' | 'youtube' | 'kick'
 export interface DetectedStream { type: StreamType; id: string }
 
 // ── URL parsers ──────────────────────────────────────────────────────────────
@@ -36,6 +36,27 @@ export function parseTwitchChannel(url: string): string | null {
   return null
 }
 
+/**
+ * Kick channel from a kick.com / player.kick.com URL. Unlike Twitch we do NOT
+ * accept a bare word here — a lone "xqc" is already claimed as a Twitch channel,
+ * so Kick must be named by an explicit kick.com link to stay unambiguous. Kick
+ * slugs are 3–25 chars of letters, digits, underscores and hyphens.
+ */
+export function parseKickChannel(url: string): string | null {
+  const raw = url.trim()
+  if (!raw) return null
+  try {
+    const normalized = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`
+    const parsed = new URL(normalized)
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase()
+    if (host !== 'kick.com' && host !== 'player.kick.com') return null
+    const first = parsed.pathname.split('/').filter(Boolean)[0]
+    return first && /^[a-zA-Z0-9_-]{3,25}$/.test(first) ? first : null
+  } catch {
+    return null
+  }
+}
+
 export function parseYouTubeId(url: string): string | null {
   const patterns = [
     /(?:youtube\.com\/watch\?.*v=)([a-zA-Z0-9_-]{11})/,
@@ -55,6 +76,8 @@ export function detectStream(url: string): DetectedStream | null {
   if (ch) return { type: 'twitch', id: ch }
   const yt = parseYouTubeId(url)
   if (yt) return { type: 'youtube', id: yt }
+  const kick = parseKickChannel(url)
+  if (kick) return { type: 'kick', id: kick }
   return null
 }
 
@@ -90,24 +113,29 @@ export function buildYouTubeSrc(videoId: string, muted = true): string {
   return `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`
 }
 
+// NOTE: there is deliberately no `buildTwitchSrc` here. Twitch is the one
+// platform /player does NOT drive with a raw iframe URL — it constructs the
+// Twitch Embed JS API player so it can read live/offline events and playback
+// progress (see masterControl.ts + FeedGate). A URL builder for it would be an
+// unused second way to do the same thing, and the wrong one.
+
 /**
- * Build a Twitch embed src that autoplays with audio unmuted.
+ * Build a Kick embed src. Kick has no JS embed API on par with Twitch's, so on
+ * /player a Kick channel is forwarded as an OVERRIDE iframe (like YouTube) rather
+ * than driven through the Twitch live-detection pipeline.
  *
- * Key params:
- *   autoplay=true  — start playback immediately
- *   muted=false    — do NOT mute (audio on)
- *
- * The iframe MUST also carry allow="autoplay" for browsers to honour these.
+ *   autoplay=true — start immediately
+ *   muted=false   — audio on (honoured inside OBS; a normal browser tab may need
+ *                   the viewer's tap, same caveat as the YouTube override)
  */
-export function buildTwitchSrc(channel: string, hostname: string, muted = false): string {
+export function buildKickSrc(channel: string, muted = false): string {
   const params = new URLSearchParams({
-    channel,
-    parent: hostname,
     autoplay: 'true',
     muted: muted ? 'true' : 'false',
   })
-  return `https://player.twitch.tv/?${params.toString()}`
+  return `https://player.kick.com/${channel}?${params.toString()}`
 }
 
-/** Required value for the iframe's `allow` attribute on both players. */
+/** Required value for the iframe's `allow` attribute on every embedded player —
+ *  without it the browser refuses the autoplay the params above request. */
 export const PLAYER_ALLOW = 'autoplay; fullscreen; encrypted-media; picture-in-picture'

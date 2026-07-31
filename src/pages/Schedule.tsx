@@ -5,7 +5,7 @@ import { Radio, Crown, Check, Loader2, AlertCircle, CalendarPlus, Twitch } from 
 import { db } from '@/config/firebase'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { isNetworkSlot, isSlotClaimable, type Slot } from '@/lib/slots'
+import { isNetworkSlot, isSlotClaimable, toMillis, type Slot } from '@/lib/slots'
 import { api } from '@/lib/api'
 import { useAuth } from '@/contexts/useAuth'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
@@ -23,17 +23,6 @@ function twitchHandleFromUrl(url?: string): string {
   return m ? m[1].replace(/^@/, '') : ''
 }
 
-function toMillis(value: unknown): number {
-  if (typeof value === 'string' || value instanceof Date || typeof value === 'number') {
-    const ms = new Date(value).getTime()
-    return Number.isFinite(ms) ? ms : 0
-  }
-  if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate: unknown }).toDate === 'function') {
-    const ms = (value as { toDate: () => Date }).toDate().getTime()
-    return Number.isFinite(ms) ? ms : 0
-  }
-  return 0
-}
 
 const toDate = (value: unknown): Date => new Date(toMillis(value))
 

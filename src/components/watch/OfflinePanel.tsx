@@ -1,19 +1,9 @@
 import { ExternalLink } from 'lucide-react'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
-import { formatESTRange, slotIdentity } from '@/lib/slots'
+import { formatESTRange, slotIdentity, toMillis } from '@/lib/slots'
 import { X_HANDLE, X_PROFILE_URL } from '@/lib/social'
 import { CsgnLogo } from '@/components/ui/CsgnLogo'
 
-function toMillis(value: unknown): number {
-  if (typeof value === 'string' || value instanceof Date || typeof value === 'number') {
-    const ms = new Date(value as string | Date | number).getTime()
-    return Number.isFinite(ms) ? ms : 0
-  }
-  if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate: unknown }).toDate === 'function') {
-    return (value as { toDate: () => Date }).toDate().getTime()
-  }
-  return 0
-}
 
 /**
  * Branded stage shown when no X broadcast URL is set (stream offline /

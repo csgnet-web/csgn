@@ -2,9 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   parseTwitchChannel,
   parseYouTubeId,
+  parseKickChannel,
   detectStream,
   buildYouTubeSrc,
-  buildTwitchSrc,
+  buildKickSrc,
   PLAYER_ALLOW,
 } from './player'
 
@@ -62,6 +63,29 @@ describe('parseYouTubeId', () => {
   })
 })
 
+// ── parseKickChannel ─────────────────────────────────────────────────────────
+
+describe('parseKickChannel', () => {
+  it('extracts channel from a kick.com URL', () => {
+    expect(parseKickChannel('https://kick.com/xqc')).toBe('xqc')
+    expect(parseKickChannel('https://www.kick.com/Adin-Ross/')).toBe('Adin-Ross')
+  })
+  it('extracts channel from a player.kick.com URL', () => {
+    expect(parseKickChannel('https://player.kick.com/trainwreckstv')).toBe('trainwreckstv')
+  })
+  it('accepts a bare kick.com host without scheme', () => {
+    expect(parseKickChannel('kick.com/roshtein')).toBe('roshtein')
+  })
+  it('does NOT claim a bare word (that stays a Twitch channel)', () => {
+    expect(parseKickChannel('xqc')).toBeNull()
+  })
+  it('returns null for a Twitch or YouTube URL, or empty', () => {
+    expect(parseKickChannel('https://twitch.tv/xqc')).toBeNull()
+    expect(parseKickChannel('https://youtube.com/watch?v=dQw4w9WgXcQ')).toBeNull()
+    expect(parseKickChannel('')).toBeNull()
+  })
+})
+
 // ── detectStream ─────────────────────────────────────────────────────────────
 
 describe('detectStream', () => {
@@ -76,6 +100,9 @@ describe('detectStream', () => {
   it('detects YouTube Live stream from /live/ URL', () => {
     const result = detectStream('https://www.youtube.com/live/dQw4w9WgXcQ')
     expect(result).toEqual({ type: 'youtube', id: 'dQw4w9WgXcQ' })
+  })
+  it('detects a Kick stream from a kick.com URL', () => {
+    expect(detectStream('https://kick.com/xqc')).toEqual({ type: 'kick', id: 'xqc' })
   })
   it('returns null for unrecognised URL', () => {
     expect(detectStream('https://example.com/stream')).toBeNull()
@@ -120,33 +147,16 @@ describe('buildYouTubeSrc', () => {
   })
 })
 
-// ── buildTwitchSrc ───────────────────────────────────────────────────────────
-//
-// TwitchPlayer uses the Twitch Embed JS API (Twitch.Embed) loaded dynamically,
-// not a raw iframe. The Embed instance is created with muted:false and
-// setMuted(false) + setVolume(1) are called in the VIDEO_READY event, which
-// fires after the player's JS has fully initialised — guaranteeing audio-on
-// autoplay regardless of browser autoplay policy.
-//
-// buildTwitchSrc remains useful for testing / server-side rendering contexts.
+// ── buildKickSrc ─────────────────────────────────────────────────────────────
 
-describe('buildTwitchSrc', () => {
-  const src = buildTwitchSrc('xqc', 'localhost')
-  const url = new URL(src)
-
-  it('targets the Twitch player', () => {
-    expect(url.hostname).toBe('player.twitch.tv')
+describe('buildKickSrc', () => {
+  const url = new URL(buildKickSrc('xqc'))
+  it('targets the Kick embed player with the channel in the path', () => {
+    expect(url.hostname).toBe('player.kick.com')
+    expect(url.pathname).toBe('/xqc')
   })
-  it('sets the channel', () => {
-    expect(url.searchParams.get('channel')).toBe('xqc')
-  })
-  it('sets the parent hostname', () => {
-    expect(url.searchParams.get('parent')).toBe('localhost')
-  })
-  it('sets autoplay=true (autoplay ON)', () => {
+  it('autoplays with audio on by default', () => {
     expect(url.searchParams.get('autoplay')).toBe('true')
-  })
-  it('sets muted=false (audio ON)', () => {
     expect(url.searchParams.get('muted')).toBe('false')
   })
 })

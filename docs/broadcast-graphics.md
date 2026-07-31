@@ -10,6 +10,15 @@ thirds, a persistent bug/clock, a crypto/headlines ticker, and the
 side-screens). It is written to fit the architecture CSGN already has, so read
 [`docs/obs-setup.md`](./obs-setup.md) first if you haven't.
 
+> **Shipped, ready to use** (self-contained OBS browser sources in
+> [`docs/obs/`](./obs/)): [`csgn-pip.html`](./obs/csgn-pip.html) is the
+> multi-source layout compositor described in §PIP below — solo · duo ·
+> duo-stack · pip-corner · tri (1 focus + 2 even) · tri-top · quad · spotlight,
+> switched with `?layout=` or the `1`–`9` keys, with a `?guide=1` setup overlay
+> that prints each window's exact X/Y/W/H. [`csgn-nowwatching.html`](./obs/csgn-nowwatching.html)
+> is the always-on "Now Watching" bug (reads `config/ticker.nowLive`, set from
+> Admin → Broadcast Control). Both are dependency-free and built to open-source.
+
 ---
 
 ## 1. The core decision: build the graphics in code, not in OBS

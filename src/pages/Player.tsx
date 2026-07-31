@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
-import { detectStream } from '@/lib/player'
+import { detectStream, buildKickSrc, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
 import {
   reduce,
   serverLiveSignal,
@@ -9,6 +9,7 @@ import {
   isServerConfirmedOffline,
   INITIAL_STATE,
   MOUNT_TIMEOUT_MS,
+  STARTING_SOON_COUNTDOWN_MS,
   type BroadcastDoc,
   type MasterState,
 } from '@/lib/masterControl'
@@ -108,11 +109,19 @@ const FAST_TIMING: RevealTiming = {
   countdownS: FAST_COUNTDOWN_MS / 1_000,
 }
 
-function buildYouTubeOverrideSrc(url: string): string | null {
+/**
+ * Build the iframe src for an OVERRIDE (non-Twitch) broadcast — a YouTube video
+ * or a forwarded Kick channel. Twitch never reaches here: it's driven through the
+ * embed live-detection pipeline, not a raw iframe.
+ */
+function buildOverrideSrc(url: string): string | null {
   const stream = detectStream(url)
-  if (!stream || stream.type !== 'youtube') return null
-  const params = new URLSearchParams({ autoplay: '1', mute: '0', controls: '0', rel: '0', modestbranding: '1', iv_load_policy: '3', disablekb: '1', playsinline: '1' })
-  return `https://www.youtube-nocookie.com/embed/${stream.id}?${params.toString()}`
+  if (!stream) return null
+  // Both builders live in lib/player.ts so the embed URLs have exactly one
+  // definition each — this used to re-spell the YouTube params inline.
+  if (stream.type === 'youtube') return buildYouTubeSrc(stream.id, false)
+  if (stream.type === 'kick') return buildKickSrc(stream.id)
+  return null
 }
 
 /**
@@ -168,6 +177,11 @@ export default function Player() {
   const [vodItems, setVodItems] = useState<VodItem[]>([])
   const [emergency, setEmergency] = useState<EmergencyOverride | null>(null)
   const [showWipe, setShowWipe] = useState(false)
+  // STARTING_SOON's second phase: a just-claimed streamer sat past the calm
+  // window without a feed, so the card switches to a last-call countdown warning
+  // the hour is about to revert to open-to-claim. Flipped precisely at the
+  // deadline − countdown mark by the effect below (no per-second polling).
+  const [startingCountdown, setStartingCountdown] = useState(false)
   // The branded cover stays over the LIVE feed until playback is confirmed
   // flowing — masks the Twitch startup reveal (poster, preroll ad + countdown,
   // chrome flash) on both first load and every rebuild.
@@ -470,6 +484,35 @@ export default function Player() {
     return () => clearInterval(t)
   }, [])
 
+  // ── STARTING_SOON phase flip: calm "goes live shortly" card for the first
+  //    minute, then the last-call countdown. Timed off the state's deadline so
+  //    the card mounts with the countdown seeded to the true remaining time; the
+  //    deferred setState keeps this side-effect out of the effect body itself. ──
+  useEffect(() => {
+    if (state.mode !== 'STARTING_SOON') {
+      const t = setTimeout(() => setStartingCountdown(false), 0)
+      return () => clearTimeout(t)
+    }
+    const delay = state.deadlineMs - STARTING_SOON_COUNTDOWN_MS - Date.now()
+    if (delay <= 0) {
+      const t = setTimeout(() => setStartingCountdown(true), 0)
+      return () => clearTimeout(t)
+    }
+    const reset = setTimeout(() => setStartingCountdown(false), 0) // calm phase now
+    const flip = setTimeout(() => setStartingCountdown(true), delay) // last call at the mark
+    return () => { clearTimeout(reset); clearTimeout(flip) }
+  }, [state])
+
+  // ── Precise deadline transition: land STARTING_SOON's revert-to-open and BRB's
+  //    grace expiry exactly on zero (the 5s TICK above is only a backstop), so
+  //    the last-call countdown reverts the instant it ends. ──
+  useEffect(() => {
+    if (state.mode !== 'STARTING_SOON' && state.mode !== 'BRB') return
+    const delay = state.deadlineMs - Date.now()
+    const t = setTimeout(() => dispatch({ type: 'TICK', nowMs: Date.now() }), Math.max(0, delay))
+    return () => clearTimeout(t)
+  }, [state])
+
   // ── Twitch player lifecycle: one instance, rebuilt per channel ──
   const channel = 'channel' in state ? state.channel : null
 
@@ -747,12 +790,13 @@ export default function Player() {
 
   const streamerName = currentSlot?.assignedName || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
-  const overrideSrc = state.mode === 'OVERRIDE' ? buildYouTubeOverrideSrc(state.url) : null
+  const overrideSrc = state.mode === 'OVERRIDE' ? buildOverrideSrc(state.url) : null
 
-  // Operator preview: /player?preview=board|brb|starting|wipe|countdown forces a
-  // state so each look can be checked inside OBS before going live. `countdown`
-  // renders the no-ads "Now Live" curtain with its live countdown regardless of
-  // the ?noads flag, so the bumper can be rehearsed on its own.
+  // Operator preview: /player?preview=board|brb|starting|lastcall|wipe|countdown
+  // forces a state so each look can be checked inside OBS before going live.
+  // `countdown` renders the no-ads "Now Live" curtain with its live countdown
+  // regardless of the ?noads flag; `lastcall` rehearses the STARTING_SOON
+  // last-call countdown that reverts an hour to open-to-claim.
   const preview = useMemo(
     () => (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('preview') : null),
     [],
@@ -763,6 +807,7 @@ export default function Player() {
         {preview === 'board' && <IntermissionBoard />}
         {preview === 'brb' && <StatusCard variant="brb" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
         {preview === 'starting' && <StatusCard variant="starting-soon" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
+        {preview === 'lastcall' && <StatusCard variant="starting-soon" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} countdownSeconds={STARTING_SOON_COUNTDOWN_MS / 1_000} />}
         {preview === 'wipe' && <WipeOverlay visible label="Going Live Now" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
         {preview === 'countdown' && (
           <FeedCover
@@ -810,7 +855,7 @@ export default function Player() {
             key={overrideSrc}
             src={overrideSrc}
             title="CSGN override"
-            allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+            allow={PLAYER_ALLOW}
             allowFullScreen
             style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, background: '#000' }}
           />
@@ -820,7 +865,13 @@ export default function Player() {
       )}
 
       {state.mode === 'STARTING_SOON' && (
-        <StatusCard variant="starting-soon" streamerName={streamerName} slotLabel={slotLabel} />
+        <StatusCard
+          key={startingCountdown ? 'starting-countdown' : 'starting-quiet'}
+          variant="starting-soon"
+          streamerName={streamerName}
+          slotLabel={slotLabel}
+          countdownSeconds={startingCountdown ? STARTING_SOON_COUNTDOWN_MS / 1_000 : undefined}
+        />
       )}
 
       {state.mode === 'BRB' && (

@@ -4,8 +4,10 @@
 > token works, and — most importantly — **what the founder actually does every
 > day.** Technical build docs (`obs-setup.md`, `broadcast-graphics.md`,
 > `agent-packets.md`, `env-setup.md`, `ops-cost-security-runbook.md`,
-> `v1-launch-checklist.md`) stay as operational references. If anything anywhere
-> disagrees with this file, this file wins.
+> `v1-launch-checklist.md`) stay as operational references, and
+> [`ecosystem-strategy.md`](ecosystem-strategy.md) is the money-and-relationships
+> companion (Ansem/Bullpen tandem, revenue-ASAP, the venue play). If anything
+> anywhere disagrees with this file, this file wins.
 
 ---
 
@@ -1014,6 +1016,86 @@ is a **draft league for coins**:
 Build it after Caller Standings (they share the same scoring/rendering spine) and
 you have two things that are exactly what he said the space needs, both on air, both
 quotable, neither of them a favor.
+
+### 11.8 The continuous vote — a "TV remote for crypto" (ideation, not scheduled)
+
+> **Status: ideation.** Logged here to consolidate the product direction, not
+> committed to the build order. The time-block schedule (§4) stays the shipping
+> model; this is the version of the network we grow *toward* if the vote mechanic
+> proves out. Everything below is a design sketch with its risks named, not a spec.
+
+**The idea in one line:** instead of selling twelve fixed 2-hour slots a day, the
+channel becomes a **live, always-on vote** — the token picks *what plays right now*
+from a short shortlist of the best current streams, and viewers can change the
+channel at will. A **TV remote for crypto**, where the remote is the token.
+
+**How it would work:**
+
+- At any moment the network presents **3–5 curated options** — the best relevant
+  live streams right now (a big Twitch trader, an X broadcast, a tournament, a
+  founder AMA), chosen by the curator and/or surfaced by activity.
+- Holders **vote with token-as-weight** — the exact mechanism already built for the
+  Meme-100 and governance votes (`castVote` / `settleVotes`, weight = live on-chain
+  $CSGN balance, re-settled against real holdings so a sold bag stops counting).
+- When enough weight lands on one option, **that stream goes live on the channel.**
+  The vote never closes; it's a running tally, so the channel re-tunes itself as
+  conviction moves — no time blocks, no dead air, always the thing the audience most
+  wants on.
+- **The forwarded streamer doesn't have to know or have an account.** We **log what
+  they're owed** (their share of the fee/attention their airtime generated) against
+  their channel identity. When they later create a CSGN account and verify that
+  channel, the ledger is already waiting — *"your stream generated you $1,000 and you
+  didn't even know."* That first-contact moment is itself the growth hook.
+- **The curator's prerogative stays intact.** Holding the majority of weight means
+  the CEO/curator can **put himself on at any time** — not a rule-break, the exact
+  opposite: the rules say weight decides, and he'd be spending real weight to do it.
+  It's the honest expression of "curator," not an override around the rules.
+
+**Why it could beat time-blocks:**
+
+- **No empty slots, ever.** A block with a no-show is dead air (which is exactly the
+  failure §11.8's parent problem — the STARTING_SOON revert — exists to paper over).
+  A continuous vote always resolves to *something live*.
+- **It's self-programming.** The schedule stops being a thing the founder has to fill
+  every day; the audience fills it, and the founder curates the shortlist.
+- **It's the same "airtime is the asset" thesis (§1.1)**, just priced continuously
+  instead of in 2-hour lots — closer to a real-time market for attention.
+- **It manufactures the owed-money surprise at scale** — every forwarded stream is a
+  potential creator who discovers CSGN already owes them money.
+
+**The risks to solve before this is more than a sketch — name them honestly:**
+
+1. **Owing money to people who never signed up is a real liability, not a
+   flourish.** An accrued-payout ledger tied to identities we don't control needs a
+   clear, published rule for what's actually owed, when it's claimable, and what
+   happens to unclaimed balances — and it wants the same "no pooled stakes / no
+   promised yield" discipline §11.7 already draws. Treat it as a treasury
+   obligation (§11.1), not a marketing line.
+2. **Forwarding someone's stream is a rights question.** Embedding a Twitch/X live
+   feed onto our own broadcast-to-X output is not automatically permitted; the safe
+   default is *link/hand-off and co-sign*, or explicit opt-in, not silent
+   re-broadcast. Get this wrong once publicly and it's the story.
+3. **Moderation surface explodes.** The moment the audience can vote *arbitrary*
+   external streams onto the channel, anything can end up on air. The 3–5 **curated**
+   shortlist is the control — the vote chooses *among vetted options*, it doesn't
+   nominate freely. Keep it that way.
+4. **Whale capture.** Token-as-weight means the biggest bag can pin the channel.
+   That's tolerable (it's the same honesty as the curator prerogative), but it needs
+   to be *visible* — show the weights on air like a live poll, so it reads as an
+   honest market, not a hidden hand.
+5. **It competes with the slot business.** Slots are the day-one revenue (§10). A
+   continuous vote could cannibalize the thing that pays the bills before it's proven.
+   The sane sequencing is: run it as **one show first** — a nightly "you hold the
+   remote" hour inside the existing schedule — measure whether the vote actually moves
+   and whether forwarded creators convert, and only then consider it as the default
+   programming layer.
+
+**One-line verdict:** it's a genuinely better *shape* than fixed blocks and it reuses
+machinery CSGN already has (token-weight voting, the treasury/owed ledger, the
+emergency-override cut-in that already lets one Firestore write change what /player
+shows). But the owed-money and stream-rights questions are load-bearing — build it as
+a single vetted-shortlist hour, prove the loop, and let it earn its way to being the
+whole channel.
 
 ---
 

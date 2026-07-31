@@ -117,10 +117,12 @@ export default function Participate() {
   const balance = walletAddress ? balanceState : null
 
   const ensureWallet = useCallback(async (): Promise<string> => {
-    const addr = walletAddress || (await connect())
+    // connect() guarantees a LIVE session; a cached address does not (it
+    // skipped the connect step and the signature prompt never appeared).
+    const addr = await connect()
     if (!addr) throw new Error('Connect your Phantom wallet to continue.')
     return addr
-  }, [walletAddress, connect])
+  }, [connect])
 
   const doVote = async (option: number) => {
     if (!vote || vote.status === 'closed') return

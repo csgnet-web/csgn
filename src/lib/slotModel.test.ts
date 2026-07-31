@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable, slotIdentity, SLOT_STATUSES } from './slotModel'
+import { normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable, slotIdentity, assignmentStatus, toMillis, SLOT_STATUSES } from './slotModel'
 
 const HOUR = 60 * 60 * 1000
 const future = new Date(Date.now() + 4 * HOUR).toISOString()
@@ -90,6 +90,55 @@ describe('isSlotClaimable', () => {
   })
   it('a network slot actually assigned to someone is never claimable', () => {
     expect(isSlotClaimable(slot({ type: 'network', status: 'confirmed', assignedUid: 'u1' }), false)).toBe(false)
+  })
+})
+
+describe('toMillis — one coercion for every timestamp shape a slot doc carries', () => {
+  const ISO = '2026-07-31T12:00:00.000Z'
+  const MS = Date.parse(ISO)
+
+  it('reads ISO strings, Dates and raw millis alike', () => {
+    expect(toMillis(ISO)).toBe(MS)
+    expect(toMillis(new Date(MS))).toBe(MS)
+    expect(toMillis(MS)).toBe(MS)
+  })
+  it('reads a Firestore Timestamp by duck-typing toDate()', () => {
+    expect(toMillis({ toDate: () => new Date(MS) })).toBe(MS)
+  })
+  // The regression this consolidation fixed: two of the five copied
+  // implementations skipped the finite check on the Timestamp branch, so a
+  // malformed stamp returned NaN. NaN loses BOTH sides of every comparison, so
+  // such a slot silently sorted into an arbitrary position instead of being
+  // filtered out of the schedule.
+  it('never returns NaN — a malformed value collapses to 0', () => {
+    expect(toMillis({ toDate: () => new Date('nonsense') })).toBe(0)
+    expect(toMillis('not a date')).toBe(0)
+    expect(toMillis(undefined)).toBe(0)
+    expect(toMillis(null)).toBe(0)
+    expect(toMillis({})).toBe(0)
+  })
+})
+
+describe('assignmentStatus — assigning the current hour goes live now', () => {
+  const NOW = 1_700_000_000_000
+  const at = (offsetH: number) => new Date(NOW + offsetH * HOUR).toISOString()
+
+  it('assigning the hour on the air right now sets it live', () => {
+    expect(assignmentStatus({ startTime: at(-1), endTime: at(1) }, NOW)).toBe('live')
+  })
+  it('assigning a future hour parks it as confirmed', () => {
+    expect(assignmentStatus({ startTime: at(2), endTime: at(4) }, NOW)).toBe('confirmed')
+  })
+  it('an already-ended hour is completed', () => {
+    expect(assignmentStatus({ startTime: at(-4), endTime: at(-2) }, NOW)).toBe('completed')
+  })
+  it('is live at the exact start instant, confirmed once ended (half-open window)', () => {
+    expect(assignmentStatus({ startTime: at(0), endTime: at(2) }, NOW)).toBe('live')
+    // end is exclusive: at the end instant the hour is over
+    expect(assignmentStatus({ startTime: at(-2), endTime: at(0) }, NOW)).toBe('completed')
+  })
+  it('falls back to confirmed on unparseable times', () => {
+    expect(assignmentStatus({ startTime: 'nope', endTime: 'nope' }, NOW)).toBe('confirmed')
   })
 })
 

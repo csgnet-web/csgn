@@ -77,7 +77,7 @@ export default function Watch() {
   // a live "CSGN @ NITE" can never headline "THE STAGE IS OPEN" and a claimed
   // hour can never read "Open Slot". The stage is "open" only when the current
   // hour has no programming on it (see slotIdentity).
-  const identity = slotIdentity(currentSlot, { networkBlockEnabled, openName: 'THE STAGE IS OPEN' })
+  const identity = slotIdentity(currentSlot, { networkBlockEnabled, openName: 'Open Slot' })
   const stageOpen = identity.isOpen
 
   // A manual X-broadcast override can still name the host when the slot itself is
@@ -87,7 +87,7 @@ export default function Watch() {
     const v = (value ?? '').trim()
     return v && !/^csgn/i.test(v) ? v : ''
   }
-  const streamerName = stageOpen ? (notNetworkBrand(manualOverride?.streamerName) || 'THE STAGE IS OPEN') : identity.name
+  const streamerName = stageOpen ? (notNetworkBrand(manualOverride?.streamerName) || 'Open Slot') : identity.name
   const streamTitle = notNetworkBrand(currentSlot?.streamTitle) || notNetworkBrand(manualOverride?.title) || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
   // Nobody on the stage right now → sell the open stage rather than the coming-soons.
@@ -150,8 +150,8 @@ export default function Watch() {
         )}
 
         {/* Status bar */}
-        <div className={`shrink-0 flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 ${isLive ? 'bg-red-600' : 'bg-surface-800'}`}>
-          <div className="flex items-center gap-2.5">
+        <div className={`shrink-0 flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 border-b ${isLive ? 'bg-gradient-to-r from-red-600 to-red-500 border-red-400/30' : 'bg-surface-800 border-white/[0.06]'}`}>
+          <div className={`flex items-center gap-2 rounded-full px-2.5 py-1 ${isLive ? 'bg-black/20' : 'bg-white/[0.04]'}`}>
             <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-white animate-pulse' : 'bg-gray-500'}`} />
             <span className="text-white font-black tracking-[0.25em] text-sm uppercase">{isLive ? 'LIVE' : 'OFFLINE'}</span>
           </div>
@@ -198,6 +198,7 @@ export default function Watch() {
           claiming={claiming}
           claimError={claimError}
           onClaimCurrent={() => void handleClaimCurrent()}
+          stageOpen={stageOpen}
         />
 
         {/* Today's schedule — on mobile this sits above the $CSGN panel; on
@@ -209,18 +210,30 @@ export default function Watch() {
           <TokenPanel broadcastUrl={broadcastUrl} />
         </div>
 
-        {/* Game buttons */}
-        <div className="shrink-0 grid grid-cols-2 gap-3 px-5 py-5">
-          <button disabled className="relative overflow-hidden flex flex-col items-center justify-center gap-1.5 py-2.5 sm:py-5 px-3 bg-gray-700/60 rounded-xl font-black font-display text-white/70 text-sm sm:text-base uppercase tracking-wider transition-all shadow-lg cursor-not-allowed">
-            <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
-            <Gamepad2 className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
-            <span className="text-center leading-tight">Starting 5<br /><span className="font-normal text-xs text-white/70">Coming Soon</span></span>
-          </button>
-          <button disabled className="relative overflow-hidden flex flex-col items-center justify-center gap-1.5 py-2.5 sm:py-5 px-3 bg-gray-700/60 rounded-xl font-black font-display text-white/70 text-sm sm:text-base uppercase tracking-wider transition-all shadow-lg cursor-not-allowed">
-            <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
-            <Grid3X3 className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
-            <span className="text-center leading-tight">Squares<br /><span className="font-normal text-xs text-white/70">Coming Soon</span></span>
-          </button>
+        {/* Game teasers — on-chain minigames, coming soon */}
+        <div className="shrink-0 grid grid-cols-2 gap-3 sm:gap-4 px-5 py-5">
+          {[
+            { Icon: Gamepad2, title: 'Starting 5', sub: 'Daily lineup game' },
+            { Icon: Grid3X3, title: 'Squares', sub: 'On-chain grid pool' },
+          ].map(({ Icon, title, sub }) => (
+            <button
+              key={title}
+              disabled
+              className="group relative overflow-hidden flex items-center gap-3 sm:gap-4 p-4 sm:p-5 rounded-2xl border border-white/[0.08] bg-gradient-to-br from-white/[0.06] to-white/[0.015] text-left cursor-not-allowed shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+            >
+              <div className="absolute -right-8 -top-10 w-28 h-28 rounded-full bg-primary-500/10 blur-2xl pointer-events-none" />
+              <span className="absolute top-2.5 right-2.5 text-[9px] font-black uppercase tracking-[0.18em] text-primary-200 bg-primary-500/15 border border-primary-500/30 rounded-full px-2 py-0.5">
+                Soon
+              </span>
+              <span className="shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-primary-500/12 border border-primary-500/25 flex items-center justify-center text-primary-300">
+                <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
+              </span>
+              <span className="min-w-0">
+                <span className="block font-black font-display text-white text-base sm:text-lg uppercase tracking-wide leading-none">{title}</span>
+                <span className="block text-[11px] sm:text-xs text-gray-400 mt-1 truncate">{sub}</span>
+              </span>
+            </button>
+          ))}
         </div>
       </div>
 

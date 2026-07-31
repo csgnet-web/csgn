@@ -3,18 +3,12 @@ import { Check, Copy, ExternalLink, MessageCircle, TrendingDown, TrendingUp } fr
 import { useLiveSlot } from '@/contexts/useLiveSlot'
 import { CSGN_MINT } from '@/lib/slots'
 import { X_HANDLE, X_PROFILE_URL } from '@/lib/social'
+import { formatPrice, compactUsd } from '@/lib/format'
 
-function formatPrice(price: number): string {
-  if (price <= 0) return '—'
-  if (price >= 1) return `$${price.toFixed(2)}`
-  if (price >= 0.01) return `$${price.toFixed(4)}`
-  return `$${Number(price.toPrecision(3)).toFixed(Math.max(0, -Math.floor(Math.log10(price)) + 2))}`
-}
 
-const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 })
 
 function formatUsdCompact(value: number): string {
-  return value > 0 ? `$${compact.format(value)}` : '—'
+  return compactUsd(value)
 }
 
 function StatTile({ label, value, accent }: { label: string; value: React.ReactNode; accent?: string }) {

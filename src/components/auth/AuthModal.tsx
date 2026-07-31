@@ -22,8 +22,8 @@ const TWITCH_ERROR_MESSAGES: Record<string, string> = {
 }
 
 export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalProps) {
-  const { signIn, signUp } = useAuth()
-  const { connect, signMessage, isConnecting, walletAddress, error: walletError } = usePhantomWallet()
+  const { signIn, signUp, signInWithPhantom } = useAuth()
+  const { connect, signMessage, isConnecting, error: walletError, needsPhantom, deeplink, isMobile } = usePhantomWallet()
   const [email, setEmail] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -100,10 +100,32 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
 
   const handleClose = () => { reset(); onClose() }
 
+  /** Login view: prove the wallet, then exchange that proof for a session. */
+  const loginWithPhantom = async () => {
+    setError(''); setVerifying('phantom')
+    try {
+      const address = await connect()
+      if (!address) return
+      const challenge = await api.createPhantomChallenge(address)
+      const signature = await signMessage(challenge.message)
+      if (!signature) return
+      const verified = await api.verifyPhantomSignature(address, signature, challenge.challengeToken)
+      await signInWithPhantom(verified.proofToken)
+      handleClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not sign in with Phantom.')
+    } finally { setVerifying(null) }
+  }
+
   const connectPhantom = async () => {
     setError(''); setVerifying('phantom')
     try {
-      const address = walletAddress || await connect()
+      // ALWAYS go through connect() — it guarantees a live provider session.
+      // Trusting the cached `walletAddress` here is what silently killed
+      // registration: a returning user skipped the connect step and the
+      // signature prompt never appeared. Reconnecting an approved wallet is
+      // promptless, so this costs nothing.
+      const address = await connect()
       if (!address) return
       const challenge = await api.createPhantomChallenge(address)
       const signature = await signMessage(challenge.message)
@@ -179,6 +201,20 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                 </div>}
                 {verifiedWallet && <p className="text-xs text-emerald-300 truncate">Wallet verified: {verifiedWallet}</p>}
                 {walletError && <p className="text-xs text-red-300">{walletError}</p>}
+                {/* Mobile browsers have no extension — the only way to approve a
+                    signature is Phantom's in-app browser, so offer the door
+                    instead of leaving the user stuck on "not detected". */}
+                {needsPhantom && (
+                  <a
+                    href={isMobile ? deeplink : 'https://phantom.app/download'}
+                    target={isMobile ? undefined : '_blank'}
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 h-11 rounded-xl bg-[#ab9ff2] text-black text-sm font-bold hover:bg-[#bcb0f5] transition-colors"
+                  >
+                    <Wallet className="w-4 h-4" />
+                    {isMobile ? 'Open in Phantom browser' : 'Install Phantom'}
+                  </a>
+                )}
                 {isRegister && returnedFromTwitch && !password && (
                   <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-sm text-amber-300"><AlertCircle className="w-4 h-4 shrink-0" /> For security, please re-enter your password to continue.</div>
                 )}
@@ -186,6 +222,26 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                 <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="Enter password" required minLength={6} disabled={loading} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button></div>
                 {isRegister && <><label className="block text-sm font-medium text-gray-300 mb-1.5">Confirm Password</label><div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="Confirm password" required minLength={6} disabled={loading} /><button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button></div></>}
                 <Button variant="primary" size="lg" className="w-full" type="submit" isLoading={loading}>{isRegister ? 'Create Account' : 'Sign In'}</Button>
+                {/* Wallet login — the signature over a server nonce IS the
+                    credential, so a returning holder never needs the password. */}
+                {!isRegister && (
+                  <>
+                    <div className="flex items-center gap-3 py-1">
+                      <span className="h-px flex-1 bg-white/10" />
+                      <span className="text-[11px] uppercase tracking-widest text-gray-500">or</span>
+                      <span className="h-px flex-1 bg-white/10" />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={loginWithPhantom}
+                      disabled={loading || isConnecting || verifying === 'phantom'}
+                      className="w-full h-12 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-60"
+                    >
+                      <Wallet className="w-4 h-4" />
+                      {verifying === 'phantom' ? 'Check Phantom…' : 'Sign in with Phantom'}
+                    </button>
+                  </>
+                )}
                 <p className="text-sm text-center text-gray-500 mt-2">
                   {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
                   <button type="button" onClick={switchMode} className="text-primary-400 hover:text-primary-300 underline cursor-pointer">
