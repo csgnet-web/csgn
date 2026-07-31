@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithCustomToken,
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   sendEmailVerification,
@@ -57,6 +58,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  /**
+   * Wallet login: the caller has already proven control of the wallet (challenge
+   * → Phantom signature → server verification), so all that's left is trading
+   * that proof for a Firebase custom token and exchanging it for a session.
+   * Only signs in a wallet already linked to an account — the server 404s
+   * otherwise, and no account is ever created here.
+   */
+  const signInWithPhantom = async (phantomProofToken: string) => {
+    void logAuthEvent('signin-start', { meta: { identifierKind: 'phantom' } })
+    try {
+      const { customToken } = await api.loginWithPhantom(phantomProofToken)
+      const { user } = await signInWithCustomToken(auth, customToken)
+      await fetchProfile(user.uid)
+      void logAuthEvent('signin-success', { uid: user.uid, meta: { identifierKind: 'phantom' } })
+    } catch (err) {
+      void logAuthEvent('signin-failure', { errorMessage: err instanceof Error ? err.message : String(err) })
+      throw err
+    }
+  }
+
   const signUp = async (email: string, password: string, username: string, proofs: { phantomProofToken: string; twitchProofToken: string }) => {
     void logAuthEvent('signup-email-start')
     let createdUid: string | null = null
@@ -87,5 +108,5 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user && !user.emailVerified) await sendEmailVerification(user)
   }
 
-  return <AuthContext.Provider value={{ user, profile, loading, signIn, signUp, signOut, refreshProfile, resendVerification }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user, profile, loading, signIn, signInWithPhantom, signUp, signOut, refreshProfile, resendVerification }}>{children}</AuthContext.Provider>
 }

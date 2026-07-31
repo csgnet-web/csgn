@@ -20,6 +20,8 @@ export type TwitchOAuthResult = { twitchProofToken: string; twitchUserId: string
 export const api = {
   createPhantomChallenge: (walletAddress: string) => functionFetch<{ challengeToken: string; message: string }>('createPhantomChallenge', { method: 'POST', body: JSON.stringify({ walletAddress }) }),
   verifyPhantomSignature: (walletAddress: string, signature: string, challengeToken: string) => functionFetch<{ proofToken: string; walletAddress: string }>('verifyPhantomSignature', { method: 'POST', body: JSON.stringify({ walletAddress, signature, challengeToken }) }),
+  /** Exchange a verified Phantom proof for a Firebase custom token (wallet login). */
+  loginWithPhantom: (proofToken: string) => functionFetch<{ customToken: string }>('loginWithPhantom', { method: 'POST', body: JSON.stringify({ proofToken }) }),
   startTwitchOAuth: () => functionFetch<{ authUrl: string }>('startTwitchOAuth', { method: 'POST' }),
   consumeTwitchOAuthResult: (handoffId: string) => functionFetch<TwitchOAuthResult>('consumeTwitchOAuthResult', { method: 'POST', body: JSON.stringify({ handoffId }) }),
   finalizeCreateAccount: (body: { username: string; phantomProofToken: string; twitchProofToken: string }) => functionFetch<{ user: unknown }>('finalizeCreateAccount', { method: 'POST', body: JSON.stringify(body) }, true),

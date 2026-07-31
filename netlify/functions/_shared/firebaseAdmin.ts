@@ -190,6 +190,30 @@ export async function verifyIdToken(idToken: string): Promise<DecodedIdToken> {
   return { ...payload, uid: String(payload.sub), email: typeof payload.email === 'string' ? payload.email : undefined }
 }
 
+/** Audience Firebase Auth requires on a custom token. */
+const CUSTOM_TOKEN_AUD = 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit'
+
+/**
+ * Mint a Firebase custom token for an EXISTING uid, which the client exchanges
+ * via `signInWithCustomToken`. Used by the Sign-in-with-Phantom path: proving
+ * control of a wallet that is already linked to an account is the credential.
+ *
+ * This function never decides *whether* a caller is entitled to a uid — callers
+ * must establish that first (loginWithPhantom does it by verifying an Ed25519
+ * signature over a single-use server nonce). Keep the TTL short; it only has to
+ * survive one immediate client exchange.
+ */
+export function createCustomToken(uid: string, ttlSeconds = 300): string {
+  if (!uid) throw new Error('createCustomToken requires a uid')
+  const now = Math.floor(Date.now() / 1000)
+  const email = clientEmail()
+  const claim = { iss: email, sub: email, aud: CUSTOM_TOKEN_AUD, iat: now, exp: now + ttlSeconds, uid }
+  const unsigned = `${b64urlJson({ alg: 'RS256', typ: 'JWT' })}.${b64urlJson(claim)}`
+  const signer = createSign('RSA-SHA256')
+  signer.update(unsigned)
+  return `${unsigned}.${signer.sign(privateKey(), 'base64url')}`
+}
+
 export async function requireAdmin(uid: string): Promise<void> {
   const user = await getDoc<{ role?: string }>(`users/${uid}`)
   if (user?.role !== 'admin') throw forbidden('Admin access required')

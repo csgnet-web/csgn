@@ -45,7 +45,9 @@ export default function MemeVoteCard() {
     if (!/^[A-Z0-9$]{2,12}$/.test(sym)) { setErr('Enter a valid ticker symbol (2–12 characters).'); return }
     setBusy(true)
     try {
-      const addr = walletAddress || (await connect())
+      // connect() guarantees a LIVE session; a cached address does not (it
+      // skipped the connect step and the signature prompt never appeared).
+      const addr = await connect()
       if (!addr) throw new Error('Connect your Phantom wallet to vote.')
       const proof = await proveWallet(addr, signMessage)
       const res = await api.voteMeme(proof, sym)
