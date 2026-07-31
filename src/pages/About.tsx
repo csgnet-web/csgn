@@ -52,6 +52,44 @@ export default function About() {
           </motion.p>
         </div>
 
+        {/* The vocabulary — the canonical definitions of the terms CSGN is
+            claiming. These exist so the words are citable: a category you want
+            to own needs exactly one definition people can look up and quote.
+            Keep the wording in sync with docs/campaign.md §1.1. */}
+        <section className="mb-24">
+          <SectionHeading
+            badge="The Vocabulary"
+            title="A New Kind of"
+            highlight="Market"
+            description="Every social app tokenized who you know. Nobody tokenized when you're watched. These are the words for what we built."
+          />
+
+          <div className="grid md:grid-cols-2 gap-6 max-w-5xl mx-auto">
+            {[
+              {
+                term: 'StreamFi',
+                body: 'Live streaming where the airtime itself is the onchain asset — owned, priced, traded and settled. Not a stream with a token bolted on; a stream whose time is the instrument.',
+              },
+              {
+                term: 'Attention Capital Markets',
+                body: 'Markets where attention is the underlying asset — allocated by auction, verified by proof, and programmable by anyone. Attention stops being something you rent indirectly, and becomes something you own directly.',
+              },
+            ].map((item, i) => (
+              <motion.div key={item.term} custom={i} initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp}>
+                <Card className="p-7 h-full" hover={false}>
+                  <h3 className="text-2xl font-black font-display text-white mb-3">{item.term}</h3>
+                  <p className="text-gray-400 leading-relaxed">{item.body}</p>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+
+          <p className="text-center text-lg text-gray-300 mt-8 max-w-3xl mx-auto">
+            CSGN is <span className="text-white font-bold">blockspace for attention</span> — a 24/7
+            channel where <span className="text-white font-bold">the hour is the asset</span>.
+          </p>
+        </section>
+
         {/* The Problem */}
         <section className="mb-24">
           <SectionHeading

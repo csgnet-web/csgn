@@ -131,6 +131,12 @@ Simplified v1 flow. Mobile full-page Twitch OAuth redirect (replaces popup, work
 - **Sign in with Phantom** on the login view — `loginWithPhantom` exchanges the existing (already-audited) `phantom_wallet` proof for a Firebase custom token via a new `createCustomToken` helper. Never creates or re-links accounts; an unlinked wallet 404s. *Needs one live smoke test against real Firebase credentials.*
 - New **[`docs/socialfi-era2.md`](docs/socialfi-era2.md)** — full agency consultation for the next SocialFi era: the market read (~8.2M daily active wallets in Q1 2026; the Era 1 → Era 2 rule change), CSGN's uncontested position (*everyone is rebuilding the feed; nobody is building the channel*), a **Privy analysis** with a segmented recommendation (Privy for viewers, Phantom for streamers — and cut the free funnel first), the founder promotion playbook (X formats, five Substack essays, how to behave in the Ansem stream room), the project's social verticals (Farcaster rated P1), a 90-day plan, metrics and kill criteria
 
+### v2.2 — July 2026
+**The campaign, locked.**
+- New **[`docs/campaign.md`](docs/campaign.md)** — the operating document that consolidates every strategy doc into one executable plan. Three pillars: **the room** (permissioned Ansem-room presence — be useful, never pitch, broadcast with attribution), **the show** (CFB 27 in three formats, with the online-dynasty league recruited first because it's 11 other people with a reason to post), and **the campaign** (own the vocabulary). Includes the two-person newsroom split with the production partner, the weekly publishing rhythm, the copy to use (bio, pinned post, talk track), a 30-day table, the scoreboard, and pre-committed kill criteria
+- **The terminology play:** don't fight for "SocialFi" — it's a contested category with incumbents. Claim **StreamFi** and **Attention Capital Markets (ACM)** outright, define them once, and let SocialFi cite you for the words it was missing. Canonical definitions now ship on **`/about`** so the terms are citable, and are mirrored in the docs index
+- New **[`docs/README.md`](docs/README.md)** — a docs index that makes the set navigable and states the supersession order (`master-plan` → `ecosystem-strategy` → `onchain-thesis` → `socialfi-era2` → **`campaign`**)
+
 ---
 
 ## Getting Started
