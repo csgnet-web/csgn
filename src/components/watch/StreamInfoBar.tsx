@@ -59,26 +59,24 @@ export default function StreamInfoBar({
           </div>
         )}
       </div>
-      <div className="text-right">
+      <div className="shrink-0 text-right rounded-xl border border-white/[0.07] bg-white/[0.02] px-3.5 py-2 min-w-[132px]">
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500 mb-0.5">Live Earnings</p>
         {currentSlot ? (
           <>
-            <p key={feePulseKey} className="text-2xl sm:text-3xl font-black font-mono text-yellow-400 animate-fee-shake">
+            <p key={feePulseKey} className="text-2xl sm:text-3xl font-black font-mono text-yellow-400 animate-fee-shake leading-none">
               {liveFeeUSD > 0 ? `$${liveFeeUSD.toFixed(2)}` : '—'}
             </p>
-            <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">
-              {liveVolumeSOL > 0
-                ? `${liveFeeSOL.toFixed(6)} SOL · ${liveVolumeSOL.toFixed(2)} SOL vol · ${(liveShareRate * 100).toFixed(3)}%`
-                : 'Live Earnings'}
-            </p>
+            {liveVolumeSOL > 0 && (
+              <p className="text-[10px] text-gray-500 tracking-wide mt-1">
+                {liveFeeSOL.toFixed(4)} SOL · {liveVolumeSOL.toFixed(1)} vol · {(liveShareRate * 100).toFixed(2)}%
+              </p>
+            )}
             {currentSlot.creatorFees?.marketCapTierLabel && (
-              <p className="text-[11px] text-gray-600 mt-0.5">{currentSlot.creatorFees.marketCapTierLabel}</p>
+              <p className="text-[10px] text-gray-600 mt-0.5">{currentSlot.creatorFees.marketCapTierLabel}</p>
             )}
           </>
         ) : (
-          <>
-            <p className="text-2xl sm:text-3xl font-black font-mono text-gray-600">—</p>
-            <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-0.5">Earnings</p>
-          </>
+          <p className="text-2xl sm:text-3xl font-black font-mono text-gray-600 leading-none">—</p>
         )}
       </div>
     </div>

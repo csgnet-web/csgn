@@ -120,6 +120,26 @@ interface TickerSpotlight {
 
 const MAX_RIGHT_NOW_ITEMS = 8
 const DEFAULT_RIGHT_NOW_TAG = 'RIGHT NOW'
+/** Max visible characters per headline. The OBS ticker renders the RIGHT NOW
+ *  rail in a fixed-width event cell that ellipsizes past roughly this many
+ *  glyphs, so capping the input here is what stops a headline getting clipped on
+ *  air — we never shrink the on-air text, we just don't accept more than fits. */
+const MAX_RIGHT_NOW_CHARS = 44
+
+/** Cap one textarea line's visible text (the part after an optional `TAG |`) to
+ *  the ticker's safe width. The tag and `|` are preserved; only the text trims,
+ *  so the operator physically can't type/paste a headline long enough to clip. */
+const capRightNowLine = (line: string): string => {
+  const pipe = line.indexOf('|')
+  if (pipe === -1) return line.length > MAX_RIGHT_NOW_CHARS ? line.slice(0, MAX_RIGHT_NOW_CHARS) : line
+  const head = line.slice(0, pipe + 1) // "TAG |"
+  const rest = line.slice(pipe + 1) // " text…"
+  const lead = rest.match(/^\s*/)?.[0] ?? '' // keep the space after the pipe
+  const body = rest.slice(lead.length)
+  return head + lead + (body.length > MAX_RIGHT_NOW_CHARS ? body.slice(0, MAX_RIGHT_NOW_CHARS) : body)
+}
+/** Cap every line as the operator types (while-you-type enforcement). */
+const capRightNowText = (raw: string): string => raw.split('\n').map(capRightNowLine).join('\n')
 
 /** One headline per line; optional `TAG | text` prefix (no pipe = RIGHT NOW). */
 const parseRightNowLines = (raw: string): TickerHeadline[] =>
@@ -130,7 +150,9 @@ const parseRightNowLines = (raw: string): TickerHeadline[] =>
       if (!trimmed) return null
       const pipe = trimmed.indexOf('|')
       const tag = pipe > -1 ? trimmed.slice(0, pipe).trim().toUpperCase() : ''
-      const text = pipe > -1 ? trimmed.slice(pipe + 1).trim() : trimmed
+      // Defensive cap on save too, so a value that reached state by any other
+      // path than the capped textarea still can't clip on air.
+      const text = (pipe > -1 ? trimmed.slice(pipe + 1).trim() : trimmed).slice(0, MAX_RIGHT_NOW_CHARS)
       if (!text) return null
       return { tag: tag || DEFAULT_RIGHT_NOW_TAG, text }
     })
@@ -1200,7 +1222,9 @@ export default function Admin() {
                   <textarea
                     value={rightNowText}
                     onChange={(e) => {
-                      setRightNowText(e.target.value)
+                      // Cap each line as they type so a headline can never be made
+                      // long enough to ellipsize on the ticker.
+                      setRightNowText(capRightNowText(e.target.value))
                       rightNowDirtyRef.current = true
                     }}
                     rows={5}
@@ -1208,10 +1232,29 @@ export default function Admin() {
                     className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:border-primary-500/50 resize-y"
                   />
                   <p className="text-xs text-gray-500 leading-relaxed">
-                    One headline per line, max {MAX_RIGHT_NOW_ITEMS}. Optional tag before a pipe —
+                    One headline per line, max {MAX_RIGHT_NOW_ITEMS}, up to {MAX_RIGHT_NOW_CHARS} characters each
+                    (longer is trimmed so it never clips on air). Optional tag before a pipe —
                     <span className="font-mono text-primary-400"> BREAKING | SOL flips $300</span>; no pipe = tagged {DEFAULT_RIGHT_NOW_TAG}.
                     The OBS ticker picks changes up within ~60s.
                   </p>
+
+                  {/* Parsed preview — each headline as its own labelled row with a
+                      character count, so on a phone it's obvious which line is which
+                      and how close each is to the ticker's limit. */}
+                  {parseRightNowLines(rightNowText).length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] uppercase tracking-[0.15em] text-gray-500">Preview — exactly what airs</p>
+                      {parseRightNowLines(rightNowText).map((h, i) => (
+                        <div key={i} className="flex items-center gap-2 rounded-lg bg-white/[0.03] border border-white/[0.06] px-2.5 py-1.5">
+                          <span className="shrink-0 text-[10px] font-black uppercase tracking-wider text-primary-200 bg-primary-500/15 border border-primary-500/30 rounded px-1.5 py-0.5">{h.tag}</span>
+                          <span className="flex-1 min-w-0 truncate text-sm text-white">{h.text}</span>
+                          <span className={`shrink-0 text-[10px] font-mono tabular-nums ${h.text.length >= MAX_RIGHT_NOW_CHARS ? 'text-amber-300' : 'text-gray-500'}`}>
+                            {h.text.length}/{MAX_RIGHT_NOW_CHARS}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {rightNowMsg && (
                     <p className="text-xs text-emerald-300 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />

@@ -110,6 +110,14 @@ Simplified v1 flow. Mobile full-page Twitch OAuth redirect (replaces popup, work
 - **No more mobile zoom-and-strand.** A global `@media (pointer: coarse)` rule forces form controls to 16px on touch devices, so focusing a field never triggers iOS's auto-zoom (scoped to touch so desktop keeps its compact sizing); tap-highlight flash removed for an app feel. The assign modal and other admin dialogs were reworked for thumbs (bigger tap targets, `inputMode`, no autocapitalize) and a double-padding bug in three modals was fixed
 - New **[`docs/ecosystem-strategy.md`](docs/ecosystem-strategy.md)** — a final analysis plus the strategy to work in tandem with Ansem / Bullpen / Solana·Base·Octra projects (CSGN as the ecosystem's broadcast layer), a money-in-pocket-ASAP plan ranked by speed to cash, the **CSGN-for-Venues** play (ChiveTV × TouchTunes × cable), and a 30-day sprint
 
+### v1.9 — July 2026
+**Landing polish · ticker guardrails · PIP + permanent-bug OBS assets.**
+- **Landing page (`/` = Watch) visual pass** (logic untouched): the "coming soon" games are now branded teaser cards (icon chip · SOON badge · title + subtitle) instead of flat gray blocks; the live-earnings readout is a defined stat chip that reads intentionally in both the live and empty states; the LIVE/OFFLINE status bar gains a pill + hairline border and a gradient live state. Verified with headless screenshots at desktop + mobile
+- **"Right Now" ticker guardrails (admin):** each headline is now capped at `MAX_RIGHT_NOW_CHARS` (44) **while you type and on save**, so a line can't be made long enough to ellipsize on the OBS ticker (the on-air text size is unchanged — only the input logic). A live parsed **preview** renders each headline as its own labelled row with a character counter, so on a phone it's obvious which line is which and how close each is to the limit
+- **New OBS asset `docs/obs/csgn-pip.html`** — one self-contained, dependency-free browser source that draws branded frames + labels + a corner bug around transparent windows for every common multi-source permutation (solo · duo · duo-stack · **pip corner** · **tri (1 focus + 2 even)** · tri-top · quad · spotlight), switchable with `?layout=` or the `1`–`9` keys. `?guide=1` prints each window's exact X/Y/W/H so OBS source transforms land pixel-true. Built as a "quotable module" to open-source
+- **New OBS asset `docs/obs/csgn-nowwatching.html`** — a **permanent** (non-rotating) "Now Watching" lower-third bug that reads `config/ticker.nowLive` and is controlled from **Admin → Broadcast Control → Now Live**; never blank (falls back to a network default). Complements the rotating `csgn-lowerthirds.html`
+- All OBS browser-source assets live in **`docs/obs/`**: `csgn-ticker.html`, `csgn-lowerthirds.html`, `csgn-pip.html` (new), `csgn-nowwatching.html` (new), plus `csgn-master.lua`
+
 ---
 
 ## Getting Started
