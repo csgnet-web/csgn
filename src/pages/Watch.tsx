@@ -11,11 +11,14 @@ import OfflinePanel from '@/components/watch/OfflinePanel'
 import TokenPanel from '@/components/watch/TokenPanel'
 import ScheduleStrip from '@/components/watch/ScheduleStrip'
 import StreamInfoBar from '@/components/watch/StreamInfoBar'
+import GameBanner from '@/components/watch/GameBanner'
 import { WipeOverlay } from '@/components/ui/WipeOverlay'
 
+/** The default strip copy. Whatever an admin sets in config/gameBanner wins;
+ *  this is what shows before anything has been configured. */
 const bannerItems = [
-  'STARTING 5: COMING SOON',
-  'SQUARES COMING SOON',
+  'STARTING 5 — 100,000 $CSGN FOR A PERFECT CARD',
+  'SQUARES — WEEKLY BOARD, FREE TO ENTER',
   "CSGN: Crypto's Entertainment Flagship",
   'Connect Your Twitch and Go Live on CSGN',
 ] as const
@@ -44,7 +47,7 @@ export default function Watch() {
   }, [showSignupNotice, navigate, location.pathname])
 
   const { user, profile } = useAuth()
-  const { currentSlot, allSlots, manualOverride, networkBlockEnabled } = useLiveSlot()
+  const { currentSlot, allSlots, manualOverride, networkBlockEnabled, gameBanner } = useLiveSlot()
   const [claiming, setClaiming] = useState(false)
   const [claimError, setClaimError] = useState('')
   const [showWipe, setShowWipe] = useState(false)
@@ -155,19 +158,7 @@ export default function Watch() {
             <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-white animate-pulse' : 'bg-gray-500'}`} />
             <span className="text-white font-black tracking-[0.25em] text-sm uppercase">{isLive ? 'LIVE' : 'OFFLINE'}</span>
           </div>
-          <div className="watch-roll-banner flex-1 min-w-0 sm:min-w-[240px] lg:flex-none lg:w-[520px] lg:ml-auto" aria-label="Live game updates">
-            <div className="watch-roll-banner__inner">
-              {banner.map((item, index) => (
-                <span
-                  key={item}
-                  className="watch-roll-banner__face"
-                  style={{ transform: `rotateX(${index * 90}deg) translateZ(12px)` }}
-                >
-                  {item}
-                </span>
-              ))}
-            </div>
-          </div>
+          <GameBanner banner={gameBanner} fallbackLines={banner} />
         </div>
 
         {/* Broadcast stage — X embeds self-size (max 550px wide), so this is a

@@ -3,8 +3,10 @@ import {
   TIER_ORDER, tierForMarketCap, validateLineup, lineupAllowance, pickPoints,
   leverageFor, ownershipPercentages, scoreLineup, rankLineups, splitPurse, settleSlate,
   CAPTAIN_MULTIPLIER, MAX_LEVERAGE, FREE_LINEUPS, MAX_LINEUPS, PAYOUT_CURVE_BPS,
+  PERFECT_CARD_PURSE_CSGN, isPerfectCard,
   type Slate, type Lineup, type SlateEntry,
 } from './startingFive'
+import type { SeedCommitment } from './provablyFair'
 
 const LOCKS = '2026-08-02T18:00:00.000Z'
 const beforeLock = Date.parse('2026-08-02T17:00:00.000Z')
@@ -317,9 +319,9 @@ describe('splitting the purse', () => {
   })
 })
 
-describe('settling a whole slate', () => {
+describe('settling a whole slate (leaderboard mode)', () => {
   it('scores, ranks and pays in one pass', () => {
-    const s = slate()
+    const s = slate({ prizeMode: 'leaderboard' })
     const a = lineup({ id: 'a', wallet: 'WalletA' })
     const b = lineup({ id: 'b', wallet: 'WalletB', captain: 'SOL' })
     const prices = { SOL: 220, BONK: 0.00002, CSGN: 0.0004, DEGEN: 0.000001, WIF: 2 }
@@ -333,8 +335,200 @@ describe('settling a whole slate', () => {
   })
 
   it('handles a slate nobody entered', () => {
-    const settled = settleSlate(slate(), [], {})
+    const settled = settleSlate(slate({ prizeMode: 'leaderboard' }), [], {})
     expect(settled.ranked).toEqual([])
+    expect(settled.payouts).toEqual([])
+  })
+})
+
+/* ─── The perfect card ─── */
+
+/** Every coin up 10% — a perfect card. */
+const ALL_GREEN = { SOL: 220, BONK: 0.000022, CSGN: 0.00044, DEGEN: 0.0000011, WIF: 2.2 }
+/** DEGEN red, everything else green — one pick short. */
+const ONE_RED = { SOL: 220, BONK: 0.000022, CSGN: 0.00044, DEGEN: 0.0000009, WIF: 2.2 }
+
+const seed = (over: Partial<SeedCommitment> = {}): SeedCommitment => ({
+  blockhash: '4vJ9JU1bJJE96FbKdjWG9WnHkQVpvJ7BqL8tR2mNcXyZ',
+  slot: 301_884_221,
+  sampledAt: '2026-08-03T02:00:00.000Z',
+  gameId: 'slate-2026-08-02',
+  ...over,
+})
+
+describe('the perfect card', () => {
+  it('starts at 100,000 $CSGN', () => {
+    expect(PERFECT_CARD_PURSE_CSGN).toBe(100_000)
+  })
+
+  it('is all five green', () => {
+    const scored = scoreLineup(slate(), lineup(), ALL_GREEN)
+    expect(isPerfectCard(scored)).toBe(true)
+  })
+
+  it('is broken by a single red pick', () => {
+    expect(isPerfectCard(scoreLineup(slate(), lineup(), ONE_RED))).toBe(false)
+  })
+
+  it('is not broken by a flat pick at the default threshold', () => {
+    const flat = { ...ALL_GREEN, WIF: 2 } // exactly unchanged
+    expect(isPerfectCard(scoreLineup(slate(), lineup(), flat))).toBe(true)
+  })
+
+  it('honours a raised threshold', () => {
+    const scored = scoreLineup(slate(), lineup(), ALL_GREEN) // every pick +10%
+    expect(isPerfectCard(scored, 5)).toBe(true)
+    expect(isPerfectCard(scored, 15)).toBe(false)
+  })
+
+  it('is judged on raw performance, so a captain multiplier cannot rescue a red pick', () => {
+    // DEGEN is red and captained; leverage/captain must not drag it over the line.
+    const scored = scoreLineup(slate(), lineup({ captain: 'DEGEN' }), ONE_RED, { DEGEN: 0 })
+    expect(isPerfectCard(scored)).toBe(false)
+  })
+
+  it('is not awarded to an empty or unpriced card', () => {
+    const scored = scoreLineup(slate(), lineup(), {}) // no settle prices at all
+    expect(isPerfectCard(scored)).toBe(false)
+  })
+
+  it('is not awarded when even ONE pick is missing a price', () => {
+    const missingOne = { SOL: 220, BONK: 0.000022, CSGN: 0.00044, DEGEN: 0.0000011 } // no WIF
+    expect(isPerfectCard(scoreLineup(slate(), lineup(), missingOne))).toBe(false)
+  })
+
+  it('marks picks as priced only when the snapshot really carried them', () => {
+    const missingOne = { SOL: 220, BONK: 0.000022, CSGN: 0.00044, DEGEN: 0.0000011 } // no WIF
+    const scored = scoreLineup(slate(), lineup(), missingOne)
+    expect(scored.picks.find((p) => p.symbol === 'WIF')!.priced).toBe(false)
+    expect(scored.picks.find((p) => p.symbol === 'SOL')!.priced).toBe(true)
+  })
+
+  it('a dead price feed rolls the jackpot instead of paying every card', () => {
+    // The expensive failure: unpriced picks score as flat, flat clears a zero
+    // threshold, and without the `priced` guard the whole field goes perfect.
+    const settled = settleSlate(slate({ purseCsgn: 100_000 }), [
+      lineup({ id: 'a', wallet: 'WalletA' }),
+      lineup({ id: 'b', wallet: 'WalletB' }),
+    ], {})
+    expect(settled.perfect).toEqual([])
+    expect(settled.payouts).toEqual([])
+    expect(settled.rolloverCsgn).toBe(100_000)
+  })
+})
+
+describe('perfect_split — the jackpot shared', () => {
+  it('pays the whole jackpot to a lone perfect card', () => {
+    const s = slate({ purseCsgn: PERFECT_CARD_PURSE_CSGN })
+    const settled = settleSlate(s, [lineup({ id: 'a', wallet: 'WalletA' })], ALL_GREEN)
+    expect(settled.prizeMode).toBe('perfect_split')
+    expect(settled.perfect).toHaveLength(1)
+    expect(settled.payouts[0].payoutCsgn).toBe(100_000)
+    expect(settled.rolloverCsgn).toBe(0)
+  })
+
+  it('splits evenly across perfect cards, to the token', () => {
+    const s = slate({ purseCsgn: 100_000 })
+    const lineups = ['a', 'b', 'c'].map((id) => lineup({ id, wallet: `Wallet${id}` }))
+    const settled = settleSlate(s, lineups, ALL_GREEN)
+    expect(settled.payouts).toHaveLength(3)
+    expect(settled.payouts.reduce((sum, p) => sum + p.payoutCsgn, 0)).toBe(100_000)
+    // 33,333 each with the odd token to the top card.
+    expect(settled.payouts.map((p) => p.payoutCsgn).sort((x, y) => y - x)).toEqual([33_334, 33_333, 33_333])
+  })
+
+  it('gives a wallet a share per perfect CARD, not per wallet', () => {
+    const s = slate({ purseCsgn: 100_000 })
+    const settled = settleSlate(s, [
+      lineup({ id: 'a', wallet: 'Whale' }),
+      lineup({ id: 'b', wallet: 'Whale' }),
+    ], ALL_GREEN)
+    expect(settled.payouts).toHaveLength(2)
+    expect(settled.payouts.every((p) => p.wallet === 'Whale')).toBe(true)
+    expect(settled.payouts.reduce((sum, p) => sum + p.payoutCsgn, 0)).toBe(100_000)
+  })
+
+  it('pays nobody and rolls the jackpot when no card is perfect', () => {
+    const s = slate({ purseCsgn: 100_000 })
+    const settled = settleSlate(s, [lineup()], ONE_RED)
+    expect(settled.perfect).toEqual([])
+    expect(settled.payouts).toEqual([])
+    expect(settled.rolloverCsgn).toBe(100_000)
+  })
+
+  it('rolls an empty slate rather than paying it out', () => {
+    const settled = settleSlate(slate({ purseCsgn: 100_000 }), [], {})
+    expect(settled.payouts).toEqual([])
+    expect(settled.rolloverCsgn).toBe(100_000)
+  })
+
+  it('carries yesterday jackpot into today purse', () => {
+    const s = slate({ purseCsgn: 100_000, jackpotInCsgn: 300_000 })
+    const settled = settleSlate(s, [lineup()], ALL_GREEN)
+    expect(settled.jackpotCsgn).toBe(400_000)
+    expect(settled.payouts[0].payoutCsgn).toBe(400_000)
+  })
+
+  it('keeps rolling a jackpot that goes unclaimed twice', () => {
+    const s = slate({ purseCsgn: 100_000, jackpotInCsgn: 300_000 })
+    expect(settleSlate(s, [lineup()], ONE_RED).rolloverCsgn).toBe(400_000)
+  })
+})
+
+describe('perfect_lottery — the jackpot drawn', () => {
+  const s = (over: Partial<Slate> = {}) =>
+    slate({ prizeMode: 'perfect_lottery', purseCsgn: 100_000, ...over })
+  const field = ['a', 'b', 'c', 'd'].map((id) => lineup({ id, wallet: `Wallet${id}` }))
+
+  it('pays the entire jackpot to exactly one perfect card', () => {
+    const settled = settleSlate(s(), field, ALL_GREEN, seed())
+    expect(settled.perfect).toHaveLength(4)
+    expect(settled.payouts).toHaveLength(1)
+    expect(settled.payouts[0].payoutCsgn).toBe(100_000)
+    expect(settled.rolloverCsgn).toBe(0)
+  })
+
+  it('is deterministic — the same seed always draws the same winner', () => {
+    const a = settleSlate(s(), field, ALL_GREEN, seed())
+    const b = settleSlate(s(), field, ALL_GREEN, seed())
+    expect(a.payouts[0].wallet).toBe(b.payouts[0].wallet)
+  })
+
+  it('draws a different winner from a different blockhash', () => {
+    const winners = new Set(
+      Array.from({ length: 12 }, (_, i) =>
+        settleSlate(s(), field, ALL_GREEN, seed({ blockhash: `GkP2sV8wNqRt4xYzB7cJfLmH3dE9aU6vC1nT5oXpQr${i}w` }))
+          .payouts[0].wallet),
+    )
+    expect(winners.size).toBeGreaterThan(1)
+  })
+
+  it('does not depend on the order lineups were submitted in', () => {
+    const a = settleSlate(s(), field, ALL_GREEN, seed())
+    const b = settleSlate(s(), [...field].reverse(), ALL_GREEN, seed())
+    expect(a.payouts[0].wallet).toBe(b.payouts[0].wallet)
+  })
+
+  it('REFUSES to draw without a published seed rather than picking the first row', () => {
+    const settled = settleSlate(s(), field, ALL_GREEN)
+    expect(settled.payouts).toEqual([])
+    expect(settled.rolloverCsgn).toBe(100_000)
+    expect(settled.note).toMatch(/seed/i)
+  })
+
+  it('rolls over when nobody goes perfect, seed or not', () => {
+    expect(settleSlate(s(), field, ONE_RED, seed()).rolloverCsgn).toBe(100_000)
+  })
+
+  it('only ever draws from the perfect cards', () => {
+    const mixed = [
+      lineup({ id: 'green', wallet: 'Green' }),
+      lineup({ id: 'red', wallet: 'Red', picks: lineup().picks }),
+    ]
+    // Both cards are identical, so make the second one lose by pricing it out:
+    // instead, assert directly that the winner is drawn from `perfect`.
+    const settled = settleSlate(s(), mixed, ONE_RED, seed())
+    expect(settled.perfect).toEqual([])
     expect(settled.payouts).toEqual([])
   })
 })

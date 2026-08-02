@@ -145,11 +145,47 @@ something they couldn't have played for. A tie straddling the last paid place
 brings both rows in, so they split that place rather than one silently taking all
 of it.
 
-The payout curve is top-heavy but pays ten deep, and **a short field doesn't let
-the treasury keep the difference** — if eight people entered a ten-place curve,
-the unpaid tail is redistributed across the field. The player who cashes for a
-small amount is the player who comes back tomorrow, and tomorrow is the only
-metric this game exists to move.
+### The prize: 100,000 $CSGN for a perfect card
+
+The live prize is a **jackpot for going 5-for-5**, not a curve for finishing
+highest. 100,000 $CSGN, treasury-funded, daily.
+
+Paying the perfect card is the more valuable design, and the reason is
+retention. A rank curve has one winner and ninety-nine people who can compute by
+2pm that they've lost — so they stop watching. A perfect-card jackpot is binary
+and survives all day: **you're alive until one of your five goes red**, and while
+you're alive you are watching five charts and our channel. It also produces the
+best broadcast graphic the game can generate — *"14 cards still perfect"* —
+counting down live through the session.
+
+Two modes, admin-selectable per slate:
+
+| Mode | Behaviour | When to use it |
+|---|---|---|
+| **Split** | Every perfect card shares the jackpot evenly | Large field — many winners, each meaningful |
+| **Lottery** | One perfect card drawn, takes it all | Small field — 100k split forty ways is forgettable; handed to one person it's a story that recruits the next forty |
+
+The lottery draw uses the same provably-fair seed as the Squares digits: one
+ticket per perfect **card** (not per wallet — a holder who earned three lineups
+and went perfect on two takes two tickets), shuffled against a blockhash sampled
+after the slate settled. A settlement in lottery mode with **no published seed
+refuses to draw** rather than falling back to the first row; a silent fallback in
+a lottery is indistinguishable from rigging it.
+
+**Nobody perfect → the whole purse rolls into tomorrow.** The jackpot growing in
+public is the game advertising itself.
+
+One guard worth naming because it costs six figures if it's missing: an unpriced
+pick scores as *flat*, and flat clears a zero threshold — so a settle run against
+a broken price feed would mark **every** card perfect and pay out the entire
+jackpot on no data. `ScoredPick.priced` separates "flat" from "we don't know",
+and the perfect-card rule requires the former. The rollover is the safe failure.
+
+The `leaderboard` mode (top-ten rank curve) is retained for a bigger field later:
+top-heavy but paying ten deep, and **a short field doesn't let the treasury keep
+the difference** — if eight people entered a ten-place curve, the unpaid tail is
+redistributed. The player who cashes for a small amount is the player who comes
+back tomorrow, and tomorrow is the only metric this game exists to move.
 
 ---
 
@@ -241,17 +277,32 @@ not a design decision, and Starting 5 pays on price outcomes. **Have counsel
 confirm the structure and the jurisdictional exclusions before a single payout
 runs.** Nothing in this repo is legal advice.
 
-**Decide the purse before promoting either game.** The treasury funds it (§11.1),
-so the purse is a published, budgeted commitment. Announcing a game before
-deciding what it pays is how you end up funding it out of panic.
+**Squares' purse is still undecided.** Starting 5 is set at 100,000 $CSGN daily
+(and configurable from Game Control). The weekly Squares board has a cadence and
+an engine but no committed purse. The treasury funds it (§11.1), so it's a
+published, budgeted commitment — announcing a game before deciding what it pays
+is how you end up funding it out of panic.
+
+### Admin — Game Control
+
+`config/gameBanner` and `config/games`, both admin-only, both editable from
+Broadcast Control → **Game Control** (`src/components/admin/GameControlsCard.tsx`):
+
+- **The /watch strip** — the game, the headline, a countdown target, and the
+  rotating lines. This used to be four constants in `Watch.tsx`, so announcing a
+  game or putting a clock on it required a deploy. There's a live preview in the
+  card that renders through the same pure resolver the page uses.
+- **Starting 5** — purse, carried jackpot, prize mode, daily lock hour (ET).
+- **Squares** — weekly cadence: the ET day and hour entries close and the digits
+  are drawn.
 
 ### What's left to build
 
 | | |
 |---|---|
 | Squares board UI | grid, claim flow, live winning-square highlight |
-| Starting 5 slate UI | slate screen, lineup builder, leaderboard |
+| Starting 5 slate UI | slate screen, lineup builder, the still-perfect counter |
 | Slate construction | daily job that builds a slate from the Meme-100 + tiering |
-| Settlement job | scheduled function: draw → score → `adminRunPayouts` |
-| Broadcast graphics | the live winning square is the best ambient tension a squares board produces, and it costs one function call (`winningSquareIndex`) |
-| Admin | purse config, board/slate creation, the payout review queue |
+| Settlement job | scheduled function: draw → score → `adminRunPayouts`; also writes `users/{uid}.gameStats`, which the profile already renders |
+| Broadcast graphics | the live winning square, and the perfect-card countdown — the best ambient tension either game produces, and the first costs one function call (`winningSquareIndex`) |
+| Admin | board/slate creation and the payout review queue (purse + cadence are done) |

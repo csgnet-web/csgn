@@ -32,6 +32,8 @@
  * nothing here reads a clock it wasn't handed.
  */
 
+import { seededShuffle, seedString, type SeedCommitment } from './provablyFair'
+
 /* ─── The slate ─── */
 
 /**
@@ -76,6 +78,17 @@ export interface SlateEntry {
   marketCapUsd: number
 }
 
+/**
+ * How a slate pays.
+ *
+ * `perfect_split` and `perfect_lottery` are the live modes: the purse is a
+ * JACKPOT for a perfect card, not a prize for finishing highest. See §"The
+ * perfect card" below for why that's the better game. `leaderboard` is the
+ * classic rank-curve payout, kept because it's the right shape for a bigger
+ * field later and it costs nothing to keep.
+ */
+export type PrizeMode = 'perfect_split' | 'perfect_lottery' | 'leaderboard'
+
 export interface Slate {
   id: string
   /** ET calendar date this slate plays, YYYY-MM-DD. */
@@ -87,6 +100,17 @@ export interface Slate {
   entries: SlateEntry[]
   /** $CSGN the treasury has committed to this slate. */
   purseCsgn: number
+  /** How the purse pays out. Defaults to `perfect_split`. */
+  prizeMode?: PrizeMode
+  /** Jackpot carried in from previous days nobody went perfect on. */
+  jackpotInCsgn?: number
+  /**
+   * A pick counts toward a perfect card at or above this percentage move.
+   * Defaults to 0 — "all five finished green". Tunable because if perfect cards
+   * turn out to be too common the answer is to raise the bar, not to shrink the
+   * purse: a smaller jackpot is a worse game, a harder one isn't.
+   */
+  perfectThresholdPct?: number
 }
 
 /* ─── A lineup ─── */
@@ -259,6 +283,17 @@ export interface ScoredPick {
   ownershipPct: number
   leverage: number
   points: number
+  /**
+   * Whether the settle snapshot actually contained a price for this symbol.
+   *
+   * Load-bearing, and not obviously so. A missing price scores as "unchanged"
+   * (see `scoreLineup`), which is the right call for the leaderboard — a feed
+   * outage shouldn't wipe out somebody's day. But "unchanged" is >= 0, so under
+   * the perfect-card rule an unpriced slate would mark EVERY card perfect and
+   * pay out the whole jackpot on missing data. This flag is what separates
+   * "flat" from "we don't know", so the jackpot can insist on the former.
+   */
+  priced: boolean
 }
 
 export interface ScoredLineup {
@@ -292,7 +327,9 @@ export function scoreLineup(
     const symbol = pick.symbol.toUpperCase()
     const entry = bySymbol.get(symbol)
     const lockPriceUsd = entry?.lockPriceUsd ?? 0
-    const settlePriceUsd = prices[symbol] ?? lockPriceUsd
+    const observed = prices[symbol]
+    const priced = Number.isFinite(observed) && observed > 0 && lockPriceUsd > 0
+    const settlePriceUsd = priced ? observed : lockPriceUsd
     const basePoints = pickPoints(lockPriceUsd, settlePriceUsd)
     const isCaptain = symbol === captain
     const ownershipPct = ownership[symbol] ?? 0
@@ -317,6 +354,7 @@ export function scoreLineup(
       ownershipPct,
       leverage,
       points: Math.round(points),
+      priced,
     }
   })
 
@@ -448,28 +486,158 @@ export function splitPurse(ranked: ScoredLineup[], purseCsgn: number): LineupPay
   return payouts
 }
 
+/* ─── The perfect card ─── */
+
 /**
- * The whole settlement in one call: score, rank, split. The shape returned is
+ * The starting purse: 100,000 $CSGN, treasury-funded, for going 5-for-5.
+ *
+ * Paying a jackpot for a PERFECT CARD rather than a curve for finishing highest
+ * is the more valuable design, and the reason is retention. A rank curve has one
+ * winner and 99 people who can compute by 2pm that they've lost — so they stop
+ * watching. A perfect-card jackpot is binary and survives all day: you're alive
+ * until one of your five goes red, and while you're alive you are watching five
+ * charts and our channel. Everyone who is still perfect at 9pm is still here.
+ *
+ * It also produces the single best broadcast graphic the game can generate:
+ * "14 cards still perfect" counting down through the session, live.
+ */
+export const PERFECT_CARD_PURSE_CSGN = 100_000
+
+/**
+ * Every pick at or above the threshold, on prices we actually observed.
+ *
+ * Two guards, both there because the failure they prevent costs 100,000 tokens:
+ *
+ *   - `priced` — an unpriced pick scores as flat, and flat clears a zero
+ *     threshold. Without this check, a settle run against a broken price feed
+ *     marks every card perfect and pays the entire jackpot on no data.
+ *   - `basePoints`, not `points` — judged on raw performance, so a captain
+ *     multiplier or contrarian leverage can never drag a red pick over the line.
+ *
+ * Zero picks is not a perfect card.
+ */
+export function isPerfectCard(scored: ScoredLineup, thresholdPct = 0): boolean {
+  if (scored.picks.length === 0) return false
+  // basePoints is 1 per 0.1%, so the threshold converts at ×10.
+  const minPoints = Math.round(thresholdPct * 10)
+  return scored.picks.every((p) => p.priced && p.basePoints >= minPoints)
+}
+
+/** Cards still alive, in board order. The number that goes on air. */
+export function perfectCards(ranked: ScoredLineup[], thresholdPct = 0): ScoredLineup[] {
+  return ranked.filter((row) => isPerfectCard(row, thresholdPct))
+}
+
+/**
+ * Split a jackpot evenly across the perfect cards.
+ *
+ * Every perfect CARD is a share, not every wallet — a holder who earned three
+ * lineups and went perfect on two of them takes two shares. That's the whole
+ * point of the holdings-based entry allowance; making it one-share-per-wallet
+ * would quietly delete the only advantage holding confers.
+ */
+function splitJackpotEvenly(winners: ScoredLineup[], jackpot: number): LineupPayout[] {
+  const each = Math.floor(jackpot / winners.length)
+  const payouts = winners.map((row) => ({
+    rank: row.rank,
+    wallet: row.wallet,
+    displayName: row.displayName,
+    totalPoints: row.totalPoints,
+    payoutCsgn: each,
+  }))
+  // Dust to the highest-scoring perfect card. Deterministic and defensible.
+  const paid = each * winners.length
+  if (payouts.length > 0 && paid < jackpot) payouts[0].payoutCsgn += jackpot - paid
+  return payouts
+}
+
+/**
+ * Draw ONE winner from the perfect cards, provably fairly.
+ *
+ * One ticket per perfect card, shuffled with the published seed, first one out
+ * takes the whole jackpot. Same seed mechanism as the Squares draw: a Solana
+ * blockhash sampled after the slate settled, so nobody — including us — could
+ * have known the winner while the game was still running, and anyone can
+ * re-derive it.
+ *
+ * Lottery mode is the right call on a small field and split mode on a large one:
+ * a hundred thousand tokens split forty ways is forgettable, and the same purse
+ * handed to one person is a story that recruits the next forty. Admin picks per
+ * slate; the mechanic is identical either way.
+ */
+function drawJackpotWinner(winners: ScoredLineup[], jackpot: number, seed: SeedCommitment): LineupPayout[] {
+  const tickets = [...winners].sort((a, b) => a.lineupId.localeCompare(b.lineupId))
+  const drawn = seededShuffle(tickets, `${seedString(seed)}:starting5-lottery`)[0]
+  return [{
+    rank: drawn.rank,
+    wallet: drawn.wallet,
+    displayName: drawn.displayName,
+    totalPoints: drawn.totalPoints,
+    payoutCsgn: jackpot,
+  }]
+}
+
+/**
+ * The whole settlement in one call: score, rank, pay. The shape returned is
  * exactly what the payout ledger consumes, so nothing between the buzzer and the
  * wallet has to re-derive who won.
+ *
+ * A `seed` is REQUIRED for lottery mode and a settlement without one refuses to
+ * draw rather than falling back to picking the first row — a silent fallback in
+ * a lottery is indistinguishable from rigging it.
  */
 export interface SlateSettlement {
   slateId: string
   gameDate: string
+  prizeMode: PrizeMode
   ranked: ScoredLineup[]
+  /** Cards that went 5-for-5. Empty means the jackpot rolls. */
+  perfect: ScoredLineup[]
   payouts: LineupPayout[]
   ownership: Record<string, number>
+  /** Purse in play: the slate's own purse plus any carried jackpot. */
+  jackpotCsgn: number
+  /** Carried to the next slate when nobody went perfect. */
+  rolloverCsgn: number
+  /** Set when the mode couldn't be honoured (e.g. lottery with no seed). */
+  note?: string
 }
 
-export function settleSlate(slate: Slate, lineups: Lineup[], prices: PriceSnapshot): SlateSettlement {
+export function settleSlate(
+  slate: Slate,
+  lineups: Lineup[],
+  prices: PriceSnapshot,
+  seed?: SeedCommitment,
+): SlateSettlement {
   const ownership = ownershipPercentages(lineups)
   const scored = lineups.map((l) => scoreLineup(slate, l, prices, ownership))
   const ranked = rankLineups(scored, lineups)
-  return {
-    slateId: slate.id,
-    gameDate: slate.gameDate,
-    ranked,
-    payouts: splitPurse(ranked, slate.purseCsgn),
-    ownership,
+
+  const mode: PrizeMode = slate.prizeMode ?? 'perfect_split'
+  const jackpotCsgn = Math.max(0, Math.floor(slate.purseCsgn + (slate.jackpotInCsgn ?? 0)))
+  const base = { slateId: slate.id, gameDate: slate.gameDate, prizeMode: mode, ranked, ownership, jackpotCsgn }
+
+  if (mode === 'leaderboard') {
+    return { ...base, perfect: [], payouts: splitPurse(ranked, jackpotCsgn), rolloverCsgn: 0 }
   }
+
+  const perfect = perfectCards(ranked, slate.perfectThresholdPct ?? 0)
+
+  // Nobody went perfect: the whole purse rolls into tomorrow. The jackpot
+  // growing in public is the game advertising itself.
+  if (perfect.length === 0 || jackpotCsgn <= 0) {
+    return { ...base, perfect, payouts: [], rolloverCsgn: jackpotCsgn }
+  }
+
+  if (mode === 'perfect_lottery') {
+    if (!seed) {
+      return {
+        ...base, perfect, payouts: [], rolloverCsgn: jackpotCsgn,
+        note: 'Lottery draw needs a published seed — settlement held, nothing paid.',
+      }
+    }
+    return { ...base, perfect, payouts: drawJackpotWinner(perfect, jackpotCsgn, seed), rolloverCsgn: 0 }
+  }
+
+  return { ...base, perfect, payouts: splitJackpotEvenly(perfect, jackpotCsgn), rolloverCsgn: 0 }
 }

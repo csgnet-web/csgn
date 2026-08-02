@@ -3,6 +3,7 @@ import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { subscribeToSlots, toMillis, type Slot } from '@/lib/slots'
 import { fetchTokenStats } from '@/lib/dexscreener'
+import { normalizeBanner, type GameBannerDoc } from '@/lib/games/schedule'
 import {
   LiveSlotContext,
   type LiveSlotContextValue,
@@ -125,14 +126,24 @@ export function LiveSlotProvider({ children }: { children: React.ReactNode }) {
     }, () => {})
   }, [])
 
+  // The admin-set game headline + countdown for the /watch strip. Normalized on
+  // read so a partial or hand-edited doc can never render a blank prism face.
+  const [gameBanner, setGameBanner] = useState<GameBannerDoc | null>(null)
+  useEffect(() => {
+    return onSnapshot(doc(db, 'config', 'gameBanner'), (snap) => {
+      if (!mountedRef.current) return
+      setGameBanner(snap.exists() ? normalizeBanner(snap.data()) : null)
+    }, () => { if (mountedRef.current) setGameBanner(null) })
+  }, [])
+
   // Derive current slot from shared slots list
   const currentSlot = useMemo(() => {
     return allSlots.find((s) => nowMs >= toMillis(s.startTime) && nowMs < toMillis(s.endTime)) ?? null
   }, [allSlots, nowMs])
 
   const value = useMemo<LiveSlotContextValue>(
-    () => ({ currentSlot, allSlots, manualOverride, tokenStats, nowMs, slotsReady, networkBlockEnabled }),
-    [currentSlot, allSlots, manualOverride, tokenStats, nowMs, slotsReady, networkBlockEnabled],
+    () => ({ currentSlot, allSlots, manualOverride, tokenStats, nowMs, slotsReady, networkBlockEnabled, gameBanner }),
+    [currentSlot, allSlots, manualOverride, tokenStats, nowMs, slotsReady, networkBlockEnabled, gameBanner],
   )
 
   return <LiveSlotContext.Provider value={value}>{children}</LiveSlotContext.Provider>
