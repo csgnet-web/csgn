@@ -1,26 +1,28 @@
 /**
- * CSGN SQUARES — the office pool, rebuilt as a token-weighted, deposit-free,
- * provably-fair daily game.
+ * CSGN SQUARES — the office pool, rebuilt as a weekly, pooled, provably-fair
+ * game paying 500,000 $CSGN to the winner.
  *
  * The classic works like this: a 10×10 grid, you buy squares, the digits 0–9 are
- * drawn onto the rows and columns AFTER the grid fills, and at the end of each
- * period the square sitting at (last digit of one score, last digit of the other)
+ * drawn onto the rows and columns AFTER the grid fills, and at the end of the
+ * game the square sitting at (last digit of one score, last digit of the other)
  * wins. It is the most successful casual betting game ever invented — your aunt
  * plays it, and she can't name a single player.
  *
- * Two things are deliberately different here, and both follow the network's
- * no-burn, no-deposit rule (docs/master-plan.md §11.1):
+ * Two things to be clear about, because one of them is a deliberate exception to
+ * how the rest of the network works:
  *
- *   1. NOBODY BUYS IN. Not with SOL, not with $CSGN, not with anything. Squares
- *      are ALLOCATED by how much $CSGN a wallet HOLDS. Holding is not spending —
- *      the tokens never leave the wallet, are never escrowed, are never burned.
- *      You can sell your whole bag mid-game; you simply hold fewer squares next
- *      game. This is the entire thesis of the token expressed as a board game.
+ *   1. SQUARES IS THE ONE PAID GAME. Players pay an entry fee per square, the
+ *      fees pool, the network takes a published rake, and the remainder goes to
+ *      the winner. That makes it self-funding rather than a treasury expense —
+ *      and it makes it the only mechanic here that takes money from a player.
+ *      Everything else on the network (Starting 5, voting, slot claiming) stays
+ *      free and holdings-based, and should stay that way. See §"The pool".
  *
- *   2. THE PURSE COMES FROM THE TREASURY, not from the players. A squares pool
- *      normally just moves money between entrants and takes a rake. Here the
- *      treasury funds a fixed daily $CSGN purse out of attention revenue, so the
- *      game is pure distribution — the network pays the audience to show up.
+ *   2. THE HOLDINGS CURVE IS NOW A CAP, NOT A GRANT. `squaresAllowance` used to
+ *      say how many squares your bag EARNED you for free. On a paid board it
+ *      says how many you're allowed to BUY — the sub-linear curve is what stops
+ *      one wallet purchasing the whole board and winning its own money back
+ *      minus the rake, which is not a game, it's a laundry.
  *
  * Everything in this file is pure. No Firestore, no clock, no network: state in,
  * state out. That is what makes the whole board unit-testable and what lets a
@@ -83,13 +85,73 @@ export interface SquaresAxes {
   y: string
 }
 
+/* ─── The pool ─── */
+
+/**
+ * Squares is a POOLED game, and the only one on the network that is.
+ *
+ * Every other mechanic here is deposit-free by design (see the header, and
+ * Starting 5, where entries are earned by holding). Squares is the deliberate
+ * exception: players pay an entry fee per square, the fees pool, the network
+ * takes a stated rake, and the remainder goes to the winner. A full 100-square
+ * board pays 500,000 $CSGN.
+ *
+ * Three things follow from that, and all three are enforced below rather than
+ * left to a settlement script:
+ *
+ *   1. THE RAKE IS PUBLISHED AND COMPUTED FROM THE POOL, never taken off the
+ *      top of a number nobody can check. `boardRake` is derived from the same
+ *      claims everyone can count on the board.
+ *   2. A SHORT BOARD PAYS A SHORT PRIZE. If forty squares sell, the prize is
+ *      forty squares' worth minus rake — not 500,000. Guaranteeing a prize the
+ *      pool doesn't cover means the treasury silently funds the difference on
+ *      every quiet week, which is how a game stops being self-sustaining.
+ *      A guarantee is available (`guaranteePrize`), but it is opt-in per board
+ *      and the top-up is reported, never hidden.
+ *   3. NOTHING IS OWED UNTIL THE BOARD IS DRAWN. Fees are collected on claim;
+ *      an abandoned board must refund, which is why `boardPool` stays derivable
+ *      from the claims at any moment.
+ */
+
+/** What a full board pays the winner at the default fee and rake. */
+export const SQUARES_TARGET_PRIZE_CSGN = 500_000
+/** $CSGN per square. 100 × 6,250 = 625,000 gross; less a 20% rake = 500,000. */
+export const DEFAULT_ENTRY_FEE_CSGN = 6_250
+/** The network's cut, in basis points. Tunable per board; published either way. */
+export const DEFAULT_RAKE_BPS = 2_000
+
+/**
+ * One winner takes the game. A single Final checkpoint at the full purse —
+ * which is what "500,000 to the winner of each game" means, and it's the shape
+ * a pooled board wants: four smaller prizes out of one pool is four reasons to
+ * feel like you nearly won, where one prize is a reason to watch the ninth.
+ *
+ * `DEFAULT_PERIODS` (the four-checkpoint split) is still supported for a
+ * treasury-funded board — the engine doesn't care which it's handed.
+ */
+export const SINGLE_WINNER_PERIODS: SquaresPeriod[] = [
+  { key: 'f', label: 'Final', weightBps: 10_000 },
+]
+
 export interface SquaresBoard {
   id: string
   status: SquaresStatus
   axes: SquaresAxes
   periods: SquaresPeriod[]
-  /** Total $CSGN the treasury has committed to this board. */
+  /**
+   * Treasury contribution, in $CSGN. Zero on a self-funding pooled board — the
+   * prize comes from entries. Non-zero only when the network is adding to the
+   * pot (a promoted board), or as the floor when `guaranteePrize` is set.
+   */
   purseCsgn: number
+  /** $CSGN each square costs. Zero makes the board free to enter. */
+  entryFeeCsgn?: number
+  /** The network's cut of the entry pool, in basis points. */
+  rakeBps?: number
+  /** Top the prize up to `purseCsgn` from the treasury when the pool falls
+   *  short. Off by default: a guarantee is a subsidy, and it should be a
+   *  decision someone made about this board, not a default nobody noticed. */
+  guaranteePrize?: boolean
   claims: SquareClaim[]
   /** ISO deadline after which no claim is accepted and the draw may happen. */
   entriesCloseAt: string
@@ -103,22 +165,87 @@ export interface SquaresBoard {
   rolloverInCsgn?: number
 }
 
-/* ─── Entry allowance: holdings, not deposits ─── */
+/* ─── Pool math ─── */
+
+export interface BoardEconomics {
+  /** Squares sold. */
+  squares: number
+  /** Gross entry fees collected. */
+  poolCsgn: number
+  /** The network's cut. */
+  rakeCsgn: number
+  /** Treasury money added on top of the pool (a promoted board, or a top-up). */
+  treasuryCsgn: number
+  /** What the winner (or winners, across periods) actually splits. */
+  prizeCsgn: number
+  /** True when the treasury covered a shortfall against a guaranteed prize. */
+  toppedUp: boolean
+}
 
 /**
- * How many squares a wallet may hold, from its share of $CSGN supply.
+ * Everything about a board's money, derived from the claims on it.
  *
- * The shape here is the important part. It is NOT linear — a whale with 5% of
- * supply does not get 5 squares to a minnow's 0.001. Linear allocation would let
- * one wallet own the board, and a board one wallet owns is not a game, it's a
- * withdrawal. Instead the curve is a square root, which is the same instinct
- * behind quadratic voting: influence grows with stake, but sub-linearly, so the
- * hundredth token buys far less than the first.
+ * Integer arithmetic throughout, and the rake is floored so rounding always
+ * favours the prize pool rather than the house — a fraction of a token is
+ * meaningless either way, but "the house rounds up" is not a sentence anyone
+ * should be able to write about us truthfully.
+ */
+export function boardEconomics(board: SquaresBoard): BoardEconomics {
+  const fee = Math.max(0, Math.floor(board.entryFeeCsgn ?? 0))
+  const squares = board.claims.length
+  const poolCsgn = fee * squares
+  const rakeBps = Math.min(10_000, Math.max(0, Math.floor(board.rakeBps ?? 0)))
+  const rakeCsgn = Math.floor((poolCsgn * rakeBps) / 10_000)
+
+  const netPool = poolCsgn - rakeCsgn
+  const floor = Math.max(0, Math.floor(board.purseCsgn ?? 0))
+
+  // A free board (no fee) is purely treasury-funded and the purse IS the prize.
+  if (fee <= 0) {
+    return { squares, poolCsgn: 0, rakeCsgn: 0, treasuryCsgn: floor, prizeCsgn: floor, toppedUp: false }
+  }
+
+  if (board.guaranteePrize && netPool < floor) {
+    return { squares, poolCsgn, rakeCsgn, treasuryCsgn: floor - netPool, prizeCsgn: floor, toppedUp: true }
+  }
+  return { squares, poolCsgn, rakeCsgn, treasuryCsgn: 0, prizeCsgn: netPool, toppedUp: false }
+}
+
+/** What one square costs. */
+export const entryFee = (board: SquaresBoard): number => Math.max(0, Math.floor(board.entryFeeCsgn ?? 0))
+
+/** What the board is playing for right now, including any carried rollover. */
+export function boardPrize(board: SquaresBoard): number {
+  return boardEconomics(board).prizeCsgn + Math.max(0, Math.floor(board.rolloverInCsgn ?? 0))
+}
+
+/** Total $CSGN a wallet has committed to this board. Drives the refund path on
+ *  an abandoned board, and the "you're in for X" line on the board screen. */
+export function stakeOf(board: SquaresBoard, wallet: string): number {
+  return squaresHeldBy(board, wallet) * entryFee(board)
+}
+
+/* ─── Entry allowance: a cap, not a grant ─── */
+
+/**
+ * How many squares a wallet may BUY, from its share of $CSGN supply.
  *
- * Anyone with an account gets ONE square regardless of holdings, including zero.
- * That is not charity — it is the funnel. A non-holder who plays for free and
- * watches a holder cover nine squares has just been shown exactly what the token
- * does, which no amount of marketing copy achieves.
+ * On a paid board this is a ceiling, not an entitlement — you still pay the fee
+ * for every square you take. The ceiling exists because a squares pool with no
+ * per-player limit has a degenerate strategy: buy all 100 squares, win
+ * guaranteed, and get back the pool minus the rake. That isn't a game, it's a
+ * 20% fee on moving your own money, and it would kill the board for everyone
+ * else the first time someone did it.
+ *
+ * The shape is the important part. It is NOT linear — a whale with 5% of supply
+ * does not get 5 squares to a minnow's 0.001. The curve is a square root, the
+ * same instinct behind quadratic voting: influence grows with stake, but
+ * sub-linearly, so the hundredth token buys far less than the first.
+ *
+ * The floor of ONE square applies regardless of holdings, including zero, so
+ * anyone with an account can play. On a paid board that's one square at the
+ * entry fee — the fee is the price of entry, the bag only decides how many more
+ * you may take.
  */
 export const FREE_SQUARES = 1
 export const MAX_SQUARES_PER_WALLET = 10
@@ -275,7 +402,10 @@ export function winningSquareIndex(board: SquaresBoard, score: PeriodScore): num
 export function resolvePeriod(board: SquaresBoard, period: SquaresPeriod, score: PeriodScore): PeriodResult {
   const squareIndex = winningSquareIndex(board, score)
   const claim = board.claims.find((c) => c.index === squareIndex) ?? null
-  const totalPurse = board.purseCsgn + (board.rolloverInCsgn ?? 0)
+  // The prize is what the POOL pays (entries less rake, plus any treasury
+  // contribution and carried rollover) — never the raw purse field, which on a
+  // self-funding board is zero.
+  const totalPurse = boardPrize(board)
   const payoutCsgn = Math.floor((totalPurse * period.weightBps) / 10_000)
 
   return {
@@ -320,7 +450,7 @@ export function settleBoard(board: SquaresBoard, scores: Record<string, PeriodSc
     payouts[r.winner.wallet] = (payouts[r.winner.wallet] ?? 0) + r.payoutCsgn
   }
 
-  const totalPurse = board.purseCsgn + (board.rolloverInCsgn ?? 0)
+  const totalPurse = boardPrize(board)
   const paid = Object.values(payouts).reduce((sum, n) => sum + n, 0)
   const allSettled = results.length === board.periods.length
 

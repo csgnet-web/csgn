@@ -1,6 +1,11 @@
 # CSGN — Crypto Sports & Gaming Network
 
 > The 24/7 crypto-native streaming network built on Solana. The ESPN and TMZ of crypto.
+>
+> **Open source under the [MIT licence](LICENSE).** Fork it, rebrand it, point the
+> wallets at your own, and run your own network — see [CONTRIBUTING.md](CONTRIBUTING.md)
+> § "Running your own node". The brand and the on-chain addresses are not part of
+> the grant; everything else is.
 
 Streamers earn real trading fee revenue — calculated per market-cap tier, backed by live DexScreener data — simply by going live on CSGN. No other platform ties streamer compensation directly to on-chain mechanics at this level of precision.
 
@@ -138,6 +143,53 @@ Simplified v1 flow. Mobile full-page Twitch OAuth redirect (replaces popup, work
 - New **[`docs/README.md`](docs/README.md)** — a docs index that makes the set navigable and states the supersession order (`master-plan` → `ecosystem-strategy` → `onchain-thesis` → `socialfi-era2` → **`campaign`**)
 
 ---
+
+### v1.15 — August 2026
+**Games, payouts, a ratings book — and the source opened.**
+
+*(Version jumps 1.9 → 1.15 deliberately: this is the open-source release, and the
+number marks it. Still well short of v2.)*
+
+- **Squares** — weekly, pooled, provably fair. 10×10 board, entry fee per square,
+  published rake, **500,000 $CSGN to the winner of a full board** (100 × 6,250
+  less a 20% rake). A short board pays a short prize; a guarantee is opt-in per
+  board and the top-up is reported, never hidden. Digits are drawn from a Solana
+  blockhash sampled *after* entries close, through a PRNG anyone can re-implement
+  and reproduce. The one paid game on the network — everything else stays free
+- **Starting 5** — daily lineup game, free to enter, entries scale with $CSGN
+  *held* (square-root curve, one free for everyone). One pick per market-cap tier
+  plus a wildcard, a 1.5× captain, and contrarian leverage on gains only.
+  **100,000 $CSGN for a perfect card (5/5)**, split across perfect cards or drawn
+  by lottery; nobody perfect rolls the jackpot into tomorrow
+- **The payout wallet** (`EftavCt6…V7Hmv`) — idempotency keys derived from what a
+  payout is *for* and claimed with a CREATE the database refuses to repeat; the
+  signature written to the ledger *before* broadcast so recovery re-sends an
+  identical transaction the cluster deduplicates; per-payout/run/day caps; a
+  solvency check that budgets token-account rent for first-time winners.
+  `adminRunPayouts` is admin-only and **dry-run by default**
+- **Game Control** (Admin → Broadcast Control) — `config/gameBanner` drives the
+  strip beside LIVE/OFFLINE on `/watch`: game, headline, live countdown, rotating
+  lines, with a preview rendered through the same resolver the page uses.
+  `config/games` holds the Starting 5 purse/jackpot/prize-mode/lock hour and the
+  weekly Squares day, hour, entry fee and rake
+- **Profile rebuilt** — the old header floated an avatar over a gradient banner
+  and collided with the name on narrow screens. Now flat surfaces, one accent,
+  everything in normal flow: no negative margins, nothing absolutely positioned,
+  so it cannot overlap at any width. New **Games** and **Holder Standing** panels
+  carry the gamification, with honest zeroes until the settlement job exists
+- **BottomLine** — the ticker gets ESPN-style **section dots** bottom-right (one
+  pip per game in the league, drawing down as it rolls, resetting on the wipe),
+  a **Meme 100 leaderboard** sized to be read from across a room rather than
+  squinted at, **MLB games-back inline with the record**, and a detail face
+  ("PROBABLE STARTERS") that fills the space it was given
+- **Open source** — MIT, plus [`CONTRIBUTING.md`](CONTRIBUTING.md): how to run
+  your own node, the rules this codebase actually keeps, and the broadcasting
+  guidance (**X is the recommended output; use Restream if you also want Twitch**)
+- **[`docs/dry-run.md`](docs/dry-run.md)** — the gated checklist that takes this
+  from "tests pass" to "it moved money on mainnet and the books balanced",
+  including the idempotency test that must never be skipped
+- Docs consolidated: one tiered index, the v1 launch checklist folded into
+  [`docs/env-setup.md`](docs/env-setup.md)
 
 ## Getting Started
 
@@ -353,4 +405,13 @@ monitoring live in [`docs/ops-cost-security-runbook.md`](docs/ops-cost-security-
 
 ## License
 
-Proprietary — CSGN, Crypto Sports & Gaming Network. All rights reserved.
+**MIT** — see [`LICENSE`](LICENSE).
+
+The software is yours. The **name, logo and BottomLine marks** are not, and
+neither are the **$CSGN mint, treasury and payout wallet** — those addresses are
+published so anyone can audit what the network does with them, not so anyone can
+act on their behalf. Fork it, rebrand it, use your own wallets.
+
+Nothing in this repository is financial, legal or tax advice. The games move real
+tokens to real people; get your own counsel before running them for anyone but
+yourself.

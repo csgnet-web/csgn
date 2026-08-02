@@ -5,6 +5,7 @@ import { db } from '@/config/firebase'
 import { formatTokens, type GameStats } from '@/lib/games/profile'
 import { PERFECT_CARD_PURSE_CSGN } from '@/lib/games/startingFive'
 import { normalizeCadence } from '@/lib/games/schedule'
+import { DEFAULT_ENTRY_FEE_CSGN, DEFAULT_RAKE_BPS, SQUARE_COUNT } from '@/lib/games/squares'
 
 /**
  * The games, on the profile.
@@ -27,6 +28,8 @@ export default function GamesPanel({ stats }: { stats?: GameStats }) {
   const [purse, setPurse] = useState(PERFECT_CARD_PURSE_CSGN)
   const [jackpot, setJackpot] = useState(0)
   const [cadence, setCadence] = useState(normalizeCadence(null))
+  const [sqFee, setSqFee] = useState(DEFAULT_ENTRY_FEE_CSGN)
+  const [sqRake, setSqRake] = useState(DEFAULT_RAKE_BPS)
 
   useEffect(() => {
     return onSnapshot(doc(db, 'config', 'games'), (snap) => {
@@ -37,10 +40,18 @@ export default function GamesPanel({ stats }: { stats?: GameStats }) {
       setPurse(Number.isFinite(p) && p > 0 ? Math.floor(p) : PERFECT_CARD_PURSE_CSGN)
       setJackpot(Number.isFinite(j) && j > 0 ? Math.floor(j) : 0)
       setCadence(normalizeCadence(d.cadence))
+      const sq = (d.squares ?? {}) as Record<string, unknown>
+      const fee = Number(sq.entryFeeCsgn)
+      const rake = Number(sq.rakeBps)
+      setSqFee(Number.isFinite(fee) && fee >= 0 ? Math.floor(fee) : DEFAULT_ENTRY_FEE_CSGN)
+      setSqRake(Number.isFinite(rake) && rake >= 0 ? Math.floor(rake) : DEFAULT_RAKE_BPS)
     }, () => {})
   }, [])
 
   const winnings = Math.max(0, Math.floor(stats?.winningsCsgn ?? 0))
+  // Full-board prize, mirroring boardEconomics: gross less a floored rake.
+  const sqGross = sqFee * SQUARE_COUNT
+  const sqPrize = sqGross - Math.floor((sqGross * Math.min(10_000, sqRake)) / 10_000)
 
   return (
     <section className="rounded-xl border border-white/[0.08] bg-white/[0.02]">
@@ -69,9 +80,9 @@ export default function GamesPanel({ stats }: { stats?: GameStats }) {
           Icon={Grid3X3}
           title="Squares"
           cadence={`Weekly · ${DAYS[cadence.squaresDayET]} ${hourLabel(cadence.squaresHourET)}`}
-          prizeLabel="Board purse"
-          prizeValue="Set per board"
-          prizeNote="free to enter"
+          prizeLabel="Full board pays"
+          prizeValue={`${formatTokens(sqPrize)} $CSGN`}
+          prizeNote={`${formatTokens(sqFee)} $CSGN per square · ${(sqRake / 100).toFixed(0)}% rake`}
           rows={[
             ['Boards played', String(stats?.squaresBoards ?? 0)],
             ['Periods won', String(stats?.squaresPeriodsWon ?? 0)],
@@ -81,8 +92,10 @@ export default function GamesPanel({ stats }: { stats?: GameStats }) {
       </div>
 
       <p className="px-5 py-3 border-t border-white/[0.06] text-[11px] text-gray-500 leading-relaxed">
-        Entries are free. How many you get depends on what you hold — never on what you spend.
-        Boards open here once the first slate goes live.
+        Starting 5 is free — how many lineups you get depends on what you hold, never on what you
+        spend. Squares is the one paid game: you buy squares into a pool, and how many you may buy
+        is capped by your holdings. A short board pays a short prize. Boards open here once the
+        first slate goes live.
       </p>
     </section>
   )

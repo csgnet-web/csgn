@@ -9,6 +9,7 @@ import {
   type GameId, type BannerMode,
 } from '@/lib/games/schedule'
 import { PERFECT_CARD_PURSE_CSGN, type PrizeMode } from '@/lib/games/startingFive'
+import { DEFAULT_ENTRY_FEE_CSGN, DEFAULT_RAKE_BPS, SQUARE_COUNT } from '@/lib/games/squares'
 
 /**
  * GAME CONTROL — sets the game, the countdown, and the strip on /watch.
@@ -79,6 +80,8 @@ export default function GameControlsCard() {
   const [jackpot, setJackpot] = useState('0')
   const [squaresDay, setSquaresDay] = useState(0)
   const [squaresHour, setSquaresHour] = useState(13)
+  const [squaresFee, setSquaresFee] = useState(String(DEFAULT_ENTRY_FEE_CSGN))
+  const [squaresRake, setSquaresRake] = useState(String(DEFAULT_RAKE_BPS))
   const [lockHour, setLockHour] = useState(12)
 
   // Ticks the preview once a second so the clock below is the real clock.
@@ -120,6 +123,11 @@ export default function GameControlsCard() {
       setJackpot(String(Math.max(0, Math.floor(Number(s5.jackpotCsgn) || 0))))
       const pm = s5.prizeMode
       if (pm === 'perfect_split' || pm === 'perfect_lottery' || pm === 'leaderboard') setPrizeMode(pm)
+      const sq = (d.squares ?? {}) as Record<string, unknown>
+      const fee = Number(sq.entryFeeCsgn)
+      const rake = Number(sq.rakeBps)
+      setSquaresFee(String(Number.isFinite(fee) && fee >= 0 ? Math.floor(fee) : DEFAULT_ENTRY_FEE_CSGN))
+      setSquaresRake(String(Number.isFinite(rake) && rake >= 0 ? Math.floor(rake) : DEFAULT_RAKE_BPS))
     }, () => {})
   }, [])
 
@@ -151,7 +159,11 @@ export default function GameControlsCard() {
           jackpotCsgn: Math.max(0, Math.floor(Number(jackpot) || 0)),
           prizeMode,
         },
-        squares: { cadence: 'weekly' },
+        squares: {
+          cadence: 'weekly',
+          entryFeeCsgn: Math.max(0, Math.floor(Number(squaresFee) || 0)),
+          rakeBps: Math.min(10_000, Math.max(0, Math.floor(Number(squaresRake) || 0))),
+        },
         updatedAt: new Date().toISOString(),
       }, { merge: true })
       flash('Game settings saved.')
@@ -178,6 +190,11 @@ export default function GameControlsCard() {
     nowMs,
     DEFAULT_BANNER_LINES,
   )
+
+  // Full-board economics, mirrored from boardEconomics: gross, floored rake, prize.
+  const squaresGross = Math.max(0, Math.floor(Number(squaresFee) || 0)) * SQUARE_COUNT
+  const squaresRakeCsgn = Math.floor((squaresGross * Math.min(10_000, Math.max(0, Math.floor(Number(squaresRake) || 0)))) / 10_000)
+  const squaresFullBoardPrize = squaresGross - squaresRakeCsgn
 
   const field = 'w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50'
   const label = 'block text-[11px] uppercase tracking-[0.14em] text-gray-500 mb-1.5'
@@ -305,7 +322,7 @@ export default function GameControlsCard() {
           <p className="text-[11px] text-gray-600 mt-1.5">{PRIZE_MODES.find((p) => p.id === prizeMode)?.hint}</p>
         </div>
 
-        <p className={`${label} pt-2`}>Squares — weekly</p>
+        <p className={`${label} pt-2`}>Squares — weekly, pooled</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label className={label} htmlFor="gc-sqday">Board closes on</label>
@@ -319,6 +336,26 @@ export default function GameControlsCard() {
               {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{hourLabel(h)}</option>)}
             </select>
           </div>
+          <div>
+            <label className={label} htmlFor="gc-sqfee">Entry fee per square ($CSGN)</label>
+            <input id="gc-sqfee" className={`${field} font-mono`} value={squaresFee} onChange={(e) => setSquaresFee(e.target.value)} inputMode="numeric" />
+          </div>
+          <div>
+            <label className={label} htmlFor="gc-sqrake">Rake (basis points)</label>
+            <input id="gc-sqrake" className={`${field} font-mono`} value={squaresRake} onChange={(e) => setSquaresRake(e.target.value)} inputMode="numeric" />
+          </div>
+        </div>
+        {/* What a full board actually pays, computed the same way the engine
+            does — so nobody has to reverse-engineer the rake from a rate card. */}
+        <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3.5 py-3">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-gray-500">Full board ({SQUARE_COUNT} squares) pays</p>
+          <p className="mt-1 font-mono tabular-nums text-lg font-semibold text-white leading-none">
+            {squaresFullBoardPrize.toLocaleString()} $CSGN
+          </p>
+          <p className="mt-1.5 text-[11px] text-gray-500">
+            {squaresGross.toLocaleString()} gross · {squaresRakeCsgn.toLocaleString()} rake
+            ({(Number(squaresRake) / 100 || 0).toFixed(1)}%). A short board pays a short prize.
+          </p>
         </div>
 
         <Button variant="primary" size="sm" onClick={() => void saveGames()} isLoading={busy}>Save game settings</Button>

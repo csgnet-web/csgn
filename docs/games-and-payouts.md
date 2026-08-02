@@ -1,37 +1,64 @@
 # Squares, Starting 5, and the payout wallet
 
 > **Status: engines shipped, unit-tested, not yet wired to UI or run against
-> mainnet.** The game logic and the payout ledger are code. The screens that
-> render them and the scheduled job that settles them are not built yet.
+> mainnet.** The game logic, the payout ledger and the admin controls are code.
+> The board/slate screens and the scheduled settlement job are not built yet.
+> Verify with [`dry-run.md`](dry-run.md) before anything pays a stranger.
 >
-> Related: [`token-voting.md`](token-voting.md) (the same no-deposit principle),
-> [`master-plan.md`](master-plan.md) §11.7 (the speculation-game brief, and its
-> legal caution — read §5 below).
+> Related: [`token-voting.md`](token-voting.md) (the no-deposit principle Starting 5
+> follows), [`master-plan.md`](master-plan.md) §11.7 (the speculation-game brief and
+> its legal caution — read §5), [`dry-run.md`](dry-run.md) (how to verify all of it).
 
 ---
 
-## 1. The principle both games are built on
+## 1. Two games, two economies — on purpose
 
-Neither game takes an entry fee. Not in SOL, not in $CSGN, not in anything.
+**Starting 5 is free. Squares is paid.** That split is deliberate and it is worth
+stating plainly, because everything else about the token argues for the first
+model and Squares is the exception.
 
-**How much you can play is a function of what you HOLD, not what you SPEND.**
-Tokens never leave the wallet, are never escrowed, are never locked, and are never
-burned. You can sell your entire bag halfway through a game; you simply get fewer
-entries in the next one.
+| | Starting 5 | Squares |
+|---|---|---|
+| Cadence | Daily | Weekly |
+| Entry | **Free** | **6,250 $CSGN per square** |
+| What holdings do | Earn you lineups (1 free, up to 5) | **Cap** how many squares you may buy (1 floor, up to 10) |
+| Prize | **100,000 $CSGN** for a perfect card | **500,000 $CSGN** to the winner of a full board |
+| Funded by | The treasury | The entry pool, less a 20% rake |
+| Nobody wins | Jackpot rolls to tomorrow | Prize rolls to the next board |
 
-This is the token thesis (§5: *"non-custodial; you keep your tokens"*) expressed
-as a board game, and it has a second effect that matters more than the first:
-**everyone gets one free entry, including a wallet holding zero.** That isn't
-generosity, it's the funnel. A non-holder plays for free, watches a holder cover
-nine squares to their one, and has just been shown what the token does — which no
-amount of marketing copy achieves.
+### Why Starting 5 stays free
 
-The purse comes from the **treasury**, not from the players. A normal squares pool
-moves money between entrants and takes a rake; here the network funds a fixed
-prize out of attention revenue. The game is pure distribution: **the network pays
-the audience to show up.**
+Entries are **allocated by what a wallet HOLDS**, never by what it spends. The
+tokens never leave the wallet, are never escrowed, are never burned. Sell your
+whole bag mid-slate and you simply get fewer lineups tomorrow. This is the token
+thesis (§5: *"non-custodial; you keep your tokens"*) expressed as a game.
 
-### The allowance curve
+Everyone — including a wallet holding zero — gets one free lineup. That isn't
+generosity, it's the funnel: a non-holder plays for free, watches a holder enter
+five, and has just been shown what the token does.
+
+### Why Squares is paid
+
+A squares board is a pool game. Its whole texture — the fill counting down, the
+board being *worth* something — comes from the fact that the money is the
+players'. Funding it from the treasury would make it a giveaway with a grid
+drawn on it.
+
+So: fees pool, the network takes a **published** rake, the remainder goes to the
+winner. At 100 squares × 6,250 that's 625,000 gross, 125,000 rake, **500,000 to
+the winner**. Self-funding rather than a treasury expense.
+
+Two rules keep it honest, and both are enforced in `boardEconomics` rather than
+left to a settlement script:
+
+- **A short board pays a short prize.** Forty squares sold pays forty squares'
+  worth minus rake — not 500,000. A guarantee exists (`guaranteePrize`) but it is
+  opt-in per board and the top-up is reported, because a guarantee is a subsidy
+  and the treasury should never fund one by default.
+- **The rake rounds down.** A fraction of a token is meaningless either way, but
+  *"the house rounds up"* must never be a true sentence about us.
+
+### The allowance curve — a cap here, a grant there
 
 Both games size entries off share of circulating supply, on a square root:
 
@@ -39,20 +66,20 @@ Both games size entries off share of circulating supply, on a square root:
 allowance = free + floor( sqrt( min(sharePct, 1) ) × (max - free) )
 ```
 
-| | Free | Max | Reaches max at |
+| | Floor | Max | Reaches max at |
 |---|---|---|---|
-| Squares | 1 square | 10 squares | 1% of supply |
-| Starting 5 | 1 lineup | 5 lineups | 1% of supply |
+| Squares | 1 square *(still paid for)* | 10 squares | 1% of supply |
+| Starting 5 | 1 lineup *(free)* | 5 lineups | 1% of supply |
 
-Sub-linear on purpose. Linear allocation would let one wallet own the board, and a
-board one wallet owns isn't a game, it's a withdrawal. The square root is the same
-instinct as quadratic voting: influence grows with stake, but the hundredth token
-buys far less than the first. A wallet at 0.01% of supply — a hundredth of the
-reference holder — still gets a *third* of the way to the cap, not a hundredth.
+Sub-linear on purpose. On Starting 5 it stops one wallet buying the leaderboard.
+On Squares it prevents the degenerate strategy: buy all 100 squares, win
+guaranteed, collect the pool minus the rake. That isn't a game — it's a 20% fee
+on moving your own money, and it would kill the board for everyone else the first
+time someone did it.
 
 Note the deliberate split with [`token-voting.md`](token-voting.md) §2.4:
-**linear supply-share where ownership should decide (what airs), square root where
-fun should (the games).**
+**linear supply-share where ownership should decide (what airs), square root
+where fun should (the games).**
 
 ---
 
@@ -70,15 +97,20 @@ can't name a player.
 sports nights, and on a slow afternoon a crypto board where the axes are the last
 digits of the $CSGN and SOL prices at the top of each hour. Same engine.
 
-**Periods** default to a back-loaded four-checkpoint split (15% / 20% / 15% / 50%)
-in basis points, so the purse divides in exact integer arithmetic. A purse must
-never be split with floating point; 0.1 + 0.2 losing a token is a support ticket
-forever.
+**One winner takes the game.** `SINGLE_WINNER_PERIODS` is a single Final
+checkpoint at 100% of the prize — which is what "500,000 to the winner" means, and
+it's the right shape for a pooled board: four smaller prizes out of one pool is
+four reasons to feel like you nearly won, where one prize is a reason to watch the
+ninth. The four-checkpoint split (`DEFAULT_PERIODS`, 15/20/15/50) is still
+supported for a treasury-funded board; the engine doesn't care which it's handed.
 
-**Unclaimed squares roll over.** If nobody held the winning square, that period's
-share carries into the next board rather than being kept. `settleBoard` reconciles
-to the token: everything paid plus the rollover equals the purse exactly, with
-rounding dust handed to the last winner.
+Weights are basis points so the prize divides in exact integer arithmetic. A prize
+must never be split with floating point; 0.1 + 0.2 losing a token is a support
+ticket forever.
+
+**An unclaimed winning square rolls over.** That share carries into the next board
+rather than being kept. `settleBoard` reconciles to the token: everything paid plus
+the rollover equals the prize exactly, with rounding dust handed to the last winner.
 
 ### The draw is the integrity story
 
@@ -267,21 +299,20 @@ and between those two failure modes there is no contest.
 
 Two things are genuinely open, and neither is a code problem.
 
-**Get legal advice on the prize structure.** `master-plan.md` §11.7 draws the
-right line: *"the moment money is pooled and paid out on price outcomes, it's a
-regulated activity in most places."* These games are deliberately on the safer
-side of it — **no entry fee, nothing pooled from players, and the purse is a
-treasury-funded prize** — which is a materially different structure from a stakes
-contest and closer to a sweepstakes. But "no consideration" is a legal conclusion,
-not a design decision, and Starting 5 pays on price outcomes. **Have counsel
-confirm the structure and the jurisdictional exclusions before a single payout
-runs.** Nothing in this repo is legal advice.
+**The prize structure has been reviewed and cleared with counsel** for CSGN's
+own structure and jurisdiction. Note what that does and does not cover: Squares
+*is* a pooled-stakes game with a rake — the exact shape `master-plan.md` §11.7
+flagged as regulated — and it was cleared on that basis. Starting 5 is
+treasury-funded with no entry fee, which is a materially different structure.
 
-**Squares' purse is still undecided.** Starting 5 is set at 100,000 $CSGN daily
-(and configurable from Game Control). The weekly Squares board has a cadence and
-an engine but no committed purse. The treasury funds it (§11.1), so it's a
-published, budgeted commitment — announcing a game before deciding what it pays
-is how you end up funding it out of panic.
+**If you fork this, that clearance is not yours.** It says nothing about your
+jurisdiction, your rake, or your prize. Get your own advice
+([`../CONTRIBUTING.md`](../CONTRIBUTING.md) § "Running your own node"). Nothing
+in this repository is legal advice.
+
+**Both purses are now set** — Starting 5 at 100,000 $CSGN daily from the
+treasury, Squares at 500,000 to the winner of a full board out of the entry pool.
+Both are configurable from Game Control without a deploy.
 
 ### Admin — Game Control
 

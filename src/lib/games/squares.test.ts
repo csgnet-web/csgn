@@ -3,6 +3,8 @@ import {
   SQUARE_COUNT, DEFAULT_PERIODS, squaresAllowance, claimSquare, drawDigits,
   winningSquareIndex, resolvePeriod, settleBoard, lastDigit, squaresHeldBy, boardFill,
   FREE_SQUARES, MAX_SQUARES_PER_WALLET,
+  SQUARES_TARGET_PRIZE_CSGN, DEFAULT_ENTRY_FEE_CSGN, DEFAULT_RAKE_BPS, SINGLE_WINNER_PERIODS,
+  boardEconomics, boardPrize, entryFee, stakeOf,
   type SquaresBoard, type SquareClaim,
 } from './squares'
 import { seededShuffle, isSeedValid, type SeedCommitment } from './provablyFair'
@@ -42,8 +44,8 @@ function fullBoard(over: Partial<SquaresBoard> = {}): SquaresBoard {
   return board({ claims, ...over })
 }
 
-describe('entry allowance is holdings-based, never a deposit', () => {
-  it('gives a free square to a wallet holding nothing at all', () => {
+describe('the holdings curve caps how many squares a wallet may buy', () => {
+  it('lets a wallet holding nothing still take one square', () => {
     expect(squaresAllowance(0, 1_000_000_000)).toBe(FREE_SQUARES)
     expect(squaresAllowance(-5, 1_000_000_000)).toBe(FREE_SQUARES)
   })
@@ -61,7 +63,7 @@ describe('entry allowance is holdings-based, never a deposit', () => {
     expect(hundredth).toBeLessThan(full)
   })
 
-  it('never returns less than the free allowance, whatever the inputs', () => {
+  it('never returns less than the one-square floor, whatever the inputs', () => {
     expect(squaresAllowance(5, 0)).toBe(FREE_SQUARES)
     expect(squaresAllowance(NaN, 1_000)).toBe(FREE_SQUARES)
     expect(squaresAllowance(1, Number.POSITIVE_INFINITY)).toBe(FREE_SQUARES)
@@ -267,5 +269,124 @@ describe('settling a whole board', () => {
 describe('period weights', () => {
   it('total exactly 100%', () => {
     expect(DEFAULT_PERIODS.reduce((s, p) => s + p.weightBps, 0)).toBe(10_000)
+  })
+})
+
+
+/* ─── The pool ─── */
+
+/** A paid board at the shipped defaults: 6,250/square, 20% rake, one winner. */
+const paid = (over: Partial<SquaresBoard> = {}): SquaresBoard => board({
+  periods: SINGLE_WINNER_PERIODS,
+  purseCsgn: 0,
+  entryFeeCsgn: DEFAULT_ENTRY_FEE_CSGN,
+  rakeBps: DEFAULT_RAKE_BPS,
+  ...over,
+})
+
+describe('board economics', () => {
+  it('a FULL board at the defaults pays exactly the 500,000 target', () => {
+    const b = paid({ claims: Array.from({ length: SQUARE_COUNT }, (_, i) => claim(i, `W${i}`)) })
+    const e = boardEconomics(b)
+    expect(e.squares).toBe(100)
+    expect(e.poolCsgn).toBe(625_000)
+    expect(e.rakeCsgn).toBe(125_000)
+    expect(e.prizeCsgn).toBe(SQUARES_TARGET_PRIZE_CSGN)
+    expect(e.prizeCsgn).toBe(500_000)
+  })
+
+  it('a SHORT board pays a short prize rather than a subsidised one', () => {
+    const b = paid({ claims: Array.from({ length: 40 }, (_, i) => claim(i, `W${i}`)) })
+    const e = boardEconomics(b)
+    expect(e.poolCsgn).toBe(250_000)
+    expect(e.rakeCsgn).toBe(50_000)
+    expect(e.prizeCsgn).toBe(200_000)
+    expect(e.toppedUp).toBe(false)
+    expect(e.treasuryCsgn).toBe(0)
+  })
+
+  it('tops up to the floor ONLY when a guarantee was explicitly set', () => {
+    const claims = Array.from({ length: 40 }, (_, i) => claim(i, `W${i}`))
+    const guaranteed = paid({ claims, purseCsgn: 500_000, guaranteePrize: true })
+    const e = boardEconomics(guaranteed)
+    expect(e.prizeCsgn).toBe(500_000)
+    expect(e.treasuryCsgn).toBe(300_000)
+    expect(e.toppedUp).toBe(true)
+
+    // Same board without the flag: no silent subsidy.
+    expect(boardEconomics(paid({ claims, purseCsgn: 500_000 })).prizeCsgn).toBe(200_000)
+  })
+
+  it('never tops up when the pool already clears the floor', () => {
+    const b = paid({
+      claims: Array.from({ length: SQUARE_COUNT }, (_, i) => claim(i, `W${i}`)),
+      purseCsgn: 100_000, guaranteePrize: true,
+    })
+    expect(boardEconomics(b).toppedUp).toBe(false)
+    expect(boardEconomics(b).prizeCsgn).toBe(500_000)
+  })
+
+  it('rounds the rake DOWN, so rounding favours the players', () => {
+    // 3 squares x 1,001 = 3,003; 20% = 600.6 -> rake 600, prize 2,403.
+    const b = paid({ entryFeeCsgn: 1_001, claims: [claim(0), claim(1, 'B'), claim(2, 'C')] })
+    const e = boardEconomics(b)
+    expect(e.rakeCsgn).toBe(600)
+    expect(e.rakeCsgn + e.prizeCsgn).toBe(e.poolCsgn)
+  })
+
+  it('treats a zero-fee board as purely treasury-funded', () => {
+    const b = paid({ entryFeeCsgn: 0, purseCsgn: 250_000, claims: [claim(0)] })
+    const e = boardEconomics(b)
+    expect(e.poolCsgn).toBe(0)
+    expect(e.rakeCsgn).toBe(0)
+    expect(e.prizeCsgn).toBe(250_000)
+  })
+
+  it('clamps a nonsense rake instead of paying a negative prize', () => {
+    const claims = [claim(0)]
+    expect(boardEconomics(paid({ claims, rakeBps: 99_999 })).prizeCsgn).toBe(0)
+    expect(boardEconomics(paid({ claims, rakeBps: -50 })).rakeCsgn).toBe(0)
+  })
+
+  it('adds carried rollover to the prize on top of the pool', () => {
+    const b = paid({ claims: [claim(0)], rolloverInCsgn: 90_000 })
+    expect(boardPrize(b)).toBe(5_000 + 90_000) // 6,250 less 20% = 5,000
+  })
+
+  it('reports what one square costs and what a wallet is in for', () => {
+    const b = paid({ claims: [claim(0, 'W'), claim(1, 'W'), claim(2, 'Other')] })
+    expect(entryFee(b)).toBe(6_250)
+    expect(stakeOf(b, 'W')).toBe(12_500)
+    expect(stakeOf(b, 'Nobody')).toBe(0)
+  })
+})
+
+describe('settling a pooled board', () => {
+  const full = () => paid({ claims: Array.from({ length: SQUARE_COUNT }, (_, i) => claim(i, `W${i}`)) })
+
+  it('pays the single winner the whole 500,000', () => {
+    const drawn = drawDigits(full(), seed())
+    const settled = settleBoard(drawn, { f: { x: 7, y: 3 } })
+    const paidOut = Object.values(settled.payouts).reduce((s, n) => s + n, 0)
+    expect(paidOut).toBe(500_000)
+    expect(Object.keys(settled.payouts)).toHaveLength(1)
+    expect(settled.rolloverOutCsgn).toBe(0)
+    expect(settled.board.status).toBe('settled')
+  })
+
+  it('rolls the prize forward when nobody held the winning square', () => {
+    const drawn = drawDigits(paid({ claims: [claim(0, 'Lonely')] }), seed())
+    const settled = settleBoard(drawn, { f: { x: 7, y: 3 } })
+    // 1 square: 6,250 less 20% = 5,000, and the lone square almost certainly loses.
+    if (Object.keys(settled.payouts).length === 0) {
+      expect(settled.rolloverOutCsgn).toBe(5_000)
+    } else {
+      expect(Object.values(settled.payouts)[0]).toBe(5_000)
+    }
+  })
+
+  it('has a single-winner period set that totals 100%', () => {
+    expect(SINGLE_WINNER_PERIODS.reduce((s, p) => s + p.weightBps, 0)).toBe(10_000)
+    expect(SINGLE_WINNER_PERIODS).toHaveLength(1)
   })
 })

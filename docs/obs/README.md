@@ -31,6 +31,25 @@ Nobody touches OBS.
 
 ---
 
+## 1a. Where the stream goes — X, or Restream for both
+
+**X is the recommended output, and it's the simplest.** OBS captures `/player`
+plus the graphics stack and streams to **X Media Studio over RTMPS**. One
+destination, one encoder, nothing in the path you don't control. Full encoder
+settings in [`../obs-setup.md`](../obs-setup.md).
+
+**Want Twitch as well? Use [Restream](https://restream.io).** OBS sends one
+stream to Restream and Restream fans it out to X and Twitch simultaneously. It
+costs a subscription and adds a hop, but it is the only sane way to hit both
+without running two encoders on one machine. Point OBS at Restream as its single
+RTMP target and configure the split there.
+
+> Slot streamers keep streaming to **their own** Twitch channels — only the
+> network's output stream goes to X. Restream is about CSGN's own broadcast
+> reaching two places, not about how creators get on air.
+
+---
+
 ## 2. The assets
 
 | File | What it is | Rotates? | Driven by |
@@ -269,3 +288,71 @@ public Firestore read. That is deliberate:
 The state boundary is the same everywhere: **the browser source reads, the admin
 panel writes, Firestore is the wire.** No asset ever writes state, so no asset
 can corrupt the broadcast.
+
+
+---
+
+## 9. The CSGN BottomLine — the finalized spec
+
+The band is a **BottomLine**, not a crawl, and the distinction is the whole
+design. A crawl scrolls text past you and you wait. A BottomLine *paginates*: it
+shows one thing at a time, at full size, and tells you where you are in the set.
+ESPN's 2008–11 board is still the reference implementation, and this is ours.
+
+### 9.1 Anatomy
+
+```
+┌────────┬──────────┬───────────────────────────────────┬──┬──────────────────┐
+│ BRAND  │  LEAGUE  │  SCOREBOARD / DETAIL              │  │  CRYPTO LED DOCK │
+│ 110px  │  158px   │  rolls vertically, flips to detail │  │  price + chart   │
+│        │   pill   │                        • • ◦ ◦ ◦  │  │                  │
+└────────┴──────────┴───────────────────────────────────┴──┴──────────────────┘
+   110px tall, pinned to the bottom. Anything above is transparent headroom.
+```
+
+### 9.2 The rules
+
+**One item at a time, at full size.** The scoreboard rolls vertically between
+games; the league changes behind a wipe. Nothing shrinks to fit — if it doesn't
+fit, it wraps or it gets its own face.
+
+**The flip is for detail, not decoration.** Every game can turn over to a second
+face: probable starters, pitching decisions, top performers. It only flips when
+there's something to show — never an empty face.
+
+**Section dots, bottom right.** One pip per item in the current league. The pip
+you're on is gold; the ones you've passed are drawn down to a dim white; the ones
+ahead are dark. The row resets on the league wipe. Over 14 items the overflow
+rides as a `+N` rather than a wall of dots nobody can count.
+
+This is the cheapest thing a ticker can do to stop feeling infinite. You always
+know how much of the NBA is left, which means you know whether to keep watching.
+
+**Type is sized to be read across a room, not on a monitor.** The band ships at
+1930×240 and gets scaled down on air. Team abbreviations run 40px, detail
+headlines 30px, the Meme 100 leaderboard 26px. If a face reads comfortably on
+your laptop it is almost certainly too small on stream.
+
+**Everything is driven by a document, nothing by a person.** The band reads
+`config/ticker` over the public Firestore REST API. Change a field in Admin →
+Broadcast Control and the board follows within ~60 seconds. Nobody touches OBS.
+
+### 9.3 What each band is for
+
+| Band | Job |
+|---|---|
+| **Brand** | Constant identity. Never changes, never animates |
+| **League pill** | Where you are. Colour-coded per league, wipes on change |
+| **Scoreboard** | The item: score, records, status — or a detail face on the flip |
+| **Section dots** | How much of this league is left |
+| **Crypto dock** | Always-on price board: LED price, 24h chart, Meme 100 power rank, $CSGN |
+
+### 9.4 Verifying it
+
+```bash
+node docs/obs/ticker-smoke.mjs      # offline render checks
+```
+
+Then the on-air pass in [`../dry-run.md`](../dry-run.md) §5 — Meme 100 readable
+from across the room, MLB record and games-back together, detail face filling its
+space, dots counting down and resetting on the wipe.
