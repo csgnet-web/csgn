@@ -17,6 +17,7 @@ import MemeVoteCard from '@/components/MemeVoteCard'
 import GamesPanel from '@/components/account/GamesPanel'
 import HolderPanel from '@/components/account/HolderPanel'
 import RecommendedProfiles from '@/components/account/RecommendedProfiles'
+import AddEmailCard from '@/components/account/AddEmailCard'
 import { Notice, EmailNotice, TwitchNotice } from '@/components/ui/Notice'
 import { api } from '@/lib/api'
 import { readTwitchProof, clearTwitchProof } from '@/lib/twitchProof'
@@ -253,6 +254,7 @@ Use your email/username and password to access your account.
     )
   }
 
+  const hasEmail = Boolean(profile?.email || user.email)
   const twitchLinked = Boolean(profile?.twitch?.verified)
   const savedWallet = profile?.phantom?.walletAddress || profile?.walletAddress
   const twitchDisplay = profile?.twitch?.displayName || profile?.twitch?.username || profile?.twitchUsername
@@ -281,7 +283,10 @@ Use your email/username and password to access your account.
           <div className="space-y-3">
             {linkMsg && <Notice tone="success" compact>{linkMsg}</Notice>}
             {linkErr && <Notice tone="error" compact>{linkErr}</Notice>}
-            {!user.emailVerified && (
+            {/* A wallet-first account has no email at all, so there's nothing to
+                resend — it needs the form, not the reminder. */}
+            {!hasEmail && <AddEmailCard onLinked={refreshProfile} />}
+            {hasEmail && !user.emailVerified && (
               <EmailNotice
                 action={
                   <Button variant="secondary" size="sm" isLoading={resending} onClick={handleResend}>
@@ -367,7 +372,7 @@ Use your email/username and password to access your account.
           <div className="border-t border-white/[0.06] px-5 sm:px-6 pt-4 pb-3 grid gap-2.5 sm:grid-cols-3">
             <Connection Icon={Twitch} label="Twitch" value={twitchDisplay} connected={twitchLinked} />
             <Connection Icon={Wallet} label="Wallet" value={savedWallet ? `${savedWallet.slice(0, 4)}…${savedWallet.slice(-4)}` : ''} connected={Boolean(savedWallet)} mono />
-            <Connection Icon={Mail} label="Email" value={profile?.email} connected={Boolean(user.emailVerified)} />
+            <Connection Icon={Mail} label="Email" value={profile?.email || user.email || ''} connected={Boolean(user.emailVerified)} />
           </div>
           <p className="px-5 sm:px-6 pb-4 text-[11px] text-gray-600 leading-relaxed">
             Only you can see your email address. It never appears on your public profile.

@@ -78,6 +78,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  /**
+   * Create an account from a wallet alone. The signature over a server nonce is
+   * the credential — no email, no password, no Twitch. Email (to claim a slot)
+   * and Twitch (to go on air) are attached later from the profile.
+   */
+  const signUpWithPhantom = async (phantomProofToken: string, username: string) => {
+    void logAuthEvent('signup-phantom-start')
+    try {
+      const { customToken } = await api.signUpWithPhantom(phantomProofToken, username)
+      const { user } = await signInWithCustomToken(auth, customToken)
+      await fetchProfile(user.uid)
+      void logAuthEvent('signup-phantom-success', { uid: user.uid })
+    } catch (err) {
+      void logAuthEvent('signup-phantom-failure', { errorMessage: err instanceof Error ? err.message : String(err) })
+      throw err
+    }
+  }
+
   const signUp = async (email: string, password: string, username: string, proofs: { phantomProofToken: string; twitchProofToken?: string }) => {
     void logAuthEvent('signup-email-start')
     let createdUid: string | null = null
@@ -108,5 +126,5 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user && !user.emailVerified) await sendEmailVerification(user)
   }
 
-  return <AuthContext.Provider value={{ user, profile, loading, signIn, signInWithPhantom, signUp, signOut, refreshProfile, resendVerification }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user, profile, loading, signIn, signInWithPhantom, signUpWithPhantom, signUp, signOut, refreshProfile, resendVerification }}>{children}</AuthContext.Provider>
 }

@@ -68,6 +68,12 @@ vi.mock('firebase/firestore', () => ({
 vi.mock('@/lib/csgnBalance', () => ({ fetchCsgnBalance: async () => 10_000_000 }))
 
 vi.mock('@/components/MemeVoteCard', () => ({ default: () => null }))
+vi.mock('@/components/account/RecommendedProfiles', () => ({ default: () => null }))
+vi.mock('firebase/auth', () => ({
+  EmailAuthProvider: { credential: vi.fn() },
+  linkWithCredential: vi.fn(),
+  sendEmailVerification: vi.fn(),
+}))
 
 const { default: Dashboard } = await import('./Dashboard')
 // The page renders <Link>s, which need a router in context to mount at all.
@@ -258,5 +264,40 @@ describe('signed out', () => {
     expect(text()).toContain('Sign in')
     expect(text()).not.toContain('Holder standing')
     authState.user = saved
+  })
+})
+
+
+describe('a wallet-first account (signed up with Phantom, no email yet)', () => {
+  const withoutEmail = async (run: () => Promise<void>) => {
+    const savedProfileEmail = mockProfile.email
+    const savedUser = authState.user
+    ;(mockProfile as { email: string }).email = ''
+    authState.user = { uid: 'u1', emailVerified: false, email: null }
+    try { await run() } finally {
+      ;(mockProfile as { email: string }).email = savedProfileEmail
+      authState.user = savedUser
+    }
+  }
+
+  it('offers the ADD-EMAIL form, not a "resend" button for an email it does not have', async () => {
+    await withoutEmail(async () => {
+      await render()
+      expect(text()).toContain('Add an email to claim slots')
+      expect(text()).not.toContain('Resend email')
+    })
+  })
+
+  it('says the wallet stays the sign-in and the email is only for claiming', async () => {
+    await withoutEmail(async () => {
+      await render()
+      expect(text()).toContain('Your wallet is your sign-in')
+      expect(text()).toContain('only needed to claim an hour')
+    })
+  })
+
+  it('never shows the add-email form once an email exists', async () => {
+    await render()
+    expect(text()).not.toContain('Add an email to claim slots')
   })
 })

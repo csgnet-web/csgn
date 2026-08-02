@@ -221,6 +221,39 @@ number marks it. Still well short of v2.)*
 - **OBS quick start** — "on air in fifteen minutes": five browser sources, two
   checkboxes each, four encoder settings, and a symptom→fix table
 
+### v1.17 — August 2026
+**Sign up with a wallet. A real Meme 100 board. Profiles you can visit.**
+
+- **Phantom is now a full sign-up, not just a sign-in.** One signature and a
+  username gets you an account — no email, no password, no Twitch. Email is
+  attached later from the profile and gates only *claiming a slot*; Twitch gates
+  only *going on air*. The uid is derived from the wallet, so a double-submit
+  resolves to the same account instead of a second one, and signing up with an
+  already-registered wallet just signs you in
+- **Slot buttons gray out when you can't claim.** An enabled button that always
+  fails teaches people the site is broken rather than that they have one thing
+  left to do. Disabled, locked, two-word reason, with the full sentence in one
+  notice at the top of `/schedule`. The cards also stopped fighting themselves —
+  a two-line all-caps slogan sat directly above an all-caps button saying nearly
+  the same thing, with glows and press-scale on 84 cards at once
+- **Meme 100 is a ranked board you pick from**, keyed by contract address rather
+  than a typed ticker. Symbols collide ($BONK / BONK / Bonk were three rows);
+  mints don't. Every card carries live price, market cap, 24h volume, 24h change
+  and the CA itself with copy + chart links. The set is admin-curated, the data
+  is enriched server-side from DexScreener, and the power score is published so
+  the ordering can be checked against the numbers on the card
+- **Public profiles at `/u/:username`**, built entirely from a server-side
+  projection — the page cannot leak a private field because it never receives
+  one. The discovery rail now samples randomly from a wider ranked pool (instead
+  of showing the same six faces forever), has a shuffle button, is dismissable,
+  and links to CSGN profiles rather than straight out to Twitch
+- **Your email is back on your profile, and private by construction.** `/account`
+  only ever renders your own profile and `toPublicProfile` has no email field at
+  all, so it's visible to you and in no response another member can reach
+- **`/about` rewritten** — plain language, every feature explained, including
+  what the token actually does and how the profile votes work. No adjectives
+  doing a fact's job
+
 ## Getting Started
 
 ```bash

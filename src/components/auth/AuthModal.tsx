@@ -23,7 +23,7 @@ const TWITCH_ERROR_MESSAGES: Record<string, string> = {
 }
 
 export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalProps) {
-  const { signIn, signUp, signInWithPhantom } = useAuth()
+  const { signIn, signUp, signInWithPhantom, signUpWithPhantom } = useAuth()
   const { connect, signMessage, isConnecting, error: walletError, needsPhantom, deeplink, isMobile } = usePhantomWallet()
   const [email, setEmail] = useState('')
   const [username, setUsername] = useState('')
@@ -102,6 +102,35 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
   const handleClose = () => { reset(); onClose() }
 
   /** Login view: prove the wallet, then exchange that proof for a session. */
+  /**
+   * Wallet-only sign-up. One signature and a username, and you have an account.
+   *
+   * Falls through to sign-in when the wallet is already registered — someone
+   * pressing "sign up" with a known wallet meant to sign in, and an error with
+   * no button on it is a dead end.
+   */
+  const registerWithPhantom = async () => {
+    setError(''); setVerifying('phantom')
+    try {
+      if (!/^[a-zA-Z0-9_]{3,20}$/.test(username.trim())) {
+        throw new Error('Pick a username first — 3–20 letters, numbers or underscores.')
+      }
+      const address = await connect()
+      if (!address) throw new Error('Connect your Phantom wallet to continue.')
+      const challenge = await api.createPhantomChallenge(address)
+      const signature = await signMessage(challenge.message)
+      if (!signature) throw new Error('Signature was declined. Approve it in Phantom to continue.')
+      const verified = await api.verifyPhantomSignature(address, signature, challenge.challengeToken)
+      await signUpWithPhantom(verified.proofToken, username.trim())
+      clearRegisterDraft()
+      handleClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create your account.')
+    } finally {
+      setVerifying(null)
+    }
+  }
+
   const loginWithPhantom = async () => {
     setError(''); setVerifying('phantom')
     try {
@@ -192,7 +221,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
               <h2 className="text-2xl font-bold font-display text-white">{isRegister ? 'Join CSGN' : 'Welcome back'}</h2>
               <p className="text-sm text-gray-400 mt-1">
                 {isRegister
-                  ? 'Connect Phantom and you\u2019re in. Twitch takes ten seconds and you can add it later.'
+                  ? 'Sign up with your wallet in one tap, or use an email and password.'
                   : 'Sign in with your email and password, or straight from your wallet.'}
               </p>
             </div>
@@ -202,6 +231,33 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                 <label className="block text-sm font-medium text-gray-300 mb-1.5">Email</label>
                 <div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="you@example.com" required disabled={loading} /></div>
                 {isRegister && <><label className="block text-sm font-medium text-gray-300 mb-1.5">Username</label><div className="relative"><User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input value={username} onChange={(e) => setUsername(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="csgn_user" required minLength={3} maxLength={20} disabled={loading} /></div></>}
+                {/* WALLET-FIRST SIGN-UP. Placed above the email form because it
+                    is the shorter path and the one that works everywhere,
+                    including in-app browsers where Twitch's Apple hop cannot
+                    complete. Email comes later, from the profile, and is only
+                    needed to claim a slot. */}
+                {isRegister && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void registerWithPhantom()}
+                      disabled={loading || isConnecting || verifying === 'phantom'}
+                      className="w-full h-12 rounded-xl bg-[#ab9ff2] hover:bg-[#bcb0f5] text-black text-sm font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-60 cursor-pointer"
+                    >
+                      <Wallet className="w-4 h-4" />
+                      {verifying === 'phantom' ? 'Check Phantom…' : 'Sign up with Phantom'}
+                    </button>
+                    <p className="text-[11px] text-gray-500 leading-relaxed">
+                      One signature and you're in. Add an email later to claim a slot, and Twitch to
+                      go on air.
+                    </p>
+                    <div className="flex items-center gap-3 py-1">
+                      <span className="h-px flex-1 bg-white/10" />
+                      <span className="text-[11px] uppercase tracking-widest text-gray-500">or use email</span>
+                      <span className="h-px flex-1 bg-white/10" />
+                    </div>
+                  </>
+                )}
                 {isRegister && <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button type="button" onClick={connectPhantom} disabled={loading || isConnecting || verifying === 'phantom'} className={`h-12 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 ${phantomProofToken ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}>{phantomProofToken ? <CheckCircle2 className="w-4 h-4" /> : <Wallet className="w-4 h-4" />} {phantomProofToken ? 'Phantom Verified' : verifying === 'phantom' ? 'Verifying…' : 'Connect Phantom'}</button>
                   <button type="button" onClick={connectTwitch} disabled={loading || verifying === 'twitch'} className={`h-12 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 ${twitchProofToken ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}>{twitchProofToken ? <CheckCircle2 className="w-4 h-4" /> : <Twitch className="w-4 h-4" />} {twitchProofToken ? twitch?.displayName || 'Twitch Connected' : verifying === 'twitch' ? 'Opening Twitch…' : 'Connect Twitch'}</button>

@@ -31,6 +31,12 @@ export type TwitchOAuthResult = { twitchProofToken: string; twitchUserId: string
 export const api = {
   createPhantomChallenge: (walletAddress: string) => functionFetch<{ challengeToken: string; message: string }>('createPhantomChallenge', { method: 'POST', body: JSON.stringify({ walletAddress }) }),
   verifyPhantomSignature: (walletAddress: string, signature: string, challengeToken: string) => functionFetch<{ proofToken: string; walletAddress: string }>('verifyPhantomSignature', { method: 'POST', body: JSON.stringify({ walletAddress, signature, challengeToken }) }),
+  /** Create an account from a wallet alone — no email, no password, no Twitch.
+   *  Returns a custom token; `existing` is true when the wallet already had an
+   *  account, in which case this is just a sign-in. */
+  signUpWithPhantom: (proofToken: string, username: string) => functionFetch<{ customToken: string; existing: boolean }>('signUpWithPhantom', { method: 'POST', body: JSON.stringify({ proofToken, username }) }),
+  /** Mirror a just-linked email onto the account and take the uniqueness lock. */
+  setAccountEmail: () => functionFetch<{ ok: boolean; email: string; alreadySet: boolean }>('setAccountEmail', { method: 'POST' }, true),
   /** Exchange a verified Phantom proof for a Firebase custom token (wallet login). */
   loginWithPhantom: (proofToken: string) => functionFetch<{ customToken: string }>('loginWithPhantom', { method: 'POST', body: JSON.stringify({ proofToken }) }),
   startTwitchOAuth: () => functionFetch<{ authUrl: string }>('startTwitchOAuth', { method: 'POST' }),
