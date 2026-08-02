@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Twitch, Users } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { RefreshCw, Twitch, Users, X } from 'lucide-react'
 import { api, type PublicProfile } from '@/lib/api'
 import { formatTokens } from '@/lib/games/profile'
+
+/** Remembers a dismissal across reloads. Closing a rail should stay closed —
+ *  re-showing it on the next visit is how a suggestion becomes nagging. */
+const DISMISS_KEY = 'csgn:hideRecommended'
 
 /**
  * Recommended members.
@@ -21,25 +26,55 @@ import { formatTokens } from '@/lib/games/profile'
 export default function RecommendedProfiles({ excludeUsername }: { excludeUsername?: string }) {
   const [profiles, setProfiles] = useState<PublicProfile[] | null>(null)
   const [failed, setFailed] = useState(false)
+  const [nonce, setNonce] = useState(0)
+  const [dismissed, setDismissed] = useState(() => {
+    try { return localStorage.getItem(DISMISS_KEY) === '1' } catch { return false }
+  })
 
   useEffect(() => {
+    if (dismissed) return
     let cancelled = false
     api.publicProfiles({ limit: 6, exclude: excludeUsername })
       .then((r) => { if (!cancelled) setProfiles(r.profiles ?? []) })
       .catch(() => { if (!cancelled) setFailed(true) })
     return () => { cancelled = true }
-  }, [excludeUsername])
+    // `nonce` is the shuffle trigger: the server samples randomly from the
+    // ranked pool, so re-fetching is what "show me different people" means.
+  }, [excludeUsername, dismissed, nonce])
 
-  // A failed or empty discovery rail renders nothing at all. An empty "Members"
+  const dismiss = () => {
+    setDismissed(true)
+    try { localStorage.setItem(DISMISS_KEY, '1') } catch { /* private mode */ }
+  }
+
+  // A dismissed, failed or empty rail renders nothing at all. An empty "Members"
   // card with a spinner in it is worse than no card — it tells a new user the
   // network is empty, which on day one is both true and unhelpful to say.
-  if (failed || (profiles && profiles.length === 0)) return null
+  if (dismissed || failed || (profiles && profiles.length === 0)) return null
 
   return (
     <section className="rounded-xl border border-white/[0.08] bg-white/[0.02]">
       <header className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06]">
-        <Users className="w-4 h-4 text-gray-400" />
-        <h2 className="text-sm font-semibold text-white">Members to watch</h2>
+        <Users className="w-4 h-4 shrink-0 text-gray-400" />
+        <h2 className="text-sm font-semibold text-white flex-1 min-w-0">Members to watch</h2>
+        <button
+          type="button"
+          onClick={() => setNonce((n) => n + 1)}
+          className="p-1 text-gray-600 hover:text-gray-300 rounded transition-colors cursor-pointer"
+          title="Show different members"
+          aria-label="Show different members"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={dismiss}
+          className="p-1 text-gray-600 hover:text-gray-300 rounded transition-colors cursor-pointer"
+          title="Hide this"
+          aria-label="Hide members to watch"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
       </header>
 
       <div className="p-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -55,10 +90,15 @@ export default function RecommendedProfiles({ excludeUsername }: { excludeUserna
 
 function ProfileCard({ profile }: { profile: PublicProfile }) {
   const initial = (profile.displayName || profile.username).trim().charAt(0).toUpperCase() || '?'
-  const href = profile.twitch ? `https://twitch.tv/${profile.twitch}` : undefined
 
-  const inner = (
-    <>
+  return (
+    // The card goes to the member's CSGN profile, not straight to Twitch —
+    // discovery should keep you on the network, and their page carries the
+    // Twitch link anyway.
+    <Link
+      to={`/u/${profile.username}`}
+      className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-white/[0.015] px-3 py-2.5 min-w-0 hover:bg-white/[0.04] hover:border-white/[0.12] transition-colors"
+    >
       {profile.avatarUrl ? (
         <img src={profile.avatarUrl} alt="" className="w-10 h-10 rounded-lg object-cover bg-white/[0.04] border border-white/[0.08] shrink-0" />
       ) : (
@@ -75,16 +115,6 @@ function ProfileCard({ profile }: { profile: PublicProfile }) {
         </p>
       </div>
       {profile.twitch && <Twitch className="w-4 h-4 shrink-0 text-gray-500" />}
-    </>
-  )
-
-  const className = 'flex items-center gap-3 rounded-lg border border-white/[0.06] bg-white/[0.015] px-3 py-2.5 min-w-0'
-
-  return href ? (
-    <a href={href} target="_blank" rel="noopener noreferrer" className={`${className} hover:bg-white/[0.04] hover:border-white/[0.12] transition-colors`}>
-      {inner}
-    </a>
-  ) : (
-    <div className={className}>{inner}</div>
+    </Link>
   )
 }

@@ -357,14 +357,21 @@ Use your email/username and password to access your account.
 
           {/* Connections — one row, each with an honest connected/missing state
               instead of three identical green chips regardless of reality. */}
-          {/* Connections. Email is deliberately NOT shown: it's a private
-              credential, this page is the model for the public profile, and a
-              member's address has no business being one screenshot away. Its
-              verification state lives in the notice above, where it's actionable. */}
-          <div className="border-t border-white/[0.06] px-5 sm:px-6 py-4 grid gap-2.5 sm:grid-cols-2">
+          {/* Connections, including the member's own email.
+              PRIVATE BY CONSTRUCTION: /account only ever renders the signed-in
+              user's own profile, and the public projection
+              (netlify/functions/publicProfiles.ts -> toPublicProfile) has no
+              email field at all. So this address is visible here and nowhere
+              else — not on /u/:username, not in the discovery rail, not in any
+              API response another member can reach. */}
+          <div className="border-t border-white/[0.06] px-5 sm:px-6 pt-4 pb-3 grid gap-2.5 sm:grid-cols-3">
             <Connection Icon={Twitch} label="Twitch" value={twitchDisplay} connected={twitchLinked} />
             <Connection Icon={Wallet} label="Wallet" value={savedWallet ? `${savedWallet.slice(0, 4)}…${savedWallet.slice(-4)}` : ''} connected={Boolean(savedWallet)} mono />
+            <Connection Icon={Mail} label="Email" value={profile?.email} connected={Boolean(user.emailVerified)} />
           </div>
+          <p className="px-5 sm:px-6 pb-4 text-[11px] text-gray-600 leading-relaxed">
+            Only you can see your email address. It never appears on your public profile.
+          </p>
         </section>
 
         {/* ── Games + holdings ──

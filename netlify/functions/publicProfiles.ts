@@ -68,7 +68,7 @@ export function toPublicProfile(row: UserRow): PublicProfile | null {
 }
 
 /**
- * Rank members for the "Recommended" rail.
+ * Rank members for the "Members to watch" rail.
  *
  * Linked-Twitch first, then by slots streamed, then by winnings. The ordering is
  * a value judgement and worth stating: we surface people who can actually GO
@@ -84,6 +84,29 @@ export function rankProfiles(profiles: PublicProfile[]): PublicProfile[] {
     if (b.winnings !== a.winnings) return b.winnings - a.winnings
     return a.username.localeCompare(b.username)
   })
+}
+
+/**
+ * Pick the rail from the ranked field, with real variety.
+ *
+ * Straight `.slice(0, 6)` off a deterministic ranking shows the same six faces
+ * to everybody, forever — which is not discovery, it's a leaderboard with a
+ * friendlier heading, and it means the 7th member is never seen by anyone.
+ *
+ * So: take a wider ranked POOL (the top ~3x), then sample randomly within it.
+ * You still only ever surface members worth surfacing, and which ones you get
+ * changes on every load. Fisher-Yates, unbiased, seeded from Math.random —
+ * nothing here decides money, so ordinary randomness is correct and a published
+ * seed would be pointless ceremony.
+ */
+export function sampleProfiles(ranked: PublicProfile[], limit: number): PublicProfile[] {
+  const pool = ranked.slice(0, Math.max(limit, Math.min(ranked.length, limit * 3)))
+  const out = [...pool]
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[out[i], out[j]] = [out[j], out[i]]
+  }
+  return out.slice(0, limit)
 }
 
 const MAX_LIMIT = 24
@@ -107,12 +130,12 @@ export const handler = withHttp(async (event) => {
 
   // Recommended set. Bounded read — never an unbounded scan of the collection.
   const rows = await queryCollection('users', [fieldFilter('status', 'EQUAL', 'active')], [], MAX_LIMIT * 3)
-  const profiles = rankProfiles(
+  const ranked = rankProfiles(
     rows
       .map((r) => toPublicProfile(r.data))
       .filter((p): p is PublicProfile => p !== null)
       .filter((p) => p.username.toLowerCase() !== exclude.toLowerCase()),
-  ).slice(0, limit)
+  )
 
-  return json(200, { profiles })
+  return json(200, { profiles: sampleProfiles(ranked, limit) })
 })

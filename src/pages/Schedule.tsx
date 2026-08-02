@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { doc, onSnapshot } from 'firebase/firestore'
-import { Radio, Crown, Check, Loader2, CalendarPlus, Twitch } from 'lucide-react'
+import { Radio, Crown, Check, Loader2, CalendarPlus, Twitch, Lock } from 'lucide-react'
 import { db } from '@/config/firebase'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -60,6 +60,14 @@ export default function Schedule() {
   const [claimingId, setClaimingId] = useState<string | null>(null)
   const [claimError, setClaimError] = useState('')
   const eligibility = claimEligibility(user, profile)
+  /** Two words on the button; the full sentence lives in the notice up top. */
+  const blockedLabel = {
+    signed_out: 'Sign up',
+    email_unverified: 'Verify email',
+    no_wallet: 'Add wallet',
+    no_twitch: 'Add Twitch',
+    inactive: 'Unavailable',
+  }[eligibility.reason ?? 'signed_out']
   const [claimedId, setClaimedId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -138,13 +146,14 @@ export default function Schedule() {
     const justClaimed = claimedId === slot.id
     const twitch = twitchHandleFromUrl(slot.streamUrl)
     const claimed = !!slot.assignedUid || justClaimed
+    const eligible = eligibility.ok
 
     return (
       <div
         className={`relative h-[112px] px-3 py-2.5 flex flex-col overflow-hidden transition-colors ${
           isLive ? 'bg-primary-500/10'
             : network ? 'bg-gradient-to-b from-gold/[0.07] to-transparent'
-            : claimable ? 'bg-primary-500/[0.03] hover:bg-primary-500/[0.08]'
+            : claimable ? 'bg-white/[0.015] hover:bg-white/[0.03]'
             : ''
         }`}
       >
@@ -183,8 +192,13 @@ export default function Schedule() {
               {slot.streamTitle && <p className="truncate text-[11px] text-gray-400 mt-0.5">{slot.streamTitle}</p>}
             </>
           ) : claimable ? (
-            <p className={`font-black uppercase tracking-tight leading-tight ${isLive ? 'text-emerald-300' : 'text-primary-300'} ${compact ? 'text-base' : 'text-sm'}`}>
-              {isLive ? <>On air.<br />Take it now.</> : <>Your slot.<br />Take it.</>}
+            /* One calm line. The old card shouted a two-line all-caps slogan
+               above a second all-caps button that said nearly the same thing —
+               two competing headlines in 112px, which is what made a week of
+               open slots read as noise. The button is the call to action; this
+               is just the label. */
+            <p className={`font-semibold leading-tight ${eligible ? 'text-gray-200' : 'text-gray-500'} ${compact ? 'text-sm' : 'text-[13px]'}`}>
+              {isLive ? 'On air now' : 'Open'}
             </p>
           ) : (
             <p className="text-[11px] text-gray-600">—</p>
@@ -198,12 +212,28 @@ export default function Schedule() {
           ) : justClaimed ? (
             <p className="text-[11px] text-emerald-400 flex items-center gap-1 font-semibold"><Check className="w-3 h-3" /> Claimed</p>
           ) : claimable ? (
+            /* GRAYED OUT WHEN YOU CAN'T ACTUALLY CLAIM IT.
+               An enabled button that always fails is the worst possible state:
+               it teaches the member that the site is broken rather than that
+               they have one thing left to do. Disabled + a plain reason, with
+               the fix explained once in the notice at the top of the page.
+               Also: flat fill, no glow, no scale-on-press — 84 of these on a
+               week view, and the shadows were most of why it looked jumbled. */
             <button
               onClick={() => void handleClaim(slot)}
-              disabled={busy}
-              className="w-full rounded-lg bg-primary-500 hover:bg-primary-400 text-white text-[11px] font-bold uppercase tracking-wide py-1.5 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1 shadow-lg shadow-primary-500/20 hover:shadow-primary-500/40 active:scale-[0.98]"
+              disabled={busy || !eligible}
+              title={eligible ? undefined : eligibility.message}
+              className={`w-full rounded-lg text-[11px] font-semibold py-1.5 flex items-center justify-center gap-1.5 transition-colors ${
+                eligible
+                  ? 'bg-primary-500 hover:bg-primary-400 text-white cursor-pointer disabled:opacity-50'
+                  : 'bg-white/[0.04] border border-white/[0.08] text-gray-500 cursor-not-allowed'
+              }`}
             >
-              {busy ? <><Loader2 className="w-3 h-3 animate-spin" /> Claiming…</> : <><CalendarPlus className="w-3 h-3" /> {isLive ? 'Go live now' : 'Claim it'}</>}
+              {busy
+                ? <><Loader2 className="w-3 h-3 animate-spin" /> Claiming…</>
+                : eligible
+                  ? <><CalendarPlus className="w-3 h-3" /> {isLive ? 'Go live' : 'Claim'}</>
+                  : <><Lock className="w-3 h-3" /> {blockedLabel}</>}
             </button>
           ) : null}
         </div>

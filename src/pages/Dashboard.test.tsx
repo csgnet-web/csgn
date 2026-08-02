@@ -150,13 +150,12 @@ describe('connections', () => {
     expect(text()).toContain('5Q54')
   })
 
-  it('NEVER shows the member email address', async () => {
-    // The profile is the model for the public profile, and an email is a
-    // private credential. Its verification state lives in the notice, where
-    // it's actionable; the address itself is never one screenshot away.
+  it('shows the member their OWN email, and says it is private', async () => {
+    // /account only ever renders the signed-in user's own profile, and the
+    // public projection has no email field — so this is the one place it shows.
     await render()
-    expect(text()).not.toContain('streamer@example.com')
-    expect(text()).not.toContain('Email')
+    expect(text()).toContain('streamer@example.com')
+    expect(text()).toContain('Only you can see your email address')
   })
 
   it('prompts an unlinked member to connect Twitch, and says why', async () => {

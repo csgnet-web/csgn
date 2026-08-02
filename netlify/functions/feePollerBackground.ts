@@ -361,6 +361,88 @@ async function advanceSlotLifecycles(): Promise<SlotRow[]> {
  * almost nothing, often enough that the on-air power ranking reflects real,
  * currently-held conviction rather than everything anyone ever felt.
  */
+/* ─── Meme 100 board enrichment ─── */
+
+/** How often the board's prices are refreshed. */
+const MEME_BOARD_INTERVAL_MS = 5 * 60 * 1000
+/** DexScreener accepts up to 30 comma-separated addresses per request. */
+const DEX_TOKENS_BATCH = 30
+
+interface DexPair {
+  baseToken?: { address?: string; symbol?: string; name?: string }
+  priceUsd?: string
+  marketCap?: number
+  fdv?: number
+  volume?: { h24?: number }
+  priceChange?: { h24?: number }
+  url?: string
+  liquidity?: { usd?: number }
+  info?: { imageUrl?: string }
+}
+
+/**
+ * Refresh public/memeBoard from the admin-curated mint list in config/memeBoard.
+ *
+ * The SET is curated (an admin lists the mints) and the DATA is enriched here.
+ * That split is deliberate: the board goes on air and is the ballot for a
+ * token-weighted vote, so an open "top memecoins" scrape would put whatever
+ * launched in the last nine minutes in front of the audience. Holders rank a
+ * vetted set; they don't nominate into it.
+ *
+ * For each mint we keep the pair with the deepest liquidity — a token can have
+ * a dozen pairs and the thin ones carry nonsense prices.
+ */
+async function refreshMemeBoard(): Promise<void> {
+  try {
+    const existing = await getDoc<{ updatedAt?: string }>('public/memeBoard')
+    const last = Date.parse(existing?.updatedAt || '')
+    if (Number.isFinite(last) && Date.now() - last < MEME_BOARD_INTERVAL_MS) return
+
+    const cfg = await getDoc<{ mints?: unknown }>('config/memeBoard')
+    const mints = (Array.isArray(cfg?.mints) ? cfg!.mints : [])
+      .map((m) => String(m ?? '').trim())
+      .filter((m) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(m))
+      .slice(0, 100)
+    if (mints.length === 0) return
+
+    const best = new Map<string, DexPair>()
+    for (let i = 0; i < mints.length; i += DEX_TOKENS_BATCH) {
+      const batch = mints.slice(i, i + DEX_TOKENS_BATCH)
+      const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${batch.join(',')}`)
+      if (!res.ok) continue
+      const data = (await res.json()) as { pairs?: DexPair[] }
+      for (const pair of data.pairs || []) {
+        const addr = pair.baseToken?.address
+        if (!addr) continue
+        const prev = best.get(addr)
+        // Deepest liquidity wins — a thin pair quotes a price nobody can trade.
+        if (!prev || (pair.liquidity?.usd ?? 0) > (prev.liquidity?.usd ?? 0)) best.set(addr, pair)
+      }
+    }
+
+    // Every requested mint stays on the board, enriched or not. Dropping an
+    // un-enriched coin would silently delete something an admin added.
+    const coins = mints.map((address) => {
+      const p = best.get(address)
+      return {
+        address,
+        symbol: String(p?.baseToken?.symbol || '').toUpperCase().slice(0, 12),
+        name: String(p?.baseToken?.name || '').slice(0, 60),
+        imageUrl: String(p?.info?.imageUrl || ''),
+        priceUsd: Number(p?.priceUsd) || 0,
+        marketCapUsd: Number(p?.marketCap ?? p?.fdv) || 0,
+        volumeH24Usd: Number(p?.volume?.h24) || 0,
+        priceChangeH24Pct: Number(p?.priceChange?.h24) || 0,
+        pairUrl: String(p?.url || `https://dexscreener.com/solana/${address}`),
+      }
+    })
+
+    await writeDoc('public/memeBoard', { coins, updatedAt: new Date().toISOString() })
+  } catch (err) {
+    console.warn('refreshMemeBoard failed', err)
+  }
+}
+
 const MEME_SETTLE_INTERVAL_MS = 30 * 60 * 1000
 const MEME_SETTLE_MAX_BALLOTS = 150
 
@@ -550,6 +632,7 @@ export const handler = async () => {
 
   // Re-anchor the Meme-100 to what voters actually still hold (every 30 min).
   await settleMemeVote()
+  await refreshMemeBoard()
 
   let tokenStatsWritten = false
   let lastDex: DexData | null = null
