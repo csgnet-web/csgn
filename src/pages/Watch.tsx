@@ -151,7 +151,7 @@ export default function Watch() {
 
         {/* Status bar */}
         <div className={`shrink-0 flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 border-b ${isLive ? 'bg-gradient-to-r from-red-600 to-red-500 border-red-400/30' : 'bg-surface-800 border-white/[0.06]'}`}>
-          <div className={`flex items-center gap-2 rounded-full px-2.5 py-1 ${isLive ? 'bg-black/20' : 'bg-white/[0.04]'}`}>
+          <div className="flex items-center gap-2 shrink-0">
             <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-white animate-pulse' : 'bg-gray-500'}`} />
             <span className="text-white font-black tracking-[0.25em] text-sm uppercase">{isLive ? 'LIVE' : 'OFFLINE'}</span>
           </div>
@@ -210,7 +210,10 @@ export default function Watch() {
           <TokenPanel broadcastUrl={broadcastUrl} />
         </div>
 
-        {/* Game teasers — on-chain minigames, coming soon */}
+        {/* Game teasers — on-chain minigames, not open yet. Deliberately plain:
+            flat gray, no accent glow, no status pill. The disabled state IS the
+            message, and the label wraps rather than truncating so "Daily lineup
+            game" reads in full at every width. */}
         <div className="shrink-0 grid grid-cols-2 gap-3 sm:gap-4 px-5 py-5">
           {[
             { Icon: Gamepad2, title: 'Starting 5', sub: 'Daily lineup game' },
@@ -219,18 +222,15 @@ export default function Watch() {
             <button
               key={title}
               disabled
-              className="group relative overflow-hidden flex items-center gap-3 sm:gap-4 p-4 sm:p-5 rounded-2xl border border-white/[0.08] bg-gradient-to-br from-white/[0.06] to-white/[0.015] text-left cursor-not-allowed shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+              className="flex items-center gap-3 sm:gap-4 p-4 sm:p-5 rounded-2xl border border-white/[0.08] bg-white/[0.02] text-left cursor-not-allowed"
             >
-              <div className="absolute -right-8 -top-10 w-28 h-28 rounded-full bg-primary-500/10 blur-2xl pointer-events-none" />
-              <span className="absolute top-2.5 right-2.5 text-[9px] font-black uppercase tracking-[0.18em] text-primary-200 bg-primary-500/15 border border-primary-500/30 rounded-full px-2 py-0.5">
-                Soon
-              </span>
-              <span className="shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-primary-500/12 border border-primary-500/25 flex items-center justify-center text-primary-300">
+              <span className="shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-gray-500">
                 <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
               </span>
               <span className="min-w-0">
-                <span className="block font-black font-display text-white text-base sm:text-lg uppercase tracking-wide leading-none">{title}</span>
-                <span className="block text-[11px] sm:text-xs text-gray-400 mt-1 truncate">{sub}</span>
+                <span className="block font-black font-display text-gray-300 text-sm sm:text-lg uppercase tracking-wide leading-tight">{title}</span>
+                <span className="block text-[11px] sm:text-xs text-gray-500 mt-1 leading-snug">{sub}</span>
+                <span className="block text-[10px] sm:text-[11px] uppercase tracking-[0.16em] text-gray-600 mt-1 leading-snug">Coming Soon</span>
               </span>
             </button>
           ))}
