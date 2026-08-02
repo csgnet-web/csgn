@@ -11,6 +11,18 @@
 |---|---|
 | **[`campaign.md`](campaign.md)** | **What we're doing right now.** The three pillars (the room · the show · the campaign), owners, weekly cadence, the copy to use, the 30-day table, the scoreboard. **Where any other doc disagrees, this one wins.** |
 
+## Proposals on the table
+
+Three design docs and one pitch, written together. They interlock: the ratings
+book seeds the Draft, the Draft is the campaign's daily event, and the games are
+what the payout wallet pays for.
+
+| Doc | What it answers |
+|---|---|
+| [`the-pitch.md`](the-pitch.md) | **The line — "YOU'RE ON"** — and the campaign that ships it: the empty slot as the creative, the proof stack, platform jobs, 30 days, the refusal list, four honest metrics |
+| [`token-voting.md`](token-voting.md) | **Supply-weight voting + The 30-Minute Draft.** Vote weight as % of supply aged by hold time — no deposits, no locks, no burns. Then the hourly draft where the audience programs the open blocks. Closes all five of `master-plan.md` §11.8's open risks |
+| [`csgn-share.md`](csgn-share.md) | **A Nielsen ratings book for streaming.** Rating vs. Share, the published competitive set, ET dayparts, the honest answer on US-only geography, per-slot cards, The Book and Sweeps |
+
 ## Strategy reference
 
 | Doc | What it answers | When to open it |
@@ -32,6 +44,7 @@
 | [`obs-setup.md`](obs-setup.md) | Full encoder walkthrough — scene, NVENC, RTMPS to X, audio |
 | [`broadcast-graphics.md`](broadcast-graphics.md) | Design rationale for the graphics layer (lower thirds, bug, ticker, PIP) |
 | [`env-setup.md`](env-setup.md) | Environment variables |
+| [`games-and-payouts.md`](games-and-payouts.md) | **Squares, Starting 5, and the payout wallet** — how the engines work, the no-deposit entry model, and the rules that keep the payout wallet from paying twice |
 | [`ops-cost-security-runbook.md`](ops-cost-security-runbook.md) | Firestore cost control, security posture, incident steps |
 | [`v1-launch-checklist.md`](v1-launch-checklist.md) | Pre-launch checklist |
 | [`agent-packets.md`](agent-packets.md) | Task packets for agent-assisted work |
