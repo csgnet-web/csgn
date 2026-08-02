@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { doc, onSnapshot } from 'firebase/firestore'
-import { Radio, Crown, Check, Loader2, AlertCircle, CalendarPlus, Twitch } from 'lucide-react'
+import { Radio, Crown, Check, Loader2, CalendarPlus, Twitch } from 'lucide-react'
 import { db } from '@/config/firebase'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { isNetworkSlot, isSlotClaimable, toMillis, type Slot } from '@/lib/slots'
 import { api } from '@/lib/api'
+import { Link } from 'react-router-dom'
+import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/contexts/useAuth'
+import { Notice } from '@/components/ui/Notice'
+import { claimEligibility } from '@/lib/slotModel'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
 
 // The schedule IS the claim surface — /queue folded into this page. Slots in the
@@ -55,6 +59,7 @@ export default function Schedule() {
   const [selectedDay, setSelectedDay] = useState(0)
   const [claimingId, setClaimingId] = useState<string | null>(null)
   const [claimError, setClaimError] = useState('')
+  const eligibility = claimEligibility(user, profile)
   const [claimedId, setClaimedId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -231,11 +236,22 @@ export default function Schedule() {
           {networkBlockEnabled && <span className="flex items-center gap-1.5"><Crown className="w-3 h-3 text-gold" /> CSGN Originals — 7 PM–3 AM ET</span>}
         </div>
 
-        {claimError && (
-          <div className="mb-3 flex items-start gap-2 text-sm text-red-300 bg-red-500/[0.07] border border-red-500/25 rounded-xl p-3">
-            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" /> {claimError}
-          </div>
+        {/* Tell the member what's missing BEFORE they press a button and get a
+            server rejection naming two requirements at once. Same rule the
+            server enforces (claimEligibility mirrors claimSlot.ts). */}
+        {!eligibility.ok && eligibility.message && (
+          <Notice
+            tone="warning"
+            className="mb-3"
+            action={eligibility.actionHref
+              ? <Link to={eligibility.actionHref}><Button variant="secondary" size="sm">{eligibility.actionLabel}</Button></Link>
+              : undefined}
+          >
+            {eligibility.message}
+          </Notice>
         )}
+
+        {claimError && <Notice tone="error" className="mb-3">{claimError}</Notice>}
 
         {/* ── Mobile: day picker + single column ── */}
         <div className="lg:hidden">

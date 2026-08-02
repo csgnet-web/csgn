@@ -16,6 +16,10 @@ import { Badge } from '@/components/ui/Badge'
 import MemeVoteCard from '@/components/MemeVoteCard'
 import GamesPanel from '@/components/account/GamesPanel'
 import HolderPanel from '@/components/account/HolderPanel'
+import RecommendedProfiles from '@/components/account/RecommendedProfiles'
+import { Notice, EmailNotice, TwitchNotice } from '@/components/ui/Notice'
+import { api } from '@/lib/api'
+import { readTwitchProof, clearTwitchProof } from '@/lib/twitchProof'
 import { Modal } from '@/components/ui/Modal'
 
 /** One connection row. Renders the real state — a missing wallet reads as
@@ -56,6 +60,9 @@ export default function Dashboard() {
   const [liveVolumeSOL, setLiveVolumeSOL] = useState(0)
   const [slotInfo, setSlotInfo] = useState<Slot | null>(null)
   const [feePage, setFeePage] = useState(0)
+  const [linking, setLinking] = useState(false)
+  const [linkMsg, setLinkMsg] = useState('')
+  const [linkErr, setLinkErr] = useState('')
   const upcomingSlots = useMemo(
     () => slotHistory.filter((s) => new Date(s.endTime).getTime() > Date.now()).slice(0, 6),
     [slotHistory],
@@ -90,6 +97,33 @@ export default function Dashboard() {
   const totalLiveMinutes = useMemo(() => feeHistory.reduce((s, x) => s + (x.streamActivity?.liveCheckCount || 0), 0), [feeHistory])
 
 
+  // Finish a Twitch link started from this page. The OAuth callback drops a
+  // proof in sessionStorage and returns here; we exchange it once and clear it,
+  // so a refresh can't replay a spent proof.
+  useEffect(() => {
+    if (!user) return
+    if (!sessionStorage.getItem('csgn:linkTwitchReturn')) return
+    const proof = readTwitchProof()
+    if (!proof) { sessionStorage.removeItem('csgn:linkTwitchReturn'); return }
+    sessionStorage.removeItem('csgn:linkTwitchReturn')
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await api.linkTwitch(proof.proofToken)
+        clearTwitchProof()
+        if (cancelled) return
+        setLinkMsg(res.alreadyLinked
+          ? `Twitch already connected as ${res.twitch.displayName}.`
+          : `Twitch connected as ${res.twitch.displayName}. You can claim slots now.`)
+        await refreshProfile()
+      } catch (err) {
+        clearTwitchProof()
+        if (!cancelled) setLinkErr(err instanceof Error ? err.message : 'Could not connect Twitch.')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [user, refreshProfile])
+
   useEffect(() => {
     if (!user) return
     ;(async () => {
@@ -112,6 +146,31 @@ export default function Dashboard() {
     setLiveEstimateUSD(liveAssignedSlot?.creatorFees?.feeOwedUSD || 0)
   }, [liveAssignedSlot])
 
+
+  const handleResend = async () => {
+    setResending(true)
+    try { await resendVerification(); setLinkMsg('Verification email sent — check your inbox.') }
+    catch { setLinkErr('Could not send the verification email. Try again in a moment.') }
+    finally { setResending(false) }
+  }
+
+  /**
+   * Start the Twitch link. Full-page redirect, never a popup: Twitch's login
+   * page offers "Sign in with Apple", and Apple refuses OAuth inside popups and
+   * embedded webviews. A redirect is the only flow that survives every entry
+   * point we actually see, including Phantom's in-app browser.
+   */
+  const handleConnectTwitch = async () => {
+    setLinking(true); setLinkErr(''); setLinkMsg('')
+    try {
+      const { authUrl } = await api.startTwitchOAuth()
+      sessionStorage.setItem('csgn:linkTwitchReturn', '1')
+      window.location.href = authUrl
+    } catch {
+      setLinking(false)
+      setLinkErr('Could not open Twitch. Please try again.')
+    }
+  }
 
   const handleDismissNotification = async (notifId: string) => {
     if (!user) return
@@ -194,6 +253,7 @@ Use your email/username and password to access your account.
     )
   }
 
+  const twitchLinked = Boolean(profile?.twitch?.verified)
   const savedWallet = profile?.phantom?.walletAddress || profile?.walletAddress
   const twitchDisplay = profile?.twitch?.displayName || profile?.twitch?.username || profile?.twitchUsername
   const displayName = profile?.displayName || profile?.username || 'CSGN Member'
@@ -213,29 +273,33 @@ Use your email/username and password to access your account.
     <div className="min-h-screen pt-24 lg:pt-32 pb-24">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
 
-        {/* Email verification banner */}
-        {!user.emailVerified && (
-          <Card hover={false} className="p-4 bg-amber-500/5 border-amber-500/20">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
-              <div className="flex-1">
-                <p className="text-sm text-white font-medium">Email not verified</p>
-                <p className="text-xs text-gray-400">Verify your email to claim a slot and get paid your creator-fee share.</p>
-              </div>
-              <Button
-                variant="secondary"
-                size="sm"
-                isLoading={resending}
-                onClick={async () => {
-                  setResending(true)
-                  try { await resendVerification() } catch (err) { console.warn('Failed to resend verification email:', err) }
-                  setResending(false)
-                }}
-              >
-                Resend
-              </Button>
-            </div>
-          </Card>
+        {/* ── Status notices ──
+            The two things that gate the product, in the app's ONE notice shape.
+            Both carry their own action: a notice that tells you to do something
+            without a way to do it is a complaint. */}
+        {(!user.emailVerified || !twitchLinked || linkMsg) && (
+          <div className="space-y-3">
+            {linkMsg && <Notice tone="success" compact>{linkMsg}</Notice>}
+            {linkErr && <Notice tone="error" compact>{linkErr}</Notice>}
+            {!user.emailVerified && (
+              <EmailNotice
+                action={
+                  <Button variant="secondary" size="sm" isLoading={resending} onClick={handleResend}>
+                    Resend email
+                  </Button>
+                }
+              />
+            )}
+            {!twitchLinked && (
+              <TwitchNotice
+                action={
+                  <Button variant="secondary" size="sm" isLoading={linking} onClick={handleConnectTwitch}>
+                    Connect Twitch
+                  </Button>
+                }
+              />
+            )}
+          </div>
         )}
 
         {/* ── Identity ──
@@ -293,10 +357,13 @@ Use your email/username and password to access your account.
 
           {/* Connections — one row, each with an honest connected/missing state
               instead of three identical green chips regardless of reality. */}
-          <div className="border-t border-white/[0.06] px-5 sm:px-6 py-4 grid gap-2.5 sm:grid-cols-3">
-            <Connection Icon={Twitch} label="Twitch" value={twitchDisplay} connected={Boolean(profile?.twitch?.verified || twitchDisplay)} />
+          {/* Connections. Email is deliberately NOT shown: it's a private
+              credential, this page is the model for the public profile, and a
+              member's address has no business being one screenshot away. Its
+              verification state lives in the notice above, where it's actionable. */}
+          <div className="border-t border-white/[0.06] px-5 sm:px-6 py-4 grid gap-2.5 sm:grid-cols-2">
+            <Connection Icon={Twitch} label="Twitch" value={twitchDisplay} connected={twitchLinked} />
             <Connection Icon={Wallet} label="Wallet" value={savedWallet ? `${savedWallet.slice(0, 4)}…${savedWallet.slice(-4)}` : ''} connected={Boolean(savedWallet)} mono />
-            <Connection Icon={Mail} label="Email" value={profile?.email} connected={Boolean(user.emailVerified)} />
           </div>
         </section>
 
@@ -479,6 +546,9 @@ Use your email/username and password to access your account.
             <Button variant="secondary" size="sm">{upcomingSlots.length === 0 ? 'Claim a slot' : 'Claim another'}</Button>
           </Link>
         </Card>
+
+        {/* Discovery — who else is here, and who can actually go live. */}
+        <RecommendedProfiles excludeUsername={profile?.username} />
       </div>
       {slotInfo && (
         <Modal open onClose={() => setSlotInfo(null)} title="Fee Calculation">

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable, slotIdentity, assignmentStatus, toMillis, SLOT_STATUSES } from './slotModel'
+import { normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable, slotIdentity, assignmentStatus, toMillis, SLOT_STATUSES, claimEligibility } from './slotModel'
 
 const HOUR = 60 * 60 * 1000
 const future = new Date(Date.now() + 4 * HOUR).toISOString()
@@ -191,5 +191,62 @@ describe('slotIdentity — one source of truth for who is on an hour', () => {
     expect(slotIdentity(null, { openName: 'THE STAGE IS OPEN' })).toEqual({
       name: 'THE STAGE IS OPEN', kind: 'Open Slot', isOpen: true, isNetwork: false,
     })
+  })
+})
+
+
+describe('claim eligibility — one rule, mirroring the server', () => {
+  const ready = {
+    status: 'active',
+    phantom: { verified: true, walletAddress: '5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1' },
+    twitch: { verified: true, username: 'csgnet' },
+  }
+  const verified = { emailVerified: true }
+
+  it('clears a fully set-up member', () => {
+    expect(claimEligibility(verified, ready)).toEqual({ ok: true })
+  })
+
+  it('names ONE missing thing at a time, in the order the server checks them', () => {
+    expect(claimEligibility(null, null).reason).toBe('signed_out')
+    expect(claimEligibility({ emailVerified: false }, ready).reason).toBe('email_unverified')
+    expect(claimEligibility(verified, { ...ready, phantom: undefined }).reason).toBe('no_wallet')
+    expect(claimEligibility(verified, { ...ready, twitch: { verified: false } }).reason).toBe('no_twitch')
+    expect(claimEligibility(verified, { ...ready, status: 'disabled' }).reason).toBe('inactive')
+  })
+
+  it('tells an unlinked member about TWITCH specifically, not "phantom and twitch"', () => {
+    const r = claimEligibility(verified, { ...ready, twitch: { verified: false } })
+    expect(r.message).toContain('Twitch')
+    expect(r.message).not.toMatch(/phantom/i)
+    expect(r.actionLabel).toBe('Connect Twitch')
+    expect(r.actionHref).toBe('/account')
+  })
+
+  it('always offers an action for anything the member can fix themselves', () => {
+    for (const profile of [
+      { ...ready, phantom: undefined },
+      { ...ready, twitch: { verified: false } },
+    ]) {
+      const r = claimEligibility(verified, profile)
+      expect(r.actionLabel).toBeTruthy()
+      expect(r.actionHref).toBe('/account')
+    }
+    expect(claimEligibility({ emailVerified: false }, ready).actionLabel).toBeTruthy()
+  })
+
+  it('lets an admin through every gate, as the server does', () => {
+    const admin = { role: 'admin', status: 'active' }
+    expect(claimEligibility({ emailVerified: false }, admin)).toEqual({ ok: true })
+    expect(claimEligibility(verified, admin)).toEqual({ ok: true })
+  })
+
+  it('treats a twitch record with no username as unlinked', () => {
+    expect(claimEligibility(verified, { ...ready, twitch: { verified: true } }).reason).toBe('no_twitch')
+  })
+
+  it('accepts a legacy top-level walletAddress', () => {
+    const legacy = { ...ready, phantom: { verified: true }, walletAddress: 'abc' }
+    expect(claimEligibility(verified, legacy)).toEqual({ ok: true })
   })
 })

@@ -191,6 +191,36 @@ number marks it. Still well short of v2.)*
 - Docs consolidated: one tiered index, the v1 launch checklist folded into
   [`docs/env-setup.md`](docs/env-setup.md)
 
+### v1.16 — August 2026
+**Sign-up that actually completes, one notice system, and discoverability.**
+
+- **Twitch is now OPTIONAL at sign-up.** Phantom is the credential; Twitch is the
+  broadcast permission and only gates *claiming a slot*. This is a correctness
+  fix, not a convenience: Twitch's login page offers "Sign in with Apple", and
+  Apple refuses OAuth inside embedded webviews (`disallowed_useragent`) — so a
+  user arriving in Phantom's in-app browser literally could not finish sign-up.
+  New `linkTwitch` function attaches the channel later, from anywhere
+- **One `Notice` component** replaces five hand-rolled message shapes (amber card,
+  red flex row, emerald pill, bare `<p className="text-red-300">`, inline span).
+  Four tones that mean something, one layout, and **the action lives inside the
+  notice** — a message telling you to do something with no way to do it is a
+  complaint. `EmailNotice` and `TwitchNotice` are named exports so the two
+  sentences that gate the product read identically everywhere
+- **`claimEligibility`** — one pure, tested rule mirroring `claimSlot.ts`, so the
+  UI names the ONE missing thing before the round trip. Previously an unlinked
+  member pressed an enabled button and got *"Verified Phantom and Twitch are
+  required"* — two requirements, no indication which was missing
+- **Email removed from the profile.** It's a private credential and this page is
+  the model for the public profile; its verification state stays in the notice,
+  where it's actionable
+- **Members to watch** — a discovery rail on the profile, backed by
+  `publicProfiles` with an explicit server-side projection (`toPublicProfile` is
+  the only place that decides what leaves the users collection — email and wallet
+  are never in it). Ranked Twitch-linked first, because discovery is for finding
+  someone to watch, not for ranking members by bag size
+- **OBS quick start** — "on air in fifteen minutes": five browser sources, two
+  checkboxes each, four encoder settings, and a symptom→fix table
+
 ## Getting Started
 
 ```bash

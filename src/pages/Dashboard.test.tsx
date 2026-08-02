@@ -146,9 +146,31 @@ describe('connections', () => {
     await render()
     expect(text()).toContain('Twitch')
     expect(text()).toContain('Wallet')
-    expect(text()).toContain('Email')
     // A verified wallet shows its truncated address, never "Not connected".
     expect(text()).toContain('5Q54')
+  })
+
+  it('NEVER shows the member email address', async () => {
+    // The profile is the model for the public profile, and an email is a
+    // private credential. Its verification state lives in the notice, where
+    // it's actionable; the address itself is never one screenshot away.
+    await render()
+    expect(text()).not.toContain('streamer@example.com')
+    expect(text()).not.toContain('Email')
+  })
+
+  it('prompts an unlinked member to connect Twitch, and says why', async () => {
+    const saved = mockProfile.twitch
+    ;(mockProfile as { twitch?: unknown }).twitch = { verified: false }
+    await render()
+    expect(text()).toContain('Connect Twitch to claim a slot')
+    expect(text()).toContain('only needed to go on air')
+    ;(mockProfile as { twitch?: unknown }).twitch = saved
+  })
+
+  it('does not nag a member who already linked Twitch', async () => {
+    await render()
+    expect(text()).not.toContain('Connect Twitch to claim a slot')
   })
 
   it('says "Not connected" when a connection is genuinely missing', async () => {

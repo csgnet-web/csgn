@@ -200,3 +200,89 @@ export function slotIdentity(
   // A creator holds an open-block hour — headline them, never "Open Slot".
   return { name: assignedName || 'Claimed', kind: streamTitle || liveKind, isOpen: false, isNetwork: false }
 }
+
+
+/* ─── Who may claim ─── */
+
+/**
+ * Why a signed-in member can't claim an hour — or that they can.
+ *
+ * This MIRRORS the checks in netlify/functions/claimSlot.ts. The server is the
+ * authority and always re-checks; this exists so the UI can say the same thing
+ * the server would, BEFORE the round trip. Before it existed, a member with no
+ * Twitch linked saw an enabled "Take Slot" button, pressed it, and got
+ * "Verified Phantom and Twitch are required" — a sentence that names two things
+ * without saying which one is missing or what to do about it.
+ *
+ * If you change a rule in claimSlot.ts, change it here too. The tests pin the
+ * pairing, not the wording.
+ */
+export type ClaimBlocker = 'signed_out' | 'email_unverified' | 'no_wallet' | 'no_twitch' | 'inactive'
+
+export interface ClaimEligibility {
+  ok: boolean
+  reason?: ClaimBlocker
+  /** What to tell the member. Names the ONE thing that's missing. */
+  message?: string
+  /** Label for the button that fixes it. */
+  actionLabel?: string
+  /** Where that button goes. */
+  actionHref?: string
+}
+
+export interface ClaimUser {
+  emailVerified?: boolean
+}
+
+export interface ClaimProfile {
+  status?: string
+  role?: string
+  phantom?: { verified?: boolean; walletAddress?: string }
+  walletAddress?: string
+  twitch?: { verified?: boolean; username?: string }
+}
+
+const OK: ClaimEligibility = { ok: true }
+
+export function claimEligibility(
+  user: ClaimUser | null | undefined,
+  profile: ClaimProfile | null | undefined,
+): ClaimEligibility {
+  if (!user || !profile) {
+    return {
+      ok: false, reason: 'signed_out',
+      message: 'Create an account to claim this hour — it takes about a minute.',
+      actionLabel: 'Get started',
+    }
+  }
+
+  // Admins bypass every gate, exactly as the server does: the network has to be
+  // able to put itself on air even when a check is misconfigured.
+  if (profile.role === 'admin') return OK
+
+  if (profile.status && profile.status !== 'active') {
+    return { ok: false, reason: 'inactive', message: 'This account is not active. Contact an admin.' }
+  }
+  if (user.emailVerified !== true) {
+    return {
+      ok: false, reason: 'email_unverified',
+      message: 'Verify your email to claim a slot. We sent you a link.',
+      actionLabel: 'Resend email', actionHref: '/account',
+    }
+  }
+  if (!profile.phantom?.verified || !(profile.phantom?.walletAddress || profile.walletAddress)) {
+    return {
+      ok: false, reason: 'no_wallet',
+      message: 'Connect your Phantom wallet — it is where your creator fees get paid.',
+      actionLabel: 'Connect wallet', actionHref: '/account',
+    }
+  }
+  if (!profile.twitch?.verified || !profile.twitch?.username) {
+    return {
+      ok: false, reason: 'no_twitch',
+      message: 'Connect Twitch to claim a slot. It is the channel the network puts on air.',
+      actionLabel: 'Connect Twitch', actionHref: '/account',
+    }
+  }
+  return OK
+}

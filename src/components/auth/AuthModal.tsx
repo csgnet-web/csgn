@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { AlertCircle, CheckCircle2, Eye, EyeOff, Lock, Mail, Twitch, User, Wallet, X } from 'lucide-react'
+import { CheckCircle2, Eye, EyeOff, Lock, Mail, Twitch, User, Wallet, X } from 'lucide-react'
+import { Notice } from '@/components/ui/Notice'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/contexts/useAuth'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
@@ -158,9 +159,11 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
     try {
       if (isRegister) {
         if (password !== confirmPassword) throw new Error('Passwords do not match.')
-        if (!phantomProofToken) throw new Error('Verify your Phantom wallet before creating an account.')
-        if (!twitchProofToken) throw new Error('Verify your Twitch account before creating an account.')
-        await signUp(email, password, username, { phantomProofToken, twitchProofToken })
+        if (!phantomProofToken) throw new Error('Connect your Phantom wallet to create an account.')
+        // Twitch is optional here by design — it gates claiming a slot, not
+        // having an account. See finalizeCreateAccount.ts for why that matters
+        // (Apple sign-in inside Twitch cannot complete in an embedded webview).
+        await signUp(email, password, username, { phantomProofToken, twitchProofToken: twitchProofToken || undefined })
         clearTwitchProof()
         clearRegisterDraft()
       } else {
@@ -187,20 +190,33 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
               <button onClick={handleClose} className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-white/5 cursor-pointer"><X className="w-5 h-5" /></button>
               <img src="https://pbs.twimg.com/profile_images/1966988305255276544/3Qz3tNAa_200x200.jpg" alt="CSGN" className="w-12 h-12 rounded-xl object-cover mb-4 shadow-lg" />
               <h2 className="text-2xl font-bold font-display text-white">{isRegister ? 'Join CSGN' : 'Welcome back'}</h2>
-              <p className="text-sm text-gray-400 mt-1">{isRegister ? 'Verify Phantom and Twitch, then create your CSGN account.' : 'Sign in with email/password.'}</p>
+              <p className="text-sm text-gray-400 mt-1">
+                {isRegister
+                  ? 'Connect Phantom and you\u2019re in. Twitch takes ten seconds and you can add it later.'
+                  : 'Sign in with your email and password, or straight from your wallet.'}
+              </p>
             </div>
             <div className="px-6 sm:px-8 pb-8 sm:pb-10 space-y-4 overflow-y-auto max-h-[calc(100dvh-13rem)] overscroll-contain">
               <form onSubmit={handleSubmit} className="space-y-3">
-                {error && <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-300"><AlertCircle className="w-4 h-4 shrink-0" /> {error}</div>}
+                {error && <Notice tone="error" compact>{error}</Notice>}
                 <label className="block text-sm font-medium text-gray-300 mb-1.5">Email</label>
                 <div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="you@example.com" required disabled={loading} /></div>
                 {isRegister && <><label className="block text-sm font-medium text-gray-300 mb-1.5">Username</label><div className="relative"><User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input value={username} onChange={(e) => setUsername(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="csgn_user" required minLength={3} maxLength={20} disabled={loading} /></div></>}
                 {isRegister && <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button type="button" onClick={connectPhantom} disabled={loading || isConnecting || verifying === 'phantom'} className={`h-12 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 ${phantomProofToken ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}>{phantomProofToken ? <CheckCircle2 className="w-4 h-4" /> : <Wallet className="w-4 h-4" />} {phantomProofToken ? 'Phantom Verified' : verifying === 'phantom' ? 'Verifying…' : 'Connect Phantom'}</button>
-                  <button type="button" onClick={connectTwitch} disabled={loading || verifying === 'twitch'} className={`h-12 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 ${twitchProofToken ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}>{twitchProofToken ? <CheckCircle2 className="w-4 h-4" /> : <Twitch className="w-4 h-4" />} {twitchProofToken ? twitch?.displayName || 'Twitch Verified' : verifying === 'twitch' ? 'Waiting…' : 'Connect Twitch'}</button>
+                  <button type="button" onClick={connectTwitch} disabled={loading || verifying === 'twitch'} className={`h-12 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 ${twitchProofToken ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}>{twitchProofToken ? <CheckCircle2 className="w-4 h-4" /> : <Twitch className="w-4 h-4" />} {twitchProofToken ? twitch?.displayName || 'Twitch Connected' : verifying === 'twitch' ? 'Opening Twitch…' : 'Connect Twitch'}</button>
                 </div>}
+                {/* Required vs. optional, said once, where the decision is made.
+                    Without this the two buttons look identical and a user who
+                    can't finish Twitch assumes sign-up is broken. */}
+                {isRegister && !twitchProofToken && (
+                  <p className="text-[11px] text-gray-500 leading-relaxed">
+                    <span className="text-gray-400">Phantom is required.</span> Twitch is optional now — you'll
+                    need it to claim a slot and go on air, and you can connect it any time from your profile.
+                  </p>
+                )}
                 {verifiedWallet && <p className="text-xs text-emerald-300 truncate">Wallet verified: {verifiedWallet}</p>}
-                {walletError && <p className="text-xs text-red-300">{walletError}</p>}
+                {walletError && <Notice tone="error" compact>{walletError}</Notice>}
                 {/* Mobile browsers have no extension — the only way to approve a
                     signature is Phantom's in-app browser, so offer the door
                     instead of leaving the user stuck on "not detected". */}
@@ -216,7 +232,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                   </a>
                 )}
                 {isRegister && returnedFromTwitch && !password && (
-                  <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-sm text-amber-300"><AlertCircle className="w-4 h-4 shrink-0" /> For security, please re-enter your password to continue.</div>
+                  <Notice tone="warning" compact>Twitch connected. Re-enter your password to finish — we never keep it across the redirect.</Notice>
                 )}
                 <label className="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
                 <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="Enter password" required minLength={6} disabled={loading} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button></div>

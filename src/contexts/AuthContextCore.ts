@@ -49,7 +49,7 @@ export interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>
   /** Wallet login — exchanges a verified Phantom proof for a Firebase session. */
   signInWithPhantom: (phantomProofToken: string) => Promise<void>
-  signUp: (email: string, password: string, username: string, proofs: { phantomProofToken: string; twitchProofToken: string }) => Promise<void>
+  signUp: (email: string, password: string, username: string, proofs: { phantomProofToken: string; twitchProofToken?: string }) => Promise<void>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
   resendVerification: () => Promise<void>

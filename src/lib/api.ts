@@ -14,6 +14,17 @@ async function functionFetch<T>(name: string, init: RequestInit = {}, authRequir
   return data as T
 }
 
+export interface PublicProfile {
+  username: string
+  displayName: string
+  avatarUrl: string
+  role: string
+  twitch: string
+  bio: string
+  slots: number
+  winnings: number
+}
+
 export type TwitchProof = { proofToken: string; twitch: { twitchUserId: string; username: string; displayName: string; profileImageUrl: string } }
 export type TwitchOAuthResult = { twitchProofToken: string; twitchUserId: string; username: string; displayName: string; profileImageUrl: string }
 
@@ -24,7 +35,20 @@ export const api = {
   loginWithPhantom: (proofToken: string) => functionFetch<{ customToken: string }>('loginWithPhantom', { method: 'POST', body: JSON.stringify({ proofToken }) }),
   startTwitchOAuth: () => functionFetch<{ authUrl: string }>('startTwitchOAuth', { method: 'POST' }),
   consumeTwitchOAuthResult: (handoffId: string) => functionFetch<TwitchOAuthResult>('consumeTwitchOAuthResult', { method: 'POST', body: JSON.stringify({ handoffId }) }),
-  finalizeCreateAccount: (body: { username: string; phantomProofToken: string; twitchProofToken: string }) => functionFetch<{ user: unknown }>('finalizeCreateAccount', { method: 'POST', body: JSON.stringify(body) }, true),
+  /** Twitch is OPTIONAL here — Phantom is the credential, Twitch only gates
+   *  claiming a slot. See netlify/functions/finalizeCreateAccount.ts. */
+  finalizeCreateAccount: (body: { username: string; phantomProofToken: string; twitchProofToken?: string }) => functionFetch<{ user: unknown }>('finalizeCreateAccount', { method: 'POST', body: JSON.stringify(body) }, true),
+  /** Attach Twitch to an existing account, any time after sign-up. */
+  linkTwitch: (twitchProofToken: string) => functionFetch<{ ok: boolean; alreadyLinked?: boolean; twitch: { username: string; displayName: string; profileImageUrl?: string } }>('linkTwitch', { method: 'POST', body: JSON.stringify({ twitchProofToken }) }, true),
+  /** Recommended members, or one member by username. Server-projected — the
+   *  response never contains an email, wallet or role flag beyond the label. */
+  publicProfiles: (params: { limit?: number; exclude?: string } = {}) => {
+    const q = new URLSearchParams()
+    if (params.limit) q.set('limit', String(params.limit))
+    if (params.exclude) q.set('exclude', params.exclude)
+    return functionFetch<{ profiles: PublicProfile[] }>(`publicProfiles?${q.toString()}`)
+  },
+  publicProfile: (username: string) => functionFetch<{ profile: PublicProfile | null }>(`publicProfiles?username=${encodeURIComponent(username)}`),
   claimSlot: (slotId: string) => functionFetch<{ ok: boolean; slotId: string }>('claimSlot', { method: 'POST', body: JSON.stringify({ slotId }) }, true),
   /** Admin: re-type every slot by its ET airtime (7 PM–3 AM network, rest open). */
   normalizeSlots: () => functionFetch<{ normalized: number; retyped: number }>('adminNormalizeExistingSlots', { method: 'POST' }, true),

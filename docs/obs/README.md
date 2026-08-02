@@ -6,6 +6,76 @@
 > for the design rationale behind the graphics layer see
 > [`../broadcast-graphics.md`](../broadcast-graphics.md).
 
+
+---
+
+## 0. Quick start — on air in fifteen minutes
+
+If you read nothing else, read this. Everything after it is detail.
+
+**You build ONE scene, once. You never touch OBS again.**
+
+### Step 1 — Make the scene
+
+New scene, call it `CSGN`. Add these five **Browser Sources**, bottom of the list
+first (OBS draws bottom-to-top, so the first one you add sits behind everything):
+
+| # | Source name | URL | Size |
+|---|---|---|---|
+| 1 | `Feed` | `https://csgn.fun/player` | 1920 × 1080 |
+| 2 | `PIP` *(optional)* | `https://csgn.fun/../docs/obs/csgn-pip.html` | 1920 × 1080 |
+| 3 | `Ticker` | `…/csgn-ticker.html` | **1930 × 240** |
+| 4 | `Bug` | `…/csgn-nowwatching.html` | 1920 × 1080 |
+| 5 | `Lower thirds` | `…/csgn-lowerthirds.html` | 1920 × 1080 |
+
+For every source, tick these two boxes and leave the rest alone:
+
+- ☑ **Shutdown source when not visible**
+- ☑ **Refresh browser when scene becomes active**
+
+Position the **Ticker** flush to the bottom of the canvas. It is 240px tall but
+only the bottom 110px draws — the space above is transparent headroom the coin
+spotlight rises into. Everything else is full-canvas and needs no positioning.
+
+### Step 2 — Point OBS at X
+
+Settings → Stream → **Custom**, then paste the RTMPS URL and stream key from
+**X Media Studio → Producer**.
+
+Also going to Twitch? Point OBS at **[Restream](https://restream.io)** instead
+and let it fan out to both. One encoder, one upload, two destinations.
+
+### Step 3 — Encoder
+
+Settings → Output → Advanced:
+
+| | |
+|---|---|
+| Encoder | NVENC H.264 (or x264 `veryfast`) |
+| Rate control | CBR |
+| Bitrate | **6000 Kbps** |
+| Keyframe interval | **2s** |
+| Preset | Quality |
+| Resolution / FPS | 1920×1080 / 30 |
+
+### Step 4 — Go live
+
+Start Streaming in OBS, then go live from X Media Studio. Paste the broadcast
+**post** URL into Admin → *X Broadcast Post URL* → Push, and `/watch` embeds it.
+
+**That's it.** From here on the whole network is run from Admin → Broadcast
+Control. Nobody opens OBS again.
+
+### If something looks wrong
+
+| Symptom | Fix |
+|---|---|
+| Ticker not at the bottom | Move it down — the source is 240px, only the bottom 110px is opaque |
+| Twitch chrome or an ad on screen | `/player` is still masking. Wait ~33s, or add `?noads=1` if your feed is ad-free |
+| Nothing on the ticker | `config/ticker` is empty. Save anything in Broadcast Control |
+| Graphics frozen | Right-click the source → Refresh |
+| Two audio sources | Only `Feed` should have audio. Mute the rest in the Audio Mixer |
+
 ---
 
 ## 1. The one idea behind all of it
