@@ -14,6 +14,17 @@ async function functionFetch<T>(name: string, init: RequestInit = {}, authRequir
   return data as T
 }
 
+export interface PublicProfile {
+  username: string
+  displayName: string
+  avatarUrl: string
+  role: string
+  twitch: string
+  bio: string
+  slots: number
+  winnings: number
+}
+
 export type TwitchProof = { proofToken: string; twitch: { twitchUserId: string; username: string; displayName: string; profileImageUrl: string } }
 export type TwitchOAuthResult = { twitchProofToken: string; twitchUserId: string; username: string; displayName: string; profileImageUrl: string }
 
@@ -24,7 +35,20 @@ export const api = {
   loginWithPhantom: (proofToken: string) => functionFetch<{ customToken: string }>('loginWithPhantom', { method: 'POST', body: JSON.stringify({ proofToken }) }),
   startTwitchOAuth: () => functionFetch<{ authUrl: string }>('startTwitchOAuth', { method: 'POST' }),
   consumeTwitchOAuthResult: (handoffId: string) => functionFetch<TwitchOAuthResult>('consumeTwitchOAuthResult', { method: 'POST', body: JSON.stringify({ handoffId }) }),
-  finalizeCreateAccount: (body: { username: string; phantomProofToken: string; twitchProofToken: string }) => functionFetch<{ user: unknown }>('finalizeCreateAccount', { method: 'POST', body: JSON.stringify(body) }, true),
+  /** Twitch is OPTIONAL here — Phantom is the credential, Twitch only gates
+   *  claiming a slot. See netlify/functions/finalizeCreateAccount.ts. */
+  finalizeCreateAccount: (body: { username: string; phantomProofToken: string; twitchProofToken?: string }) => functionFetch<{ user: unknown }>('finalizeCreateAccount', { method: 'POST', body: JSON.stringify(body) }, true),
+  /** Attach Twitch to an existing account, any time after sign-up. */
+  linkTwitch: (twitchProofToken: string) => functionFetch<{ ok: boolean; alreadyLinked?: boolean; twitch: { username: string; displayName: string; profileImageUrl?: string } }>('linkTwitch', { method: 'POST', body: JSON.stringify({ twitchProofToken }) }, true),
+  /** Recommended members, or one member by username. Server-projected — the
+   *  response never contains an email, wallet or role flag beyond the label. */
+  publicProfiles: (params: { limit?: number; exclude?: string } = {}) => {
+    const q = new URLSearchParams()
+    if (params.limit) q.set('limit', String(params.limit))
+    if (params.exclude) q.set('exclude', params.exclude)
+    return functionFetch<{ profiles: PublicProfile[] }>(`publicProfiles?${q.toString()}`)
+  },
+  publicProfile: (username: string) => functionFetch<{ profile: PublicProfile | null }>(`publicProfiles?username=${encodeURIComponent(username)}`),
   claimSlot: (slotId: string) => functionFetch<{ ok: boolean; slotId: string }>('claimSlot', { method: 'POST', body: JSON.stringify({ slotId }) }, true),
   /** Admin: re-type every slot by its ET airtime (7 PM–3 AM network, rest open). */
   normalizeSlots: () => functionFetch<{ normalized: number; retyped: number }>('adminNormalizeExistingSlots', { method: 'POST' }, true),
@@ -36,7 +60,9 @@ export const api = {
   }>('adminSettleVote', { method: 'POST', body: JSON.stringify({ voteId, close }) }, true),
   submitRightNow: (proofToken: string, text: string) => functionFetch<{ ok: boolean; text: string; railSize: number }>('submitRightNow', { method: 'POST', body: JSON.stringify({ proofToken, text }) }),
   castVote: (proofToken: string, voteId: string, option: number) => functionFetch<{ ok: boolean; option: number; weight: number }>('castVote', { method: 'POST', body: JSON.stringify({ proofToken, voteId, option }) }),
-  voteMeme: (proofToken: string, symbol: string) => functionFetch<{ ok: boolean; symbol: string; weight: number; tallies: Record<string, { tokens: number; wallets: number }> }>('voteMeme', { method: 'POST', body: JSON.stringify({ proofToken, symbol }) }),
+  /** Ballots are cast against the MINT, not a typed ticker — symbols collide
+   *  and a string nobody can look up makes the ranking unauditable. */
+  voteMeme: (proofToken: string, address: string) => functionFetch<{ ok: boolean; address: string; symbol: string; weight: number; tallies: Record<string, { tokens: number; wallets: number }> }>('voteMeme', { method: 'POST', body: JSON.stringify({ proofToken, address }) }),
   jukeboxSpotlight: (proofToken: string, signature: string, coin: { symbol: string; currency?: 'SOL' | 'CSGN'; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }) =>
     functionFetch<{ ok: boolean; symbol: string; currency: 'SOL' | 'CSGN'; amount: number; requiredAmount: number; sol?: number; requiredSol?: number }>('jukeboxSpotlight', { method: 'POST', body: JSON.stringify({ proofToken, signature, ...coin }) }),
 }

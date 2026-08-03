@@ -1,5 +1,6 @@
 import { createContext } from 'react'
 import type { Slot } from '@/lib/slots'
+import type { GameBannerDoc } from '@/lib/games/schedule'
 
 export interface ManualOverride {
   url: string
@@ -33,6 +34,9 @@ export interface LiveSlotContextValue {
    *  the schedule strip all decide claimability from the same answer, instead of
    *  each rolling its own check that the server then contradicts. */
   networkBlockEnabled: boolean
+  /** config/gameBanner — the admin-set game headline + countdown for the /watch
+   *  strip. Null until the first snapshot, which renders the default copy. */
+  gameBanner: GameBannerDoc | null
 }
 
 export const LiveSlotContext = createContext<LiveSlotContextValue>({
@@ -43,4 +47,5 @@ export const LiveSlotContext = createContext<LiveSlotContextValue>({
   nowMs: Date.now(),
   slotsReady: false,
   networkBlockEnabled: true,
+  gameBanner: null,
 })

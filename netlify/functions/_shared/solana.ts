@@ -11,6 +11,39 @@ const CSGN_DECIMALS = 6
 // endpoint is the fallback and is fine at low request volume.
 const RPC_URL = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com'
 
+/**
+ * Hard ceiling on an RPC call. Netlify bills wall-clock and kills the
+ * invocation at its limit, so a hung socket doesn't fail fast — it burns the
+ * entire budget and then fails anyway, taking everything else in the run with
+ * it. Public Solana RPC stalls often enough that this is a when, not an if.
+ *
+ * Deliberately THROWS rather than returning null like `_shared/cache.fetchJson`:
+ * these calls verify payments and read balances that decide payouts, and
+ * "couldn't reach the chain" must never be indistinguishable from "no payment
+ * found". Fail loud on the money path.
+ */
+const RPC_TIMEOUT_MS = 8_000
+
+async function rpcFetch(body: string): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS)
+  try {
+    return await fetch(RPC_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      signal: controller.signal,
+    })
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`Solana RPC timed out after ${RPC_TIMEOUT_MS}ms`)
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export const CSGN_MINT_ADDRESS = CSGN_MINT
 export const CSGN_TOKEN_DECIMALS = CSGN_DECIMALS
 
@@ -52,14 +85,10 @@ export const CSGN_TREASURY_ADDRESS = CSGN_TREASURY
 /** Fetch a CONFIRMED transaction (jsonParsed). Shared by every payment verifier
  *  so they all read the chain the same way. */
 export async function fetchTransaction(signature: string): Promise<ParsedTransaction | null> {
-  const res = await fetch(RPC_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0', id: 1, method: 'getTransaction',
-      params: [signature, { encoding: 'jsonParsed', commitment: 'confirmed', maxSupportedTransactionVersion: 0 }],
-    }),
-  })
+  const res = await rpcFetch(JSON.stringify({
+    jsonrpc: '2.0', id: 1, method: 'getTransaction',
+    params: [signature, { encoding: 'jsonParsed', commitment: 'confirmed', maxSupportedTransactionVersion: 0 }],
+  }))
   if (!res.ok) throw new Error(`Solana RPC error ${res.status}`)
   const data = (await res.json()) as TxResponse
   if (data.error) throw new Error(`Solana RPC: ${data.error.message || 'error'}`)
@@ -169,16 +198,12 @@ export async function verifySplPayment(
 
 /** UI-amount CSGN held by a wallet (sums every token account for the mint). */
 export async function getCsgnBalance(walletAddress: string): Promise<number> {
-  const res = await fetch(RPC_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'getTokenAccountsByOwner',
-      params: [walletAddress, { mint: CSGN_MINT }, { encoding: 'jsonParsed' }],
-    }),
-  })
+  const res = await rpcFetch(JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'getTokenAccountsByOwner',
+    params: [walletAddress, { mint: CSGN_MINT }, { encoding: 'jsonParsed' }],
+  }))
   if (!res.ok) throw new Error(`Solana RPC error ${res.status}`)
   const data = (await res.json()) as RpcResponse
   if (data.error) throw new Error(`Solana RPC: ${data.error.message || 'error'}`)

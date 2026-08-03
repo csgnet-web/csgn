@@ -182,13 +182,18 @@ html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;ba
    the away/home rows share this block's width so their scores stay aligned. */
 .rows{flex:0 1 auto;display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0;max-width:62%}
 .trow{display:grid;grid-template-columns:44px minmax(0,1fr) 128px;align-items:center;gap:20px;height:44px}
-.trow.hasgb{grid-template-columns:54px 44px minmax(0,1fr) 128px;gap:14px}
+/* (The old four-column `.trow.hasgb` variant is gone — games-back is inline
+   with the record now, so every row uses the same three-column grid.) */
 .tlogo{width:42px;height:42px;object-fit:contain;justify-self:center;filter:brightness(1.15)}
 .tname{display:flex;align-items:baseline;gap:14px;min-width:0}
 /* line-height leaves headroom so descenders/tall glyphs never clip the row bottom */
 .abbr{font-size:40px;font-weight:900;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.08;text-shadow:0 0 6px rgba(0,0,0,.8)}
 /* games-back in the division, to the LEFT of each baseball team */
-.gb{font-size:15px;font-weight:800;color:#8a8a94;font-family:var(--mono);white-space:nowrap;justify-self:end;padding-right:2px}
+/* Games back, inline after the record. Dimmer than the record and preceded by a
+   separator dot, so it reads as a second fact about the same team rather than
+   competing with the W-L. */
+.gb{font-size:22px;font-weight:800;color:#8a8a94;font-family:var(--mono);white-space:nowrap;letter-spacing:-.01em}
+.gb::before{content:"·";margin:0 8px 0 2px;color:#4a4a54}
 .rec{font-size:27px;font-weight:800;color:#b6b6c0;font-family:var(--mono);white-space:nowrap;letter-spacing:-.01em}
 .scorecell{display:flex;align-items:center;justify-content:flex-end;gap:8px}
 .score{font-size:47px;font-weight:900;color:#fff;font-variant-numeric:tabular-nums;line-height:1;text-shadow:0 0 8px rgba(255,255,255,.35)}
@@ -276,15 +281,44 @@ html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;ba
 @keyframes g3in{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
 .g3-cards.g3swap>.g3-card{animation:g3in .42s ease-out both}
 /* stats face */
+/* ── BottomLine section dots ──────────────────────────────────────────────
+   The ESPN BottomLine (2008–11) told you where you were in a league before it
+   told you the score: a row of pips, bottom right, one per game, draws down as
+   the section rolls and resets on the wipe. It's the single cheapest thing a
+   ticker can do to stop feeling like an infinite scroll — you always know how
+   much of the NBA is left.
+
+   Sits above the rolling .item layers but below the wipe, so scores slide past
+   a fixed progress row and the league change still covers the reset. Capped at
+   14 pips; beyond that the section is long enough that counting stops helping
+   and the overflow rides as a "+N". */
+.secdots{position:absolute;right:12px;bottom:7px;z-index:3;display:flex;align-items:center;gap:5px;pointer-events:none}
+.secdots[hidden]{display:none}
+.secdot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.16);flex:none;
+  transition:background .28s ease,box-shadow .28s ease,transform .28s ease}
+/* Already played this pass — drawn down, still visible so the length reads. */
+.secdot.done{background:rgba(255,255,255,.42)}
+/* The one on screen right now. */
+.secdot.on{background:var(--gold);box-shadow:0 0 7px var(--gold),0 0 13px rgba(255,207,64,.45);transform:scale(1.25)}
+.secdot-more{font-family:var(--cond);font-size:12px;font-weight:800;color:rgba(255,255,255,.42);letter-spacing:.04em;margin-left:2px}
+
 .stats{flex:1;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:20px;min-width:0}
 .stat-side{display:flex;flex-direction:column;gap:3px;min-width:0}
 .stat-side.h{text-align:right}
-.stat-abbr{font-size:15px;font-weight:900;color:var(--gold);text-transform:uppercase}
-.stat-line{font-size:21px;font-weight:900;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}
-.stat-cat{font-size:12px;font-weight:700;color:#9a9aa4;text-transform:uppercase;letter-spacing:.08em}
-.stat-sub{font-size:13px;font-weight:800;color:#cfcfd6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}
-.stat-mid{display:flex;flex-direction:column;align-items:center;gap:3px;padding:0 10px}
-.stat-tag{font-size:11px;font-weight:900;color:var(--red);letter-spacing:.22em;text-transform:uppercase;white-space:nowrap}
+/* The detail face fills the SAME 110px band as the scoreboard, where the team
+   abbreviation runs 40px — so an 11px section tag and a 21px name read as a
+   footnote next to it. Everything here is sized to fill the space it was given:
+   the tag is a real chyron label, the name is the headline. */
+.stat-abbr{font-size:22px;font-weight:900;color:var(--gold);text-transform:uppercase;line-height:1.05}
+.stat-line{font-size:30px;font-weight:900;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase;line-height:1.08;
+  text-shadow:0 0 6px rgba(0,0,0,.8)}
+.stat-cat{font-size:17px;font-weight:700;color:#b6b6c0;text-transform:uppercase;letter-spacing:.06em;line-height:1.1}
+.stat-sub{font-size:18px;font-weight:800;color:#cfcfd6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase;line-height:1.1}
+.stat-mid{display:flex;flex-direction:column;align-items:center;gap:3px;padding:0 14px}
+/* "PROBABLE STARTERS" / "DECISIONS + TOP BAT" — always large, wrapping onto a
+   second line rather than shrinking, so the label never becomes decoration. */
+.stat-tag{font-size:19px;font-weight:900;color:var(--red);letter-spacing:.1em;text-transform:uppercase;
+  text-align:center;line-height:1.05;max-width:210px;text-shadow:0 0 8px rgba(255,35,70,.45)}
 /* live / final treatments */
 @keyframes livePulse{0%,100%{box-shadow:0 0 10px rgba(255,0,0,.2)}50%{box-shadow:0 0 28px rgba(255,0,0,.6)}}
 .live-glow{animation:livePulse 2s infinite ease-in-out}
@@ -346,11 +380,17 @@ html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;ba
 .c-tag.pick{background:linear-gradient(90deg,#6db3ff,#1d6fff);color:#00122e;border:none;font-weight:800}
 .c-rank.pick{background:linear-gradient(90deg,#6db3ff,#1d6fff);color:#00122e}
 /* Meme-100 power-ranking leaderboard (top 3) in the dock's middle band */
-.ml-list{height:54px;display:flex;flex-direction:column;justify-content:center;gap:3px;position:relative;z-index:2}
-.ml-row{display:grid;grid-template-columns:22px 1fr auto;align-items:center;gap:8px;font-family:var(--cond)}
-.ml-rank{font-size:15px;font-weight:900;color:#6db3ff;font-family:var(--mono);text-align:center}
-.ml-sym{font-size:17px;font-weight:800;color:#e8e8ec;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ml-d{font-size:14px;font-weight:800;font-family:var(--mono)}
+/* Sized to be READ from across a room, not squinted at. The old board ran
+   15/17/14px in a 54px band — legible on a monitor, invisible on a stream at
+   720p. Ticker symbols are uppercase with no descenders, so line-height:1 lets
+   a 26px face live comfortably in a 19px row: cap height is what costs space,
+   not the em box. The band also steals 4px back from the card's padding. */
+.ml-list{height:58px;display:flex;flex-direction:column;justify-content:center;gap:1px;position:relative;z-index:2}
+.ml-row{display:grid;grid-template-columns:30px 1fr auto;align-items:center;gap:10px;font-family:var(--cond);line-height:1}
+.ml-rank{font-size:21px;font-weight:900;color:#6db3ff;font-family:var(--mono);text-align:center;line-height:1}
+.ml-sym{font-size:26px;font-weight:800;color:#e8e8ec;letter-spacing:.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1;
+  text-shadow:0 0 8px rgba(0,0,0,.8)}
+.ml-d{font-size:20px;font-weight:900;font-family:var(--mono);line-height:1}
 .ml-d.up{color:var(--green)} .ml-d.down{color:var(--loss)}
 .c-top{display:flex;justify-content:space-between;align-items:center;height:26px;position:relative;z-index:2}
 .c-id{display:flex;align-items:center;gap:8px;min-width:0}
@@ -430,6 +470,10 @@ html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;ba
   <div class="sports" id="sports">
     <div class="item" id="cur"></div>
     <div class="item" id="nxt" style="transform:translateY(110px)"></div>
+    <!-- BottomLine section dots: one per item in the current league, bottom
+         right, drawing down as the section advances. Outside the .item layers
+         so the roll animation slides the scores past a fixed progress row. -->
+    <div class="secdots" id="secdots" aria-hidden="true"></div>
     <div class="wipe" id="wipe"></div>
   </div>
   <div class="divider"></div>
@@ -1224,12 +1268,15 @@ function teamRow(side,g){
   const score=away?g.awayScore:g.homeScore;
   const win=g.isFinal&&g.winner===side;
   const poss=g.possession===side?'<span class="poss"></span>':"";
-  // Division games-back to the LEFT of the team (baseball, when the feed carries it).
-  const showGb=!!(g.gamesBack&&(g.gamesBack.away||g.gamesBack.home));
-  const gb=showGb?`<span class="gb">${esc((away?g.gamesBack.away:g.gamesBack.home)||"")}</span>`:"";
-  return `<div class="trow${showGb?" hasgb":""}">
-    ${gb}${logo?`<img class="tlogo" src="${esc(logo)}" alt="">`:'<span></span>'}
-    <div class="tname">${poss}<span class="abbr">${esc(abbr)}</span>${rec?`<span class="rec">${esc(rec)}</span>`:""}</div>
+  // Division games-back rides INLINE WITH THE RECORD — "NYY 92-58 · 2.0 GB" —
+  // rather than in its own left-hand column. Baseball is the sport where the
+  // record only means something next to the deficit, and a separate column both
+  // cost a logo-width of space and read as unrelated to the numbers beside it.
+  const gbTxt=cleanText((away?g.gamesBack?.away:g.gamesBack?.home)||"");
+  const gb=gbTxt?`<span class="gb">${esc(gbTxt)}</span>`:"";
+  return `<div class="trow">
+    ${logo?`<img class="tlogo" src="${esc(logo)}" alt="">`:'<span></span>'}
+    <div class="tname">${poss}<span class="abbr">${esc(abbr)}</span>${rec?`<span class="rec">${esc(rec)}</span>`:""}${gb}</div>
     <div class="scorecell">${win?'<span class="win-arrow">◀</span>':""}<span class="score${win?" win":""}">${esc(score)}</span></div>
   </div>`;
 }
@@ -1507,10 +1554,36 @@ function retriggerRightNow(){
   groups=g;pendingGroups=null;gi=idx;ii=0;
   const next=groups[idx];
   clearTimeout(stepTimer);
-  playWipe("league",next.league,()=>{setPill(next.league);hardSwap(next.items[0]);});
+  playWipe("league",next.league,()=>{setPill(next.league);hardSwap(next.items[0]);renderSecDots();});
   const {io,hold}=wipePhases(CONFIG.WIPE_MS);
   clearTimeout(stepTimer);
   stepTimer=setTimeout(()=>scheduleFlipAndAdvance(next.items[0]),io+hold);
+}
+/** Max pips before the row stops being countable and starts being clutter. */
+const MAX_SECDOTS=14;
+/**
+ * Paint the BottomLine section dots: one pip per item in the current league,
+ * pips before the cursor drawn down, the current one lit.
+ *
+ * Called on every roll, every league change and every hard swap, so the row is
+ * always describing the item actually on screen. Hidden for one-item sections —
+ * a single dot communicates nothing and just adds furniture.
+ */
+function renderSecDots(){
+  const el=document.getElementById("secdots");
+  if(!el)return;
+  const items=groups[gi]?.items||[];
+  const total=items.length;
+  if(total<2){el.hidden=true;el.innerHTML="";return}
+  el.hidden=false;
+  const shown=Math.min(total,MAX_SECDOTS);
+  let html="";
+  for(let i=0;i<shown;i++){
+    const cls=i===ii?"on":(i<ii?"done":"");
+    html+=`<span class="secdot ${cls}"></span>`;
+  }
+  if(total>shown)html+=`<span class="secdot-more">+${total-shown}</span>`;
+  el.innerHTML=html;
 }
 function advance(){
   if(pendingGroups){groups=pendingGroups;pendingGroups=null;
@@ -1522,6 +1595,7 @@ function advance(){
   if(ii<groups[gi].items.length){          // same league → roll
     const g=groups[gi].items[ii];
     rollTo(g);
+    renderSecDots();
     scheduleFlipAndAdvance(g);
     return;
   }
@@ -1531,6 +1605,7 @@ function advance(){
   playWipe(lastGroup?"csgn":"league",next.league,()=>{
     setPill(next.league);
     hardSwap(next.items[0]);
+    renderSecDots();   // new section → row resets to its full length
   });
   // The new item's dwell clock starts when the wipe begins to reveal it.
   const {io,hold}=wipePhases(lastGroup?CONFIG.STINGER_MS:CONFIG.WIPE_MS);
@@ -1542,7 +1617,7 @@ async function sportsRefresh(){
   const g=buildGroups();
   if(!groups.length){                       // first load — start immediately
     groups=g;gi=0;ii=0;
-    if(groups.length){setPill(groups[0].league);hardSwap(groups[0].items[0]);scheduleFlipAndAdvance(groups[0].items[0])}
+    if(groups.length){setPill(groups[0].league);hardSwap(groups[0].items[0]);renderSecDots();scheduleFlipAndAdvance(groups[0].items[0])}
     else{hardSwap(null);stepTimer=setTimeout(advance,5_000)}
   }else pendingGroups=g;                    // applied at the next advance
 }

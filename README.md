@@ -1,6 +1,11 @@
 # CSGN — Crypto Sports & Gaming Network
 
 > The 24/7 crypto-native streaming network built on Solana. The ESPN and TMZ of crypto.
+>
+> **Open source under the [MIT licence](LICENSE).** Fork it, rebrand it, point the
+> wallets at your own, and run your own network — see [CONTRIBUTING.md](CONTRIBUTING.md)
+> § "Running your own node". The brand and the on-chain addresses are not part of
+> the grant; everything else is.
 
 Streamers earn real trading fee revenue — calculated per market-cap tier, backed by live DexScreener data — simply by going live on CSGN. No other platform ties streamer compensation directly to on-chain mechanics at this level of precision.
 
@@ -138,6 +143,145 @@ Simplified v1 flow. Mobile full-page Twitch OAuth redirect (replaces popup, work
 - New **[`docs/README.md`](docs/README.md)** — a docs index that makes the set navigable and states the supersession order (`master-plan` → `ecosystem-strategy` → `onchain-thesis` → `socialfi-era2` → **`campaign`**)
 
 ---
+
+### v1.15 — August 2026
+**Games, payouts, a ratings book — and the source opened.**
+
+*(Version jumps 1.9 → 1.15 deliberately: this is the open-source release, and the
+number marks it. Still well short of v2.)*
+
+- **Squares** — weekly, pooled, provably fair. 10×10 board, entry fee per square,
+  published rake, **500,000 $CSGN to the winner of a full board** (100 × 6,250
+  less a 20% rake). A short board pays a short prize; a guarantee is opt-in per
+  board and the top-up is reported, never hidden. Digits are drawn from a Solana
+  blockhash sampled *after* entries close, through a PRNG anyone can re-implement
+  and reproduce. The one paid game on the network — everything else stays free
+- **Starting 5** — daily lineup game, free to enter, entries scale with $CSGN
+  *held* (square-root curve, one free for everyone). One pick per market-cap tier
+  plus a wildcard, a 1.5× captain, and contrarian leverage on gains only.
+  **100,000 $CSGN for a perfect card (5/5)**, split across perfect cards or drawn
+  by lottery; nobody perfect rolls the jackpot into tomorrow
+- **The payout wallet** (`EftavCt6…V7Hmv`) — idempotency keys derived from what a
+  payout is *for* and claimed with a CREATE the database refuses to repeat; the
+  signature written to the ledger *before* broadcast so recovery re-sends an
+  identical transaction the cluster deduplicates; per-payout/run/day caps; a
+  solvency check that budgets token-account rent for first-time winners.
+  `adminRunPayouts` is admin-only and **dry-run by default**
+- **Game Control** (Admin → Broadcast Control) — `config/gameBanner` drives the
+  strip beside LIVE/OFFLINE on `/watch`: game, headline, live countdown, rotating
+  lines, with a preview rendered through the same resolver the page uses.
+  `config/games` holds the Starting 5 purse/jackpot/prize-mode/lock hour and the
+  weekly Squares day, hour, entry fee and rake
+- **Profile rebuilt** — the old header floated an avatar over a gradient banner
+  and collided with the name on narrow screens. Now flat surfaces, one accent,
+  everything in normal flow: no negative margins, nothing absolutely positioned,
+  so it cannot overlap at any width. New **Games** and **Holder Standing** panels
+  carry the gamification, with honest zeroes until the settlement job exists
+- **BottomLine** — the ticker gets ESPN-style **section dots** bottom-right (one
+  pip per game in the league, drawing down as it rolls, resetting on the wipe),
+  a **Meme 100 leaderboard** sized to be read from across a room rather than
+  squinted at, **MLB games-back inline with the record**, and a detail face
+  ("PROBABLE STARTERS") that fills the space it was given
+- **Open source** — MIT, plus [`CONTRIBUTING.md`](CONTRIBUTING.md): how to run
+  your own node, the rules this codebase actually keeps, and the broadcasting
+  guidance (**X is the recommended output; use Restream if you also want Twitch**)
+- **[`docs/dry-run.md`](docs/dry-run.md)** — the gated checklist that takes this
+  from "tests pass" to "it moved money on mainnet and the books balanced",
+  including the idempotency test that must never be skipped
+- Docs consolidated: one tiered index, the v1 launch checklist folded into
+  [`docs/env-setup.md`](docs/env-setup.md)
+
+### v1.16 — August 2026
+**Sign-up that actually completes, one notice system, and discoverability.**
+
+- **Twitch is now OPTIONAL at sign-up.** Phantom is the credential; Twitch is the
+  broadcast permission and only gates *claiming a slot*. This is a correctness
+  fix, not a convenience: Twitch's login page offers "Sign in with Apple", and
+  Apple refuses OAuth inside embedded webviews (`disallowed_useragent`) — so a
+  user arriving in Phantom's in-app browser literally could not finish sign-up.
+  New `linkTwitch` function attaches the channel later, from anywhere
+- **One `Notice` component** replaces five hand-rolled message shapes (amber card,
+  red flex row, emerald pill, bare `<p className="text-red-300">`, inline span).
+  Four tones that mean something, one layout, and **the action lives inside the
+  notice** — a message telling you to do something with no way to do it is a
+  complaint. `EmailNotice` and `TwitchNotice` are named exports so the two
+  sentences that gate the product read identically everywhere
+- **`claimEligibility`** — one pure, tested rule mirroring `claimSlot.ts`, so the
+  UI names the ONE missing thing before the round trip. Previously an unlinked
+  member pressed an enabled button and got *"Verified Phantom and Twitch are
+  required"* — two requirements, no indication which was missing
+- **Email removed from the profile.** It's a private credential and this page is
+  the model for the public profile; its verification state stays in the notice,
+  where it's actionable
+- **Members to watch** — a discovery rail on the profile, backed by
+  `publicProfiles` with an explicit server-side projection (`toPublicProfile` is
+  the only place that decides what leaves the users collection — email and wallet
+  are never in it). Ranked Twitch-linked first, because discovery is for finding
+  someone to watch, not for ranking members by bag size
+- **OBS quick start** — "on air in fifteen minutes": five browser sources, two
+  checkboxes each, four encoder settings, and a symptom→fix table
+
+### v1.17 — August 2026
+**Sign up with a wallet. A real Meme 100 board. Profiles you can visit.**
+
+- **Phantom is now a full sign-up, not just a sign-in.** One signature and a
+  username gets you an account — no email, no password, no Twitch. Email is
+  attached later from the profile and gates only *claiming a slot*; Twitch gates
+  only *going on air*. The uid is derived from the wallet, so a double-submit
+  resolves to the same account instead of a second one, and signing up with an
+  already-registered wallet just signs you in
+- **Slot buttons gray out when you can't claim.** An enabled button that always
+  fails teaches people the site is broken rather than that they have one thing
+  left to do. Disabled, locked, two-word reason, with the full sentence in one
+  notice at the top of `/schedule`. The cards also stopped fighting themselves —
+  a two-line all-caps slogan sat directly above an all-caps button saying nearly
+  the same thing, with glows and press-scale on 84 cards at once
+- **Meme 100 is a ranked board you pick from**, keyed by contract address rather
+  than a typed ticker. Symbols collide ($BONK / BONK / Bonk were three rows);
+  mints don't. Every card carries live price, market cap, 24h volume, 24h change
+  and the CA itself with copy + chart links. The set is admin-curated, the data
+  is enriched server-side from DexScreener, and the power score is published so
+  the ordering can be checked against the numbers on the card
+- **Public profiles at `/u/:username`**, built entirely from a server-side
+  projection — the page cannot leak a private field because it never receives
+  one. The discovery rail now samples randomly from a wider ranked pool (instead
+  of showing the same six faces forever), has a shuffle button, is dismissable,
+  and links to CSGN profiles rather than straight out to Twitch
+- **Your email is back on your profile, and private by construction.** `/account`
+  only ever renders your own profile and `toPublicProfile` has no email field at
+  all, so it's visible to you and in no response another member can reach
+- **`/about` rewritten** — plain language, every feature explained, including
+  what the token actually does and how the profile votes work. No adjectives
+  doing a fact's job
+
+### v1.18 — August 2026
+**On-chain Meme 100, sign-up back to email + wallet, and a backend cost pass.**
+
+- **The Meme 100 seeds itself from on-chain activity.** DexScreener's boost and
+  profile feeds supply candidate Solana mints; each is enriched from real pool
+  state (deepest-liquidity pair wins) and must clear hard thresholds —
+  **≥$25k liquidity, ≥$50k 24h volume, ≥24h old** — before it can reach the
+  board. Those gates are the safety story: this list goes on air and is the
+  ballot for a token-weighted vote, so without them a rug minted ninety seconds
+  ago lands next to real coins and the vote legitimises it. An allowlist pins
+  coins past the thresholds ($CSGN on its own board); a denylist still exists,
+  because "cleared the numbers" isn't "happy to put on television". An empty
+  result never overwrites a good board
+- **Sign-up requires email, password and Phantom again**, with Twitch optional.
+  Wallet-only registration is gone — it made mass registration far too cheap.
+  Signing *in* with Phantom is unchanged
+- **Backend hardening** ([`docs/backend-hardening.md`](docs/backend-hardening.md)):
+  - `publicProfiles` read **~72 documents per request** at a 60/min limit —
+    4,320 reads a minute from one IP, from a public GET, using traffic no
+    firewall would flag. Now cached per TTL with stampede protection; limit cut
+    to 20/min
+  - **Every outbound call now has a hard timeout.** Netlify bills wall clock, so
+    a hung third party didn't fail fast — it burned the whole invocation and
+    took everything else in that run with it
+  - **Request bodies capped at 16KB**; malformed JSON returns 400 instead of
+    500, and non-object bodies are rejected so handlers can destructure safely
+  - New `_shared/cache.ts`: bounded TTL cache, single-flight, bounded fetch —
+    with the rule that a failed load is never cached
 
 ## Getting Started
 
@@ -353,4 +497,13 @@ monitoring live in [`docs/ops-cost-security-runbook.md`](docs/ops-cost-security-
 
 ## License
 
-Proprietary — CSGN, Crypto Sports & Gaming Network. All rights reserved.
+**MIT** — see [`LICENSE`](LICENSE).
+
+The software is yours. The **name, logo and BottomLine marks** are not, and
+neither are the **$CSGN mint, treasury and payout wallet** — those addresses are
+published so anyone can audit what the network does with them, not so anyone can
+act on their behalf. Fork it, rebrand it, use your own wallets.
+
+Nothing in this repository is financial, legal or tax advice. The games move real
+tokens to real people; get your own counsel before running them for anyone but
+yourself.

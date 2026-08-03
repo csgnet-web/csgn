@@ -1,0 +1,339 @@
+# Squares, Starting 5, and the payout wallet
+
+> **Status: engines shipped, unit-tested, not yet wired to UI or run against
+> mainnet.** The game logic, the payout ledger and the admin controls are code.
+> The board/slate screens and the scheduled settlement job are not built yet.
+> Verify with [`dry-run.md`](dry-run.md) before anything pays a stranger.
+>
+> Related: [`token-voting.md`](token-voting.md) (the no-deposit principle Starting 5
+> follows), [`master-plan.md`](master-plan.md) §11.7 (the speculation-game brief and
+> its legal caution — read §5), [`dry-run.md`](dry-run.md) (how to verify all of it).
+
+---
+
+## 1. Two games, two economies — on purpose
+
+**Starting 5 is free. Squares is paid.** That split is deliberate and it is worth
+stating plainly, because everything else about the token argues for the first
+model and Squares is the exception.
+
+| | Starting 5 | Squares |
+|---|---|---|
+| Cadence | Daily | Weekly |
+| Entry | **Free** | **6,250 $CSGN per square** |
+| What holdings do | Earn you lineups (1 free, up to 5) | **Cap** how many squares you may buy (1 floor, up to 10) |
+| Prize | **100,000 $CSGN** for a perfect card | **500,000 $CSGN** to the winner of a full board |
+| Funded by | The treasury | The entry pool, less a 20% rake |
+| Nobody wins | Jackpot rolls to tomorrow | Prize rolls to the next board |
+
+### Why Starting 5 stays free
+
+Entries are **allocated by what a wallet HOLDS**, never by what it spends. The
+tokens never leave the wallet, are never escrowed, are never burned. Sell your
+whole bag mid-slate and you simply get fewer lineups tomorrow. This is the token
+thesis (§5: *"non-custodial; you keep your tokens"*) expressed as a game.
+
+Everyone — including a wallet holding zero — gets one free lineup. That isn't
+generosity, it's the funnel: a non-holder plays for free, watches a holder enter
+five, and has just been shown what the token does.
+
+### Why Squares is paid
+
+A squares board is a pool game. Its whole texture — the fill counting down, the
+board being *worth* something — comes from the fact that the money is the
+players'. Funding it from the treasury would make it a giveaway with a grid
+drawn on it.
+
+So: fees pool, the network takes a **published** rake, the remainder goes to the
+winner. At 100 squares × 6,250 that's 625,000 gross, 125,000 rake, **500,000 to
+the winner**. Self-funding rather than a treasury expense.
+
+Two rules keep it honest, and both are enforced in `boardEconomics` rather than
+left to a settlement script:
+
+- **A short board pays a short prize.** Forty squares sold pays forty squares'
+  worth minus rake — not 500,000. A guarantee exists (`guaranteePrize`) but it is
+  opt-in per board and the top-up is reported, because a guarantee is a subsidy
+  and the treasury should never fund one by default.
+- **The rake rounds down.** A fraction of a token is meaningless either way, but
+  *"the house rounds up"* must never be a true sentence about us.
+
+### The allowance curve — a cap here, a grant there
+
+Both games size entries off share of circulating supply, on a square root:
+
+```
+allowance = free + floor( sqrt( min(sharePct, 1) ) × (max - free) )
+```
+
+| | Floor | Max | Reaches max at |
+|---|---|---|---|
+| Squares | 1 square *(still paid for)* | 10 squares | 1% of supply |
+| Starting 5 | 1 lineup *(free)* | 5 lineups | 1% of supply |
+
+Sub-linear on purpose. On Starting 5 it stops one wallet buying the leaderboard.
+On Squares it prevents the degenerate strategy: buy all 100 squares, win
+guaranteed, collect the pool minus the rake. That isn't a game — it's a 20% fee
+on moving your own money, and it would kill the board for everyone else the first
+time someone did it.
+
+Note the deliberate split with [`token-voting.md`](token-voting.md) §2.4:
+**linear supply-share where ownership should decide (what airs), square root
+where fun should (the games).**
+
+---
+
+## 2. Squares
+
+`src/lib/games/squares.ts` · `provablyFair.ts` · 33 tests
+
+The office pool, unchanged in shape: a 10×10 grid, you take squares, digits 0–9
+are drawn onto the rows and columns *after* the grid fills, and at the end of each
+period the square at (last digit of one score, last digit of the other) wins. It's
+the most successful casual betting game ever invented — your aunt plays it and she
+can't name a player.
+
+**The axes are named, not hardcoded to home/away.** CSGN runs both: a real game on
+sports nights, and on a slow afternoon a crypto board where the axes are the last
+digits of the $CSGN and SOL prices at the top of each hour. Same engine.
+
+**One winner takes the game.** `SINGLE_WINNER_PERIODS` is a single Final
+checkpoint at 100% of the prize — which is what "500,000 to the winner" means, and
+it's the right shape for a pooled board: four smaller prizes out of one pool is
+four reasons to feel like you nearly won, where one prize is a reason to watch the
+ninth. The four-checkpoint split (`DEFAULT_PERIODS`, 15/20/15/50) is still
+supported for a treasury-funded board; the engine doesn't care which it's handed.
+
+Weights are basis points so the prize divides in exact integer arithmetic. A prize
+must never be split with floating point; 0.1 + 0.2 losing a token is a support
+ticket forever.
+
+**An unclaimed winning square rolls over.** That share carries into the next board
+rather than being kept. `settleBoard` reconciles to the token: everything paid plus
+the rollover equals the prize exactly, with rounding dust handed to the last winner.
+
+### The draw is the integrity story
+
+Digits are assigned only *after* entries close. While you were picking, your
+square had no number — so no square was better than any other and there was
+nothing to game.
+
+The randomness is **derived, never generated**. The seed is a Solana blockhash
+sampled after the entry deadline, which gives three properties for free:
+
+1. **Unpredictable at entry time** — nobody knows the hash of a block that doesn't
+   exist yet.
+2. **Unforgeable afterward** — the hash is on-chain at a known slot.
+3. **Verifiable by a stranger** — blockhash + the published functions = the same
+   board, byte for byte.
+
+The PRNG is xmur3 + sfc32 with an unbiased back-to-front Fisher–Yates. Both are
+tiny and identical in any language, which is the point: a skeptic should be able
+to re-implement the draw in ten lines of Python and get our exact answer.
+`isSeedValid` refuses a seed sampled before entries closed, so a board that can't
+prove that ordering cannot settle.
+
+---
+
+## 3. Starting 5
+
+`src/lib/games/startingFive.ts` · 38 tests
+
+Daily fantasy where the athletes are coins. Pick five off the day's slate, name a
+captain, lock before tip-off, score on how they moved. Eleven seconds to enter,
+and it gives someone a reason to keep CSGN on a second monitor from lock to
+settle — which is the actual product. **The game is a retention mechanic wearing a
+jersey.**
+
+Four decisions, each load-bearing:
+
+**One pick per tier** — anchor (>$1B), core ($100M–1B), swing ($10–100M),
+moonshot (<$10M), plus a wildcard that takes anything. Without tiers every lineup
+is five microcaps and the game is a coin flip decided by whoever got the luckiest
+rug. Tiers give skill somewhere to live and make no two lineups alike.
+
+**A captain at 1.5×** — one decision worth more than the other four. It's the pick
+people argue about on air, which makes it the pick that writes our content.
+
+**Contrarian leverage** — a pick almost nobody rostered is worth up to 1.5× more
+*when it hits*, scaling to 1.0× at 50% ownership. **Applied to gains only, and the
+asymmetry is the whole point:** if leverage cut both ways it would just be
+volatility and the rational play would still be the consensus lineup. One-sided,
+being early is a free option — precisely the behaviour a network that broadcasts
+coin discovery should reward.
+
+**Captained losses are not multiplied either.** A captained loser costs its raw
+loss and no more. Punishing the bold pick 1.5× on the downside teaches everyone to
+captain the anchor, and a game whose optimal play is the boring play dies quietly.
+
+Scoring is 1 point per 0.1% move, so a 10% day is 100 points and the leaderboard
+reads in whole numbers. **Lineups can finish below zero** — a game where the worst
+outcome is "nothing happened" has no stakes.
+
+**Ties share a rank and split the pooled shares** (standard competition numbering:
+1, 2, 2, 4). There is no tiebreak worth having: the player controls their picks
+and nothing else, so breaking a tie on submission time would decide real money on
+something they couldn't have played for. A tie straddling the last paid place
+brings both rows in, so they split that place rather than one silently taking all
+of it.
+
+### The prize: 100,000 $CSGN for a perfect card
+
+The live prize is a **jackpot for going 5-for-5**, not a curve for finishing
+highest. 100,000 $CSGN, treasury-funded, daily.
+
+Paying the perfect card is the more valuable design, and the reason is
+retention. A rank curve has one winner and ninety-nine people who can compute by
+2pm that they've lost — so they stop watching. A perfect-card jackpot is binary
+and survives all day: **you're alive until one of your five goes red**, and while
+you're alive you are watching five charts and our channel. It also produces the
+best broadcast graphic the game can generate — *"14 cards still perfect"* —
+counting down live through the session.
+
+Two modes, admin-selectable per slate:
+
+| Mode | Behaviour | When to use it |
+|---|---|---|
+| **Split** | Every perfect card shares the jackpot evenly | Large field — many winners, each meaningful |
+| **Lottery** | One perfect card drawn, takes it all | Small field — 100k split forty ways is forgettable; handed to one person it's a story that recruits the next forty |
+
+The lottery draw uses the same provably-fair seed as the Squares digits: one
+ticket per perfect **card** (not per wallet — a holder who earned three lineups
+and went perfect on two takes two tickets), shuffled against a blockhash sampled
+after the slate settled. A settlement in lottery mode with **no published seed
+refuses to draw** rather than falling back to the first row; a silent fallback in
+a lottery is indistinguishable from rigging it.
+
+**Nobody perfect → the whole purse rolls into tomorrow.** The jackpot growing in
+public is the game advertising itself.
+
+One guard worth naming because it costs six figures if it's missing: an unpriced
+pick scores as *flat*, and flat clears a zero threshold — so a settle run against
+a broken price feed would mark **every** card perfect and pay out the entire
+jackpot on no data. `ScoredPick.priced` separates "flat" from "we don't know",
+and the perfect-card rule requires the former. The rollover is the safe failure.
+
+The `leaderboard` mode (top-ten rank curve) is retained for a bigger field later:
+top-heavy but paying ten deep, and **a short field doesn't let the treasury keep
+the difference** — if eight people entered a ten-place curve, the unpaid tail is
+redistributed. The player who cashes for a small amount is the player who comes
+back tomorrow, and tomorrow is the only metric this game exists to move.
+
+---
+
+## 4. The payout wallet
+
+```
+EftavCt6Tk2bzWJ9Dnz7cAvfa5RAnh8S9vZcrorV7Hmv
+```
+
+`_shared/payouts.ts` (rules, pure) · `payoutWallet.ts` (signing) ·
+`payoutRunner.ts` (sequence) · `adminRunPayouts.ts` (endpoint) · 53 tests
+
+This is the highest-consequence code in the repository. Everything else, at worst,
+shows someone the wrong number. This spends money, irreversibly, to strangers,
+unattended, on a schedule.
+
+It is built on one assumption: **this process will crash mid-run.** Not might —
+will. Netlify functions have a wall-clock limit, RPC times out, a deploy lands at
+3 AM while the daily settle is halfway through the field. Every rule exists so
+that when it happens, nobody is paid twice and nobody is skipped.
+
+### The four guarantees
+
+**1. Idempotent by construction.** A payout's id is derived from what it's *for* —
+`source:sourceId:wallet` — never from a counter, a timestamp, or a nonce. Any of
+those would make a retry look like a new payout. Re-running a settlement produces
+the same ids, and the ledger write that claims one is a **CREATE**, which fails if
+the id exists. Double payment isn't prevented by being careful; it's prevented by
+the database refusing.
+
+**2. Signature recorded before broadcast.** We sign, write the signature to the
+ledger, and only then send. Crash between the two and recovery re-broadcasts the
+*identical* signed transaction — same signature, so the cluster deduplicates it.
+Broadcasting first and recording after is the classic way to pay twice.
+
+**3. Capped at every level.** Per payout, per run, per ET day, tunable from
+`config/payoutLimits` without a deploy. A bug that computes a nine-figure prize
+hits a ceiling and files for review instead of emptying the wallet. When a ceiling
+truncates a run, payouts go out largest-first — a truncated run should pay the
+winner, not the tenth-place consolation.
+
+**4. Solvent before the first transfer.** A run that can't cover its whole field
+never starts. The check budgets **associated-token-account rent for first-time
+winners** — which for a game whose job is turning viewers into holders is the
+common case, not the edge case. Budgeting zero for it is how a payout run dies on
+its first real new user.
+
+### Recovery
+
+| Ledger state | Action | Why |
+|---|---|---|
+| `confirmed` / `failed` / `needs_review` | skip | Terminal |
+| `pending` | re-sign | No signature was ever recorded, so nothing was broadcast |
+| `sending` **with** a signature | **ask the chain** | It may or may not have landed. Never re-sign — that creates a second transaction that could also land |
+| `sending` **without** a signature | back to `pending` | A torn write. The signature is written first, so this can only mean nothing was sent |
+
+An `unknown` answer from the chain leaves the record in `sending` for the next run
+to ask again. That's a payout that stays stuck rather than one that pays twice,
+and between those two failure modes there is no contest.
+
+### Operational notes
+
+- **`adminRunPayouts` is admin-only and dry-run by default.** You must pass
+  `dryRun: false` to move a token. An endpoint that pays by default is one
+  fat-fingered curl from an incident — and the dry run returns the batch, the
+  solvency check and the review queue, which is what you wanted to see anyway.
+- **Winners are never accepted from the request body.** They're recomputed from
+  the stored game document. A payout endpoint that pays whoever the caller names
+  is not a payout endpoint, it's a withdrawal endpoint.
+- **Key handling** is in [`env-setup.md`](env-setup.md) — hot wallet, thin float,
+  rotate freely.
+- **Dry-run against a tiny real mainnet payment before this pays anyone.** The
+  same caution the jukebox SPL path still carries (§v1.6). Nothing here has
+  touched mainnet.
+
+---
+
+## 5. Before either game goes live
+
+Two things are genuinely open, and neither is a code problem.
+
+**The prize structure has been reviewed and cleared with counsel** for CSGN's
+own structure and jurisdiction. Note what that does and does not cover: Squares
+*is* a pooled-stakes game with a rake — the exact shape `master-plan.md` §11.7
+flagged as regulated — and it was cleared on that basis. Starting 5 is
+treasury-funded with no entry fee, which is a materially different structure.
+
+**If you fork this, that clearance is not yours.** It says nothing about your
+jurisdiction, your rake, or your prize. Get your own advice
+([`../CONTRIBUTING.md`](../CONTRIBUTING.md) § "Running your own node"). Nothing
+in this repository is legal advice.
+
+**Both purses are now set** — Starting 5 at 100,000 $CSGN daily from the
+treasury, Squares at 500,000 to the winner of a full board out of the entry pool.
+Both are configurable from Game Control without a deploy.
+
+### Admin — Game Control
+
+`config/gameBanner` and `config/games`, both admin-only, both editable from
+Broadcast Control → **Game Control** (`src/components/admin/GameControlsCard.tsx`):
+
+- **The /watch strip** — the game, the headline, a countdown target, and the
+  rotating lines. This used to be four constants in `Watch.tsx`, so announcing a
+  game or putting a clock on it required a deploy. There's a live preview in the
+  card that renders through the same pure resolver the page uses.
+- **Starting 5** — purse, carried jackpot, prize mode, daily lock hour (ET).
+- **Squares** — weekly cadence: the ET day and hour entries close and the digits
+  are drawn.
+
+### What's left to build
+
+| | |
+|---|---|
+| Squares board UI | grid, claim flow, live winning-square highlight |
+| Starting 5 slate UI | slate screen, lineup builder, the still-perfect counter |
+| Slate construction | daily job that builds a slate from the Meme-100 + tiering |
+| Settlement job | scheduled function: draw → score → `adminRunPayouts`; also writes `users/{uid}.gameStats`, which the profile already renders |
+| Broadcast graphics | the live winning square, and the perfect-card countdown — the best ambient tension either game produces, and the first costs one function call (`winningSquareIndex`) |
+| Admin | board/slate creation and the payout review queue (purse + cadence are done) |

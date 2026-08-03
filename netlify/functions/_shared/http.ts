@@ -14,8 +14,12 @@ export function corsHeaders(): Record<string, string> {
   }
 }
 
-export function json(statusCode: number, data: unknown): HandlerResponse {
-  return { statusCode, headers: { ...corsHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(data) }
+export function json(statusCode: number, data: unknown, extraHeaders: Record<string, string> = {}): HandlerResponse {
+  return {
+    statusCode,
+    headers: { ...corsHeaders(), 'Content-Type': 'application/json', ...extraHeaders },
+    body: JSON.stringify(data),
+  }
 }
 
 export function html(statusCode: number, body: string): HandlerResponse {
@@ -30,9 +34,39 @@ export function redirect(location: string): HandlerResponse {
   return { statusCode: 302, headers: { ...corsHeaders(), Location: location, 'Cache-Control': 'no-store' }, body: '' }
 }
 
+/**
+ * Largest request body any endpoint accepts. Every real payload here is a few
+ * hundred bytes — a proof token, a slot id, a mint. Without a ceiling, a caller
+ * can post megabytes and make us pay to parse it, repeatedly, inside the rate
+ * limit. Cheapest possible DoS, and the cheapest possible fix.
+ */
+export const MAX_BODY_BYTES = 16_000
+
+/**
+ * Parse a JSON body, bounded and non-throwing.
+ *
+ * Malformed JSON returns a 400 rather than a 500. That distinction matters
+ * beyond tidiness: a 500 says we broke, gets logged as an incident, and hides
+ * real failures in the noise — when what actually happened is that somebody
+ * sent us junk, which is not an outage.
+ */
 export function parseJson<T = Record<string, unknown>>(event: HandlerEvent): T {
   if (!event.body) return {} as T
-  return JSON.parse(event.body) as T
+  if (event.body.length > MAX_BODY_BYTES) {
+    throw new HttpError(413, 'body_too_large', 'Request body is too large.')
+  }
+  try {
+    const parsed = JSON.parse(event.body)
+    // Guard against `null`, arrays and primitives — every handler destructures
+    // this as an object, and `null.field` is a 500 with a stack trace.
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new HttpError(400, 'invalid_body', 'Request body must be a JSON object.')
+    }
+    return parsed as T
+  } catch (err) {
+    if (err instanceof HttpError) throw err
+    throw new HttpError(400, 'invalid_json', 'Request body is not valid JSON.')
+  }
 }
 
 export function withHttp(handler: Handler): Handler {

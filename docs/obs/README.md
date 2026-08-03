@@ -6,6 +6,76 @@
 > for the design rationale behind the graphics layer see
 > [`../broadcast-graphics.md`](../broadcast-graphics.md).
 
+
+---
+
+## 0. Quick start — on air in fifteen minutes
+
+If you read nothing else, read this. Everything after it is detail.
+
+**You build ONE scene, once. You never touch OBS again.**
+
+### Step 1 — Make the scene
+
+New scene, call it `CSGN`. Add these five **Browser Sources**, bottom of the list
+first (OBS draws bottom-to-top, so the first one you add sits behind everything):
+
+| # | Source name | URL | Size |
+|---|---|---|---|
+| 1 | `Feed` | `https://csgn.fun/player` | 1920 × 1080 |
+| 2 | `PIP` *(optional)* | `https://csgn.fun/../docs/obs/csgn-pip.html` | 1920 × 1080 |
+| 3 | `Ticker` | `…/csgn-ticker.html` | **1930 × 240** |
+| 4 | `Bug` | `…/csgn-nowwatching.html` | 1920 × 1080 |
+| 5 | `Lower thirds` | `…/csgn-lowerthirds.html` | 1920 × 1080 |
+
+For every source, tick these two boxes and leave the rest alone:
+
+- ☑ **Shutdown source when not visible**
+- ☑ **Refresh browser when scene becomes active**
+
+Position the **Ticker** flush to the bottom of the canvas. It is 240px tall but
+only the bottom 110px draws — the space above is transparent headroom the coin
+spotlight rises into. Everything else is full-canvas and needs no positioning.
+
+### Step 2 — Point OBS at X
+
+Settings → Stream → **Custom**, then paste the RTMPS URL and stream key from
+**X Media Studio → Producer**.
+
+Also going to Twitch? Point OBS at **[Restream](https://restream.io)** instead
+and let it fan out to both. One encoder, one upload, two destinations.
+
+### Step 3 — Encoder
+
+Settings → Output → Advanced:
+
+| | |
+|---|---|
+| Encoder | NVENC H.264 (or x264 `veryfast`) |
+| Rate control | CBR |
+| Bitrate | **6000 Kbps** |
+| Keyframe interval | **2s** |
+| Preset | Quality |
+| Resolution / FPS | 1920×1080 / 30 |
+
+### Step 4 — Go live
+
+Start Streaming in OBS, then go live from X Media Studio. Paste the broadcast
+**post** URL into Admin → *X Broadcast Post URL* → Push, and `/watch` embeds it.
+
+**That's it.** From here on the whole network is run from Admin → Broadcast
+Control. Nobody opens OBS again.
+
+### If something looks wrong
+
+| Symptom | Fix |
+|---|---|
+| Ticker not at the bottom | Move it down — the source is 240px, only the bottom 110px is opaque |
+| Twitch chrome or an ad on screen | `/player` is still masking. Wait ~33s, or add `?noads=1` if your feed is ad-free |
+| Nothing on the ticker | `config/ticker` is empty. Save anything in Broadcast Control |
+| Graphics frozen | Right-click the source → Refresh |
+| Two audio sources | Only `Feed` should have audio. Mute the rest in the Audio Mixer |
+
 ---
 
 ## 1. The one idea behind all of it
@@ -28,6 +98,25 @@ Nobody touches OBS.
 | Survives a crash/restart | ❌ | ✅ (state lives in Firestore) |
 | Reacts to live data | ❌ | ✅ (prices, who's live, votes) |
 | Anyone can run a node | ❌ | ✅ (same URLs, same result) |
+
+---
+
+## 1a. Where the stream goes — X, or Restream for both
+
+**X is the recommended output, and it's the simplest.** OBS captures `/player`
+plus the graphics stack and streams to **X Media Studio over RTMPS**. One
+destination, one encoder, nothing in the path you don't control. Full encoder
+settings in [`../obs-setup.md`](../obs-setup.md).
+
+**Want Twitch as well? Use [Restream](https://restream.io).** OBS sends one
+stream to Restream and Restream fans it out to X and Twitch simultaneously. It
+costs a subscription and adds a hop, but it is the only sane way to hit both
+without running two encoders on one machine. Point OBS at Restream as its single
+RTMP target and configure the split there.
+
+> Slot streamers keep streaming to **their own** Twitch channels — only the
+> network's output stream goes to X. Restream is about CSGN's own broadcast
+> reaching two places, not about how creators get on air.
 
 ---
 
@@ -269,3 +358,71 @@ public Firestore read. That is deliberate:
 The state boundary is the same everywhere: **the browser source reads, the admin
 panel writes, Firestore is the wire.** No asset ever writes state, so no asset
 can corrupt the broadcast.
+
+
+---
+
+## 9. The CSGN BottomLine — the finalized spec
+
+The band is a **BottomLine**, not a crawl, and the distinction is the whole
+design. A crawl scrolls text past you and you wait. A BottomLine *paginates*: it
+shows one thing at a time, at full size, and tells you where you are in the set.
+ESPN's 2008–11 board is still the reference implementation, and this is ours.
+
+### 9.1 Anatomy
+
+```
+┌────────┬──────────┬───────────────────────────────────┬──┬──────────────────┐
+│ BRAND  │  LEAGUE  │  SCOREBOARD / DETAIL              │  │  CRYPTO LED DOCK │
+│ 110px  │  158px   │  rolls vertically, flips to detail │  │  price + chart   │
+│        │   pill   │                        • • ◦ ◦ ◦  │  │                  │
+└────────┴──────────┴───────────────────────────────────┴──┴──────────────────┘
+   110px tall, pinned to the bottom. Anything above is transparent headroom.
+```
+
+### 9.2 The rules
+
+**One item at a time, at full size.** The scoreboard rolls vertically between
+games; the league changes behind a wipe. Nothing shrinks to fit — if it doesn't
+fit, it wraps or it gets its own face.
+
+**The flip is for detail, not decoration.** Every game can turn over to a second
+face: probable starters, pitching decisions, top performers. It only flips when
+there's something to show — never an empty face.
+
+**Section dots, bottom right.** One pip per item in the current league. The pip
+you're on is gold; the ones you've passed are drawn down to a dim white; the ones
+ahead are dark. The row resets on the league wipe. Over 14 items the overflow
+rides as a `+N` rather than a wall of dots nobody can count.
+
+This is the cheapest thing a ticker can do to stop feeling infinite. You always
+know how much of the NBA is left, which means you know whether to keep watching.
+
+**Type is sized to be read across a room, not on a monitor.** The band ships at
+1930×240 and gets scaled down on air. Team abbreviations run 40px, detail
+headlines 30px, the Meme 100 leaderboard 26px. If a face reads comfortably on
+your laptop it is almost certainly too small on stream.
+
+**Everything is driven by a document, nothing by a person.** The band reads
+`config/ticker` over the public Firestore REST API. Change a field in Admin →
+Broadcast Control and the board follows within ~60 seconds. Nobody touches OBS.
+
+### 9.3 What each band is for
+
+| Band | Job |
+|---|---|
+| **Brand** | Constant identity. Never changes, never animates |
+| **League pill** | Where you are. Colour-coded per league, wipes on change |
+| **Scoreboard** | The item: score, records, status — or a detail face on the flip |
+| **Section dots** | How much of this league is left |
+| **Crypto dock** | Always-on price board: LED price, 24h chart, Meme 100 power rank, $CSGN |
+
+### 9.4 Verifying it
+
+```bash
+node docs/obs/ticker-smoke.mjs      # offline render checks
+```
+
+Then the on-air pass in [`../dry-run.md`](../dry-run.md) §5 — Meme 100 readable
+from across the room, MLB record and games-back together, detail face filling its
+space, dots counting down and resetting on the wipe.
