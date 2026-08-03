@@ -20,6 +20,19 @@ import { json, requireMethod, withHttp } from './_shared/http'
 import { badRequest } from './_shared/errors'
 import { fieldFilter, queryCollection } from './_shared/firebaseAdmin'
 import { checkRateLimit, clientIp } from './_shared/rateLimit'
+import { memo } from './_shared/cache'
+
+/**
+ * How long a directory read is reused. Members change slowly; a minute of
+ * staleness is invisible, and it turns ~72 Firestore reads PER REQUEST into ~72
+ * per minute per container.
+ *
+ * That ratio is the point. At the old 60/min rate limit a single IP could bill
+ * 4,300 reads a minute from one endpoint without doing anything a firewall
+ * would notice — not a traffic problem, an invoice with a URL.
+ */
+const DIRECTORY_TTL_MS = 60_000
+const PROFILE_TTL_MS = 120_000
 
 /** Everything a stranger may see. Add a field here and you have published it. */
 export interface PublicProfile {
@@ -113,7 +126,9 @@ const MAX_LIMIT = 24
 
 export const handler = withHttp(async (event) => {
   requireMethod(event, 'GET')
-  await checkRateLimit(clientIp(event), 'publicProfiles', 60)
+  // 20/min is generous for a discovery rail that renders once per page view,
+  // and the cache below means most of those never reach Firestore at all.
+  await checkRateLimit(clientIp(event), 'publicProfiles', 20)
 
   const q = event.queryStringParameters || {}
   const username = str(q.username, 20).toLowerCase()
@@ -123,19 +138,29 @@ export const handler = withHttp(async (event) => {
   // Single profile by username — powers /u/:username.
   if (username) {
     if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) throw badRequest('Invalid username.', 'invalid_username')
-    const rows = await queryCollection('users', [fieldFilter('usernameLower', 'EQUAL', username)], [], 1)
-    const profile = rows[0] ? toPublicProfile(rows[0].data) : null
-    return json(200, { profile })
+    const profile = await memo(`profile:${username}`, PROFILE_TTL_MS, async () => {
+      const rows = await queryCollection('users', [fieldFilter('usernameLower', 'EQUAL', username)], [], 1)
+      return rows[0] ? toPublicProfile(rows[0].data) : null
+    })
+    // A short browser cache too: a shared profile link gets opened repeatedly
+    // from one feed, and those hits should never reach the origin.
+    return json(200, { profile }, { 'Cache-Control': 'public, max-age=60' })
   }
 
-  // Recommended set. Bounded read — never an unbounded scan of the collection.
-  const rows = await queryCollection('users', [fieldFilter('status', 'EQUAL', 'active')], [], MAX_LIMIT * 3)
-  const ranked = rankProfiles(
-    rows
-      .map((r) => toPublicProfile(r.data))
-      .filter((p): p is PublicProfile => p !== null)
-      .filter((p) => p.username.toLowerCase() !== exclude.toLowerCase()),
-  )
+  // The directory is loaded ONCE per TTL per container and ranked in memory.
+  // Ranking is deterministic, so it caches; the random sample is applied after,
+  // per request, which is what keeps the rail varied without re-reading.
+  const ranked = await memo('directory', DIRECTORY_TTL_MS, async () => {
+    const rows = await queryCollection('users', [fieldFilter('status', 'EQUAL', 'active')], [], MAX_LIMIT * 3)
+    return rankProfiles(
+      rows.map((r) => toPublicProfile(r.data)).filter((p): p is PublicProfile => p !== null),
+    )
+  })
 
-  return json(200, { profiles: sampleProfiles(ranked, limit) })
+  const pool = exclude
+    ? ranked.filter((p) => p.username.toLowerCase() !== exclude.toLowerCase())
+    : ranked
+
+  // No browser cache on the rail — the whole point is that it differs per load.
+  return json(200, { profiles: sampleProfiles(pool, limit) }, { 'Cache-Control': 'no-store' })
 })

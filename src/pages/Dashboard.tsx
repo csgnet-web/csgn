@@ -17,7 +17,6 @@ import MemeVoteCard from '@/components/MemeVoteCard'
 import GamesPanel from '@/components/account/GamesPanel'
 import HolderPanel from '@/components/account/HolderPanel'
 import RecommendedProfiles from '@/components/account/RecommendedProfiles'
-import AddEmailCard from '@/components/account/AddEmailCard'
 import { Notice, EmailNotice, TwitchNotice } from '@/components/ui/Notice'
 import { api } from '@/lib/api'
 import { readTwitchProof, clearTwitchProof } from '@/lib/twitchProof'
@@ -254,7 +253,6 @@ Use your email/username and password to access your account.
     )
   }
 
-  const hasEmail = Boolean(profile?.email || user.email)
   const twitchLinked = Boolean(profile?.twitch?.verified)
   const savedWallet = profile?.phantom?.walletAddress || profile?.walletAddress
   const twitchDisplay = profile?.twitch?.displayName || profile?.twitch?.username || profile?.twitchUsername
@@ -283,10 +281,7 @@ Use your email/username and password to access your account.
           <div className="space-y-3">
             {linkMsg && <Notice tone="success" compact>{linkMsg}</Notice>}
             {linkErr && <Notice tone="error" compact>{linkErr}</Notice>}
-            {/* A wallet-first account has no email at all, so there's nothing to
-                resend — it needs the form, not the reminder. */}
-            {!hasEmail && <AddEmailCard onLinked={refreshProfile} />}
-            {hasEmail && !user.emailVerified && (
+            {!user.emailVerified && (
               <EmailNotice
                 action={
                   <Button variant="secondary" size="sm" isLoading={resending} onClick={handleResend}>

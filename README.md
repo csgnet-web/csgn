@@ -254,6 +254,35 @@ number marks it. Still well short of v2.)*
   what the token actually does and how the profile votes work. No adjectives
   doing a fact's job
 
+### v1.18 — August 2026
+**On-chain Meme 100, sign-up back to email + wallet, and a backend cost pass.**
+
+- **The Meme 100 seeds itself from on-chain activity.** DexScreener's boost and
+  profile feeds supply candidate Solana mints; each is enriched from real pool
+  state (deepest-liquidity pair wins) and must clear hard thresholds —
+  **≥$25k liquidity, ≥$50k 24h volume, ≥24h old** — before it can reach the
+  board. Those gates are the safety story: this list goes on air and is the
+  ballot for a token-weighted vote, so without them a rug minted ninety seconds
+  ago lands next to real coins and the vote legitimises it. An allowlist pins
+  coins past the thresholds ($CSGN on its own board); a denylist still exists,
+  because "cleared the numbers" isn't "happy to put on television". An empty
+  result never overwrites a good board
+- **Sign-up requires email, password and Phantom again**, with Twitch optional.
+  Wallet-only registration is gone — it made mass registration far too cheap.
+  Signing *in* with Phantom is unchanged
+- **Backend hardening** ([`docs/backend-hardening.md`](docs/backend-hardening.md)):
+  - `publicProfiles` read **~72 documents per request** at a 60/min limit —
+    4,320 reads a minute from one IP, from a public GET, using traffic no
+    firewall would flag. Now cached per TTL with stampede protection; limit cut
+    to 20/min
+  - **Every outbound call now has a hard timeout.** Netlify bills wall clock, so
+    a hung third party didn't fail fast — it burned the whole invocation and
+    took everything else in that run with it
+  - **Request bodies capped at 16KB**; malformed JSON returns 400 instead of
+    500, and non-object bodies are rejected so handlers can destructure safely
+  - New `_shared/cache.ts`: bounded TTL cache, single-flight, bounded fetch —
+    with the rule that a failed load is never cached
+
 ## Getting Started
 
 ```bash

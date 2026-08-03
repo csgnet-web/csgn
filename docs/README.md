@@ -28,6 +28,7 @@ The two documents that describe what is actually happening.
 | [`env-setup.md`](env-setup.md) | Every environment variable, which are secret, the payout-wallet key policy, and the **deploy checklist** |
 | [`dry-run.md`](dry-run.md) | **The gated verification runbook.** Local → settlement → payout dry run → **the mainnet money test**. Includes the idempotency test that must never be skipped |
 | [`games-and-payouts.md`](games-and-payouts.md) | Squares (weekly, pooled, 500k to the winner), Starting 5 (daily, free, 100k perfect card), and the payout ledger's four guarantees |
+| [`backend-hardening.md`](backend-hardening.md) | **Cost, scale and the attacks that actually happen.** The read amplifier that was there, the caching/timeout/body-cap primitives, and the six questions a new endpoint has to answer |
 | [`ops-cost-security-runbook.md`](ops-cost-security-runbook.md) | Firestore cost control, security posture, incident steps |
 
 ## 3 · Broadcast
