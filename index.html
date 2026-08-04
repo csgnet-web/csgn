@@ -2,17 +2,62 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/jpeg" href="/csgn-logo.jpg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="CSGN - Crypto Sports & Gaming Network. The 24/7 crypto-native streaming network. The ESPN and TMZ of crypto." />
-    <meta name="theme-color" content="#0a0a1a" />
-    <meta property="og:title" content="CSGN - Crypto Sports & Gaming Network" />
-    <meta property="og:description" content="The 24/7 crypto-native streaming network built on Solana. Watch live crypto drama, sports gaming, and esports." />
+
+    <title>CSGN — Crypto Sports &amp; Gaming Network | Live 24/7 on Solana</title>
+    <meta
+      name="description"
+      content="The 24/7 crypto-native streaming network. Streamers claim an hour, go live on their own channel, and earn a share of $CSGN's real trading fees for the block they're on air."
+    />
+    <link rel="canonical" href="https://csgn.fun/" />
+    <meta name="theme-color" content="#06060e" />
+    <link rel="icon" type="image/jpeg" href="/csgn-logo.jpg" />
+    <link rel="apple-touch-icon" href="/csgn-logo.jpg" />
+
+    <!--
+      Link previews. This project lives or dies on being pasted into X, Telegram
+      and Discord, and until these existed every one of those paste-ins rendered
+      as a bare blue URL with no image, no title and no pitch. og:image must be
+      an ABSOLUTE url — crawlers do not resolve relative paths — and the 1200x630
+      card is checked into public/ so it is served from our own origin at a size
+      X renders as summary_large_image rather than a thumbnail.
+    -->
+    <meta property="og:site_name" content="CSGN" />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://csgn.fun/" />
+    <meta property="og:title" content="CSGN — Crypto Sports &amp; Gaming Network" />
+    <meta
+      property="og:description"
+      content="The 24/7 streaming network where streamers earn a share of $CSGN's real trading fees for the hour they're on air. Claim an hour, stream your own channel, get paid on-chain."
+    />
+    <meta property="og:image" content="https://csgn.fun/csgn-og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="CSGN — Crypto Sports &amp; Gaming Network. Live 24/7 on Solana. 30% of fees to the streamer."
+    />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@CSGNet" />
+    <meta name="twitter:creator" content="@CSGNet" />
+    <meta name="twitter:title" content="CSGN — Crypto Sports &amp; Gaming Network" />
+    <meta
+      name="twitter:description"
+      content="The 24/7 streaming network where streamers earn a share of $CSGN's real trading fees for the hour they're on air."
+    />
+    <meta name="twitter:image" content="https://csgn.fun/csgn-og.png" />
+
+    <!--
+      preconnect, then the stylesheet. The two hosts are separate on purpose:
+      googleapis.com serves the CSS, gstatic.com serves the font files, and the
+      handshake to the second one can't start until the first has been parsed
+      unless we warm it here. `crossorigin` is required on the gstatic hint or
+      the browser opens a second, unused connection.
+    -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-    <title>CSGN.fun</title>
   </head>
   <body class="bg-[#06060e] text-white antialiased">
     <div id="root"></div>

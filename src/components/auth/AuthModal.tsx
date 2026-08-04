@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CheckCircle2, Eye, EyeOff, Lock, Mail, Twitch, User, Wallet, X } from 'lucide-react'
 import { Notice } from '@/components/ui/Notice'
@@ -9,6 +9,7 @@ import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { api, type TwitchProof } from '@/lib/api'
 import { clearTwitchProof, readTwitchProof } from '@/lib/twitchProof'
 import { clearRegisterDraft, readRegisterDraft, storeRegisterDraft } from '@/lib/registerDraft'
+import { storeAuthReturn } from '@/lib/authReturn'
 import { useScrollLock } from '@/hooks/useScrollLock'
 
 interface AuthModalProps { isOpen: boolean; onClose: () => void; initialMode?: 'login' | 'signup' }
@@ -73,6 +74,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
   const [mode, setMode] = useState<'login' | 'signup'>(initialMode)
   const isRegister = mode === 'signup'
   const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
 
   // Sync mode to the initialMode prop whenever the modal opens so that
   // reopening via "Sign In" after previously switching to signup resets correctly.
@@ -191,10 +193,14 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
     setError(''); setVerifying('twitch')
     try {
       const { authUrl } = await api.startTwitchOAuth()
-      // Persist the in-progress form so the user doesn't lose it across the
-      // full-page redirect, then redirect (no popup / window.opener) so this
-      // works inside mobile in-app browsers like Phantom on iPhone.
+      // Persist the in-progress form AND where to come back to, then redirect
+      // (no popup / window.opener) so this works inside mobile in-app browsers
+      // like Phantom on iPhone. Returning to the page they left — rather than
+      // always to the home page — is what makes the round trip feel like one
+      // step instead of a detour; the wallet proof survives it, so on the
+      // wallet path there is nothing to re-enter at all.
       storeRegisterDraft({ email, username, phantomProofToken, verifiedWallet, emailMode })
+      storeAuthReturn({ path: `${location.pathname}${location.search}`, intent: 'signup' })
       window.location.href = authUrl
     } catch (err) {
       setVerifying(null)
@@ -246,7 +252,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={handleClose} />
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative w-full max-w-md max-h-[92vh] bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
             <div className="relative px-6 sm:px-8 pt-6 sm:pt-8 pb-4">
-              <button onClick={handleClose} className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-white/5 cursor-pointer"><X className="w-5 h-5" /></button>
+              <button type="button" onClick={handleClose} aria-label="Close" className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-white/5 cursor-pointer"><X className="w-5 h-5" aria-hidden /></button>
               <img src="https://pbs.twimg.com/profile_images/1966988305255276544/3Qz3tNAa_200x200.jpg" alt="CSGN" className="w-12 h-12 rounded-xl object-cover mb-4 shadow-lg" />
               <h2 className="text-2xl font-bold font-display text-white">{isRegister ? 'Join CSGN' : 'Welcome back'}</h2>
               <p className="text-sm text-gray-400 mt-1">
@@ -312,7 +318,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                         <label className="block text-sm font-medium text-gray-300 mb-1.5 pt-1">Username</label>
                         <div className="relative">
                           <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                          <input value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} placeholder="csgn_user" required minLength={3} maxLength={20} disabled={loading} autoFocus />
+                          <input value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} placeholder="csgn_user" required minLength={3} maxLength={20} disabled={loading} autoFocus autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
                         </div>
 
                         <button type="button" onClick={connectTwitch} disabled={loading || verifying === 'twitch'} className={`w-full h-12 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 ${twitchProofToken ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}>
@@ -340,21 +346,21 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                         <label className="block text-sm font-medium text-gray-300 mb-1.5">Email</label>
                         <div className="relative">
                           <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} placeholder="you@example.com" required disabled={loading} />
+                          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} placeholder="you@example.com" required disabled={loading} autoComplete="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
                         </div>
                         <label className="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
                         <div className="relative">
                           <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                          <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="Enter password" required minLength={6} disabled={loading} />
-                          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+                          <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="Enter password" required minLength={6} disabled={loading} autoComplete={isRegister ? 'new-password' : 'current-password'} />
+                          <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showPassword ? <EyeOff className="w-4 h-4" aria-hidden /> : <Eye className="w-4 h-4" aria-hidden />}</button>
                         </div>
                         {isRegister && (
                           <>
                             <label className="block text-sm font-medium text-gray-300 mb-1.5">Confirm Password</label>
                             <div className="relative">
                               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                              <input type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="Confirm password" required minLength={6} disabled={loading} />
-                              <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+                              <input type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="Confirm password" required minLength={6} disabled={loading} autoComplete="new-password" />
+                              <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} aria-label={showConfirmPassword ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showConfirmPassword ? <EyeOff className="w-4 h-4" aria-hidden /> : <Eye className="w-4 h-4" aria-hidden />}</button>
                             </div>
                           </>
                         )}

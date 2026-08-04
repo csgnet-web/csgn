@@ -284,7 +284,7 @@ number marks it. Still well short of v2.)*
     with the rule that a failed load is never cached
 
 ### v1.19 — August 2026
-**Sign-up down to one signature, and `/player` can forward a stream that lives on X.**
+**Sign-up down to one signature; a Twitch redirect that comes back where it left; X handled honestly.**
 
 - **Sign-up is a wallet signature and a username.** No email, no password, no
   verification round trip. The credential was already the wallet — Phantom has
@@ -318,20 +318,48 @@ number marks it. Still well short of v2.)*
   claim gate now checks it only on accounts that have one; the gates doing the
   real work are unchanged — a verified wallet to be paid into, a verified Twitch
   channel to put on air (`claimSlot.ts` + `slotModel.ts`, mirrored as always)
-- **`/player` forwards a stream that lives on X.** Both shapes are now first-class
-  sources: the **post** carrying a broadcast is embedded and scaled to fill the
-  canvas — real video on the encode — while the raw `x.com/i/broadcasts/…`
-  permalink X actually hands a streamer gets a branded "Live on X" stage that
-  bills the streamer and the hour. Before this, an X URL parsed as nothing and a
-  booked hour silently fell back to the intermission board
-- **No iframe attempt on the permalink, on purpose.** X serves those pages with
-  `frame-ancestors 'self'`, and a frame refused for framing still fires `load` in
-  Chromium with an origin-opaque error page — indistinguishable from a successful
-  cross-origin load. Guessing wrong puts a white "refused to connect" box on a
-  live encode, so the branded stage is used instead. The Admin assign modal tells
-  the operator which of the two links they pasted, and what it will do on air
-- Rehearse it with `/player?preview=x`; the whole thing, audio caveat included,
-  is documented in [`docs/obs-setup.md`](docs/obs-setup.md) §4b
+- **The Twitch redirect returns you to where you started.** It was hardcoded to
+  come back to `/?auth=register`, so every Twitch round trip ended on the home
+  page with the sign-up modal open. Mid-sign-up that was merely abrupt; linking
+  Twitch from `/account` it was a **bug** — you landed on the home page being
+  asked to join a network you were already in, and the code that completes the
+  link never ran, so the link silently didn't happen. The destination and the
+  intent now travel with the round trip (`lib/authReturn.ts`, same-origin paths
+  only), failures route through the same landing page as successes so an error
+  surfaces where you started, and on the wallet path there is nothing to re-enter
+  on the way back
+- **`/player` no longer tries to carry video from X — deliberately.** X's
+  broadcast permalink can't be embedded at all (`frame-ancestors 'self'`), and
+  the post embed that *can* be rendered starts muted with no unmute API for the
+  parent page, so sound would depend on a human making an OBS **Interact** click
+  every session. A 24/7 network that goes silent when nobody's watching the
+  console is worse than one that doesn't try. **Take the streamer's original
+  Twitch / Kick / YouTube feed**, which plays with audio and full live detection
+- **X links are still recognised, so they fail visibly instead of silently.** An
+  X URL reaching a slot (legacy data, a hand-edited URL, an emergency override)
+  gets a branded "Live on X" card billing the streamer and the hour, rather than
+  parsing as nothing and dropping the booked hour onto the intermission board.
+  X is not offered as a bookable source, and both the assign modal and the
+  per-slot stream-URL override warn the moment one is pasted. Rehearse the card
+  with `/player?preview=x`; the reasoning is in
+  [`docs/obs-setup.md`](docs/obs-setup.md) §4b
+- **Link previews exist.** This project gets shared by being pasted into X,
+  Telegram and Discord, and every one of those paste-ins rendered as a bare blue
+  URL: no `og:image`, no `og:url`, no `twitter:card`. There's now a real 1200×630
+  card served from our own origin, full Open Graph + Twitter meta, a title and
+  description that say what CSGN actually is, plus `robots.txt` and a sitemap
+  (with `/player` excluded — an encoder surface with no navigation has no
+  business ranking on a brand search)
+- **Password managers can fill the sign-up form.** Not one input in the app had
+  an `autoComplete` attribute, so autofill silently did nothing on the two forms
+  that most needed it. Email, username and new/current password are all annotated
+  now, along with `aria-label`s on the icon-only controls
+- **Vendor code is split from app code.** Routes were already lazy, so the 785KB
+  entry chunk was almost entirely libraries — meaning a one-line copy change
+  re-shipped ~250KB gzipped of React, Firebase and Framer Motion with a fresh
+  hash. They're separate chunks now, so a normal deploy invalidates the small app
+  chunk and returning visitors keep the rest from cache. Same bytes on a cold
+  visit; far fewer on every one after
 
 ## Getting Started
 

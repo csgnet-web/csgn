@@ -11,8 +11,19 @@ function frontendOrigin(): string {
   return (process.env.CSGN_ALLOWED_ORIGIN || '').replace(/\/+$/, '')
 }
 
+/**
+ * Every outcome — success and failure alike — lands on the same in-app page.
+ *
+ * This used to send failures straight to `/?auth=register`, which put the
+ * server in charge of a destination only the browser knows: the user's own
+ * session records where they left from and whether they were signing up or
+ * linking Twitch to an account they already have. Bouncing everything through
+ * one landing route lets the client make that decision with the context it
+ * actually has, and means an error no longer strands a member on the home page
+ * being asked to join twice.
+ */
 function redirectError(code: string): HandlerResponse {
-  return redirect(`${frontendOrigin()}/?auth=register&twitchError=${code}`)
+  return redirect(`${frontendOrigin()}/auth/twitch/complete?twitchError=${code}`)
 }
 
 export const handler = withHttp(async (event) => {

@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   Mail, Wallet, Trophy, Lock,
   CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Twitch, X as XIcon, Info,
@@ -20,6 +20,7 @@ import RecommendedProfiles from '@/components/account/RecommendedProfiles'
 import { Notice, EmailNotice, TwitchNotice } from '@/components/ui/Notice'
 import { api } from '@/lib/api'
 import { readTwitchProof, clearTwitchProof } from '@/lib/twitchProof'
+import { storeAuthReturn } from '@/lib/authReturn'
 import { Modal } from '@/components/ui/Modal'
 
 /** One connection row. Renders the real state — a missing wallet reads as
@@ -103,15 +104,38 @@ export default function Dashboard() {
   const totalLiveMinutes = useMemo(() => feeHistory.reduce((s, x) => s + (x.streamActivity?.liveCheckCount || 0), 0), [feeHistory])
 
 
-  // Finish a Twitch link started from this page. The OAuth callback drops a
-  // proof in sessionStorage and returns here; we exchange it once and clear it,
-  // so a refresh can't replay a spent proof.
+  // Finish a Twitch link started from this page. The OAuth round trip drops a
+  // proof in sessionStorage and returns the user HERE (see lib/authReturn.ts);
+  // we exchange it once and clear it, so a refresh can't replay a spent proof.
+  //
+  // The presence of the proof is the trigger. It used to also require a separate
+  // 'csgn:linkTwitchReturn' flag, which meant the two halves could disagree —
+  // and did: the callback always returned to the home page, so this effect never
+  // ran and the link silently never completed.
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // A Twitch round trip that FAILED comes back here too, carrying its reason.
+  // Surfacing it on the page the member started from is the whole point of
+  // routing every outcome through one landing page — an error that only ever
+  // rendered on the home sign-up modal was invisible to someone linking Twitch
+  // from their profile.
+  useEffect(() => {
+    const code = searchParams.get('twitchError')
+    if (!code && !searchParams.has('twitch')) return
+    if (code) {
+      setLinkErr(code === 'duplicate_twitch'
+        ? 'That Twitch account is already linked to another CSGN account.'
+        : 'Could not finish Twitch verification. Please try again.')
+    }
+    const next = new URLSearchParams(searchParams)
+    next.delete('twitch'); next.delete('twitchError')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
+
   useEffect(() => {
     if (!user) return
-    if (!sessionStorage.getItem('csgn:linkTwitchReturn')) return
     const proof = readTwitchProof()
-    if (!proof) { sessionStorage.removeItem('csgn:linkTwitchReturn'); return }
-    sessionStorage.removeItem('csgn:linkTwitchReturn')
+    if (!proof) return
     let cancelled = false
     ;(async () => {
       try {
@@ -202,7 +226,11 @@ export default function Dashboard() {
     setLinking(true); setLinkErr(''); setLinkMsg('')
     try {
       const { authUrl } = await api.startTwitchOAuth()
-      sessionStorage.setItem('csgn:linkTwitchReturn', '1')
+      // 'link', not 'signup': this member already has an account. The intent is
+      // what keeps ?auth=register off the return URL — sending it would greet
+      // them with a "Join CSGN" modal on the way back from linking Twitch to
+      // the account they're signed into.
+      storeAuthReturn({ path: '/account', intent: 'link' })
       window.location.href = authUrl
     } catch {
       setLinking(false)
@@ -281,8 +309,8 @@ Use your email/username and password to access your account.
                   <AlertTriangle className="w-4 h-4 shrink-0" /> {signInError}
                 </div>
               )}
-              <div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="text" value={signInIdentifier} onChange={(e) => setSignInIdentifier(e.target.value)} className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Email" required disabled={signInLoading} /></div>
-              <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="password" value={signInPassword} onChange={(e) => setSignInPassword(e.target.value)} className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Password" required minLength={6} disabled={signInLoading} /></div>
+              <div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="text" value={signInIdentifier} onChange={(e) => setSignInIdentifier(e.target.value)} className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Email" required disabled={signInLoading} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></div>
+              <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="password" value={signInPassword} onChange={(e) => setSignInPassword(e.target.value)} className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Password" required minLength={6} disabled={signInLoading} autoComplete="current-password" /></div>
               <Button variant="primary" size="md" className="w-full" isLoading={signInLoading}>Sign In</Button>
             </form>
           </Card>
@@ -635,6 +663,10 @@ Use your email/username and password to access your account.
                 placeholder="you@example.com"
                 required
                 disabled={addingEmail}
+                autoComplete="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
               />
             </div>
             <div className="relative">
@@ -648,6 +680,7 @@ Use your email/username and password to access your account.
                 required
                 minLength={6}
                 disabled={addingEmail}
+                autoComplete="new-password"
               />
             </div>
             <Button variant="primary" size="md" className="w-full" isLoading={addingEmail}>Add email</Button>
