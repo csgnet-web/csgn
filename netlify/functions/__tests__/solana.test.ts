@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   verifySplPaymentFromTx,
+  isEstablishedWallet,
   CSGN_MINT_ADDRESS,
   CSGN_TREASURY_ADDRESS,
   type ParsedTransaction,
@@ -100,5 +101,68 @@ describe('verifySplPaymentFromTx — the $CSGN jukebox trust boundary', () => {
       bal(TREASURY, 'OtherMint1111111111111111111111111111111111', '9999999'),
     ]
     expect(verifySplPaymentFromTx(tx, WALLET, MINT, 1_000_000n).raw).toBe(1_000_000n)
+  })
+})
+
+// ── isEstablishedWallet — the wallet-only sign-up sybil gate ────────────────
+//
+// Wallet-only registration was pulled once (v1.18) because a keypair is free
+// and instant to generate, making "prove you hold a wallet" a weaker toll than
+// a verified email. This check is what puts the toll back: SOL or history, both
+// of which cost the sprayer real money per wallet. These tests pin the decision
+// table, because getting it wrong either reopens mass registration or locks
+// real members out.
+
+/** Stub the two RPC calls isEstablishedWallet makes, in the order it makes them. */
+function stubRpc(balanceLamports: number, signatures: unknown[]) {
+  const bodies = [
+    { result: { value: balanceLamports } },
+    { result: signatures },
+  ]
+  let call = 0
+  return vi.fn(async () => {
+    const body = bodies[call] ?? bodies[bodies.length - 1]
+    // getBalance and getSignaturesForAddress are issued concurrently, so the
+    // stub answers by call order — which is the order they're constructed in.
+    call += 1
+    return { ok: true, json: async () => body } as unknown as Response
+  })
+}
+
+describe('isEstablishedWallet', () => {
+  const WALLET_ADDR = '5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1'
+  const MIN = 1_000_000
+
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('accepts a wallet holding at least the minimum, with no history', async () => {
+    vi.stubGlobal('fetch', stubRpc(MIN, []))
+    expect(await isEstablishedWallet(WALLET_ADDR, MIN)).toBe(true)
+  })
+
+  it('accepts an emptied wallet that has transacted before', async () => {
+    vi.stubGlobal('fetch', stubRpc(0, [{ signature: 'sig' }]))
+    expect(await isEstablishedWallet(WALLET_ADDR, MIN)).toBe(true)
+  })
+
+  it('rejects a keypair minted seconds ago — no balance, no history', async () => {
+    vi.stubGlobal('fetch', stubRpc(0, []))
+    expect(await isEstablishedWallet(WALLET_ADDR, MIN)).toBe(false)
+  })
+
+  it('rejects dust below the minimum when there is no history to fall back on', async () => {
+    vi.stubGlobal('fetch', stubRpc(MIN - 1, []))
+    expect(await isEstablishedWallet(WALLET_ADDR, MIN)).toBe(false)
+  })
+
+  // The caller treats a throw as "unavailable" and falls open on purpose, so
+  // this must throw rather than quietly returning false — a false would read as
+  // a real rejection and lock members out during an RPC outage.
+  it('throws (never returns false) when the RPC errors', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 503, json: async () => ({}) }) as unknown as Response))
+    await expect(isEstablishedWallet(WALLET_ADDR, MIN)).rejects.toThrow(/RPC error/i)
+
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ error: { message: 'boom' } }) }) as unknown as Response))
+    await expect(isEstablishedWallet(WALLET_ADDR, MIN)).rejects.toThrow(/boom/i)
   })
 })

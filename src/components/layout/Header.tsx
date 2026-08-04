@@ -66,8 +66,11 @@ export function Header() {
     setAuthModal({ open: true, mode })
   }, [])
 
-  // The mobile-safe Twitch OAuth flow returns to /?auth=register; open the
-  // register modal so AuthModal can pick up the stored Twitch proof.
+  // The mobile-safe Twitch OAuth flow returns the user to the page they left,
+  // tagged ?auth=register when they were mid-sign-up (see lib/authReturn.ts).
+  // Reopen the modal so AuthModal can pick up the stored Twitch proof and the
+  // draft. Deliberately NOT keyed to the home page: the point of the return
+  // path is that sign-up resumes wherever it started.
   useEffect(() => {
     if (searchParams.get('auth') !== 'register') return
     const id = setTimeout(() => openAuth('signup'), 0)

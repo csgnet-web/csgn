@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   Mail, Wallet, Trophy, Lock,
   CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Twitch, X as XIcon, Info,
@@ -20,6 +20,7 @@ import RecommendedProfiles from '@/components/account/RecommendedProfiles'
 import { Notice, EmailNotice, TwitchNotice } from '@/components/ui/Notice'
 import { api } from '@/lib/api'
 import { readTwitchProof, clearTwitchProof } from '@/lib/twitchProof'
+import { storeAuthReturn } from '@/lib/authReturn'
 import { Modal } from '@/components/ui/Modal'
 
 /** One connection row. Renders the real state — a missing wallet reads as
@@ -48,8 +49,14 @@ function Connection({
 }
 
 export default function Dashboard() {
-  const { user, profile, signIn, resendVerification, refreshProfile } = useAuth()
+  const { user, profile, signIn, resendVerification, refreshProfile, addEmailPassword } = useAuth()
   const [resending, setResending] = useState(false)
+  // Adding a recovery email to a wallet-only account.
+  const [addEmailOpen, setAddEmailOpen] = useState(false)
+  const [newEmail, setNewEmail] = useState('')
+  const [newEmailPassword, setNewEmailPassword] = useState('')
+  const [addingEmail, setAddingEmail] = useState(false)
+  const [addEmailError, setAddEmailError] = useState('')
   const [signInIdentifier, setSignInIdentifier] = useState('')
   const [signInPassword, setSignInPassword] = useState('')
   const [signInLoading, setSignInLoading] = useState(false)
@@ -97,15 +104,38 @@ export default function Dashboard() {
   const totalLiveMinutes = useMemo(() => feeHistory.reduce((s, x) => s + (x.streamActivity?.liveCheckCount || 0), 0), [feeHistory])
 
 
-  // Finish a Twitch link started from this page. The OAuth callback drops a
-  // proof in sessionStorage and returns here; we exchange it once and clear it,
-  // so a refresh can't replay a spent proof.
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // A Twitch round trip that FAILED comes back here too, carrying its reason.
+  // Surfacing it on the page the member started from is the whole point of
+  // routing every outcome through one landing page — an error that only ever
+  // rendered on the home sign-up modal was invisible to someone linking Twitch
+  // from their profile.
+  useEffect(() => {
+    const code = searchParams.get('twitchError')
+    if (!code && !searchParams.has('twitch')) return
+    if (code) {
+      setLinkErr(code === 'duplicate_twitch'
+        ? 'That Twitch account is already linked to another CSGN account.'
+        : 'Could not finish Twitch verification. Please try again.')
+    }
+    const next = new URLSearchParams(searchParams)
+    next.delete('twitch'); next.delete('twitchError')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
+
+  // Finish a Twitch link started from this page. The OAuth round trip drops a
+  // proof in sessionStorage and returns the user HERE (see lib/authReturn.ts);
+  // we exchange it once and clear it, so a refresh can't replay a spent proof.
+  //
+  // The presence of the proof is the trigger. It used to also require a separate
+  // 'csgn:linkTwitchReturn' flag, which meant the two halves could disagree —
+  // and did: the callback always returned to the home page, so this effect never
+  // ran and the link silently never completed.
   useEffect(() => {
     if (!user) return
-    if (!sessionStorage.getItem('csgn:linkTwitchReturn')) return
     const proof = readTwitchProof()
-    if (!proof) { sessionStorage.removeItem('csgn:linkTwitchReturn'); return }
-    sessionStorage.removeItem('csgn:linkTwitchReturn')
+    if (!proof) return
     let cancelled = false
     ;(async () => {
       try {
@@ -155,6 +185,38 @@ export default function Dashboard() {
   }
 
   /**
+   * Attach an email + password to a wallet-only account.
+   *
+   * This is the recovery path, and it is the reason sign-up can leave email out
+   * without leaving members stranded: a seed phrase is the one credential nobody
+   * can reset for you, so an account with nothing else on it is one lost phrase
+   * away from gone. Everything here is additive — the wallet keeps working as a
+   * sign-in exactly as before.
+   */
+  const handleAddEmail = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setAddingEmail(true); setAddEmailError(''); setLinkMsg('')
+    try {
+      await addEmailPassword(newEmail.trim(), newEmailPassword)
+      setAddEmailOpen(false); setNewEmail(''); setNewEmailPassword('')
+      setLinkMsg('Email added — check your inbox for the verification link.')
+    } catch (err: unknown) {
+      const code = err instanceof Error && 'code' in err ? String((err as { code?: string }).code || '') : ''
+      if (code === 'auth/email-already-in-use' || code === 'auth/credential-already-in-use') {
+        setAddEmailError('That email is already on another CSGN account.')
+      } else if (code === 'auth/invalid-email') {
+        setAddEmailError('Please enter a valid email address.')
+      } else if (code === 'auth/weak-password') {
+        setAddEmailError('Pick a password of at least 6 characters.')
+      } else if (code === 'auth/requires-recent-login') {
+        setAddEmailError('For security, sign in again with your wallet and then add the email.')
+      } else {
+        setAddEmailError(err instanceof Error ? err.message : 'Could not add the email. Try again.')
+      }
+    } finally { setAddingEmail(false) }
+  }
+
+  /**
    * Start the Twitch link. Full-page redirect, never a popup: Twitch's login
    * page offers "Sign in with Apple", and Apple refuses OAuth inside popups and
    * embedded webviews. A redirect is the only flow that survives every entry
@@ -164,7 +226,11 @@ export default function Dashboard() {
     setLinking(true); setLinkErr(''); setLinkMsg('')
     try {
       const { authUrl } = await api.startTwitchOAuth()
-      sessionStorage.setItem('csgn:linkTwitchReturn', '1')
+      // 'link', not 'signup': this member already has an account. The intent is
+      // what keeps ?auth=register off the return URL — sending it would greet
+      // them with a "Join CSGN" modal on the way back from linking Twitch to
+      // the account they're signed into.
+      storeAuthReturn({ path: '/account', intent: 'link' })
       window.location.href = authUrl
     } catch {
       setLinking(false)
@@ -234,8 +300,29 @@ export default function Dashboard() {
           <Card hover={false} className="p-6 border-red-500/25 bg-white/[0.03]">
             <h1 className="text-3xl font-display font-bold text-white mb-1">Sign in</h1>
             <p className="text-sm text-gray-400 mb-4">
-Use your email/username and password to access your account.
+              Your wallet is your sign-in — one signature, no password to remember.
             </p>
+
+            {/* Same hierarchy as the header modal: the wallet leads, because the
+                signature over a server nonce IS the credential and most members
+                have no password at all. Opens the shared AuthModal rather than
+                duplicating the challenge/sign/verify sequence, so there is one
+                implementation of the wallet flow in the app, not two. */}
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full"
+              leftIcon={<Wallet className="w-4 h-4" aria-hidden />}
+              onClick={() => window.dispatchEvent(new Event('csgn:openLogin'))}
+            >
+              Sign in with Phantom
+            </Button>
+
+            <div className="flex items-center gap-3 py-4">
+              <span className="h-px flex-1 bg-white/10" />
+              <span className="text-[11px] uppercase tracking-widest text-gray-500">or use email</span>
+              <span className="h-px flex-1 bg-white/10" />
+            </div>
 
             <form onSubmit={handleEmailSignIn} className="space-y-3">
               {signInError && (
@@ -243,9 +330,9 @@ Use your email/username and password to access your account.
                   <AlertTriangle className="w-4 h-4 shrink-0" /> {signInError}
                 </div>
               )}
-              <div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="text" value={signInIdentifier} onChange={(e) => setSignInIdentifier(e.target.value)} className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Email" required disabled={signInLoading} /></div>
-              <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="password" value={signInPassword} onChange={(e) => setSignInPassword(e.target.value)} className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Password" required minLength={6} disabled={signInLoading} /></div>
-              <Button variant="primary" size="md" className="w-full" isLoading={signInLoading}>Sign In</Button>
+              <div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="text" value={signInIdentifier} onChange={(e) => setSignInIdentifier(e.target.value)} className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Email" required disabled={signInLoading} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></div>
+              <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="password" value={signInPassword} onChange={(e) => setSignInPassword(e.target.value)} className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Password" required minLength={6} disabled={signInLoading} autoComplete="current-password" /></div>
+              <Button variant="secondary" size="md" className="w-full" isLoading={signInLoading}>Sign in with email</Button>
             </form>
           </Card>
         </div>
@@ -254,6 +341,12 @@ Use your email/username and password to access your account.
   }
 
   const twitchLinked = Boolean(profile?.twitch?.verified)
+  // Wallet-only accounts (signupWithPhantom) have no email, so there is nothing
+  // to verify and nothing to nag about — the old unconditional check told them
+  // to go check an inbox they never gave us. Adding an address later turns the
+  // notice back on for exactly the accounts it applies to.
+  const accountEmail = profile?.email || user.email || ''
+  const needsEmailVerification = Boolean(accountEmail) && !user.emailVerified
   const savedWallet = profile?.phantom?.walletAddress || profile?.walletAddress
   const twitchDisplay = profile?.twitch?.displayName || profile?.twitch?.username || profile?.twitchUsername
   const displayName = profile?.displayName || profile?.username || 'CSGN Member'
@@ -277,11 +370,11 @@ Use your email/username and password to access your account.
             The two things that gate the product, in the app's ONE notice shape.
             Both carry their own action: a notice that tells you to do something
             without a way to do it is a complaint. */}
-        {(!user.emailVerified || !twitchLinked || linkMsg) && (
+        {(needsEmailVerification || !twitchLinked || linkMsg) && (
           <div className="space-y-3">
             {linkMsg && <Notice tone="success" compact>{linkMsg}</Notice>}
             {linkErr && <Notice tone="error" compact>{linkErr}</Notice>}
-            {!user.emailVerified && (
+            {needsEmailVerification && (
               <EmailNotice
                 action={
                   <Button variant="secondary" size="sm" isLoading={resending} onClick={handleResend}>
@@ -367,11 +460,27 @@ Use your email/username and password to access your account.
           <div className="border-t border-white/[0.06] px-5 sm:px-6 pt-4 pb-3 grid gap-2.5 sm:grid-cols-3">
             <Connection Icon={Twitch} label="Twitch" value={twitchDisplay} connected={twitchLinked} />
             <Connection Icon={Wallet} label="Wallet" value={savedWallet ? `${savedWallet.slice(0, 4)}…${savedWallet.slice(-4)}` : ''} connected={Boolean(savedWallet)} mono />
-            <Connection Icon={Mail} label="Email" value={profile?.email || user.email || ''} connected={Boolean(user.emailVerified)} />
+            <Connection Icon={Mail} label="Email" value={accountEmail} connected={Boolean(accountEmail) && Boolean(user.emailVerified)} />
           </div>
-          <p className="px-5 sm:px-6 pb-4 text-[11px] text-gray-600 leading-relaxed">
-            Only you can see your email address. It never appears on your public profile.
-          </p>
+          <div className="px-5 sm:px-6 pb-4 space-y-2">
+            <p className="text-[11px] text-gray-600 leading-relaxed">
+              Only you can see your email address. It never appears on your public profile.
+            </p>
+            {/* A wallet account has no way back in if the seed phrase is lost —
+                nobody can reset that for you. Offered, not demanded: the account
+                works completely without it. */}
+            {!accountEmail && (
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-[11px] text-gray-500 leading-relaxed flex-1 min-w-[16rem]">
+                  You signed up with your wallet, so there's no email on this account. Add one and you
+                  can get back in without your seed phrase.
+                </p>
+                <Button variant="secondary" size="sm" onClick={() => { setAddEmailOpen(true); setAddEmailError('') }}>
+                  Add email
+                </Button>
+              </div>
+            )}
+          </div>
         </section>
 
         {/* ── Games + holdings ──
@@ -557,6 +666,52 @@ Use your email/username and password to access your account.
         {/* Discovery — who else is here, and who can actually go live. */}
         <RecommendedProfiles excludeUsername={profile?.username} />
       </div>
+      {addEmailOpen && (
+        <Modal open onClose={() => setAddEmailOpen(false)} title="Add an email and password">
+          <form onSubmit={handleAddEmail} className="space-y-3 mt-2">
+            <p className="text-xs text-gray-400 leading-relaxed">
+              This is a way back into your account that doesn't depend on your seed phrase. Your
+              wallet keeps working as a sign-in exactly as it does now — nothing is replaced.
+            </p>
+            {addEmailError && <Notice tone="error" compact>{addEmailError}</Notice>}
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              <input
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                placeholder="you@example.com"
+                required
+                disabled={addingEmail}
+                autoComplete="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+            </div>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              <input
+                type="password"
+                value={newEmailPassword}
+                onChange={(e) => setNewEmailPassword(e.target.value)}
+                className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                placeholder="Choose a password"
+                required
+                minLength={6}
+                disabled={addingEmail}
+                autoComplete="new-password"
+              />
+            </div>
+            <Button variant="primary" size="md" className="w-full" isLoading={addingEmail}>Add email</Button>
+            <p className="text-[11px] text-gray-600 leading-relaxed">
+              We'll send a verification link. Only you can see this address — it never appears on
+              your public profile.
+            </p>
+          </form>
+        </Modal>
+      )}
       {slotInfo && (
         <Modal open onClose={() => setSlotInfo(null)} title="Fee Calculation">
           <div>

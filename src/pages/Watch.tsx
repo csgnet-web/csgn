@@ -147,7 +147,7 @@ export default function Watch() {
         {showSignupNotice && (
           <div className="shrink-0 px-4 sm:px-5 pt-3">
             <div className="max-w-[1280px] mx-auto rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
-              Account created. Verified Twitch and Phantom are ready for slot claims.
+              Account created. Connect Twitch when you're ready to claim an hour and go on air.
             </div>
           </div>
         )}

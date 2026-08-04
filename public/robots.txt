@@ -1,0 +1,21 @@
+# CSGN — https://csgn.fun
+#
+# The public surface is indexable. The three exclusions below are not secrets
+# (they all enforce their own auth); they're pages that would be junk in a
+# search result and, in /player's case, actively confusing:
+#
+#   /player   the OBS browser source — a chrome-free 1920x1080 encoder surface
+#             with no navigation. Indexing it puts a page with no way back into
+#             the site at the top of a brand search.
+#   /admin    operator tooling.
+#   /account  every visitor's own signed-in page; there is nothing there to
+#             crawl and nothing that renders without a session.
+
+User-agent: *
+Allow: /
+Disallow: /player
+Disallow: /admin
+Disallow: /account
+Disallow: /auth/
+
+Sitemap: https://csgn.fun/sitemap.xml

@@ -54,7 +54,15 @@ export const handler = withHttp(async (event) => {
   const transaction = await beginTransaction()
   const user = await getDoc<UserDoc>(`users/${authUser.uid}`, transaction)
   const isAdmin = user?.role === 'admin'
-  if (!isAdmin && authUser.email_verified !== true) throw forbidden('Email verification required before claiming slots')
+  // Email verification is required only of accounts that HAVE an email. A
+  // wallet-only account (signupWithPhantom) never gave one, and gating it on a
+  // verification it can never complete would make the account unusable. The
+  // checks that actually matter are below and unchanged: a verified wallet to be
+  // paid into, and a verified Twitch channel to put on air.
+  // Mirrored by claimEligibility() in src/lib/slotModel.ts — change both.
+  if (!isAdmin && authUser.email && authUser.email_verified !== true) {
+    throw forbidden('Email verification required before claiming slots')
+  }
   if (!user || (user.status !== 'active' && !isAdmin)) throw forbidden('Active CSGN account required')
 
   const twitchUsername = cleanTwitchUsername(

@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { getDoc, writeDoc } from './_shared/firebaseAdmin'
 import { createProofToken } from './_shared/proofTokens'
 import { redirect, requireMethod, withHttp, type HandlerResponse } from './_shared/http'
+import { checkRateLimit, clientIp } from './_shared/rateLimit'
 
 type StateDoc = { used?: boolean; expiresAt?: string; provider?: string }
 type TwitchToken = { access_token: string }
@@ -11,12 +12,28 @@ function frontendOrigin(): string {
   return (process.env.CSGN_ALLOWED_ORIGIN || '').replace(/\/+$/, '')
 }
 
+/**
+ * Every outcome — success and failure alike — lands on the same in-app page.
+ *
+ * This used to send failures straight to `/?auth=register`, which put the
+ * server in charge of a destination only the browser knows: the user's own
+ * session records where they left from and whether they were signing up or
+ * linking Twitch to an account they already have. Bouncing everything through
+ * one landing route lets the client make that decision with the context it
+ * actually has, and means an error no longer strands a member on the home page
+ * being asked to join twice.
+ */
 function redirectError(code: string): HandlerResponse {
-  return redirect(`${frontendOrigin()}/?auth=register&twitchError=${code}`)
+  return redirect(`${frontendOrigin()}/auth/twitch/complete?twitchError=${code}`)
 }
 
 export const handler = withHttp(async (event) => {
   requireMethod(event, 'GET')
+  // The single-use OAuth state makes this self-limiting for real flows, but a
+  // bogus state still costs a Firestore read before it can be rejected, and
+  // nothing else here is authenticated. 20/min is far above any human returning
+  // from Twitch and far below a useful read-amplification attack.
+  await checkRateLimit(clientIp(event), 'twitchOAuthCallback', 20)
   try {
     const params = event.queryStringParameters || {}
     // User denied authorization or Twitch returned an error.

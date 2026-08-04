@@ -4,6 +4,8 @@ import {
   signInWithEmailAndPassword,
   signInWithCustomToken,
   createUserWithEmailAndPassword,
+  linkWithCredential,
+  EmailAuthProvider,
   signOut as firebaseSignOut,
   sendEmailVerification,
   type User,
@@ -95,6 +97,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  /**
+   * Wallet-only sign-up. The server mints the account documents and hands back
+   * a custom token; exchanging it here is what creates the Firebase Auth user,
+   * so there is no window where an auth user exists without a profile — the
+   * failure mode the email path has to guard against with `createdUid`.
+   */
+  const signUpWithPhantom = async (username: string, proofs: { phantomProofToken: string; twitchProofToken?: string }) => {
+    void logAuthEvent('signup-phantom-start')
+    try {
+      const { customToken } = await api.signupWithPhantom({ username, ...proofs })
+      const { user } = await signInWithCustomToken(auth, customToken)
+      await fetchProfile(user.uid)
+      void logAuthEvent('signup-phantom-success', { uid: user.uid })
+    } catch (err) {
+      void logAuthEvent('signup-phantom-failure', { errorMessage: err instanceof Error ? err.message : String(err) })
+      throw err
+    }
+  }
+
+  /**
+   * Add an email + password to an account that was created from a wallet.
+   *
+   * The recovery path wallet-only sign-up owes its members: a seed phrase is the
+   * one credential nobody can reset for you, so an account with nothing else on
+   * it is one lost phrase away from gone. Firebase does the actual linking (only
+   * it can attach a password to an existing user, and only it can enforce one
+   * address per auth user); the server call afterwards records the address on
+   * the profile and takes the uniqueness lock.
+   *
+   * Order matters: link first, then refresh the ID token so it CARRIES the new
+   * email, then call the server — which reads the address off that verified
+   * token rather than trusting anything we send.
+   */
+  const addEmailPassword = async (email: string, password: string) => {
+    const current = auth.currentUser
+    if (!current) throw new Error('Please sign in first.')
+    await linkWithCredential(current, EmailAuthProvider.credential(email, password))
+    await current.getIdToken(true)
+    await api.linkEmail()
+    try { await sendEmailVerification(current) } catch (err) { console.warn('Failed to send email verification:', err) }
+    await current.reload()
+    setUser(auth.currentUser)
+    await fetchProfile(current.uid)
+  }
+
   const signOut = async () => {
     await firebaseSignOut(auth)
     setProfile(null)
@@ -108,5 +155,5 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user && !user.emailVerified) await sendEmailVerification(user)
   }
 
-  return <AuthContext.Provider value={{ user, profile, loading, signIn, signInWithPhantom, signUp, signOut, refreshProfile, resendVerification }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user, profile, loading, signIn, signInWithPhantom, signUp, signUpWithPhantom, addEmailPassword, signOut, refreshProfile, resendVerification }}>{children}</AuthContext.Provider>
 }

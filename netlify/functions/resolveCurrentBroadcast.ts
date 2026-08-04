@@ -1,5 +1,6 @@
 import { getDoc, queryCollection, fieldFilter, order, writeDoc } from './_shared/firebaseAdmin'
 import { json, requireMethod, withHttp } from './_shared/http'
+import { checkRateLimit, clientIp } from './_shared/rateLimit'
 
 type Override = { enabled?: boolean; streamUrl?: string; reason?: string }
 
@@ -29,5 +30,10 @@ export async function resolveBroadcast() {
 
 export const handler = withHttp(async (event) => {
   requireMethod(event, 'POST')
+  // Unauthenticated by design — /player and the admin panel both nudge it — but
+  // every call costs a slots query plus a document write, so it needs a ceiling.
+  // The internal callers (claimSlot, the admin force-resolve) invoke
+  // `resolveBroadcast()` directly and never touch this limit.
+  await checkRateLimit(clientIp(event), 'resolveCurrentBroadcast', 10)
   return json(200, { currentBroadcast: await resolveBroadcast() })
 })

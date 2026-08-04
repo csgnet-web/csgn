@@ -27,7 +27,7 @@ import { CreatorFeesTab } from '@/components/admin/CreatorFeesTab'
 import { VoteHistoryTab } from '@/components/admin/VoteHistoryTab'
 import { isVoteOpen, type VoteRecord } from '@/lib/votes'
 import { PUMP_FUN_FEE_TIERS, estimateCreatorFeeSOL, formatTierRange, resolvePumpFeeTier } from '@/lib/dexscreener'
-import { parseXPostId, isBroadcastUrl } from '@/lib/xembed'
+import { parseXPostId, parseXBroadcastId, isBroadcastUrl } from '@/lib/xembed'
 import {
   appendNextThreeDays,
   wipeAndRegenerateSlots,
@@ -85,8 +85,36 @@ function assignSourceFromUrl(url?: string): { platform: 'twitch' | 'kick' | 'you
   const detected = url ? detectStream(url) : null
   if (detected?.type === 'kick') return { platform: 'kick', value: detected.id }
   if (detected?.type === 'youtube') return { platform: 'youtube', value: url ?? '' }
+  // An X source is no longer bookable, but an existing one must still open in a
+  // form the operator can SEE and fix. It reuses the free-text URL field (the
+  // 'youtube' tab), which keeps the link editable and renders the warning that
+  // tells them to swap it for the streamer's original feed.
+  if (detected?.type === 'x_broadcast' || detected?.type === 'x_post') return { platform: 'youtube', value: url ?? '' }
   if (detected?.type === 'twitch') return { platform: 'twitch', value: detected.id }
   return { platform: 'twitch', value: twitchHandleFromUrl(url) }
+}
+
+/**
+ * Warns the operator, at the moment they paste it, that an X link is not a
+ * carriable source — before it becomes a silent hour on the air.
+ *
+ * The network deliberately does not carry video from X: the broadcast permalink
+ * can't be embedded at all, and the post embed that CAN be rendered starts muted
+ * with no unmute API for the parent page, so sound would depend on a human
+ * remembering an OBS Interact click every session. Take the streamer's original
+ * Twitch / Kick / YouTube feed instead — that's the one /player carries with
+ * audio. See components/player/XStage.tsx.
+ */
+function XSourceHint({ url }: { url: string }) {
+  const trimmed = url.trim()
+  if (!trimmed || !(parseXPostId(trimmed) || parseXBroadcastId(trimmed))) return null
+  return (
+    <p className="mt-1.5 text-[11px] text-amber-300 leading-relaxed">
+      That's an X link, and the network can't carry video from X — /player will bill the hour on the
+      branded "Live on X" card with no feed. Use the streamer's original Twitch, Kick or YouTube
+      channel instead; that plays with audio.
+    </p>
+  )
 }
 
 interface UserData {
@@ -1724,7 +1752,12 @@ export default function Admin() {
                   <div>
                     <label className="block text-sm text-gray-300 mb-1.5">Stream source</label>
                     {/* Platform picker — Twitch drives /player's live-detection pipeline;
-                        Kick + YouTube are forwarded as an override iframe. */}
+                        Kick + YouTube are forwarded as an override iframe. X is
+                        deliberately NOT offered: nothing on X can be carried with
+                        audio, so booking one would only ever produce a silent
+                        hour (components/player/XStage.tsx). An X URL that reaches
+                        a slot some other way is still recognised and warned about
+                        below, rather than silently falling to the board. */}
                     <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-white/[0.03] border border-white/10 mb-2">
                       {([
                         { id: 'twitch', label: 'Twitch' },
@@ -1779,6 +1812,7 @@ export default function Admin() {
                         ? 'Paste the full watch / live link — /player forwards it as an override.'
                         : `Just the username — we build the ${assignPlatform === 'kick' ? 'Kick' : 'Twitch'} link.`}
                     </p>
+                    <XSourceHint url={assignTwitch} />
                   </div>
 
                   <div>
@@ -1816,7 +1850,7 @@ export default function Admin() {
                   <div className="space-y-4">
                     <div>
                       <p className="text-sm text-gray-400 mb-1">Slot: {streamOverrideModal.label}</p>
-                      <p className="text-xs text-gray-500">This URL will be auto-loaded when this slot goes live. Twitch, Kick and YouTube links are all supported.</p>
+                      <p className="text-xs text-gray-500">This URL will be auto-loaded when this slot goes live. Twitch, Kick and YouTube are carried with audio; X links are not (the network can't unmute an X embed).</p>
                     </div>
                     <div>
                       <label className="block text-sm text-gray-300 mb-1.5">Stream URL</label>
@@ -1831,6 +1865,7 @@ export default function Admin() {
                         autoCorrect="off"
                         spellCheck={false}
                       />
+                      <XSourceHint url={overrideUrl} />
                     </div>
                     <Button variant="primary" size="lg" className="w-full" onClick={handleStreamOverride}>
                       Save URL

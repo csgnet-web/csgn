@@ -68,6 +68,18 @@ describe('masterControl reducer', () => {
     expect(s).toEqual({ mode: 'OVERRIDE', url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' })
   })
 
+  // An X-forwarded hour used to land in channel-less INTERMISSION — the URL
+  // parsed as nothing, so a booked streamer simply never appeared on the encode.
+  it('a slot streaming on X → OVERRIDE, not intermission', () => {
+    const broadcastUrl = 'https://x.com/i/broadcasts/1DGleeyqVQmAB'
+    expect(reduce(INITIAL_STATE, { type: 'BROADCAST_CHANGED', broadcast: { streamUrl: broadcastUrl, source: 'slot' }, nowMs: T0 }))
+      .toEqual({ mode: 'OVERRIDE', url: broadcastUrl })
+
+    const postUrl = 'https://x.com/CSGNet/status/1234567890123456789'
+    expect(reduce(INITIAL_STATE, { type: 'BROADCAST_CHANGED', broadcast: { streamUrl: postUrl, source: 'slot' }, nowMs: T0 }))
+      .toEqual({ mode: 'OVERRIDE', url: postUrl })
+  })
+
   it('ONLINE from STARTING_SOON or INTERMISSION-with-channel → LIVE', () => {
     const starting = reduce(INITIAL_STATE, slotBroadcast())
     expect(reduce(starting, { type: 'PLAYER_ONLINE' })).toEqual({ mode: 'LIVE', channel: 'streamer_one' })

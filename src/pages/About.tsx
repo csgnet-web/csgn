@@ -86,16 +86,15 @@ export default function About() {
             Open blocks run from 3 AM to 7 PM ET. From 7 PM to 3 AM we run our own programming —
             CSGN Originals — so those hours aren't claimable.
           </p>
-          <p>You need three things, and only the first two take any effort:</p>
-          <div className="grid gap-2.5 sm:grid-cols-3">
+          <p>You need two things:</p>
+          <div className="grid gap-2.5 sm:grid-cols-2">
             <Term label="A wallet">
-              Connect Phantom. It's how you sign in and where your share of the fees goes.
-            </Term>
-            <Term label="A verified email">
-              We send a link, you click it. This is what stops one person claiming the whole week.
+              Connect Phantom. It's how you sign in — signing a message is the whole account, no
+              email and no password — and it's where your share of the fees goes.
             </Term>
             <Term label="A Twitch channel">
-              You stream to your own channel as normal. We put it on the network.
+              You stream to your own channel as normal. We put it on the network. This is also what
+              stops one person claiming the whole week.
             </Term>
           </div>
           <p>
@@ -194,8 +193,9 @@ export default function About() {
             Other members can find you at{' '}
             <span className="font-mono text-gray-300">csgn.fun/u/yourname</span>. That page shows
             your name, your Twitch, your slots and your winnings.{' '}
-            <strong className="text-white">It does not show your email address.</strong> Your email
-            is visible to you and nobody else — it isn't in any response another member can reach.
+            <strong className="text-white">It does not show your wallet address, and it does not
+            show an email if you gave one.</strong> Both are visible to you and nobody else — neither
+            is in any response another member can reach.
           </p>
         </Section>
 

@@ -17,8 +17,12 @@ export interface UserNotification {
 
 export interface UserProfile {
   uid: string
+  /** Empty string on a wallet-only account until the member adds an address. */
   email: string
   emailLower?: string
+  /** How the account was created. 'phantom' accounts have no password to reset,
+   *  and nothing should nag them to verify an email they never gave. */
+  authMethod?: 'email' | 'phantom'
   authEmail?: string
   displayName?: string
   username: string
@@ -50,6 +54,11 @@ export interface AuthContextType {
   /** Wallet login — exchanges a verified Phantom proof for a Firebase session. */
   signInWithPhantom: (phantomProofToken: string) => Promise<void>
   signUp: (email: string, password: string, username: string, proofs: { phantomProofToken: string; twitchProofToken?: string }) => Promise<void>
+  /** Wallet-only sign-up — no email, no password. See
+   *  netlify/functions/signupWithPhantom.ts for why the wallet alone is enough. */
+  signUpWithPhantom: (username: string, proofs: { phantomProofToken: string; twitchProofToken?: string }) => Promise<void>
+  /** Attach an email + password to a wallet-only account — the recovery path. */
+  addEmailPassword: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
   resendVerification: () => Promise<void>

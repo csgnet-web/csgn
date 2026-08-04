@@ -476,6 +476,36 @@ Everything else — streamer drops, slot handoffs, empty slots, intermission pro
 automatic. Fill the **Intermission VOD Playlist** in Admin with MP4 URLs whenever promo content
 is ready; `/player` rotates them with the animated board, no restart needed.
 
+## 4b. Hours that stream on X
+
+**The network does not carry video from X. Take the streamer's original feed
+instead** — their Twitch, Kick or YouTube channel — which `/player` carries with
+audio, live detection and the full reveal pipeline behind it.
+
+That isn't a limitation we haven't got to yet; it's a decision, and it's worth
+knowing why so nobody re-litigates it mid-season. X hands out two links for a
+broadcast and both fail:
+
+| Link | Why it can't go on air |
+|---|---|
+| `x.com/i/broadcasts/{id}` — the permalink X's own "copy link" gives a streamer | Can't be embedded at all. widgets.js takes a numeric post ID, and X serves the page with `frame-ancestors 'self'`, so an iframe is refused outright |
+| `x.com/{handle}/status/{id}` — the post carrying the broadcast | *Can* be rendered with a working player — but an X embed starts **muted** and exposes no unmute API to the parent page. The only way to get sound onto the encode is a manual OBS **Interact** click, once per session, by a human who remembered |
+
+A 24/7 network that goes silent whenever nobody is watching the operator console
+is worse than one that doesn't try, so the embed isn't shipped.
+
+**What happens if an X link reaches a slot anyway** (a legacy slot, a
+hand-edited stream URL, an emergency override): `/player` shows a branded
+**"Live on X"** card that bills the streamer and the hour and names where the
+stream is. No dead frame, and no silent hour pretending to be a broadcast. It
+also beats what used to happen — an unrecognised URL fell through to the
+intermission board and a booked streamer simply never appeared.
+
+The Admin assign modal and the per-slot **Stream URL** override both warn on an
+X link the moment it's pasted. X is not offered as a bookable stream source.
+
+Rehearse the card with `/player?preview=x`.
+
 ## 5. 24/7 reliability checklist (Windows)
 
 - OBS → Settings → Advanced → ✅ **Automatically Reconnect** — Retry Delay `2s`, Max Retries `25`.
@@ -513,10 +543,11 @@ workflow and gain OS-notification risk — treat it as a temporary fallback only
 | **Video stuck unplayed after a slot change** | Fixed in-app: same root cause and fix as the row above — the old retune path (`setChannel` + `getChannel` verification) could wedge playback in a restart loop on a slot handoff. Channel changes now rebuild the embed deterministically; nothing retunes a running player |
 | Brand wipe stutters or plays twice in a row | Fixed in-app: the wipe is now one continuous sweep (in left → out right), and it only plays when leaving a state `/player` actually settled in for ≥5s — boot-time state shuffling and brief event races no longer fire it |
 | `/watch` embed not showing | Broadcast post URL not pushed in Admin, or it's a raw `/i/broadcasts/` link (not embeddable — paste the *post* URL) |
+| **An hour shows the branded "Live on X" card instead of video** | Working as designed — the slot's stream URL is an X link, and nothing on X can be carried with audio (§4b). Put the streamer's original Twitch / Kick / YouTube channel on the slot instead. `?debug=1` shows which shape is armed on the `channel` row (`x_broadcast:…` / `x_post:…`) |
 
 **State previews:** open `/player?preview=board`, `?preview=brb`, `?preview=starting`,
-`?preview=wipe`, or `?preview=countdown` (the "Going Live Now" bumper) to check each
-look inside OBS without touching live state. Add `?debug=1` to any `/player` URL for
+`?preview=wipe`, `?preview=countdown` (the "Going Live Now" bumper), or `?preview=x`
+(the "Live on X" card) to check each look inside OBS without touching live state. Add `?debug=1` to any `/player` URL for
 the live diagnostic panel (env, mode, channel, reveal mode, playback/gate state, audio
 state, event log), and `?peek=1` to see the raw Twitch startup through a translucent
 shield (proves whether a preroll actually plays — diagnostic only, never on a live source). To rehearse against a specific

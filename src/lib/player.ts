@@ -3,7 +3,15 @@
  * Extracted here so logic can be unit-tested independently of React.
  */
 
-export type StreamType = 'twitch' | 'youtube' | 'kick'
+import { parseXBroadcastId, parseXPostId } from '@/lib/xembed'
+
+/**
+ * `x_broadcast` and `x_post` are the two ways an X stream reaches us: the
+ * broadcast permalink a streamer copies (x.com/i/broadcasts/…) and the post
+ * that carries the same broadcast (x.com/{user}/status/…). They stay distinct
+ * types because only the second one can be embedded — see XStage.
+ */
+export type StreamType = 'twitch' | 'youtube' | 'kick' | 'x_broadcast' | 'x_post'
 export interface DetectedStream { type: StreamType; id: string }
 
 // ── URL parsers ──────────────────────────────────────────────────────────────
@@ -72,6 +80,14 @@ export function parseYouTubeId(url: string): string | null {
 }
 
 export function detectStream(url: string): DetectedStream | null {
+  // X is matched FIRST. A bare word like `1DGleeyqVQmAB` is still a valid Twitch
+  // channel and parseTwitchChannel would claim it, but the X parsers only accept
+  // a real x.com/twitter.com URL, so nothing bare is stolen from Twitch here —
+  // this ordering only guarantees a full X URL is never mis-read.
+  const broadcast = parseXBroadcastId(url)
+  if (broadcast) return { type: 'x_broadcast', id: broadcast }
+  const post = parseXPostId(url)
+  if (post) return { type: 'x_post', id: post }
   const ch = parseTwitchChannel(url)
   if (ch) return { type: 'twitch', id: ch }
   const yt = parseYouTubeId(url)
@@ -79,6 +95,11 @@ export function detectStream(url: string): DetectedStream | null {
   const kick = parseKickChannel(url)
   if (kick) return { type: 'kick', id: kick }
   return null
+}
+
+/** True for the two X stream shapes — the sources XStage knows how to forward. */
+export function isXStream(stream: DetectedStream | null): boolean {
+  return stream?.type === 'x_broadcast' || stream?.type === 'x_post'
 }
 
 // ── Embed src builders ───────────────────────────────────────────────────────

@@ -201,7 +201,9 @@ describe('claim eligibility — one rule, mirroring the server', () => {
     phantom: { verified: true, walletAddress: '5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1' },
     twitch: { verified: true, username: 'csgnet' },
   }
-  const verified = { emailVerified: true }
+  const verified = { email: 'member@example.com', emailVerified: true }
+  /** A wallet-only account: no email was ever given, so none can be verified. */
+  const walletOnly = { email: '', emailVerified: false }
 
   it('clears a fully set-up member', () => {
     expect(claimEligibility(verified, ready)).toEqual({ ok: true })
@@ -209,7 +211,7 @@ describe('claim eligibility — one rule, mirroring the server', () => {
 
   it('names ONE missing thing at a time, in the order the server checks them', () => {
     expect(claimEligibility(null, null).reason).toBe('signed_out')
-    expect(claimEligibility({ emailVerified: false }, ready).reason).toBe('email_unverified')
+    expect(claimEligibility({ email: 'member@example.com', emailVerified: false }, ready).reason).toBe('email_unverified')
     expect(claimEligibility(verified, { ...ready, phantom: undefined }).reason).toBe('no_wallet')
     expect(claimEligibility(verified, { ...ready, twitch: { verified: false } }).reason).toBe('no_twitch')
     expect(claimEligibility(verified, { ...ready, status: 'disabled' }).reason).toBe('inactive')
@@ -232,13 +234,26 @@ describe('claim eligibility — one rule, mirroring the server', () => {
       expect(r.actionLabel).toBeTruthy()
       expect(r.actionHref).toBe('/account')
     }
-    expect(claimEligibility({ emailVerified: false }, ready).actionLabel).toBeTruthy()
+    expect(claimEligibility({ email: 'member@example.com', emailVerified: false }, ready).actionLabel).toBeTruthy()
   })
 
   it('lets an admin through every gate, as the server does', () => {
     const admin = { role: 'admin', status: 'active' }
-    expect(claimEligibility({ emailVerified: false }, admin)).toEqual({ ok: true })
+    expect(claimEligibility({ email: 'member@example.com', emailVerified: false }, admin)).toEqual({ ok: true })
     expect(claimEligibility(verified, admin)).toEqual({ ok: true })
+  })
+
+  // The email gate applies to accounts that HAVE an email. A wallet-only account
+  // never gave one, and gating it on a verification it can never complete would
+  // make the account permanently unable to claim. Mirrors claimSlot.ts.
+  it('does not demand email verification from a wallet-only account', () => {
+    expect(claimEligibility(walletOnly, ready)).toEqual({ ok: true })
+    expect(claimEligibility({}, ready)).toEqual({ ok: true })
+  })
+
+  it('still blocks a wallet-only account on the gates that DO apply', () => {
+    expect(claimEligibility(walletOnly, { ...ready, twitch: { verified: false } }).reason).toBe('no_twitch')
+    expect(claimEligibility(walletOnly, { ...ready, phantom: undefined }).reason).toBe('no_wallet')
   })
 
   it('treats a twitch record with no username as unlinked', () => {
