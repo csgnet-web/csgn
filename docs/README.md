@@ -48,6 +48,8 @@ Designs on the table, and the long-form thinking behind the product.
 | [`token-voting.md`](token-voting.md) | **Supply-weight voting + The 30-Minute Draft.** Vote weight as % of supply aged by hold time — no deposits, no locks, no burns — and the hourly draft where the audience programs the open blocks |
 | [`csgn-share.md`](csgn-share.md) | **A Nielsen ratings book for streaming.** Share over Rating, ET dayparts, the honest answer on US-only measurement, The Book and Sweeps |
 | [`master-plan.md`](master-plan.md) | The long-form original: who we are, the schedule model, the shows, the token audit, the 180-day plan |
+| [`growth-and-market-plan.md`](growth-and-market-plan.md) | Where the project stands, what the fee maths actually require for a given income, honest odds on market cap, and the six-month content and recruiting plan |
+| [`security-audit.md`](security-audit.md) | Full security / cost / correctness audit: what was found, what was fixed, and what was deliberately left alone with reasoning |
 
 ### Archive — superseded, kept for the reasoning
 
