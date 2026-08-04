@@ -2,12 +2,41 @@
 // Executes 4 DexScreener polls at 15-second intervals (t=0, 15s, 30s, 45s).
 // Writes live creatorFees to the active slot doc in Firestore.
 // Browser clients NEVER call DexScreener — they read from the single Firestore listener.
+//
+// ── Why this function guards itself ────────────────────────────────────────
+//
+// Netlify serves every function at /.netlify/functions/<name>, scheduled ones
+// included, so "it's a cron job" is not an access control. Anyone who knows the
+// path could invoke this, and each invocation is the single most expensive
+// thing in the codebase: it holds a container for ~45 seconds of wall clock
+// (which is what Netlify bills), makes four DexScreener calls, a Twitch Helix
+// call, and a run of slot-lifecycle, vote-settlement and meme-board writes to
+// Firestore. Being a *background* function makes it worse, not better — it
+// returns to the caller immediately and keeps working, so requests stack
+// concurrently instead of queueing.
+//
+// Two independent controls, because the first one is infrastructure and the
+// second one is code:
+//
+//  1. netlify.toml returns 404 for the public path. Public HTTP is served by
+//     the CDN; the scheduler invokes internally and never crosses it, so this
+//     blocks the outside world without touching the cron.
+//  2. The single-flight lock below. Even a caller who gets past (1) — an
+//     operator with the redirect removed, a future route change, a retry storm
+//     from the scheduler itself — cannot stack overlapping runs, because a run
+//     that starts within MIN_RUN_INTERVAL_MS of the last one exits immediately.
+//
+// The lock deliberately does NOT throw and is deliberately shorter than the
+// cron period: a guard that can reject the real scheduled run would be a
+// self-inflicted outage on the job that drives fees, slot lifecycle and token
+// stats. It skips, it never fails.
 
 import { queryCollection, countCollection, getDoc, writeDoc, commitWrites, createWrite, updateWrite, fieldFilter, order } from './_shared/firebaseAdmin'
 import { buildExpectedSlotsForDate, buildSlotDoc } from './_shared/schedule'
 import { deriveNowLive, deriveUpNext, type OnAirSlot } from './_shared/onAir'
 import { readLiveWeights, settleTally, type BallotRow } from './_shared/settleVotes'
 import { fetchJson } from './_shared/cache'
+import { getDoc as getLockDoc, writeDoc as writeLockDoc } from './_shared/firebaseAdmin'
 import {
   buildTokenStatsDoc,
   fetchDexData,
@@ -712,7 +741,54 @@ async function pollAndWrite(dexData: DexData, active: SlotRow | null, tick: numb
 // fetches DexScreener once; the first successful tick also refreshes
 // public/tokenStats (~1 write/min) so token stats flow 24/7 even when no slot
 // is live.
+/** Shortest gap between two real runs. Below the 60s cron period on purpose —
+ *  see the header: this must never be able to reject the scheduled run. */
+const MIN_RUN_INTERVAL_MS = 45_000
+const RUN_LOCK_PATH = 'config/feePollerRun'
+
+/**
+ * The lock decision, with the I/O taken out so every case is testable.
+ *
+ * Anything it cannot read as a real, in-the-past timestamp means "run": a
+ * missing lock is a first run, and a garbled or future-dated one is a bug in
+ * the lock rather than evidence a poll just happened. The failure that matters
+ * here is a poll that silently never happens, so every ambiguous input resolves
+ * toward running.
+ */
+export function shouldRunPoll(lastStartedAt: string | undefined, nowMs: number): boolean {
+  if (!lastStartedAt) return true
+  const last = new Date(lastStartedAt).getTime()
+  if (!Number.isFinite(last) || last <= 0) return true
+  const elapsed = nowMs - last
+  if (elapsed < 0) return true
+  return elapsed >= MIN_RUN_INTERVAL_MS
+}
+
+/**
+ * Single-flight guard. Returns false when a run started too recently, so the
+ * caller exits before doing any billable work.
+ *
+ * Best-effort by design: if the lock can't be read or written we run anyway.
+ * Skipping the poll because Firestore hiccuped would silently stall fee
+ * tracking, and a duplicate run is far cheaper than a missing one.
+ */
+async function claimRunSlot(): Promise<boolean> {
+  try {
+    const lock = await getLockDoc<{ startedAt?: string }>(RUN_LOCK_PATH)
+    if (!shouldRunPoll(lock?.startedAt, Date.now())) return false
+    await writeLockDoc(RUN_LOCK_PATH, { startedAt: new Date().toISOString() }, { merge: true })
+    return true
+  } catch (err) {
+    console.warn('feePoller run lock unavailable, running anyway:', err)
+    return true
+  }
+}
+
 export const handler = async () => {
+  if (!(await claimRunSlot())) {
+    return { statusCode: 200, body: JSON.stringify({ skipped: 'ran too recently' }) }
+  }
+
   // Keep the schedule seeded ~a week out so it never runs empty. Cheap check
   // every minute; real work only when the horizon actually shrinks (~daily).
   await topUpSchedule()

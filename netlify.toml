@@ -2,6 +2,24 @@
   command = "npm run build"
   publish = "dist"
 
+# The scheduled poller must not be reachable over public HTTP.
+#
+# Netlify serves every function at /.netlify/functions/<name>, scheduled ones
+# included, and this one holds a container for ~45s of billed wall clock per
+# call while hitting DexScreener, Twitch and Firestore. The scheduler invokes it
+# internally and never crosses the CDN, so returning 404 here closes it to the
+# outside world without affecting the cron. `force = true` is required or the
+# function route wins. The function also self-guards (see its header) — this is
+# the outer of two independent controls, not the only one.
+#
+# Verify after deploy: `curl -i https://csgn.fun/.netlify/functions/feePollerBackground`
+# must return 404, and the fee poller must keep updating public/tokenStats.
+[[redirects]]
+  from = "/.netlify/functions/feePollerBackground"
+  to = "/index.html"
+  status = 404
+  force = true
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

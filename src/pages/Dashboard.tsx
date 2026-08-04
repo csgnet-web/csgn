@@ -104,14 +104,6 @@ export default function Dashboard() {
   const totalLiveMinutes = useMemo(() => feeHistory.reduce((s, x) => s + (x.streamActivity?.liveCheckCount || 0), 0), [feeHistory])
 
 
-  // Finish a Twitch link started from this page. The OAuth round trip drops a
-  // proof in sessionStorage and returns the user HERE (see lib/authReturn.ts);
-  // we exchange it once and clear it, so a refresh can't replay a spent proof.
-  //
-  // The presence of the proof is the trigger. It used to also require a separate
-  // 'csgn:linkTwitchReturn' flag, which meant the two halves could disagree —
-  // and did: the callback always returned to the home page, so this effect never
-  // ran and the link silently never completed.
   const [searchParams, setSearchParams] = useSearchParams()
 
   // A Twitch round trip that FAILED comes back here too, carrying its reason.
@@ -132,6 +124,14 @@ export default function Dashboard() {
     setSearchParams(next, { replace: true })
   }, [searchParams, setSearchParams])
 
+  // Finish a Twitch link started from this page. The OAuth round trip drops a
+  // proof in sessionStorage and returns the user HERE (see lib/authReturn.ts);
+  // we exchange it once and clear it, so a refresh can't replay a spent proof.
+  //
+  // The presence of the proof is the trigger. It used to also require a separate
+  // 'csgn:linkTwitchReturn' flag, which meant the two halves could disagree —
+  // and did: the callback always returned to the home page, so this effect never
+  // ran and the link silently never completed.
   useEffect(() => {
     if (!user) return
     const proof = readTwitchProof()
@@ -300,8 +300,29 @@ export default function Dashboard() {
           <Card hover={false} className="p-6 border-red-500/25 bg-white/[0.03]">
             <h1 className="text-3xl font-display font-bold text-white mb-1">Sign in</h1>
             <p className="text-sm text-gray-400 mb-4">
-Use your email/username and password to access your account.
+              Your wallet is your sign-in — one signature, no password to remember.
             </p>
+
+            {/* Same hierarchy as the header modal: the wallet leads, because the
+                signature over a server nonce IS the credential and most members
+                have no password at all. Opens the shared AuthModal rather than
+                duplicating the challenge/sign/verify sequence, so there is one
+                implementation of the wallet flow in the app, not two. */}
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full"
+              leftIcon={<Wallet className="w-4 h-4" aria-hidden />}
+              onClick={() => window.dispatchEvent(new Event('csgn:openLogin'))}
+            >
+              Sign in with Phantom
+            </Button>
+
+            <div className="flex items-center gap-3 py-4">
+              <span className="h-px flex-1 bg-white/10" />
+              <span className="text-[11px] uppercase tracking-widest text-gray-500">or use email</span>
+              <span className="h-px flex-1 bg-white/10" />
+            </div>
 
             <form onSubmit={handleEmailSignIn} className="space-y-3">
               {signInError && (
@@ -311,7 +332,7 @@ Use your email/username and password to access your account.
               )}
               <div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="text" value={signInIdentifier} onChange={(e) => setSignInIdentifier(e.target.value)} className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Email" required disabled={signInLoading} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></div>
               <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="password" value={signInPassword} onChange={(e) => setSignInPassword(e.target.value)} className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50" placeholder="Password" required minLength={6} disabled={signInLoading} autoComplete="current-password" /></div>
-              <Button variant="primary" size="md" className="w-full" isLoading={signInLoading}>Sign In</Button>
+              <Button variant="secondary" size="md" className="w-full" isLoading={signInLoading}>Sign in with email</Button>
             </form>
           </Card>
         </div>

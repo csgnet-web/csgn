@@ -63,7 +63,28 @@ service cloud.firestore {
       allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
       allow list: if isAdmin();
       allow create: if isAdmin();
-      allow update: if isAdmin();
+
+      // A member may touch exactly ONE field of their own document —
+      // `notifications` — and nothing else, ever. Everything that decides what
+      // an account can do (role, status, phantom, twitch, slotLimits, username)
+      // stays server-only, so this cannot become a privilege-escalation path:
+      // the `hasOnly` check rejects the whole write if any other key changes.
+      //
+      // Without this, dismissing a notification or marking one read was denied
+      // by the rules and swallowed by the client's catch — the buttons simply
+      // did nothing for every non-admin member, silently, forever.
+      //
+      // The size cap is a cost guard, not a correctness one: the array lives on
+      // a doc the member can rewrite, so it needs a ceiling or it becomes free
+      // storage that every profile read then pays to transfer.
+      allow update: if isAdmin()
+        || (
+          isSignedIn()
+          && request.auth.uid == userId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notifications'])
+          && request.resource.data.notifications.size() <= 50
+        );
+
       allow delete: if isAdmin();
     }
 

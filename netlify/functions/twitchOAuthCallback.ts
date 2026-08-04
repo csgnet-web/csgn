@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { getDoc, writeDoc } from './_shared/firebaseAdmin'
 import { createProofToken } from './_shared/proofTokens'
 import { redirect, requireMethod, withHttp, type HandlerResponse } from './_shared/http'
+import { checkRateLimit, clientIp } from './_shared/rateLimit'
 
 type StateDoc = { used?: boolean; expiresAt?: string; provider?: string }
 type TwitchToken = { access_token: string }
@@ -28,6 +29,11 @@ function redirectError(code: string): HandlerResponse {
 
 export const handler = withHttp(async (event) => {
   requireMethod(event, 'GET')
+  // The single-use OAuth state makes this self-limiting for real flows, but a
+  // bogus state still costs a Firestore read before it can be rejected, and
+  // nothing else here is authenticated. 20/min is far above any human returning
+  // from Twitch and far below a useful read-amplification attack.
+  await checkRateLimit(clientIp(event), 'twitchOAuthCallback', 20)
   try {
     const params = event.queryStringParameters || {}
     // User denied authorization or Twitch returned an error.

@@ -243,6 +243,10 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
   // asking for a username is asking someone to fill in a field for an account
   // that may turn out to already exist.
   const walletReady = Boolean(phantomProofToken)
+  // The wallet button leads in both modes. It only steps aside on sign-in when
+  // the member has explicitly asked for the email form (sign-up always needs the
+  // wallet, so there it is never hidden).
+  const showWalletFirst = isRegister || !emailMode
   const inputClass = 'w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50'
 
   return (
@@ -260,20 +264,31 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                   ? emailMode
                     ? 'Email, password and a Phantom wallet. Twitch is optional — add it when you want to go on air.'
                     : 'Your wallet and a username. That is the whole sign-up.'
-                  : 'Sign in straight from your wallet, or with your email and password.'}
+                  : emailMode
+                    ? 'Sign in with the email and password on your account.'
+                    : 'Your wallet is your sign-in. One signature, no password to remember.'}
               </p>
             </div>
             <div className="px-6 sm:px-8 pb-8 sm:pb-10 space-y-4 overflow-y-auto max-h-[calc(100dvh-13rem)] overscroll-contain">
               <form onSubmit={handleSubmit} className="space-y-3">
                 {error && <Notice tone="error" compact>{error}</Notice>}
 
-                {/* ── Sign up: the wallet comes first and does the most work.
-                       Until it's proven there is nothing else worth asking. ── */}
-                {isRegister && (
+                {/* ── The wallet is the primary action in BOTH modes. ──
+                       Signing in, the Ed25519 signature over a single-use server
+                       nonce IS the credential — a returning holder has never
+                       needed the password, so burying this under an email field
+                       was asking most of our members for the weaker of the two
+                       keys they hold. Signing up, it does even more: it proves
+                       the wallet, and if that wallet already has an account it
+                       just signs them in.
+
+                       Email and password stay reachable one tap below, because a
+                       seed phrase is the one credential nobody can reset. ── */}
+                {showWalletFirst && (
                   <>
                     <button
                       type="button"
-                      onClick={connectPhantom}
+                      onClick={isRegister ? connectPhantom : loginWithPhantom}
                       disabled={loading || isConnecting || verifying === 'phantom'}
                       className={`w-full h-14 rounded-xl border text-base font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-60 ${
                         walletReady
@@ -281,14 +296,19 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                           : 'bg-[#ab9ff2] border-transparent text-black hover:bg-[#bcb0f5]'
                       }`}
                     >
-                      {walletReady ? <CheckCircle2 className="w-5 h-5" /> : <Wallet className="w-5 h-5" />}
-                      {walletReady ? 'Wallet verified' : verifying === 'phantom' ? 'Check Phantom…' : 'Continue with Phantom'}
+                      {walletReady ? <CheckCircle2 className="w-5 h-5" aria-hidden /> : <Wallet className="w-5 h-5" aria-hidden />}
+                      {walletReady
+                        ? 'Wallet verified'
+                        : verifying === 'phantom'
+                          ? 'Check Phantom…'
+                          : isRegister ? 'Continue with Phantom' : 'Sign in with Phantom'}
                     </button>
                     {verifiedWallet && <p className="text-xs text-emerald-300 truncate">{verifiedWallet}</p>}
                     {!walletReady && !needsPhantom && (
                       <p className="text-[11px] text-gray-500 leading-relaxed">
-                        You'll sign a one-line message to prove the wallet — no transaction, no fee, nothing approved.
-                        Already have an account on this wallet? This signs you in.
+                        {isRegister
+                          ? "You'll sign a one-line message to prove the wallet — no transaction, no fee, nothing approved. Already have an account on this wallet? This signs you in."
+                          : "You'll sign a one-line message to prove the wallet — no transaction, no fee, nothing approved."}
                       </p>
                     )}
                     {walletError && <Notice tone="error" compact>{walletError}</Notice>}
@@ -302,16 +322,18 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                         rel="noopener noreferrer"
                         className="flex items-center justify-center gap-2 h-11 rounded-xl bg-[#ab9ff2] text-black text-sm font-bold hover:bg-[#bcb0f5] transition-colors"
                       >
-                        <Wallet className="w-4 h-4" />
+                        <Wallet className="w-4 h-4" aria-hidden />
                         {isMobile ? 'Open in Phantom browser' : 'Install Phantom'}
                       </a>
                     )}
                   </>
                 )}
 
-                {/* Everything below is gated on a proven wallet during sign-up.
-                    Sign-in shows its email field unconditionally. */}
-                {(!isRegister || walletReady) && (
+                {/* Sign-up: gated on a proven wallet — asking for a username
+                    before that is asking someone to fill a field for an account
+                    that may already exist. Sign-in: gated on the member choosing
+                    the email route, so the default view is one button. */}
+                {(isRegister ? walletReady : emailMode) && (
                   <>
                     {isRegister && (
                       <>
@@ -389,9 +411,11 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                   </button>
                 )}
 
-                {/* Wallet login — the signature over a server nonce IS the
-                    credential, so a returning holder never needs the password. */}
-                {!isRegister && (
+                {/* Sign-in's secondary route. Every account made before wallet
+                    sign-up has a password, and some members will add one for
+                    recovery, so this can never go away — it just stops being the
+                    thing people see first. */}
+                {!isRegister && !emailMode && (
                   <>
                     <div className="flex items-center gap-3 py-1">
                       <span className="h-px flex-1 bg-white/10" />
@@ -400,14 +424,24 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
                     </div>
                     <button
                       type="button"
-                      onClick={loginWithPhantom}
-                      disabled={loading || isConnecting || verifying === 'phantom'}
-                      className="w-full h-12 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-60"
+                      onClick={() => { setError(''); setEmailMode(true) }}
+                      className="w-full h-12 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors"
                     >
-                      <Wallet className="w-4 h-4" />
-                      {verifying === 'phantom' ? 'Check Phantom…' : 'Sign in with Phantom'}
+                      <Mail className="w-4 h-4" aria-hidden />
+                      Sign in with email and password
                     </button>
                   </>
+                )}
+
+                {/* ...and the way back, so choosing email isn't a one-way door. */}
+                {!isRegister && emailMode && (
+                  <button
+                    type="button"
+                    onClick={() => { setError(''); setEmailMode(false) }}
+                    className="w-full text-xs text-gray-500 hover:text-gray-300 underline cursor-pointer pt-1"
+                  >
+                    Sign in with Phantom instead
+                  </button>
                 )}
                 <p className="text-sm text-center text-gray-500 mt-2">
                   {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
