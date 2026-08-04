@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
-import { detectStream, buildKickSrc, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
+import { detectStream, isXStream, buildKickSrc, buildYouTubeSrc, PLAYER_ALLOW } from '@/lib/player'
 import {
   reduce,
   serverLiveSignal,
@@ -22,6 +22,7 @@ import IntermissionBoard from '@/components/player/IntermissionBoard'
 import StatusCard from '@/components/player/StatusCard'
 import VodRotator, { type VodItem } from '@/components/player/VodRotator'
 import FeedCover from '@/components/player/FeedCover'
+import XStage from '@/components/player/XStage'
 import { formatESTRange, DEFAULT_STREAM_URL } from '@/lib/slots'
 
 interface EmergencyOverride { enabled?: boolean; streamUrl?: string }
@@ -112,7 +113,8 @@ const FAST_TIMING: RevealTiming = {
 /**
  * Build the iframe src for an OVERRIDE (non-Twitch) broadcast — a YouTube video
  * or a forwarded Kick channel. Twitch never reaches here: it's driven through the
- * embed live-detection pipeline, not a raw iframe.
+ * embed live-detection pipeline, not a raw iframe. X never reaches here either:
+ * neither X shape is playable from a raw iframe URL, so it goes to XStage.
  */
 function buildOverrideSrc(url: string): string | null {
   const stream = detectStream(url)
@@ -790,13 +792,19 @@ export default function Player() {
 
   const streamerName = currentSlot?.assignedName || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
-  const overrideSrc = state.mode === 'OVERRIDE' ? buildOverrideSrc(state.url) : null
+  // OVERRIDE splits three ways: an X source (its own stage — neither X shape is
+  // playable from a raw iframe URL), an iframe-able source (YouTube / Kick), or
+  // nothing we recognise, which holds the intermission board.
+  const overrideStream = state.mode === 'OVERRIDE' ? detectStream(state.url) : null
+  const overrideX = isXStream(overrideStream) ? overrideStream : null
+  const overrideSrc = state.mode === 'OVERRIDE' && !overrideX ? buildOverrideSrc(state.url) : null
 
-  // Operator preview: /player?preview=board|brb|starting|lastcall|wipe|countdown
+  // Operator preview: /player?preview=board|brb|starting|lastcall|wipe|countdown|x
   // forces a state so each look can be checked inside OBS before going live.
   // `countdown` renders the no-ads "Now Live" curtain with its live countdown
   // regardless of the ?noads flag; `lastcall` rehearses the STARTING_SOON
-  // last-call countdown that reverts an hour to open-to-claim.
+  // last-call countdown that reverts an hour to open-to-claim; `x` rehearses the
+  // stage an X-forwarded hour shows when only a broadcast permalink is known.
   const preview = useMemo(
     () => (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('preview') : null),
     [],
@@ -815,6 +823,16 @@ export default function Player() {
             streamerName={streamerName || 'Streamer'}
             slotLabel={slotLabel}
             countdownSeconds={FAST_COUNTDOWN_MS / 1_000}
+          />
+        )}
+        {/* The look an X-forwarded hour has when only the broadcast permalink is
+            known — the shape an operator most needs to check before air. */}
+        {preview === 'x' && (
+          <XStage
+            stream={{ type: 'x_broadcast', id: '1DGleeyqVQmAB' }}
+            url="https://x.com/i/broadcasts/1DGleeyqVQmAB"
+            streamerName={streamerName || 'Streamer'}
+            slotLabel={slotLabel}
           />
         )}
       </div>
@@ -850,7 +868,9 @@ export default function Player() {
       )}
 
       {state.mode === 'OVERRIDE' && (
-        overrideSrc ? (
+        overrideX ? (
+          <XStage stream={overrideX} url={state.url} streamerName={streamerName} slotLabel={slotLabel} />
+        ) : overrideSrc ? (
           <iframe
             key={overrideSrc}
             src={overrideSrc}
@@ -906,7 +926,7 @@ export default function Player() {
         <DebugOverlay
           obs={obs}
           mode={state.mode}
-          channel={channel}
+          channel={channel ?? (overrideX ? `${overrideX.type}:${overrideX.id}` : null)}
           reveal={`${noAds ? 'no-ads' : 'ad-mask'} · ${Math.round(timing.maskMs / 1000)}s mask · ${timing.countdownS}s count${peek ? ' · PEEK' : ''}`}
           playback={playbackOk ? (feedReady ? 'confirmed (revealed)' : 'confirmed (covered)') : 'not confirmed'}
           gate={gateInfo}

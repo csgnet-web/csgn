@@ -48,8 +48,14 @@ function Connection({
 }
 
 export default function Dashboard() {
-  const { user, profile, signIn, resendVerification, refreshProfile } = useAuth()
+  const { user, profile, signIn, resendVerification, refreshProfile, addEmailPassword } = useAuth()
   const [resending, setResending] = useState(false)
+  // Adding a recovery email to a wallet-only account.
+  const [addEmailOpen, setAddEmailOpen] = useState(false)
+  const [newEmail, setNewEmail] = useState('')
+  const [newEmailPassword, setNewEmailPassword] = useState('')
+  const [addingEmail, setAddingEmail] = useState(false)
+  const [addEmailError, setAddEmailError] = useState('')
   const [signInIdentifier, setSignInIdentifier] = useState('')
   const [signInPassword, setSignInPassword] = useState('')
   const [signInLoading, setSignInLoading] = useState(false)
@@ -155,6 +161,38 @@ export default function Dashboard() {
   }
 
   /**
+   * Attach an email + password to a wallet-only account.
+   *
+   * This is the recovery path, and it is the reason sign-up can leave email out
+   * without leaving members stranded: a seed phrase is the one credential nobody
+   * can reset for you, so an account with nothing else on it is one lost phrase
+   * away from gone. Everything here is additive — the wallet keeps working as a
+   * sign-in exactly as before.
+   */
+  const handleAddEmail = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setAddingEmail(true); setAddEmailError(''); setLinkMsg('')
+    try {
+      await addEmailPassword(newEmail.trim(), newEmailPassword)
+      setAddEmailOpen(false); setNewEmail(''); setNewEmailPassword('')
+      setLinkMsg('Email added — check your inbox for the verification link.')
+    } catch (err: unknown) {
+      const code = err instanceof Error && 'code' in err ? String((err as { code?: string }).code || '') : ''
+      if (code === 'auth/email-already-in-use' || code === 'auth/credential-already-in-use') {
+        setAddEmailError('That email is already on another CSGN account.')
+      } else if (code === 'auth/invalid-email') {
+        setAddEmailError('Please enter a valid email address.')
+      } else if (code === 'auth/weak-password') {
+        setAddEmailError('Pick a password of at least 6 characters.')
+      } else if (code === 'auth/requires-recent-login') {
+        setAddEmailError('For security, sign in again with your wallet and then add the email.')
+      } else {
+        setAddEmailError(err instanceof Error ? err.message : 'Could not add the email. Try again.')
+      }
+    } finally { setAddingEmail(false) }
+  }
+
+  /**
    * Start the Twitch link. Full-page redirect, never a popup: Twitch's login
    * page offers "Sign in with Apple", and Apple refuses OAuth inside popups and
    * embedded webviews. A redirect is the only flow that survives every entry
@@ -254,6 +292,12 @@ Use your email/username and password to access your account.
   }
 
   const twitchLinked = Boolean(profile?.twitch?.verified)
+  // Wallet-only accounts (signupWithPhantom) have no email, so there is nothing
+  // to verify and nothing to nag about — the old unconditional check told them
+  // to go check an inbox they never gave us. Adding an address later turns the
+  // notice back on for exactly the accounts it applies to.
+  const accountEmail = profile?.email || user.email || ''
+  const needsEmailVerification = Boolean(accountEmail) && !user.emailVerified
   const savedWallet = profile?.phantom?.walletAddress || profile?.walletAddress
   const twitchDisplay = profile?.twitch?.displayName || profile?.twitch?.username || profile?.twitchUsername
   const displayName = profile?.displayName || profile?.username || 'CSGN Member'
@@ -277,11 +321,11 @@ Use your email/username and password to access your account.
             The two things that gate the product, in the app's ONE notice shape.
             Both carry their own action: a notice that tells you to do something
             without a way to do it is a complaint. */}
-        {(!user.emailVerified || !twitchLinked || linkMsg) && (
+        {(needsEmailVerification || !twitchLinked || linkMsg) && (
           <div className="space-y-3">
             {linkMsg && <Notice tone="success" compact>{linkMsg}</Notice>}
             {linkErr && <Notice tone="error" compact>{linkErr}</Notice>}
-            {!user.emailVerified && (
+            {needsEmailVerification && (
               <EmailNotice
                 action={
                   <Button variant="secondary" size="sm" isLoading={resending} onClick={handleResend}>
@@ -367,11 +411,27 @@ Use your email/username and password to access your account.
           <div className="border-t border-white/[0.06] px-5 sm:px-6 pt-4 pb-3 grid gap-2.5 sm:grid-cols-3">
             <Connection Icon={Twitch} label="Twitch" value={twitchDisplay} connected={twitchLinked} />
             <Connection Icon={Wallet} label="Wallet" value={savedWallet ? `${savedWallet.slice(0, 4)}…${savedWallet.slice(-4)}` : ''} connected={Boolean(savedWallet)} mono />
-            <Connection Icon={Mail} label="Email" value={profile?.email || user.email || ''} connected={Boolean(user.emailVerified)} />
+            <Connection Icon={Mail} label="Email" value={accountEmail} connected={Boolean(accountEmail) && Boolean(user.emailVerified)} />
           </div>
-          <p className="px-5 sm:px-6 pb-4 text-[11px] text-gray-600 leading-relaxed">
-            Only you can see your email address. It never appears on your public profile.
-          </p>
+          <div className="px-5 sm:px-6 pb-4 space-y-2">
+            <p className="text-[11px] text-gray-600 leading-relaxed">
+              Only you can see your email address. It never appears on your public profile.
+            </p>
+            {/* A wallet account has no way back in if the seed phrase is lost —
+                nobody can reset that for you. Offered, not demanded: the account
+                works completely without it. */}
+            {!accountEmail && (
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-[11px] text-gray-500 leading-relaxed flex-1 min-w-[16rem]">
+                  You signed up with your wallet, so there's no email on this account. Add one and you
+                  can get back in without your seed phrase.
+                </p>
+                <Button variant="secondary" size="sm" onClick={() => { setAddEmailOpen(true); setAddEmailError('') }}>
+                  Add email
+                </Button>
+              </div>
+            )}
+          </div>
         </section>
 
         {/* ── Games + holdings ──
@@ -557,6 +617,47 @@ Use your email/username and password to access your account.
         {/* Discovery — who else is here, and who can actually go live. */}
         <RecommendedProfiles excludeUsername={profile?.username} />
       </div>
+      {addEmailOpen && (
+        <Modal open onClose={() => setAddEmailOpen(false)} title="Add an email and password">
+          <form onSubmit={handleAddEmail} className="space-y-3 mt-2">
+            <p className="text-xs text-gray-400 leading-relaxed">
+              This is a way back into your account that doesn't depend on your seed phrase. Your
+              wallet keeps working as a sign-in exactly as it does now — nothing is replaced.
+            </p>
+            {addEmailError && <Notice tone="error" compact>{addEmailError}</Notice>}
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              <input
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                placeholder="you@example.com"
+                required
+                disabled={addingEmail}
+              />
+            </div>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              <input
+                type="password"
+                value={newEmailPassword}
+                onChange={(e) => setNewEmailPassword(e.target.value)}
+                className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+                placeholder="Choose a password"
+                required
+                minLength={6}
+                disabled={addingEmail}
+              />
+            </div>
+            <Button variant="primary" size="md" className="w-full" isLoading={addingEmail}>Add email</Button>
+            <p className="text-[11px] text-gray-600 leading-relaxed">
+              We'll send a verification link. Only you can see this address — it never appears on
+              your public profile.
+            </p>
+          </form>
+        </Modal>
+      )}
       {slotInfo && (
         <Modal open onClose={() => setSlotInfo(null)} title="Fee Calculation">
           <div>

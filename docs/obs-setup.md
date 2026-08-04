@@ -476,6 +476,44 @@ Everything else — streamer drops, slot handoffs, empty slots, intermission pro
 automatic. Fill the **Intermission VOD Playlist** in Admin with MP4 URLs whenever promo content
 is ready; `/player` rotates them with the animated board, no restart needed.
 
+## 4b. Forwarding an hour that streams on X
+
+Most hours are Twitch, which `/player` drives through its live-detection
+pipeline. Kick and YouTube are forwarded as override iframes. **X is different,
+and the difference is worth understanding before you book one**, because X hands
+out two links for the same broadcast and only one of them can be played inside
+another page:
+
+| Link you paste | What `/player` does |
+|---|---|
+| `https://x.com/{handle}/status/{id}` — the **post** carrying the broadcast | Embeds it with widgets.js and scales it to fill the canvas. **Real video on the encode.** |
+| `https://x.com/i/broadcasts/{id}` — the **broadcast permalink** | Bills the hour on the branded **"Live on X"** stage, naming the streamer, the slot window and where the stream is. No video. |
+
+The permalink is what X's own "copy link" gives a streamer, so it's what you'll
+usually be handed first — it is accepted rather than ignored (before this, an X
+URL parsed as nothing and the hour silently fell back to the intermission
+board), but **to actually carry the feed, open that broadcast's post on X and
+paste the post URL instead**. The Admin assign modal tells you which of the two
+you've pasted the moment you paste it.
+
+There is deliberately no iframe attempt on the permalink. X serves those pages
+with `frame-ancestors 'self'`, and a frame refused for framing still fires
+`load` in Chromium with an origin-opaque error page — indistinguishable from a
+successful cross-origin load. Guessing wrong would put a white "refused to
+connect" box on a live encode, so the branded stage is used instead.
+
+**Audio:** an X embed starts muted and exposes no unmute API to the parent page,
+so the CSGN encode picks up the broadcast's sound only after a one-time
+right-click → **Interact** on the browser source and a click on the embed's own
+unmute control. Do it once per session, right after the hour cuts over. If you
+need reliable audio from an X hour, take the feed from its original source
+(Twitch/Kick) instead.
+
+Rehearse the look before air with `/player?preview=x`.
+
+Booking one: Admin → the slot's assign (👤) button → **Stream source → X** →
+paste the link. The emergency override accepts the same two shapes.
+
 ## 5. 24/7 reliability checklist (Windows)
 
 - OBS → Settings → Advanced → ✅ **Automatically Reconnect** — Retry Delay `2s`, Max Retries `25`.
@@ -513,10 +551,12 @@ workflow and gain OS-notification risk — treat it as a temporary fallback only
 | **Video stuck unplayed after a slot change** | Fixed in-app: same root cause and fix as the row above — the old retune path (`setChannel` + `getChannel` verification) could wedge playback in a restart loop on a slot handoff. Channel changes now rebuild the embed deterministically; nothing retunes a running player |
 | Brand wipe stutters or plays twice in a row | Fixed in-app: the wipe is now one continuous sweep (in left → out right), and it only plays when leaving a state `/player` actually settled in for ≥5s — boot-time state shuffling and brief event races no longer fire it |
 | `/watch` embed not showing | Broadcast post URL not pushed in Admin, or it's a raw `/i/broadcasts/` link (not embeddable — paste the *post* URL) |
+| **An X hour shows the branded "Live on X" card instead of video** | Expected for a raw `x.com/i/broadcasts/…` permalink — X refuses to be embedded, so there is no feed to carry. Open the broadcast's *post* on X and put that URL on the slot instead (§4b). `?debug=1` shows which shape is armed on the `channel` row (`x_broadcast:…` vs `x_post:…`) |
+| **An X hour is silent on the encode** | X embeds start muted with no unmute API for the parent page. Right-click the browser source → **Interact** → click the embed's unmute control, once per session (§4b) |
 
 **State previews:** open `/player?preview=board`, `?preview=brb`, `?preview=starting`,
-`?preview=wipe`, or `?preview=countdown` (the "Going Live Now" bumper) to check each
-look inside OBS without touching live state. Add `?debug=1` to any `/player` URL for
+`?preview=wipe`, `?preview=countdown` (the "Going Live Now" bumper), or `?preview=x`
+(the "Live on X" stage) to check each look inside OBS without touching live state. Add `?debug=1` to any `/player` URL for
 the live diagnostic panel (env, mode, channel, reveal mode, playback/gate state, audio
 state, event log), and `?peek=1` to see the raw Twitch startup through a translucent
 shield (proves whether a preroll actually plays — diagnostic only, never on a live source). To rehearse against a specific

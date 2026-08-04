@@ -231,6 +231,9 @@ export interface ClaimEligibility {
 }
 
 export interface ClaimUser {
+  /** Absent/empty on a wallet-only account, which is what makes the email
+   *  verification check conditional rather than universal. */
+  email?: string | null
   emailVerified?: boolean
 }
 
@@ -263,7 +266,11 @@ export function claimEligibility(
   if (profile.status && profile.status !== 'active') {
     return { ok: false, reason: 'inactive', message: 'This account is not active. Contact an admin.' }
   }
-  if (user.emailVerified !== true) {
+  // Only accounts that HAVE an email must verify it. A wallet-only account never
+  // gave one, so an unconditional check here locked it out of claiming forever —
+  // and the gate it was standing in for is the pair below: the wallet that gets
+  // paid, and the Twitch channel that goes on air. Those are the real ones.
+  if (user.email && user.emailVerified !== true) {
     return {
       ok: false, reason: 'email_unverified',
       message: 'Verify your email to claim a slot. We sent you a link.',

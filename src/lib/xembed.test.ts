@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseXPostId, isBroadcastUrl, canonicalPostUrl } from './xembed'
+import { parseXPostId, parseXBroadcastId, isBroadcastUrl, canonicalPostUrl, canonicalBroadcastUrl } from './xembed'
 
 describe('parseXPostId', () => {
   it('parses a standard x.com post URL', () => {
@@ -49,8 +49,47 @@ describe('isBroadcastUrl', () => {
   })
 })
 
+describe('parseXBroadcastId', () => {
+  it('extracts the base62 ID from a broadcast permalink', () => {
+    expect(parseXBroadcastId('https://x.com/i/broadcasts/1DGleeyqVQmAB')).toBe('1DGleeyqVQmAB')
+  })
+
+  it('accepts the twitter.com, mobile and www spellings', () => {
+    expect(parseXBroadcastId('https://twitter.com/i/broadcasts/1DGleeyqVQmAB')).toBe('1DGleeyqVQmAB')
+    expect(parseXBroadcastId('https://mobile.x.com/i/broadcasts/1DGleeyqVQmAB')).toBe('1DGleeyqVQmAB')
+    expect(parseXBroadcastId('https://www.x.com/i/broadcasts/1DGleeyqVQmAB')).toBe('1DGleeyqVQmAB')
+  })
+
+  it('tolerates a missing scheme, query string and trailing slash', () => {
+    expect(parseXBroadcastId('x.com/i/broadcasts/1DGleeyqVQmAB')).toBe('1DGleeyqVQmAB')
+    expect(parseXBroadcastId('https://x.com/i/broadcasts/1DGleeyqVQmAB/')).toBe('1DGleeyqVQmAB')
+    expect(parseXBroadcastId('https://x.com/i/broadcasts/1DGleeyqVQmAB?s=20')).toBe('1DGleeyqVQmAB')
+  })
+
+  it('returns null for posts, other X routes and non-X hosts', () => {
+    expect(parseXBroadcastId('https://x.com/CSGNet/status/1234567890')).toBeNull()
+    expect(parseXBroadcastId('https://x.com/i/spaces/1DGleeyqVQmAB')).toBeNull()
+    expect(parseXBroadcastId('https://fakex.com/i/broadcasts/1DGleeyqVQmAB')).toBeNull()
+    expect(parseXBroadcastId('https://twitch.tv/csgnet')).toBeNull()
+    expect(parseXBroadcastId('')).toBeNull()
+  })
+
+  it('rejects IDs that are not the 1-prefixed base62 shape', () => {
+    expect(parseXBroadcastId('https://x.com/i/broadcasts/DGleeyqVQmAB')).toBeNull()
+    expect(parseXBroadcastId('https://x.com/i/broadcasts/1-Gleeyq_VQmAB')).toBeNull()
+    expect(parseXBroadcastId('https://x.com/i/broadcasts/1ab')).toBeNull()
+  })
+})
+
 describe('canonicalPostUrl', () => {
   it('builds a stable outbound link from an ID', () => {
     expect(canonicalPostUrl('1234567890')).toBe('https://x.com/i/web/status/1234567890')
+  })
+})
+
+describe('canonicalBroadcastUrl', () => {
+  it('round-trips a parsed broadcast ID back to its permalink', () => {
+    const url = 'https://x.com/i/broadcasts/1DGleeyqVQmAB'
+    expect(canonicalBroadcastUrl(parseXBroadcastId(url)!)).toBe(url)
   })
 })

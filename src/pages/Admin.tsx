@@ -27,7 +27,7 @@ import { CreatorFeesTab } from '@/components/admin/CreatorFeesTab'
 import { VoteHistoryTab } from '@/components/admin/VoteHistoryTab'
 import { isVoteOpen, type VoteRecord } from '@/lib/votes'
 import { PUMP_FUN_FEE_TIERS, estimateCreatorFeeSOL, formatTierRange, resolvePumpFeeTier } from '@/lib/dexscreener'
-import { parseXPostId, isBroadcastUrl } from '@/lib/xembed'
+import { parseXPostId, parseXBroadcastId, isBroadcastUrl } from '@/lib/xembed'
 import {
   appendNextThreeDays,
   wipeAndRegenerateSlots,
@@ -81,12 +81,50 @@ function twitchHandleFromUrl(url?: string): string {
 
 /** Derive the assign modal's platform + input value from a stored stream URL, so
  *  editing a Kick or YouTube slot reopens on the right platform, not blank Twitch. */
-function assignSourceFromUrl(url?: string): { platform: 'twitch' | 'kick' | 'youtube'; value: string } {
+function assignSourceFromUrl(url?: string): { platform: 'twitch' | 'kick' | 'youtube' | 'x'; value: string } {
   const detected = url ? detectStream(url) : null
   if (detected?.type === 'kick') return { platform: 'kick', value: detected.id }
   if (detected?.type === 'youtube') return { platform: 'youtube', value: url ?? '' }
+  // Both X shapes reopen the modal on the X tab holding the pasted link, so an
+  // operator upgrading a broadcast permalink to a post URL edits it in place.
+  if (detected?.type === 'x_broadcast' || detected?.type === 'x_post') return { platform: 'x', value: url ?? '' }
   if (detected?.type === 'twitch') return { platform: 'twitch', value: detected.id }
   return { platform: 'twitch', value: twitchHandleFromUrl(url) }
+}
+
+/**
+ * Tells the operator, at the moment they paste it, which of X's two links they
+ * have and what it will actually do on air. The distinction is invisible in the
+ * URL bar and decides whether the hour carries live video or a branded card, so
+ * it has to be said here rather than discovered during a broadcast.
+ */
+function XSourceHint({ url }: { url: string }) {
+  const trimmed = url.trim()
+  if (!trimmed) {
+    return (
+      <p className="text-[11px] text-gray-500 mt-1">
+        Paste the X <em>post</em> carrying the broadcast — that's the one /player can play.
+      </p>
+    )
+  }
+  if (parseXPostId(trimmed)) {
+    return (
+      <p className="mt-1 text-[11px] text-emerald-300 flex items-center gap-1.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block shrink-0" />
+        X post — /player plays the live broadcast full-frame.
+      </p>
+    )
+  }
+  if (parseXBroadcastId(trimmed)) {
+    return (
+      <p className="mt-1 text-[11px] text-amber-300 leading-relaxed">
+        Broadcast permalink — X refuses to be embedded, so /player bills the hour on the branded
+        "Live on X" stage instead of carrying video. Open the broadcast's <em>post</em> and paste
+        that link to put the feed on air.
+      </p>
+    )
+  }
+  return <p className="mt-1 text-[11px] text-gray-500">Not an X link — /player will hold the intermission board.</p>
 }
 
 interface UserData {
@@ -194,7 +232,7 @@ export default function Admin() {
   const [assignName, setAssignName] = useState('')
   const [assignStreamTitle, setAssignStreamTitle] = useState('')
   const [assignTwitch, setAssignTwitch] = useState('') // handle (twitch/kick) or full URL (youtube)
-  const [assignPlatform, setAssignPlatform] = useState<'twitch' | 'kick' | 'youtube'>('twitch')
+  const [assignPlatform, setAssignPlatform] = useState<'twitch' | 'kick' | 'youtube' | 'x'>('twitch')
   const [actionError, setActionError] = useState<string | null>(null)
 
   // Slot stream URL override
@@ -743,7 +781,7 @@ export default function Admin() {
       // override iframe and drives Twitch through its live-detection pipeline.
       const streamUrl =
         assignPlatform === 'kick' ? buildKickStreamUrl(assignTwitch)
-        : assignPlatform === 'youtube' ? (assignTwitch.trim() || DEFAULT_STREAM_URL)
+        : assignPlatform === 'youtube' || assignPlatform === 'x' ? (assignTwitch.trim() || DEFAULT_STREAM_URL)
         : buildTwitchStreamUrl(assignTwitch)
       if (assignModal.type === 'network') {
         await assignNetworkSlot(assignModal.id, assignUid, assignName, streamUrl, assignStreamTitle, status)
@@ -1724,12 +1762,14 @@ export default function Admin() {
                   <div>
                     <label className="block text-sm text-gray-300 mb-1.5">Stream source</label>
                     {/* Platform picker — Twitch drives /player's live-detection pipeline;
-                        Kick + YouTube are forwarded as an override iframe. */}
-                    <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-white/[0.03] border border-white/10 mb-2">
+                        Kick + YouTube are forwarded as an override iframe; X gets
+                        its own stage (see components/player/XStage.tsx). */}
+                    <div className="grid grid-cols-4 gap-1.5 p-1 rounded-xl bg-white/[0.03] border border-white/10 mb-2">
                       {([
                         { id: 'twitch', label: 'Twitch' },
                         { id: 'kick', label: 'Kick' },
                         { id: 'youtube', label: 'YouTube' },
+                        { id: 'x', label: 'X' },
                       ] as const).map((p) => (
                         <button
                           key={p.id}
@@ -1745,14 +1785,14 @@ export default function Admin() {
                         </button>
                       ))}
                     </div>
-                    {assignPlatform === 'youtube' ? (
+                    {assignPlatform === 'youtube' || assignPlatform === 'x' ? (
                       <input
                         type="text"
                         inputMode="url"
                         value={assignTwitch}
                         onChange={(e) => setAssignTwitch(e.target.value.trim())}
                         className="w-full px-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono focus:outline-none focus:border-primary-500/50"
-                        placeholder="https://youtube.com/watch?v=…"
+                        placeholder={assignPlatform === 'x' ? 'https://x.com/handle/status/… (or /i/broadcasts/…)' : 'https://youtube.com/watch?v=…'}
                         autoCapitalize="none"
                         autoCorrect="off"
                         spellCheck={false}
@@ -1774,11 +1814,15 @@ export default function Admin() {
                         />
                       </div>
                     )}
-                    <p className="text-[11px] text-gray-500 mt-1">
-                      {assignPlatform === 'youtube'
-                        ? 'Paste the full watch / live link — /player forwards it as an override.'
-                        : `Just the username — we build the ${assignPlatform === 'kick' ? 'Kick' : 'Twitch'} link.`}
-                    </p>
+                    {assignPlatform === 'x' ? (
+                      <XSourceHint url={assignTwitch} />
+                    ) : (
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        {assignPlatform === 'youtube'
+                          ? 'Paste the full watch / live link — /player forwards it as an override.'
+                          : `Just the username — we build the ${assignPlatform === 'kick' ? 'Kick' : 'Twitch'} link.`}
+                      </p>
+                    )}
                   </div>
 
                   <div>

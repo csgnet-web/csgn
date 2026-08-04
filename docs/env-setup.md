@@ -66,7 +66,22 @@ SOLANA_RPC_URL=
 ```
 
 The public mainnet endpoint is the fallback and is fine at low volume; a payout
-run over a large field wants a paid RPC.
+run over a large field wants a paid RPC. Note that wallet-only sign-up also hits
+the chain (one `getBalance` + one `getSignaturesForAddress` per attempt), so a
+registration spike lands here too.
+
+```env
+CSGN_SIGNUP_MIN_LAMPORTS=1000000
+```
+
+The sybil gate on wallet-only sign-up: lamports a wallet must hold to register
+on balance alone (default `1000000` = 0.001 SOL). Any on-chain history clears
+the gate regardless of balance, so this only has to be high enough that
+dust-spraying freshly minted keypairs costs the sprayer more than it costs you.
+Raise it if you see scripted registration; a real Phantom user never notices it.
+If the RPC is unreachable the check falls open and the account is stamped
+`walletCheck: 'unavailable'` so it can be audited after — see
+`netlify/functions/signupWithPhantom.ts`.
 
 `TWITCH_CLIENT_ID` can be treated as backend-only for architecture consistency, but it is not as sensitive as `TWITCH_CLIENT_SECRET`.
 

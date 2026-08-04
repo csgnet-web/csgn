@@ -283,6 +283,56 @@ number marks it. Still well short of v2.)*
   - New `_shared/cache.ts`: bounded TTL cache, single-flight, bounded fetch —
     with the rule that a failed load is never cached
 
+### v1.19 — August 2026
+**Sign-up down to one signature, and `/player` can forward a stream that lives on X.**
+
+- **Sign-up is a wallet signature and a username.** No email, no password, no
+  verification round trip. The credential was already the wallet — Phantom has
+  always been mandatory (fees are paid to it) and `loginWithPhantom` has always
+  let a returning holder in on a signature alone, so the email and password were
+  a second, weaker key that went unused after the first sign-in. What they
+  reliably did was cost accounts: three extra fields, a verification step that
+  gated slot claims, and a Twitch redirect that came back demanding the password
+  again because it's the one thing we refuse to persist
+- **Signing up and signing in are the same button.** Prove the wallet; if it
+  already has an account you're in, if it doesn't you pick a username. Nobody has
+  to work out which form they needed first
+- **Wallet-only registration is back, with the v1.18 objection actually
+  answered.** It was pulled last release for a correct reason — a keypair is free
+  and instant to generate, which made it a *weaker* toll than a verified email,
+  not a stronger one. The toll is now the thing that can't be faked for free:
+  the wallet must hold SOL or have signed at least one transaction
+  (`isEstablishedWallet`). Funding and transacting thousands of wallets costs
+  real money on a public ledger; a real Phantom user clears it instantly.
+  Tunable via `CSGN_SIGNUP_MIN_LAMPORTS`; an unreachable RPC falls open and
+  stamps the account `walletCheck: 'unavailable'` for audit, because this gate is
+  anti-spam, not anti-fraud, and an outage must not lock the product
+- **Email and password stay** — as a full sign-up path behind a disclosure, and
+  unchanged for every account that already exists. And **`/account` can now
+  actually add one to a wallet account** (`linkEmail` + Firebase
+  `linkWithCredential`), which is what makes leaving email off the door honest
+  rather than a one-way door: a seed phrase is the one credential nobody can
+  reset for you, so the recovery path has to exist before it's needed. Additive —
+  the wallet keeps signing you in exactly as before
+- **Email verification no longer blocks a member who never gave an email.** The
+  claim gate now checks it only on accounts that have one; the gates doing the
+  real work are unchanged — a verified wallet to be paid into, a verified Twitch
+  channel to put on air (`claimSlot.ts` + `slotModel.ts`, mirrored as always)
+- **`/player` forwards a stream that lives on X.** Both shapes are now first-class
+  sources: the **post** carrying a broadcast is embedded and scaled to fill the
+  canvas — real video on the encode — while the raw `x.com/i/broadcasts/…`
+  permalink X actually hands a streamer gets a branded "Live on X" stage that
+  bills the streamer and the hour. Before this, an X URL parsed as nothing and a
+  booked hour silently fell back to the intermission board
+- **No iframe attempt on the permalink, on purpose.** X serves those pages with
+  `frame-ancestors 'self'`, and a frame refused for framing still fires `load` in
+  Chromium with an origin-opaque error page — indistinguishable from a successful
+  cross-origin load. Guessing wrong puts a white "refused to connect" box on a
+  live encode, so the branded stage is used instead. The Admin assign modal tells
+  the operator which of the two links they pasted, and what it will do on air
+- Rehearse it with `/player?preview=x`; the whole thing, audio caveat included,
+  is documented in [`docs/obs-setup.md`](docs/obs-setup.md) §4b
+
 ## Getting Started
 
 ```bash
@@ -441,7 +491,7 @@ monitoring live in [`docs/ops-cost-security-runbook.md`](docs/ops-cost-security-
 
 | Domain | Score | Status |
 |---|---|---|
-| Authentication | 85/100 | HMAC proof-of-ownership model; email verification enforced at slot claim |
+| Authentication | 85/100 | HMAC proof-of-ownership model; Ed25519 wallet proof over a single-use server nonce is the credential; on-chain activity gates registration; email verification still enforced at slot claim for accounts that have an email |
 | Authorization | 87/100 | Firestore rules solid; admin check on every privileged request |
 | API Security | 80/100 | Rate limiting on all endpoints; CORS locked to configured origin |
 | Data Protection | 75/100 | Password not in sessionStorage; no hardcoded Firebase config |
@@ -471,7 +521,7 @@ monitoring live in [`docs/ops-cost-security-runbook.md`](docs/ops-cost-security-
 
 ## v1.0 Technical Sign-off Checklist
 
-- [x] Multi-factor registration (Phantom wallet + Twitch OAuth + email/password)
+- [x] Multi-factor registration (Phantom wallet, plus optional Twitch OAuth and optional email/password)
 - [x] Real-time slot claiming with server-side race-condition protection
 - [x] Server-side live earnings — 4 DexScreener calls/minute, server only, scale-invariant
 - [x] Universal `LiveSlotContext` — 2 Firestore listeners per browser session
@@ -479,7 +529,8 @@ monitoring live in [`docs/ops-cost-security-runbook.md`](docs/ops-cost-security-
 - [x] CORS origin locked — defaults to deny when env var missing
 - [x] Hardcoded Firebase config removed — fails fast on misconfiguration
 - [x] Password not stored in sessionStorage during OAuth redirect
-- [x] Email verification required before slot claim (`email_verified` JWT claim)
+- [x] Email verification required before slot claim (`email_verified` JWT claim) — for accounts that have an email; wallet-only accounts are gated on verified Phantom + Twitch instead
+- [x] On-chain activity (SOL balance or transaction history) required to register a wallet, so a freshly minted keypair can't be mass-registered
 - [x] `auth_events` writes restricted to authenticated users
 - [x] Content-Security-Policy header on all responses
 - [x] Login ↔ Register seamless modal switching

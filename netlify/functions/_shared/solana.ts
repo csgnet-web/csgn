@@ -216,3 +216,40 @@ export async function getCsgnBalance(walletAddress: string): Promise<number> {
   }
   return total
 }
+
+/**
+ * Is this wallet ESTABLISHED on-chain — does it hold lamports, or has it ever
+ * signed anything?
+ *
+ * This is the sybil gate for wallet-only sign-up, and it exists because of a
+ * real objection: a keypair is free and instant to generate offline, which
+ * makes a bare "prove you hold a wallet" check a weaker registration cost than
+ * a verified email, not a stronger one. Funding thousands of wallets is not
+ * free — it costs SOL, per wallet, on a public ledger — and neither is putting
+ * a transaction through one. A person who has actually used Phantom clears this
+ * instantly; a script that minted 10,000 keypairs a second ago clears none of
+ * them.
+ *
+ * `getSignaturesForAddress` is capped at one result: we only need existence,
+ * and asking for a page of history would cost the RPC far more for no answer we
+ * use.
+ */
+export async function isEstablishedWallet(walletAddress: string, minLamports: number): Promise<boolean> {
+  const [balanceRes, sigRes] = await Promise.all([
+    rpcFetch(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getBalance', params: [walletAddress] })),
+    rpcFetch(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getSignaturesForAddress', params: [walletAddress, { limit: 1 }] })),
+  ])
+  if (!balanceRes.ok || !sigRes.ok) throw new Error(`Solana RPC error ${balanceRes.status}/${sigRes.status}`)
+
+  const balance = (await balanceRes.json()) as { result?: { value?: number }; error?: { message?: string } }
+  const sigs = (await sigRes.json()) as { result?: unknown[]; error?: { message?: string } }
+  if (balance.error) throw new Error(`Solana RPC: ${balance.error.message || 'error'}`)
+  if (sigs.error) throw new Error(`Solana RPC: ${sigs.error.message || 'error'}`)
+
+  const lamports = Number(balance.result?.value ?? 0)
+  const hasHistory = Array.isArray(sigs.result) && sigs.result.length > 0
+  // Either signal is enough. A wallet that has been swept to zero but has
+  // history is still a real wallet, and a funded wallet that has never sent
+  // anything is still one somebody paid for.
+  return lamports >= minLamports || hasHistory
+}

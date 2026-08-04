@@ -41,7 +41,10 @@ export type MasterState =
   /** Network programming: VOD rotation / animated board. `channel` (if any)
    *  stays mounted+muted so an ONLINE event can cut straight back to LIVE. */
   | { mode: 'INTERMISSION'; channel: string | null }
-  /** Emergency-override URL that isn't a Twitch channel (e.g. YouTube). */
+  /** A source that isn't a Twitch channel — YouTube, a forwarded Kick channel,
+   *  or a stream on X. Twitch is the only platform driven through the embed
+   *  live-detection pipeline; everything else is rendered from the URL, so it
+   *  has no ONLINE/OFFLINE events and no STARTING_SOON/BRB lifecycle. */
   | { mode: 'OVERRIDE'; url: string }
 
 export interface BroadcastDoc {

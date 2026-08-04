@@ -31,13 +31,21 @@ export type TwitchOAuthResult = { twitchProofToken: string; twitchUserId: string
 export const api = {
   createPhantomChallenge: (walletAddress: string) => functionFetch<{ challengeToken: string; message: string }>('createPhantomChallenge', { method: 'POST', body: JSON.stringify({ walletAddress }) }),
   verifyPhantomSignature: (walletAddress: string, signature: string, challengeToken: string) => functionFetch<{ proofToken: string; walletAddress: string }>('verifyPhantomSignature', { method: 'POST', body: JSON.stringify({ walletAddress, signature, challengeToken }) }),
-  /** Exchange a verified Phantom proof for a Firebase custom token (wallet login). */
+  /** Exchange a verified Phantom proof for a Firebase custom token (wallet login).
+   *  404s for a wallet with no account — it never creates one. */
   loginWithPhantom: (proofToken: string) => functionFetch<{ customToken: string }>('loginWithPhantom', { method: 'POST', body: JSON.stringify({ proofToken }) }),
+  /** Wallet-only sign-up: the wallet is the credential, so there is no email and
+   *  no password. Returns a custom token whose exchange creates the auth user. */
+  signupWithPhantom: (body: { username: string; phantomProofToken: string; twitchProofToken?: string }) =>
+    functionFetch<{ customToken: string }>('signupWithPhantom', { method: 'POST', body: JSON.stringify(body) }),
   startTwitchOAuth: () => functionFetch<{ authUrl: string }>('startTwitchOAuth', { method: 'POST' }),
   consumeTwitchOAuthResult: (handoffId: string) => functionFetch<TwitchOAuthResult>('consumeTwitchOAuthResult', { method: 'POST', body: JSON.stringify({ handoffId }) }),
   /** Twitch is OPTIONAL here — Phantom is the credential, Twitch only gates
    *  claiming a slot. See netlify/functions/finalizeCreateAccount.ts. */
   finalizeCreateAccount: (body: { username: string; phantomProofToken: string; twitchProofToken?: string }) => functionFetch<{ user: unknown }>('finalizeCreateAccount', { method: 'POST', body: JSON.stringify(body) }, true),
+  /** Record an email the client has already linked via Firebase on the profile.
+   *  The address is read from the caller's ID token, never from the body. */
+  linkEmail: () => functionFetch<{ ok: boolean; alreadyLinked?: boolean; email: string }>('linkEmail', { method: 'POST' }, true),
   /** Attach Twitch to an existing account, any time after sign-up. */
   linkTwitch: (twitchProofToken: string) => functionFetch<{ ok: boolean; alreadyLinked?: boolean; twitch: { username: string; displayName: string; profileImageUrl?: string } }>('linkTwitch', { method: 'POST', body: JSON.stringify({ twitchProofToken }) }, true),
   /** Recommended members, or one member by username. Server-projected — the

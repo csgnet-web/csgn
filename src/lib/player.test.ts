@@ -4,6 +4,7 @@ import {
   parseYouTubeId,
   parseKickChannel,
   detectStream,
+  isXStream,
   buildYouTubeSrc,
   buildKickSrc,
   PLAYER_ALLOW,
@@ -104,8 +105,29 @@ describe('detectStream', () => {
   it('detects a Kick stream from a kick.com URL', () => {
     expect(detectStream('https://kick.com/xqc')).toEqual({ type: 'kick', id: 'xqc' })
   })
+  it('detects an X broadcast from its permalink', () => {
+    expect(detectStream('https://x.com/i/broadcasts/1DGleeyqVQmAB')).toEqual({ type: 'x_broadcast', id: '1DGleeyqVQmAB' })
+  })
+  it('detects an X post (the embeddable shape) separately from a broadcast', () => {
+    expect(detectStream('https://x.com/CSGNet/status/1234567890123456789')).toEqual({ type: 'x_post', id: '1234567890123456789' })
+  })
+  it('still reads a bare word as a Twitch channel, even in broadcast-ID shape', () => {
+    // X detection runs first, but it only accepts real x.com URLs — so this
+    // bare word stays Twitch's, exactly as it was before X was added.
+    expect(detectStream('1DGleeyqVQmAB')).toEqual({ type: 'twitch', id: '1DGleeyqVQmAB' })
+  })
   it('returns null for unrecognised URL', () => {
     expect(detectStream('https://example.com/stream')).toBeNull()
+  })
+})
+
+describe('isXStream', () => {
+  it('is true for both X shapes and false for everything else', () => {
+    expect(isXStream(detectStream('https://x.com/i/broadcasts/1DGleeyqVQmAB'))).toBe(true)
+    expect(isXStream(detectStream('https://x.com/CSGNet/status/1234567890123456789'))).toBe(true)
+    expect(isXStream(detectStream('https://www.twitch.tv/xqc'))).toBe(false)
+    expect(isXStream(detectStream('https://kick.com/xqc'))).toBe(false)
+    expect(isXStream(null)).toBe(false)
   })
 })
 
