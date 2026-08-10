@@ -24,6 +24,8 @@ other file disagrees with it, it wins.** On token design specifically,
 | Doc | What it answers |
 |---|---|
 | **[`plan.md`](plan.md)** | **The 90 days.** Follower targets and how they're earned, the three phases, the weekly cadence, where the breakouts come from, pre-committed kill criteria, the refusal list |
+| [`show-bible.md`](show-bible.md) | **The nightly block, 7 PM–3 AM ET.** The eight-hour rundown and weekly grid, the burnout tripwire, the graphics that don't exist yet, the OBS scene, and the comic-book host rig |
+| [`x-playbook.md`](x-playbook.md) | **@two3oh2, operationally.** The 70-minute daily budget, the follow/reply tiers and how to build them, the Scoreboard Reply, six post formats, the weekly scoreboard |
 | [`decisions.md`](decisions.md) | Append-only log of every decision that changed the shape of the thing, and where it lives |
 | [`../CHANGELOG.md`](../CHANGELOG.md) | The full version history, v0.1 → v1.19 |
 
@@ -35,6 +37,7 @@ The specs. What each system is, why it is shaped that way, and the build order.
 |---|---|
 | **[`design/the-grid.md`](design/the-grid.md)** | **The cap table is the programming schedule.** The 16 open hours allocated 1:1 to supply share; Producers and Talent; live always supplants; the ratings ladder; the Charter 50; links-then-uploads; moderation; the Partner Day toggle |
 | **[`design/token-economics.md`](design/token-economics.md)** | **Why $CSGN works.** The spend-side diagnosis, the two-market structure and Airtime Yield, the demand engine, the seven things investors want that need no outreach, the legal line, the falsification test |
+| **[`design/the-denominator.md`](design/the-denominator.md)** | **$CSGN as the asset other tokens are priced in.** The StonkFun quote-token model, why MANLET × ANSEM worked, reflections paid in airtime, the Airtime Standard, show tokens, and the coupling risk |
 | [`design/token-voting.md`](design/token-voting.md) | Supply-weight voting and The 30-Minute Draft. Weight as % of supply aged by hold time — no deposits, no locks, no burns |
 | [`design/csgn-share.md`](design/csgn-share.md) | A Nielsen ratings book for streaming. Share over Rating, the ET dayparts the Grid ladder runs on, The Book and Sweeps |
 | [`design/games-and-payouts.md`](design/games-and-payouts.md) | Squares (weekly, pooled, 500k to the winner), Starting 5 (daily, free, 100k perfect card), and the payout ledger's four guarantees |
@@ -77,6 +80,9 @@ explains what replaced what and what each is still worth reading for.
 
 > **Airtime Yield** — the open-market value of the inventory a given share of supply
 > received. A disclosure, in kind. Never a distribution.
+
+> **The Airtime Standard** — the published conversion from $CSGN to screen-seconds, so
+> every price in the ecosystem can be quoted in television rather than in tokens.
 
 > **CSGN, in one line** — *Blockspace for attention. A 24/7 channel where the hour
 > is the asset.*

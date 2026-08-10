@@ -28,10 +28,19 @@ first (OBS draws bottom-to-top, so the first one you add sits behind everything)
 | 4 | `Bug` | `…/csgn-nowwatching.html` | 1920 × 1080 |
 | 5 | `Lower thirds` | `…/csgn-lowerthirds.html` | 1920 × 1080 |
 
-For every source, tick these two boxes and leave the rest alone:
+For every source, **leave these two boxes UNTICKED** and leave the rest alone:
 
-- ☑ **Shutdown source when not visible**
-- ☑ **Refresh browser when scene becomes active**
+- ☐ **Shutdown source when not visible**
+- ☐ **Refresh browser when scene becomes active**
+
+Both must be off. The network runs one scene for weeks at a time, so there is no "not
+visible" and no "becomes active" — but if either fires, `/player` reloads mid-broadcast and
+the ticker loses its rotation position on air. `csgn-master.lua` handles the one reload that
+*is* wanted (a periodic watchdog for CEF memory creep, §7).
+
+> **Corrected 2026-08-10.** This table previously said to tick both boxes, which
+> contradicted §4.1, §4.3, §4.4 and [`../obs-setup.md`](../obs-setup.md). The detailed
+> sections were right.
 
 Position the **Ticker** flush to the bottom of the canvas. It is 240px tall but
 only the bottom 110px draws — the space above is transparent headroom the coin

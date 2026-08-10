@@ -101,3 +101,74 @@ Yield is a disclosure, not a distribution. Transferable airtime, futures, predic
 markets and a streamer index are designed but sequenced behind counsel, so they remain an
 option rather than a dependency.
 → [`design/token-economics.md`](design/token-economics.md) §7
+
+**2026-08-10 · correction · $ANSEM was described as having "no product, no roadmap and no
+revenue." That is no longer accurate and the claim is retracted.** It reflected June-2026
+reporting. As of August it is building an on-chain liquidity and index layer for creator
+ecosystems — automated LP pods, a Bull Index staking vault distributing real trading fees,
+curated deployments with $ANSEM as deployment #1, ATH around $450M. The partner argument is
+re-framed from "we'd be its first mechanism" to "a distribution layer offered to a liquidity
+layer." Also recorded: reporting is explicit the token was **not** launched or endorsed by
+Ansem himself, which makes the disclosure rule load-bearing rather than boilerplate.
+→ [`design/the-grid.md`](design/the-grid.md) §8.2
+
+**2026-08-10 · token · $CSGN becomes a denominator — the asset other tokens are quoted
+against — rather than a tenant on someone else's surface.** Follows the StonkFun model
+(fixed supply, one-sided locked liquidity, any custom quote token, reflections paid in the
+quote asset) demonstrated by MANLET × ANSEM. CSGN's differentiator is that its quote asset
+is redeemable for television: their buyers acquire airtime, and their reflections pay in
+expiring in-kind access rather than money — which is also the securities-safer version of
+the 2026 reflections meta. **Explicitly rejected: launching a second CSGN token.**
+→ [`design/the-denominator.md`](design/the-denominator.md)
+
+**2026-08-10 · token · Prices across the ecosystem will be quoted in screen-seconds — the
+Airtime Standard.** Unit-of-account is the strongest form of monetary demand and almost no
+token has it. It renders on hardware that already exists (`config/ticker.chyron`).
+→ [`design/the-denominator.md`](design/the-denominator.md) §4
+
+**2026-08-10 · product · The Grid's rule is generalised to five more surfaces.** *A fixed
+resource, divided by the cap table, expiring daily* — applied to ticker rotations, the
+Chyron Question, Meme 100 seats, the credits, and the guest chair. **The Chyron Question is
+the one to build**: it is nearly free (the Right Now rail is already a gated, viewer-writable
+submission pipeline) and it converts holding into a moment rather than a tally.
+→ [`design/the-grid.md`](design/the-grid.md) §12
+
+**2026-08-10 · show · The nightly block is planned as all eight hours live, 7 PM–3 AM, with
+the burnout risk stated and a pre-committed tripwire.** Miss the 7 PM open three times in a
+rolling 30 days and the block contracts to 7 PM–12 AM automatically. Three recovery hours
+(9 PM, 12 AM, 1 AM) are load-bearing structure, not filler. Interviews are Tue/Wed/Thu only —
+three bookings a week, not seven.
+→ [`show-bible.md`](show-bible.md) §1–2
+
+**2026-08-10 · show · Finding: interviews are blocked by missing graphics.** No guest lower
+third, and **no take button** — the only lower thirds rotate on a fixed ~3-minute timer.
+Also missing: segment clock, on-air poll bar, rundown board over the live feed, question
+queue, generic standings. The build is one control doc (`config/showControl`), one Control
+Room admin tab, and four browser sources. Until then the show runs on
+`config/ticker.chyron`, which is a worse name-plate and is enough to start.
+→ [`show-bible.md`](show-bible.md) §4
+
+**2026-08-10 · show · The host is a custom comic-book browser source, not off-the-shelf
+Live2D, and the founder does not dox.** `csgn-host.html`: ink line, halftone, panel borders
+that change by segment, mouth flap from mic amplitude, five expressions and SFX lettering on
+hotkeys, driven locally via obs-websocket for sub-100ms latency. The research is that
+VTubers reduce social richness but not interpersonal attraction, credibility or parasocial
+interaction; the decisive argument is that 56 hours a week on camera is not sustainable and
+a rig is. Conditions attached: voice-forward, sub-100ms reactions, performed live, real
+track record.
+→ [`show-bible.md`](show-bible.md) §6–7
+
+**2026-08-10 · growth · The founder's account gets a 70-minute daily budget and a written
+procedure instead of a handle list.** X is the credibility engine, not the acquisition
+engine — only short-form produces ~72 followers/day at this size. The CSGN Set from the
+ratings book doubles as the Tier B follow list. The **Scoreboard Reply** — rendering someone
+else's call as a CSGN lower third — is named the single highest-leverage daily habit.
+→ [`x-playbook.md`](x-playbook.md)
+
+**2026-08-10 · docs · Repo-wide path repair after the reorganisation.** Prose and code
+samples still pointing at `docs/obs/…` were repointed to `docs/ops/obs/…`; archived docs
+were left verbatim by the archive rule. Separately, `docs/ops/obs/README.md`'s quick-start
+table told operators to enable "Shutdown source when not visible" and "Refresh browser when
+scene becomes active", contradicting its own §4.1/§4.3/§4.4 and `obs-setup.md`. The detailed
+sections were right; the table is corrected.
+→ [`ops/obs/README.md`](ops/obs/README.md)

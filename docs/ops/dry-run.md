@@ -250,7 +250,7 @@ Full encoder setup is in [`obs-setup.md`](obs-setup.md). This is the pre-air che
 ☐ Stream key set for **X**, or Restream if you're also going to Twitch (§ below).
 
 ```bash
-node docs/obs/ticker-smoke.mjs   # all checks pass
+node docs/ops/obs/ticker-smoke.mjs   # all checks pass
 ```
 
 ---

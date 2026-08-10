@@ -333,20 +333,39 @@ the bag and selling it. The Grid has no sell leg anywhere in it. Nothing is spen
 locked, escrowed, staked or burned — the mechanism reads a balance and nothing else. The
 only way to get more airtime is to hold more, and the only way to lose it is to sell.
 
-For **$ANSEM** specifically, which launched on pump.fun in June 2026 and has **no product,
-no roadmap and no revenue behind it**
-([crypto.news](https://crypto.news/what-is-ansem-coin-solana-influencer-memecoin-explained/),
-[Phemex](https://phemex.com/academy/who-is-ansem-solana-trader-ansem-token-frenzy)):
+For **$ANSEM** specifically — launched on pump.fun in June 2026, with roughly 65% of supply
+and the creator role airdropped to the trader it is named after, who embraced it rather
+than launching his own
+([crypto.news](https://crypto.news/what-is-ansem-coin-solana-influencer-memecoin-explained/)).
 
-1. **It would be the token's first mechanism of any kind.** Not its best one — its only
-   one.
-2. **It converts a pure attention asset into a claim on attention.** That is the correct
-   thematic shape for a coin named after a caller, and it reads well on air.
+**Correction, 2026-08-10.** An earlier version of this section described $ANSEM as having
+"no product, no roadmap and no revenue." That reflected June reporting and **is no longer
+accurate.** It is now building an on-chain **liquidity and index layer for creator
+ecosystems on Solana** — automated LP pods, a "Bull Index" staking vault distributing a
+share of real trading fees harvested from ecosystem liquidity, and curated deployments with
+$ANSEM as deployment #1 of a repeatable program. It reached an all-time high around $450M
+([IQ.wiki](https://iq.wiki/wiki/the-black-bull-ansem),
+[CoinMarketCap](https://coinmarketcap.com/cmc-ai/the-black-bull/what-is/)). Anyone taking
+this document into that community should know that before they open their mouth.
+
+**That makes the offer better, not worse.** CSGN is not handing a bare memecoin its first
+mechanism. It is offering **a distribution layer to a liquidity layer** — two different
+jobs that compose rather than compete:
+
+1. **They own liquidity; we own attention.** An index layer needs things worth indexing and
+   an audience that knows they exist. A channel is the front end their flywheel doesn't have.
+2. **It converts a claim on liquidity into a claim on attention as well.** Hold $ANSEM,
+   receive fees from their vault *and* seconds of television from ours. Those stack, and
+   neither one asks you to sell anything.
 3. **The ask is nothing.** No build, no signature, no integration, no appearance, no
-   treasury movement. The mechanism works on a public mint whether or not anyone
-   participates.
+   treasury movement. The mechanism reads a public mint whether or not anyone participates.
 4. **It is non-exclusive by construction**, which is what keeps CSGN a product rather
    than a dependency — the tenancy argument from `master-plan.md` §11.3.
+
+**One more fact that cuts the other way, and belongs here rather than in a footnote:**
+reporting is explicit that $ANSEM was **not officially launched or endorsed by Ansem
+himself.** So the disclosure rule in §8.3 is not boilerplate — it is the difference between
+a surface and a misrepresentation.
 
 ### 8.3 How it launches, and what CSGN refuses
 
@@ -453,3 +472,58 @@ a section to skim.
 than they want a governance vote. If fill rate is under 20% at day 60,
 [`../plan.md`](../plan.md) says to fall back to curated house VOD and say so publicly. The
 mechanism would be wrong, not the audience.
+
+---
+
+## 12. The same rule, everywhere else
+
+The Grid is not a feature. It is **one rule applied to the schedule**:
+
+> **A fixed resource, divided by the cap table, expiring daily.**
+
+The schedule is the largest resource the network owns, which is why it goes first. But the
+rule generalises to every scarce surface, and each application costs a fraction of what the
+Grid costs because the surfaces already exist.
+
+| Surface | The 1:1 | Why it earns its place |
+|---|---|---|
+| **The Ticker** | 1% of supply = 1% of BottomLine rotations | The cheapest possible second application. `csgn-ticker.html` already paginates a fixed set of faces on a fixed dwell, already reads `config/ticker`, and already renders from a phone. The resource is *slots in the rotation*, and it is countable today |
+| **The Chyron Question** | 1% of supply = 1% of the questions asked on air | **The best one on this list.** Guests answer the cap table |
+| **Meme 100 seats** | 100 slots, 1% of supply = 1 seat you control | Perfectly legible: *"you own seat 34."* The board exists, the vote exists; this replaces a tally nobody can read with a seating chart anybody can |
+| **The Credits** | Every hour ends with a roll of who produced it | Free to give, screenshot-able, and status is the entire retention mechanic. Real networks have paid people in credits for a century |
+| **The Guest Chair** | One seat a night, to the top Producer by trailing ratings | Aspirational, and deliberately **not purchasable** — it comes off the ladder (§4), so the biggest bag cannot simply buy the chair |
+
+### 12.1 The Chyron Question, because it is the one to build
+
+*"Your bag asks the questions."*
+
+Holders submit questions. Supply share determines **how many of yours get asked**, not
+whether you may submit — the same floor-and-share shape as everything else. During an
+interview the host works the queue, and the question card carries the asker's handle.
+
+Four reasons it outperforms every governance feature the project has considered:
+
+1. **It converts holding into a moment**, not a tally. A vote you win is a number; a
+   question asked on air with your name on it is a clip you send to your friends.
+2. **It makes the show better.** The audience of a crypto channel contains people who know
+   more about a given guest's book than the host does. Free research.
+3. **It is a reason for a guest to come on** — they are being interviewed by the market,
+   not by one person.
+4. **It is nearly built.** The Right Now rail is already a viewer-writable, $CSGN-gated
+   submission pipeline (`submitRightNow`, gated by `config/tokenGates.rightNowMinCsgn`) and
+   `public/onAirActions` already counts submissions. What is missing is a queue renderer and
+   a take button — both of which the nightly show needs anyway
+   ([`../show-bible.md`](../show-bible.md) §4).
+
+### 12.2 The three bigger swings
+
+The surfaces above are the same rule at smaller scale. Three ideas change the *kind* of
+demand instead, and they have their own document —
+[`the-denominator.md`](the-denominator.md):
+
+- **$CSGN as the denominator** — other people's tokens quoted against it, so every buyer of
+  their token acquires airtime.
+- **Reflections paid in airtime** — the 2026 reflections meta, paid in expiring in-kind
+  access rather than money.
+- **The Airtime Standard** — quote every price in the ecosystem in seconds of television,
+  and the token becomes a unit of account rather than an asset.
