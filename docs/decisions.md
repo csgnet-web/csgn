@@ -165,6 +165,73 @@ ratings book doubles as the Tier B follow list. The **Scoreboard Reply** — ren
 else's call as a CSGN lower third — is named the single highest-leverage daily habit.
 → [`x-playbook.md`](x-playbook.md)
 
+**2026-08-10 · show · The show graphics and the sports ticker are two separate systems, and
+will stay that way.** The BottomLine renders sports data from `config/ticker` on a 6-second
+REST poll. The show graphics render from `config/showControl` on a sub-second `onSnapshot`
+listener, because a take button on a 6-second poll is not a take button. Separate files,
+separate control docs, no shared state. An earlier draft proposed using `config/ticker.chyron`
+as a stopgap name-plate; that conflated the two and is dropped.
+→ [`design/graphics-package.md`](design/graphics-package.md) §1
+
+**2026-08-10 · show · The graphics package is four mode-driven browser sources, not sixteen
+files.** `csgn-showbar` (name/guest/topic/clock), `csgn-fullframe` (twelve card modes),
+`csgn-bug` (bug + ET clock + referral), `csgn-clip` (the 9:16 kit). Shared stylesheet, one
+Control Room tab, one TAKE button. Broadcast palette wins over web where they fork —
+gold `#ffcf40`, green `#68ff7a`, loss `#ff4b4b` — and type is Roboto Condensed, not Space
+Grotesk, which only loads to 700.
+→ [`design/graphics-package.md`](design/graphics-package.md) §1–2
+
+**2026-08-10 · legal · The Bullpen referral link ships with a permanent, visible `REFERRAL`
+tag.** FTC guidance requires a clear and conspicuous disclosure near the link whenever money
+changes hands on a click, crypto endorsements draw heightened scrutiny, and "not financial
+advice" does not cure an undisclosed commission. This also matches the house rule the jukebox
+already enforces automatically with `PAID SPOTLIGHT`. The tag is a compliance requirement, not
+a design choice, and is not to be shrunk.
+→ [`design/graphics-package.md`](design/graphics-package.md) §6
+
+**2026-08-10 · show · Betting lines render as market context, never as picks.** Spread and
+total appear on matchup cards and the pregame ticker face the way a broadcast shows them. No
+picks, no units, no confidence, no lock of the day — the doctrine that CSGN never pays for or
+recommends a financial outcome extends to sports betting without exception.
+→ [`design/ticker-football.md`](design/ticker-football.md) §7
+
+**2026-08-10 · ticker · Football is a two-field feature and gets a proper upgrade.** Rank,
+odds, timeouts, last play, line score and conference records are **all on the ESPN endpoint
+already being called** and discarded. Three real bugs found: the possession dot shifts the
+team abbreviations ~23px every change of possession because it has no reserved slot; it never
+turns red in the red zone despite the file's own comment claiming it does; and a 60-game CFB
+Saturday locks the band for 7–11 minutes while `MAX_SECDOTS = 14` makes the progress row stop
+tracking past item 14. New situational data goes into the **130px of unused headroom** as a
+Situation Strip, because the status cell is already ~9px over its box.
+→ [`design/ticker-football.md`](design/ticker-football.md)
+
+**2026-08-10 · data · ESPN for live football, CollegeFootballData for rankings and
+standings.** ESPN's unauthenticated endpoints stay for volatile data and already work; CFBD
+supplies poll *movement*, which ESPN's `curatedRank` cannot (current rank only, no previous-week
+delta). CFBD's free tier is 1,000 calls/month against a poll that moves weekly.
+→ [`design/ticker-football.md`](design/ticker-football.md) §6
+
+**2026-08-10 · content · The show is designed so the reels fall out of it.** Three clip beats
+at fixed times — 7:20, 11:15, 1:50 — two clean minutes each, one opinion, delivered knowing it
+will be cut. Three beats a night is three reels tomorrow with no separate shoot, which is the
+difference between "3 reels a day" being a second job and being a byproduct. Plus a
+twelve-format segment library so no hour ever starts blank.
+→ [`shows.md`](shows.md) §1.1, §5
+
+**2026-08-10 · calendar · Correction: college football does not start on Sep 5.** Week 0 is
+**Sat Aug 29** (eight games, USC–San Jose State opening) and Week 1 opens **Thu Sep 3**; Sep 5
+is the big Saturday. Football is ~19 days out, not 26. The AP Preseason Top 25 lands **Aug 17
+at noon ET** and is the quarter's first hard graphics deadline. Fantasy draft season runs
+Aug 23 – Sep 3.
+→ [`the-runup.md`](the-runup.md) §0–1
+
+**2026-08-10 · token · REVERSAL of sequencing: the denominator play is relegated, not
+cancelled.** It is not being built this quarter. The mechanism stands as designed; the host
+suggests it on air and viewers can launch tokens quoted against $CSGN themselves, so whether
+it happens is decided by popularity rather than roadmap. Supersedes the sequencing in the
+2026-08-10 denominator entry above; that entry stays as written, per the append-only rule.
+→ [`design/the-denominator.md`](design/the-denominator.md)
+
 **2026-08-10 · docs · Repo-wide path repair after the reorganisation.** Prose and code
 samples still pointing at `docs/obs/…` were repointed to `docs/ops/obs/…`; archived docs
 were left verbatim by the archive rule. Separately, `docs/ops/obs/README.md`'s quick-start

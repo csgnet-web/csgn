@@ -25,6 +25,8 @@ other file disagrees with it, it wins.** On token design specifically,
 |---|---|
 | **[`plan.md`](plan.md)** | **The 90 days.** Follower targets and how they're earned, the three phases, the weekly cadence, where the breakouts come from, pre-committed kill criteria, the refusal list |
 | [`show-bible.md`](show-bible.md) | **The nightly block, 7 PM–3 AM ET.** The eight-hour rundown and weekly grid, the burnout tripwire, the graphics that don't exist yet, the OBS scene, and the comic-book host rig |
+| **[`shows.md`](shows.md)** | **The rundown bible.** Every show beat by beat, the 8 PM rotation, the twelve-format segment library, the clip beats that produce the reels, and how to win the information battle |
+| [`the-runup.md`](the-runup.md) | **Aug 10 → Sep 5.** The real football calendar, four weeks with tentpoles, the three-reels-a-day engine, build deadlines by date, milestones and kill criteria |
 | [`x-playbook.md`](x-playbook.md) | **@two3oh2, operationally.** The 70-minute daily budget, the follow/reply tiers and how to build them, the Scoreboard Reply, six post formats, the weekly scoreboard |
 | [`decisions.md`](decisions.md) | Append-only log of every decision that changed the shape of the thing, and where it lives |
 | [`../CHANGELOG.md`](../CHANGELOG.md) | The full version history, v0.1 → v1.19 |
@@ -37,7 +39,9 @@ The specs. What each system is, why it is shaped that way, and the build order.
 |---|---|
 | **[`design/the-grid.md`](design/the-grid.md)** | **The cap table is the programming schedule.** The 16 open hours allocated 1:1 to supply share; Producers and Talent; live always supplants; the ratings ladder; the Charter 50; links-then-uploads; moderation; the Partner Day toggle |
 | **[`design/token-economics.md`](design/token-economics.md)** | **Why $CSGN works.** The spend-side diagnosis, the two-market structure and Airtime Yield, the demand engine, the seven things investors want that need no outreach, the legal line, the falsification test |
-| **[`design/the-denominator.md`](design/the-denominator.md)** | **$CSGN as the asset other tokens are priced in.** The StonkFun quote-token model, why MANLET × ANSEM worked, reflections paid in airtime, the Airtime Standard, show tokens, and the coupling risk |
+| **[`design/graphics-package.md`](design/graphics-package.md)** | **The show's on-air look.** Four mode-driven browser sources, the brand tokens quoted from source, the football cards, the Bullpen referral lockup and its disclosure, and the 9:16 clip kit |
+| **[`design/ticker-football.md`](design/ticker-football.md)** | **The BottomLine, football edition.** What ESPN already sends that the ticker throws away, three real bugs, the Situation Strip in the headroom, rotation fixes for a 60-game Saturday |
+| [`design/the-denominator.md`](design/the-denominator.md) | *(Not scheduled.)* $CSGN as the asset other tokens are priced in — the StonkFun quote-token model, reflections paid in airtime, the Airtime Standard, and the coupling risk |
 | [`design/token-voting.md`](design/token-voting.md) | Supply-weight voting and The 30-Minute Draft. Weight as % of supply aged by hold time — no deposits, no locks, no burns |
 | [`design/csgn-share.md`](design/csgn-share.md) | A Nielsen ratings book for streaming. Share over Rating, the ET dayparts the Grid ladder runs on, The Book and Sweeps |
 | [`design/games-and-payouts.md`](design/games-and-payouts.md) | Squares (weekly, pooled, 500k to the winner), Starting 5 (daily, free, 100k perfect card), and the payout ledger's four guarantees |

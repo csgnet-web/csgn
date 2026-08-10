@@ -1,5 +1,17 @@
 # The Denominator — $CSGN as the asset other tokens are priced in
 
+> **Status: design, not scheduled. Relegated 2026-08-10.** This is **not being built this
+> quarter.** The mechanism stands exactly as designed; what changed is sequencing. The
+> priority through Week 0 is the show, the graphics and the audience
+> ([`../the-runup.md`](../the-runup.md)) — a denominator with no audience behind it is a
+> spreadsheet.
+>
+> **How it lives in the meantime:** as something the host suggests on air. Viewers can launch
+> tokens quoted against $CSGN themselves if they want to. Whether that happens is decided by
+> whether people find it interesting — which is the honest test for this idea anyway, and a
+> better one than a roadmap would have given it. If it takes off on its own, this document is
+> ready. Nothing in the current plan depends on it.
+
 > **Status: design.** The biggest version of the Grid's rule. Where
 > [`the-grid.md`](the-grid.md) turns the token into programming rights, this turns it into
 > **the quote asset other projects launch against** — so that buying their token means
