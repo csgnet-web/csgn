@@ -7,4 +7,4 @@ should be treated as current — the live product is described by the root
 
 | File | What it is |
 |---|---|
-| `CSGN Business Plan.docx` | The original written business plan the project started from (v0.1, November 2025). Superseded operationally by [`docs/master-plan.md`](../docs/master-plan.md) and [`docs/growth-and-market-plan.md`](../docs/growth-and-market-plan.md), and kept because the earliest statement of an idea is worth being able to point at. |
+| `CSGN Business Plan.docx` | The original written business plan the project started from (v0.1, November 2025). Superseded operationally by [`docs/archive/master-plan.md`](../docs/archive/master-plan.md) and [`docs/archive/growth-and-market-plan.md`](../docs/archive/growth-and-market-plan.md), and kept because the earliest statement of an idea is worth being able to point at. |

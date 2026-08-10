@@ -4,7 +4,7 @@
 > This is the index for `docs/obs/`. For the full encoder walkthrough (NVENC
 > settings, RTMPS to X, audio routing) see [`../obs-setup.md`](../obs-setup.md);
 > for the design rationale behind the graphics layer see
-> [`../broadcast-graphics.md`](../broadcast-graphics.md).
+> [`../broadcast-graphics.md`](../../design/broadcast-graphics.md).
 
 
 ---

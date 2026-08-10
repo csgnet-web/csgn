@@ -1,5 +1,11 @@
 # CSGN — The Campaign (locked)
 
+> **ARCHIVED 2026-08-10.** Superseded by [`../plan.md`](../plan.md), which is now the
+> operating document. Kept verbatim for the reasoning; **not authoritative on what
+> we're doing now.**
+> Still worth reading for: the three pillars (the room · the show · the campaign), the
+> CFB 27 formats and dynasty league, and the exact copy — bio, pinned post, talk track.
+
 > **This is the operating document.** Not analysis — the plan being run. Three
 > pillars, named owners, dated cadence, and the exact copy to use.
 >

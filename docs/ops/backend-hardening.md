@@ -141,7 +141,7 @@ Worth stating so nobody "optimises" them away:
   unforgeable) over `x-forwarded-for` (client-supplied, spoofable). Getting this
   backwards makes the rate limiter decorative.
 - **Payout idempotency is enforced by the database**, not by caching or by care.
-  See [`games-and-payouts.md`](games-and-payouts.md) §4.
+  See [`games-and-payouts.md`](../design/games-and-payouts.md) §4.
 - **`toPublicProfile` is the only place** that decides what leaves the users
   collection — one line to audit when someone asks whether their email is
   visible.

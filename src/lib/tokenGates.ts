@@ -2,7 +2,7 @@
 //
 // Every gate the token controls is a *promotion* gate — it decides whose message
 // gets amplified, never who is allowed in. Access to the network (an account, a
-// slot, going live) is free and always will be; see §5 of docs/master-plan.md.
+// slot, going live) is free and always will be; see §5 of docs/archive/master-plan.md.
 //
 // These are the defaults. The live values are stored in config/tokenGates so a
 // threshold can be retuned as the token's price moves without a deploy — a fixed

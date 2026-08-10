@@ -1,5 +1,10 @@
 # The Pitch
 
+> **ARCHIVED 2026-08-10.** Superseded by [`../plan.md`](../plan.md). Kept verbatim for
+> the reasoning; **not authoritative on what we're doing now.**
+> Still worth reading for: **"YOU'RE ON"**, the empty-slot-as-creative rule, the proof
+> stack, and the refusal list — all of which [`../plan.md`](../plan.md) carries forward.
+
 > **What this is:** the agency presentation. An account executive's pitch for the
 > line, and a copy chief's build for the campaign that makes it ship.
 >
@@ -159,7 +164,7 @@ make sure each channel is aimed at one of them.
 
 That third one is the one people will underestimate, and it's the one that makes
 this a *network* instead of a channel. The holder doesn't just watch — they
-program it. Every hour, they pick who goes on ([`token-voting.md`](token-voting.md)).
+program it. Every hour, they pick who goes on ([`token-voting.md`](../design/token-voting.md)).
 When we say "you're on" to a holder, we mean *you're the one who decides*.
 
 ---
@@ -178,12 +183,12 @@ is a website.
 
 **2. THE DRAFT.** Every hour, on the half-hour, the network holds an election for
 who goes on next, live, with a countdown, and the audience decides
-([`token-voting.md`](token-voting.md) §3). This is the campaign's daily event and
+([`token-voting.md`](../design/token-voting.md) §3). This is the campaign's daily event and
 its best possible piece of content, because it is *appointment television about
 appointment television*. Sixteen times a day, something happens at a known time
 and there's a result. Nothing else in crypto has that.
 
-**3. THE BOOK.** Ratings ([`csgn-share.md`](csgn-share.md)). Monthly, published,
+**3. THE BOOK.** Ratings ([`csgn-share.md`](../design/csgn-share.md)). Monthly, published,
 covering the whole category — not just us. This is the one that changes what we
 *are*. The moment a competitor screenshots their own row to brag about it, we
 stopped being a channel and became the body that keeps the record. **Networks that
@@ -247,7 +252,7 @@ only thing that makes anyone believe the schedule.
 - The daily open-slot graphic starts. Every day. Non-negotiable, including the
   days it feels pointless.
 - The ratings poller goes live and starts collecting silently
-  ([`csgn-share.md`](csgn-share.md) §7). Publish nothing yet. **Every day it isn't
+  ([`csgn-share.md`](../design/csgn-share.md) §7). Publish nothing yet. **Every day it isn't
   running is a day of history that can't be recovered.**
 - Founder account: the "you're shouting into a slot machine" thesis post. That's
   the pitch above, written down, with no product in it until the last line.
@@ -269,7 +274,7 @@ only thing that makes anyone believe the schedule.
 **Week 4 — Show the homework.**
 - The first Overnight post: yesterday's Prime share, one graphic, ~9 AM ET.
 - Publish the methodology page and the competitive set *before* anyone asks
-  ([`csgn-share.md`](csgn-share.md) §2.1). Publishing the denominator unprompted
+  ([`csgn-share.md`](../design/csgn-share.md) §2.1). Publishing the denominator unprompted
   is the whole credibility play.
 - The number will be small. **Post it anyway.** A ratings book that starts
   reporting once the numbers got good is a ratings book nobody believes.

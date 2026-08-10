@@ -1,5 +1,11 @@
 # CSGN Agent Work Packets
 
+> **ARCHIVED 2026-08-10.** Build sequencing now lives in [`../plan.md`](../plan.md) and
+> in the build orders inside [`../design/`](../design). Kept verbatim for the reasoning;
+> **not authoritative on what we're doing now.**
+> Still worth reading for: packet **B2** (the second/partner token surface), which is the
+> exact change [`../design/the-grid.md`](../design/the-grid.md) §8 depends on.
+
 > Scoped, self-contained work packets for future engineering/ops agents (or the
 > founder). Each packet lists goal, context files, spec, and acceptance criteria
 > so an agent can start cold. Ordering within each lane ≈ recommended priority.

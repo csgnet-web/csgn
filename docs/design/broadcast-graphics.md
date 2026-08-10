@@ -8,7 +8,7 @@ This is the design + build plan for the on-air graphics layer: text lower
 thirds, a persistent bug/clock, a crypto/headlines ticker, and the
 **picture-in-picture whip-around** (one content square + one or two host
 side-screens). It is written to fit the architecture CSGN already has, so read
-[`docs/obs-setup.md`](./obs-setup.md) first if you haven't.
+[`docs/obs-setup.md`](../ops/obs-setup.md) first if you haven't.
 
 > **Shipped, ready to use** (self-contained OBS browser sources in
 > [`docs/obs/`](./obs/)): [`csgn-pip.html`](./obs/csgn-pip.html) is the
@@ -249,7 +249,7 @@ strategic investment.
 
 ## 8. Related
 
-- [`docs/obs-setup.md`](./obs-setup.md) — the encoder, the no-ads/`?noads` flag,
+- [`docs/obs-setup.md`](../ops/obs-setup.md) — the encoder, the no-ads/`?noads` flag,
   the "Now Live" countdown, verifying the encode.
 - `src/components/player/IntermissionBoard.tsx` — the existing code-driven
   full-screen graphics system to extend for full-screen cards.

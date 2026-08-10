@@ -1,5 +1,11 @@
 # CSGN — The Plan
 
+> **ARCHIVED 2026-08-10.** Superseded by [`../plan.md`](../plan.md) as the operating
+> plan and by [`../design/token-economics.md`](../design/token-economics.md) on token
+> design. Kept verbatim for the reasoning; **not authoritative on what we're doing now.**
+> Still worth reading for: the schedule model, the treasury rules (§11.1), the jukebox
+> rules (§11.2), and the partner refusal list (§11.5) — all of which still stand.
+
 > **The single source of truth.** One document: what CSGN is, what's built, how the
 > token works, and — most importantly — **what the founder actually does every
 > day.** Technical build docs (`obs-setup.md`, `broadcast-graphics.md`,

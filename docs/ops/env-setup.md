@@ -57,7 +57,7 @@ unattended. The mitigation is float, not secrecy:
 The loader asserts that the derived public key equals the published payout
 address, so a wrong key is a startup error rather than transfers out of some other
 wallet. See `netlify/functions/_shared/payoutWallet.ts` and
-[`games-and-payouts.md`](games-and-payouts.md).
+[`games-and-payouts.md`](../design/games-and-payouts.md).
 
 Optional, and worth setting before this runs at any volume:
 
@@ -202,4 +202,4 @@ Running your own network on this? Every variable above is yours to set, and
 **the wallet addresses in the code are not environment variables** — they're
 constants in `src/lib/slots.ts` and `netlify/functions/_shared/`. Change them or
 you are funding someone else's treasury. See
-[`../CONTRIBUTING.md`](../CONTRIBUTING.md) § "Running your own node".
+[`../CONTRIBUTING.md`](../../CONTRIBUTING.md) § "Running your own node".

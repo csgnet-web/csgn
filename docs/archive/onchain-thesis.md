@@ -1,5 +1,12 @@
 # CSGN — Full Analysis + The Onchain Thesis
 
+> **ARCHIVED 2026-08-10.** Superseded on token design by
+> [`../design/token-economics.md`](../design/token-economics.md) and
+> [`../design/the-grid.md`](../design/the-grid.md). Kept verbatim for the reasoning;
+> **not authoritative on what we're doing now.**
+> Still worth reading for: the eight ranked mechanisms (§6.3), Proof-of-Broadcast,
+> Harberger ticker cells, and the "blockspace for attention" framing the new docs build on.
+
 > **The question this document answers:** is "CSGN as a remote control" better than
 > time blocks, and what makes $CSGN a *novel programmatic concept* rather than a
 > coin with utility bolted on — the standard Ansem applies when he says a token

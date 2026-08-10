@@ -3,11 +3,11 @@
 > **Status: engines shipped, unit-tested, not yet wired to UI or run against
 > mainnet.** The game logic, the payout ledger and the admin controls are code.
 > The board/slate screens and the scheduled settlement job are not built yet.
-> Verify with [`dry-run.md`](dry-run.md) before anything pays a stranger.
+> Verify with [`dry-run.md`](../ops/dry-run.md) before anything pays a stranger.
 >
 > Related: [`token-voting.md`](token-voting.md) (the no-deposit principle Starting 5
-> follows), [`master-plan.md`](master-plan.md) §11.7 (the speculation-game brief and
-> its legal caution — read §5), [`dry-run.md`](dry-run.md) (how to verify all of it).
+> follows), [`master-plan.md`](../archive/master-plan.md) §11.7 (the speculation-game brief and
+> its legal caution — read §5), [`dry-run.md`](../ops/dry-run.md) (how to verify all of it).
 
 ---
 
@@ -287,7 +287,7 @@ and between those two failure modes there is no contest.
 - **Winners are never accepted from the request body.** They're recomputed from
   the stored game document. A payout endpoint that pays whoever the caller names
   is not a payout endpoint, it's a withdrawal endpoint.
-- **Key handling** is in [`env-setup.md`](env-setup.md) — hot wallet, thin float,
+- **Key handling** is in [`env-setup.md`](../ops/env-setup.md) — hot wallet, thin float,
   rotate freely.
 - **Dry-run against a tiny real mainnet payment before this pays anyone.** The
   same caution the jukebox SPL path still carries (§v1.6). Nothing here has
@@ -307,7 +307,7 @@ treasury-funded with no entry fee, which is a materially different structure.
 
 **If you fork this, that clearance is not yours.** It says nothing about your
 jurisdiction, your rake, or your prize. Get your own advice
-([`../CONTRIBUTING.md`](../CONTRIBUTING.md) § "Running your own node"). Nothing
+([`../CONTRIBUTING.md`](../../CONTRIBUTING.md) § "Running your own node"). Nothing
 in this repository is legal advice.
 
 **Both purses are now set** — Starting 5 at 100,000 $CSGN daily from the

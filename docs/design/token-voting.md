@@ -4,7 +4,7 @@
 > "vote weight = token balance" with something meaningfully harder to buy. The
 > second is the user-facing product that makes it matter every single hour.
 >
-> Builds on [`master-plan.md`](master-plan.md) §5 (the token does six things),
+> Builds on [`master-plan.md`](../archive/master-plan.md) §5 (the token does six things),
 > §5.1 (the live-settle fix), and §11.8 (the continuous vote, logged as ideation).
 > **This document is the answer to §11.8's five open risks** — read §3.6 for how
 > each one is closed.

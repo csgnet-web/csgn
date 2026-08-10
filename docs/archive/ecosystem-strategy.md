@@ -1,5 +1,11 @@
 # CSGN — Final Analysis + Ecosystem & Money Strategy
 
+> **ARCHIVED 2026-08-10.** Superseded by [`../plan.md`](../plan.md) on sequencing and by
+> [`../design/token-economics.md`](../design/token-economics.md) on the partner surface.
+> Kept verbatim for the reasoning; **not authoritative on what we're doing now.**
+> Still worth reading for: the speed-to-cash ranking (§3) and the **CSGN-for-Venues**
+> play (§4), which the new docs carry forward as the DePIN line.
+
 > **What this doc is.** A straight read on where the project actually stands, and
 > the strategy to (1) work *in tandem* with Ansem, Bullpen and the projects he
 > blesses across Solana / Base / Octra, (2) put money in the founder's pocket

@@ -425,7 +425,7 @@ make it the default encoder.
 have hosts push their feed into CSGN's *own* ingest (RTMP), so there is zero
 Twitch ad surface, `?noads` is simply always correct, **and** you keep full
 Master Control and graphics. That path (and the professional-graphics build it
-unlocks) is in [`docs/broadcast-graphics.md`](./broadcast-graphics.md), and it's
+unlocks) is in [`docs/broadcast-graphics.md`](../design/broadcast-graphics.md), and it's
 the one to invest in.
 
 ### Verifying the encode (do this once before going live)

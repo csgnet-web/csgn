@@ -1,5 +1,10 @@
 # CSGN — position, economics, and the plan forward
 
+> **ARCHIVED 2026-08-10.** Its six-month plan is superseded by [`../plan.md`](../plan.md).
+> Kept verbatim for the reasoning; **not authoritative on what we're doing now.**
+> Still worth reading for: the creator-fee maths against the real pump.fun tier table, and
+> the honest odds on market cap — the most unsentimental numbers in the repository.
+
 An honest assessment of where this project stands, what the numbers actually
 require, and what to do for the next six months.
 

@@ -1,5 +1,10 @@
 # CSGN — Winning SocialFi Era 2
 
+> **ARCHIVED 2026-08-10.** Its 90-day plan is superseded by [`../plan.md`](../plan.md).
+> Kept verbatim for the reasoning; **not authoritative on what we're doing now.**
+> Still worth reading for: the Era 1 → Era 2 rule change, the Privy funnel analysis, and
+> the founder promotion playbook (§5) — the X formats and the five Substack essays.
+
 > **A full agency consultation.** The market read, the honest positioning, the
 > sign-up-friction decision (Privy), the founder's promotion playbook, the
 > project's social verticals, and a 90-day operating plan.

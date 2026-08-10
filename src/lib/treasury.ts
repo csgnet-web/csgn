@@ -1,6 +1,6 @@
 // The CSGN treasury — the public balance sheet that replaces burning.
 //
-// CSGN never burns anything (see §11.1 of docs/master-plan.md). Instead every
+// CSGN never burns anything (see §11.1 of docs/archive/master-plan.md). Instead every
 // token the network receives goes to ONE public address under published rules,
 // so anyone can watch the balance and hold us to the policy. A burn is a press
 // release; a rule-bound public treasury is a balance sheet that does the same

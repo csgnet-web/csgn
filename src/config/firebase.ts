@@ -25,7 +25,7 @@ const app = initializeApp(firebaseConfig)
 // App Check attests that Firestore/Auth requests come from this real web app,
 // not a script with the (public) API key. No-ops when the site key env var is
 // unset so local dev and preview deploys keep working. Enforcement is a
-// separate Firebase-console switch — see docs/ops-cost-security-runbook.md.
+// separate Firebase-console switch — see docs/ops/ops-cost-security-runbook.md.
 const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY as string | undefined
 if (appCheckSiteKey) {
   const debugToken = import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN as string | undefined

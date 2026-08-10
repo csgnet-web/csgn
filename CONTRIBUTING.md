@@ -15,7 +15,7 @@ actually holds itself to, and how to run your own network on it.
 git clone https://github.com/csgnet-web/csgn
 cd csgn
 npm install
-cp .env.example .env     # fill in Firebase — see docs/env-setup.md
+cp .env.example .env     # fill in Firebase — see docs/ops/env-setup.md
 npm run dev              # http://localhost:5173
 ```
 
@@ -46,7 +46,7 @@ Anything that decides an outcome — who won, what gets paid, what's on screen �
 lives in a pure module that takes state and returns state. No Firestore, no
 clock it wasn't handed, no `fetch`. The I/O sits in a thin wrapper around it.
 
-That's why a settlement can be exercised in a REPL ([`docs/dry-run.md`](docs/dry-run.md) §2)
+That's why a settlement can be exercised in a REPL ([`docs/ops/dry-run.md`](docs/ops/dry-run.md) §2)
 and why "does this pay the right person" is a unit test rather than a mainnet
 experiment.
 
@@ -93,22 +93,22 @@ The whole point of open-sourcing this is that a network shouldn't need our
 permission to exist. To run your own:
 
 1. **Fork it and rebrand.** Change the name, the logo (`public/`), and the
-   marks in `docs/obs/`. Don't call it CSGN.
+   marks in `docs/ops/obs/`. Don't call it CSGN.
 2. **Point the addresses at wallets you control.** `CSGN_MINT`, `CSGN_TREASURY`
    in `src/lib/slots.ts`; `CSGN_PAYOUT_WALLET` in
    `netlify/functions/_shared/payouts.ts`; the mirrors in
    `netlify/functions/_shared/solana.ts`. **Leaving ours in means paying us.**
-3. **Stand up your own Firebase + Netlify.** [`docs/env-setup.md`](docs/env-setup.md)
+3. **Stand up your own Firebase + Netlify.** [`docs/ops/env-setup.md`](docs/ops/env-setup.md)
    lists every variable and which are secret.
 4. **Set your own schedule.** `netlify/functions/_shared/schedule.ts` defines the
    twelve daily blocks and which are network-reserved. It's a template, not a law.
-5. **Do the dry run before you pay anyone.** [`docs/dry-run.md`](docs/dry-run.md).
+5. **Do the dry run before you pay anyone.** [`docs/ops/dry-run.md`](docs/ops/dry-run.md).
    §4.4 in particular — the idempotency test — is not optional.
 6. **Get your own legal advice on the games.** Entry fees and prize payouts are
    regulated. Ours were reviewed for our structure in our jurisdiction; that
    tells you nothing about yours.
 
-The OBS assets in `docs/obs/` work against any Firestore project — they're static
+The OBS assets in `docs/ops/obs/` work against any Firestore project — they're static
 HTML that reads a config document. Point them at yours and the broadcast layer
 works on day one.
 
@@ -123,7 +123,7 @@ Studio over RTMPS. One destination, one encoder, no third party in the path.
 sends one stream to Restream, which fans it out to X and Twitch simultaneously.
 Costs a subscription and adds a hop, but it's the only sane way to hit both
 without running two encoders. Configure it as your single RTMP target and let it
-handle the split — see [`docs/obs-setup.md`](docs/obs-setup.md).
+handle the split — see [`docs/ops/obs-setup.md`](docs/ops/obs-setup.md).
 
 Streamers on the network keep streaming to **their own** Twitch channels. Only
 the network's output stream goes to X.

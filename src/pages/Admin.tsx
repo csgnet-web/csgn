@@ -129,7 +129,7 @@ interface UserData {
 }
 
 // ── Broadcast ticker (config/ticker) ──
-// The OBS ticker overlay (docs/obs/csgn-ticker.html) polls this doc over the
+// The OBS ticker overlay (docs/ops/obs/csgn-ticker.html) polls this doc over the
 // public Firestore REST API roughly once a minute, so edits here reach the
 // broadcast within ~60s without touching OBS.
 
@@ -1098,7 +1098,7 @@ export default function Admin() {
               <div className="p-4 space-y-4">
                 {/* Workflow hint */}
                 <div className="p-3 bg-white/[0.03] border border-white/[0.06] rounded-xl text-xs text-gray-500 leading-relaxed space-y-1">
-                  <p className="text-gray-400 font-medium">Setup flow (OBS → X, no Restream) — full guide: <span className="font-mono text-primary-400">docs/obs-setup.md</span></p>
+                  <p className="text-gray-400 font-medium">Setup flow (OBS → X, no Restream) — full guide: <span className="font-mono text-primary-400">docs/ops/obs-setup.md</span></p>
                   <p>1. Add <span className="font-mono text-primary-400">/player</span> as an OBS <span className="text-gray-300">Browser Source</span> (1920×1080) — it runs the 24/7 logic itself: live feed, BRB, intermission VODs, transitions</p>
                   <p>2. X Media Studio (studio.x.com → Producer) → create broadcast → copy RTMPS URL + key into OBS → Start Streaming</p>
                   <p>3. Go live from Media Studio, open the broadcast's post on @CSGNet, copy the post URL</p>
@@ -1236,7 +1236,7 @@ export default function Admin() {
             <TickerControlsCard railModule={(
               <div className="space-y-4">
                 <p className="text-xs text-gray-500 leading-relaxed">
-                  Drives the OBS ticker overlay (<span className="font-mono text-primary-400">docs/obs/csgn-ticker.html</span>).
+                  Drives the OBS ticker overlay (<span className="font-mono text-primary-400">docs/ops/obs/csgn-ticker.html</span>).
                   The overlay polls this config over the public Firestore REST API, so saves here reach the broadcast within ~60s — no OBS restart needed.
                 </p>
 

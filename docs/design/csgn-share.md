@@ -3,7 +3,7 @@
 > **Status: design.** The measurement layer. It answers "how are we actually
 > doing" in a currency that means something, and it feeds three other systems:
 > Draft seeding ([`token-voting.md`](token-voting.md) §3.3), slot pricing, and
-> the entire "be the scoreboard" growth strategy ([`master-plan.md`](master-plan.md) §7.1).
+> the entire "be the scoreboard" growth strategy ([`master-plan.md`](../archive/master-plan.md) §7.1).
 
 ---
 
