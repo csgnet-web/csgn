@@ -399,10 +399,21 @@ fit, it wraps or it gets its own face.
 face: probable starters, pitching decisions, top performers. It only flips when
 there's something to show — never an empty face.
 
-**Section dots, bottom right.** One pip per item in the current league. The pip
-you're on is gold; the ones you've passed are drawn down to a dim white; the ones
-ahead are dark. The row resets on the league wipe. Over 14 items the overflow
-rides as a `+N` rather than a wall of dots nobody can count.
+**Section dots, under the league pill.** One pip per item in the current league.
+The pip you're on is gold; the ones you've passed are drawn down to a dim white;
+the ones ahead are dark. The row resets on the league wipe.
+
+They sit **beneath the pill**, not in the corner of the scoreboard — a progress
+row floating over a game card reads as belonging to the game, and under the pill
+it sits with the league it actually counts. The scoreboard gets its full width
+back as a result.
+
+**Capped at five.** Past that the row becomes a sliding window: five pips with
+the lit one always inside it, and the remainder riding as `+N`. Five is about the
+largest number of pips a person reads without counting, and the pill is 158px
+wide. (The window matters — the old renderer compared the cursor against the
+visible pip count, so once you were past the cap every pip drew as `done` and
+none drew as `on`.)
 
 This is the cheapest thing a ticker can do to stop feeling infinite. You always
 know how much of the NBA is left, which means you know whether to keep watching.

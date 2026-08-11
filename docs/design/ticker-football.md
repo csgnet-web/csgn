@@ -1,7 +1,7 @@
 # The BottomLine, football edition
 
-> **Status: design.** An upgrade to `ops/obs/csgn-ticker.html` — the bottom sports band —
-> to carry football properly before Week 0.
+> **Status: partly shipped 2026-08-10.** An upgrade to `ops/obs/csgn-ticker.html` — the
+> bottom sports band — to carry football properly before Week 0.
 >
 > **This is not the show graphics package.** The BottomLine is its own system: its own file,
 > its own control document (`config/ticker`), its own 90-second data cycle. The show's
@@ -10,6 +10,21 @@
 >
 > Everything below is grounded in the shipped code. Line references are to
 > [`../ops/obs/csgn-ticker.html`](../ops/obs/csgn-ticker.html).
+
+## 0. What shipped
+
+| | |
+|---|---|
+| ✅ **AP / CFP rank chips** | `curatedRank.current`, with 25 treated as the unranked sentinel. Reserved slot so ranked and unranked rows still align |
+| ✅ **Possession slot reserved** | The dot no longer shifts both abbreviations ~23px on every change of possession |
+| ✅ **Red-zone possession dot** | The header comment claimed this for months; it is now true |
+| ✅ **Section dots under the pill, cap 5** | Sliding window with a cursor clamp — see §2.4 |
+| ✅ **`groups=80` on CFB** | ESPN was answering with a limited group, not all of FBS |
+| ✅ **`dateRangeDays` actually works** | The day filter used to discard every extra day that had just been fetched |
+| ✅ **WEEK 0 / WEEK 1 slates** | Three windowed boards that retire themselves once played |
+| ✅ **Empty columns collapse** | Score and logo columns, which are 148px and 64px of guaranteed blank on an upcoming game |
+| ✅ **Panel fills** | `.rows` grows; `fitText` can grow a short headline as well as shrink a long one |
+| ⬜ | Everything in §5 below |
 
 ---
 
@@ -229,19 +244,71 @@ starts recommending bets is a different product with different regulators.
 
 ---
 
-## 8. Build order
+## 8. The full catalog — everything worth building before the season
 
-Ordered by value per hour of work:
+Exhaustive on purpose, so nothing gets rediscovered in October. Grouped by what it costs
+to build, not by how much anyone wants it.
 
-1. **Rank chips** on team rows — one parser line, one row slot. The biggest visible win.
-2. **Possession slot reserved** + red in the red zone. Two small fixes, both visible.
-3. **Section-dot clamp** + per-group item cap. Fixes CFB Saturday before CFB Saturday.
-4. **Odds on the pregame face**, and conference records from `records[1]`.
-5. **Live-football refresh tier** at 20–25s.
-6. **`groups=80`** for CFB, `dateRangeDays` for NFL.
-7. **The TOP 25 lead group** — before noon ET on Aug 17.
-8. **The Situation Strip** — before Week 0, Aug 29.
-9. Line-score flip face, last play, weather.
+### 8.1 Free — the data is in a response already being fetched
+
+Each of these is a parser line and a render slot. No new endpoint, no new dependency.
+
+| | Field | Why it earns the space |
+|---|---|---|
+| ✅ | `curatedRank.current` | Rank. **Shipped** |
+| | `odds[].details`, `overUnder` | Spread and total. The number this audience actually talks games in |
+| | `records[1..n]` | Conference record — "6-1 Big Ten" is the CFB fact that matters |
+| | `situation.homeTimeouts` / `awayTimeouts` | Timeout pips. On every real football bug ever made |
+| | `situation.lastPlay.text` | "Allen pass complete to Diggs for 14 yds" |
+| | `situation.yardLine`, `possessionText` | Ball spot, and the input to a field-position bar |
+| | `linescores[]` | Quarter-by-quarter, as the flip face |
+| | `notes[0].headline` | Bowl name, rivalry name, "Week 12" |
+| | `venue.fullName`, `neutralSite` | Where it's being played |
+| | `weather` | Cold-weather NFL games are a story by themselves |
+| | `status.type.detail` | Final/OT distinguished from Final |
+| | quarter and clock, **separated** | They're jammed into one `.l1` string today |
+
+### 8.2 Situational — needs the headroom strip (§4)
+
+Field-position bar with the ball spot · goal-to-go · two-minute warning · OT indicator ·
+drive summary ("8 plays, 75 yards, 4:12") · win probability · **red-zone panel tint** on top
+of the dot that now turns red.
+
+### 8.3 Season shape — the context that makes a game matter
+
+AP / Coaches / CFP boards with **movement arrows** (§6) · conference standings · CFP
+bracket projection · playoff picture and seeding · bye weeks · **kickoff countdown**
+("KICKS IN 2D 4H", which is what makes a slate board feel live rather than static) ·
+TV-window grouping (1pm / 4:25 / SNF / MNF) · **upset alert** when an unranked team leads a
+ranked one · **close-game alert** inside two minutes with a one-score margin.
+
+### 8.4 Production behaviour — how the band carries a Saturday
+
+**Score-alert queue jump** — a touchdown interrupts the rotation. `retriggerRightNow` is the
+only interrupt path in the file and is the shape to clone · **marquee dwell** via the
+per-item `dwellMs` override that already exists · **priority sorting**, live-and-close
+first, so 1pm finals stop playing ahead of live 4:25 games · **per-league refresh tier**,
+20–25s for live football against the flat 90s today · **item caps with paging** ·
+**conference-split pills** (SEC / B1G / ACC as their own boards on a 60-game Saturday) ·
+a **GAMEDAY mode** that drops non-football leagues entirely.
+
+### 8.5 Stats
+
+Three-up QB/RB/WR leaders instead of the QB-only face `leaderOf` produces today · season
+leaders on the pregame face · team stat comparison (yards, turnover margin) · Heisman watch
+board.
+
+### 8.6 Sequenced
+
+1. ~~Rank chips~~ · ~~possession slot~~ · ~~red-zone dot~~ · ~~section dots~~ ·
+   ~~`groups=80`~~ · ~~slates~~ — **done**
+2. **Odds on the pregame face** + conference records. Highest remaining value per hour.
+3. **The TOP 25 lead group** — before noon ET, **Aug 17**.
+4. **Priority sorting + item caps** — before **Aug 29**, or Week 0 Saturday locks the band.
+5. **Live-football refresh tier** at 20–25s — same deadline.
+6. **The Situation Strip** — before Week 1.
+7. Line score, last play, timeouts, kickoff countdown.
+8. Everything in §8.3 and §8.4 as the season gives them a reason to exist.
 
 ---
 

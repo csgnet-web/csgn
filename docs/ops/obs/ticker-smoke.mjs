@@ -111,8 +111,10 @@ const mainFace = __csgn.renderMainFace(mlb)
 check('Main face shows both records in grey', mainFace.includes('55-38') && mainFace.includes('48-45'))
 check('Stacked rows: away row before home row', (() => {
   const away = mainFace.indexOf('Red Sox'), home = mainFace.indexOf('Yankees')
-  return away > -1 && home > -1 && away < home && (mainFace.match(/class="trow"/g) || []).length === 2
+  // `class="trow …"` now carries collapse modifiers (noscore / nologo), so match the prefix.
+  return away > -1 && home > -1 && away < home && (mainFace.match(/class="trow[ "]/g) || []).length === 2
 })())
+check('Row with no logo collapses its logo column', mainFace.includes('trow nologo'))
 check('Scores live in the fixed score column', (mainFace.match(/class="scorecell"/g) || []).length === 2)
 const finalGame = { ...mlb, isFinal: true, live: false, winner: 'home', baseball: null }
 const finalFace = __csgn.renderMainFace(finalGame)
@@ -281,7 +283,10 @@ check('rankMemes returns the whole set, power-ranked', rankedNoVotes.length === 
 const ranked = __csgn.rankMemes(memes, { WIF: { tokens: 5e8, wallets: 42 } })
 check('Holder votes give real power: WIF ranks #1 despite lower vol/mcap', ranked[0].sym === 'WIF' && ranked[0].votesCell.wallets === 42)
 const mlBoard = __csgn.renderMemeLeaderboard(ranked)
-check('Meme leaderboard card: MEME 100 POWER RANK + top rows', mlBoard.includes('MEME 100') && mlBoard.includes('POWER RANK') && (mlBoard.match(/ml-row/g) || []).length === 3 && mlBoard.includes('COMMUNITY POWER RANKING'))
+check('Meme board: MEME 100 head + 3 rows, and NO .c-bot (the band was removed)',
+  mlBoard.includes('MEME 100') && (mlBoard.match(/ml-row/g) || []).length === 3 && !mlBoard.includes('c-bot'))
+check('Meme board leads with the holder vote, not the price',
+  mlBoard.includes('$CSGN HOLDER VOTE') && mlBoard.includes('ml-share'))
 const pickCard = __csgn.renderCommunityPick(ranked[0], ranked[0].votesCell)
 check('Community pick card: COMMUNITY PICK tag + backers + WIF', pickCard.includes('c-tag pick') && pickCard.includes('COMMUNITY PICK') && pickCard.includes('42 backers') && pickCard.includes('WIF'))
 check('compactNum abbreviates', __csgn.compactNum(1.5e6) === '1.5M' && __csgn.compactNum(2e9) === '2.0B')
@@ -352,6 +357,159 @@ check('Empty tweets → no group', __csgn.buildTweetsGroup([]) === null && __csg
 // ── $CSGN dock coin (network coin always present in the rotation) ────────────
 const csgnCard = __csgn.renderCsgnCoinCard({ price: 0.0000038, chg: 5.2, mc: 3800, vol: 900 })
 check('$CSGN dock coin: brand tag + star rank + CSGN symbol + LED digits', csgnCard.includes('c-tag csgn') && csgnCard.includes('c-rank csgn') && csgnCard.includes('CSGN') && csgnCard.includes('digit'))
+
+// ── Section dots: cap 5, sliding window, cursor always lit ──────────────────
+// The old renderer compared the cursor against the VISIBLE pip count, so past
+// the cap every pip drew `done` and none drew `on` — the progress row silently
+// stopped working. At a cap of 5 that would fire constantly, so the window
+// maths is the thing worth pinning down.
+const sd = __csgn.secDotState
+check('MAX_SECDOTS is 5', __csgn.MAX_SECDOTS === 5)
+check('Under the cap: every item gets a pip, no overflow', (() => {
+  const s = sd(3, 1); return !s.hidden && s.start === 0 && s.shown === 3 && s.more === 0
+})())
+check('One item → hidden (a single pip says nothing)', sd(1, 0).hidden && sd(0, 0).hidden)
+check('Long section: window opens at the start with +N', (() => {
+  const s = sd(60, 0); return s.start === 0 && s.shown === 5 && s.more === 55
+})())
+check('Long section: window slides to keep the cursor inside', (() => {
+  const s = sd(60, 30); return s.start <= 30 && 30 < s.start + s.shown && s.more === 27
+})())
+check('Long section: window clamps at the end, no negative overflow', (() => {
+  const s = sd(60, 59); return s.start === 55 && s.shown === 5 && s.more === 0
+})())
+check('Cursor past the end is clamped, never off-window', (() => {
+  const s = sd(10, 999); return s.start + s.shown <= 10 && s.more === 0
+})())
+
+// ── Meme 100: vote share is the hero ────────────────────────────────────────
+const shares = __csgn.memeVoteShares([
+  { sym: 'DOGE', votesCell: { tokens: 600 } },
+  { sym: 'PEPE', votesCell: { tokens: 300 } },
+  { sym: 'WIF', votesCell: { tokens: 100 } },
+])
+check('Vote shares are percentages of all weight cast, summing to 100',
+  shares[0].share === 60 && shares[1].share === 30 && shares[2].share === 10)
+check('No votes anywhere → 0% rather than a divide-by-zero',
+  __csgn.memeVoteShares([{ sym: 'A', votesCell: { tokens: 0 } }])[0].share === 0)
+const noVoteBoard = __csgn.renderMemeLeaderboard([
+  { sym: 'A', powerRank: 1, chg: 1, votesCell: { tokens: 0 } },
+  { sym: 'B', powerRank: 2, chg: 1, votesCell: { tokens: 0 } },
+  { sym: 'C', powerRank: 3, chg: 1, votesCell: { tokens: 0 } },
+])
+check('No votes yet → a call to action and a dash, never a fake 0%',
+  noVoteBoard.includes('VOTE AT CSGN.FUN') && noVoteBoard.includes('>—<') && !noVoteBoard.includes('ml-bar'))
+
+// ── MLB games back: the renderer was fine, the data source was missing ──────
+const standings = __csgn.parseStandingsTable({ children: [{ standings: { entries: [
+  { team: { id: '10' }, stats: [{ name: 'gamesBehind', displayValue: '-' }] },
+  { team: { id: '11' }, stats: [{ name: 'gamesBehind', displayValue: '2.5' }] },
+  { team: { id: '12' }, stats: [{ abbreviation: 'GB', value: 7 }] },
+] } }] })
+check('Standings parse: division leader → 1st, others → N GB',
+  standings['10'] === '1st' && standings['11'] === '2.5 GB' && standings['12'] === '7.0 GB')
+check('Standings parse survives junk', JSON.stringify(__csgn.parseStandingsTable(null)) === '{}')
+check('Games back falls back to the standings table', __csgn.gamesBackOf({ team: { id: '11' } }, standings) === '2.5 GB')
+check('Scoreboard value still wins over the table',
+  __csgn.gamesBackOf({ team: { id: '11', standingSummary: '1.0 GB' } }, standings) === '1.0 GB')
+check('Unknown team → empty, never a stray separator', __csgn.gamesBackOf({ team: { id: '99' } }, standings) === '')
+
+// ── MMA: the card, not the bout ─────────────────────────────────────────────
+// ESPN gives every BOUT its own event, and the bout note used to shadow the
+// card name — so "UFC 330" was unreachable whenever a note existed, i.e. always.
+check('Event name comes off the card, not the bout',
+  __csgn.eventNameOf({ season: { slug: 'ufc-330' }, name: 'Makhachev vs. Oliveira' }) === 'UFC 330')
+check('Event name splits a "UFC 330: A vs B" title', __csgn.eventNameOf({ name: 'UFC 330: Makhachev vs Oliveira' }) === 'UFC 330')
+check('A bare bout name is not mistaken for a card', __csgn.eventNameOf({ name: 'Makhachev vs. Oliveira' }) === '')
+const bout = (a, h, wc, title, when) => ({ awayAbbr: a, homeAbbr: h, subnote: wc, titleFight: title,
+  sortDate: new Date(when), eventName: 'UFC 330', live: false, isFinal: true, pregame: false, winner: 'away' })
+const cards = __csgn.buildFightCardGroups([
+  bout('Jones', 'Aspinall', 'Heavyweight', true, '2026-08-10T04:00Z'),
+  bout('Silva', 'Costa', 'Middleweight', false, '2026-08-10T03:00Z'),
+  bout('Diaz', 'Poirier', 'Lightweight', false, '2026-08-10T02:00Z'),
+  bout('Lee', 'Kim', 'Flyweight', false, '2026-08-10T01:00Z'),
+])
+check('Bouts collapse into one card, paged three at a time',
+  cards.length === 1 && cards[0].cardName === 'UFC 330' && cards[0].bouts.length === 4 && cards[0].pages.length === 2)
+check('Main event is the last bout of the night', cards[0].bouts.find((b) => b.mainEvent).awayAbbr === 'Jones')
+check('Card dwell scales with the number of pages', cards[0].dwellMs >= 2 * 4500)
+const cardFace = __csgn.renderFightCard(cards[0])
+check('Card face: event rail + bout count', cardFace.includes('UFC 330') && cardFace.includes('4 BOUTS') && cardFace.includes('fc-rail'))
+const page2 = __csgn.fightCardsHtml(cards[0].pages[1])
+check('A title fight that is also the main event shows BOTH flags',
+  page2.includes('MAIN EVENT') && page2.includes('★ TITLE'))
+check('Weight class rides every bout', __csgn.fightCardsHtml(cards[0].pages[0]).includes('Flyweight'))
+check('Two promotions on one night stay separate cards',
+  __csgn.buildFightCardGroups([bout('A', 'B', 'X', false, '2026-08-10T01:00Z'),
+    { ...bout('C', 'D', 'Y', false, '2026-08-10T02:00Z'), eventName: 'BELLATOR 300' }]).length === 2)
+
+// ── Season slates: upcoming football, weeks ahead ───────────────────────────
+const slateKeys = __csgn.SLATES.map((s) => s.key).join(',')
+check('Three slates: CFB Week 0, CFB Week 1, NFL Week 1', slateKeys === 'cfb-wk0,cfb-wk1,nfl-wk1')
+const wk0 = __csgn.SLATES.find((s) => s.key === 'cfb-wk0')
+const wk1 = __csgn.SLATES.find((s) => s.key === 'cfb-wk1')
+const nflWk1 = __csgn.SLATES.find((s) => s.key === 'nfl-wk1')
+check('Week 0 asks for Aug 29 exactly', __csgn.buildScoreboardUrl(wk0, 'college-football').includes('dates=20260829&'))
+check('CFB Week 1 asks for Sep 3–7', __csgn.buildScoreboardUrl(wk1, 'college-football').includes('dates=20260903-20260907'))
+check('NFL Week 1 asks for Sep 9–14', __csgn.buildScoreboardUrl(nflWk1, 'nfl').includes('dates=20260909-20260914'))
+check('CFB requests all of FBS (groups=80), not the default subset',
+  __csgn.buildScoreboardUrl(__csgn.LEAGUES.find((l) => l.key === 'cfb'), 'college-football').includes('groups=80'))
+check('A windowed league keeps future events — the day filter used to eat them',
+  __csgn.shouldKeepEventToday(wk0, { date: '2026-08-29T19:00:00Z', competitions: [{ date: '2026-08-29T19:00:00Z' }] }))
+check('Slates retire themselves once their window has passed', (() => {
+  const before = __csgn.activeSlates(new Date('2026-08-10')).length
+  const mid = __csgn.activeSlates(new Date('2026-08-30')).map((s) => s.key)
+  const after = __csgn.activeSlates(new Date('2026-09-16')).length
+  return before === 3 && !mid.includes('cfb-wk0') && after === 0
+})())
+
+// ── Football: rank, collapsing columns, possession ──────────────────────────
+const cfbLeague = __csgn.LEAGUES.find((l) => l.key === 'cfb')
+const [wk0Game] = __csgn.parseGameEvent(cfbLeague, {
+  date: '2026-08-29T19:00:00Z', status: { type: { state: 'pre' } },
+  competitions: [{
+    date: '2026-08-29T19:00:00Z', status: { type: { state: 'pre' } },
+    broadcasts: [{ market: 'national', names: ['NBC'] }],
+    competitors: [
+      { homeAway: 'home', id: '1', team: { shortDisplayName: 'SJSU' }, records: [{ summary: '0-0' }] },
+      { homeAway: 'away', id: '2', curatedRank: { current: 3 }, team: { shortDisplayName: 'USC' }, records: [{ summary: '0-0' }] },
+    ],
+  }],
+})
+check('AP rank is finally read off the payload', wk0Game.ranks && wk0Game.ranks.away === 3)
+check('ESPN\'s unranked sentinel (25) is not a rank', (() => {
+  const [g] = __csgn.parseGameEvent(cfbLeague, { date: '2026-08-29T19:00:00Z', status: { type: { state: 'pre' } },
+    competitions: [{ date: '2026-08-29T19:00:00Z', status: { type: { state: 'pre' } }, competitors: [
+      { homeAway: 'home', id: '1', curatedRank: { current: 25 }, team: { shortDisplayName: 'A' } },
+      { homeAway: 'away', id: '2', curatedRank: { current: 25 }, team: { shortDisplayName: 'B' } }] }] })
+  return g.ranks === null
+})())
+const wk0Rows = __csgn.renderRows(wk0Game)
+check('Unranked team still reserves the rank slot so names line up',
+  wk0Rows.includes('class="rank"') && wk0Rows.includes('rank empty'))
+check('An upcoming game collapses its empty score column', wk0Rows.includes('trow noscore'))
+const [nflLive] = __csgn.parseGameEvent(__csgn.LEAGUES.find((l) => l.key === 'nfl'), {
+  date: new Date().toISOString(), status: { type: { state: 'in' } },
+  competitions: [{
+    date: new Date().toISOString(),
+    status: { period: 3, displayClock: '4:12', type: { state: 'in', shortDetail: 'Q3 4:12' } },
+    situation: { shortDownDistanceText: '3rd & 8', possession: '11', isRedZone: true },
+    competitors: [
+      { homeAway: 'home', id: '10', score: '14', team: { shortDisplayName: 'KC' } },
+      { homeAway: 'away', id: '11', score: '17', team: { shortDisplayName: 'BUF' } },
+    ],
+  }],
+})
+const nflRows = __csgn.renderRows(nflLive)
+check('Possession slot is always rendered, so the names never jitter',
+  (nflRows.match(/class="poss/g) || []).length === 2 && nflRows.includes('poss off'))
+check('Possession dot goes red in the red zone (the header comment finally true)',
+  nflRows.includes('poss rz'))
+
+// ── RIGHT NOW: two lines, evenly spaced ─────────────────────────────────────
+const rnCard = __csgn.renderEventCard(__csgn.buildRightNowGroup([{ tag: 'BREAKING', text: 'SOL flips $300' }]).items[0])
+check('RIGHT NOW takes the evenly-spaced two-line variant, not the 3-line one',
+  rnCard.includes('event rn') && !rnCard.includes('event sub') && !rnCard.includes('ev-sub'))
 
 console.log(failures ? `\n${failures} FAILURES` : '\nAll ticker smoke checks passed')
 process.exit(failures ? 1 : 0)

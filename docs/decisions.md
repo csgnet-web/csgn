@@ -232,6 +232,67 @@ it happens is decided by popularity rather than roadmap. Supersedes the sequenci
 2026-08-10 denominator entry above; that entry stays as written, per the append-only rule.
 → [`design/the-denominator.md`](design/the-denominator.md)
 
+**2026-08-10 · ticker · Section dots move under the league pill and cap at five.** A
+progress row in the corner of a game card reads as belonging to the game; under the pill it
+sits with the league it counts, and the scoreboard gets its width back. Past five pips the
+row becomes a sliding window with the lit pip always inside it. **The clamp was mandatory,
+not cosmetic:** the old renderer compared the cursor against the *visible* count, so past
+the cap every pip drew `done` and none drew `on` — at 14 that was rare, at 5 it would have
+been constant. `setPill` now writes to a label span, because `textContent` on the pill would
+delete the dots on every league change.
+→ `docs/ops/obs/csgn-ticker.html`, [`ops/obs/README.md`](ops/obs/README.md)
+
+**2026-08-10 · ticker · The Meme 100 face is rebuilt around $CSGN vote share as the hero
+number.** It is the flagship token feature and it was leading with price. Share of vote
+weight is the number nobody else on television can show, and a bar behind each row makes the
+board readable before anyone reads a label. The bottom band is removed from this face
+entirely — it carried ~411px of text in a 375px row and was the tightest line in the file.
+
+**The overlap was arithmetic, not styling.** `.ml-list` declared 58px and held three 26px
+rows plus gaps (80px), with no `overflow` and the same `z-index` as its neighbours, so it
+bled raw text into the bands above and below. Above it, `.c-top` declared 26px while `.c-sym`
+ran 30px with **no `line-height` declared anywhere in the dock**, so `min-height:auto`
+inflated it and pushed the bottom band off *every* card, not just this one. Both bands now
+budget to exactly 97px and the smoke test asserts the sum.
+→ `docs/ops/obs/csgn-ticker.html`
+
+**2026-08-10 · ticker · MMA renders the card, not the bout.** ESPN gives each bout its own
+event, so a 14-fight night was 14 anonymous rows. Bouts now group under their card with a
+static event rail and pages of three, reusing the golf board pattern; the shared sub-rotation
+timer was generalised so two paged faces can't collide. **The event name was unreachable**
+— the bout note and the card name were read from one chained expression with the note first,
+and the note always exists. Weight class, TITLE and MAIN EVENT all ride each bout; a title
+fight that is also the main event shows both flags.
+→ `docs/ops/obs/csgn-ticker.html`
+
+**2026-08-10 · ticker · MLB games-back gets a data source; the renderer was never broken.**
+`gamesBackOf` → `teamRow` was correct and wired end to end. Its only source was
+`team.standingSummary`, which the *scoreboard* payload generally omits — that field lives on
+the standings endpoint — and every path degraded to `""` silently, so a feature with no data
+looked identical to a working one. Added a standings fetch cached for six hours, behind the
+existing scoreboard reads. **Not verified against a live payload** — outbound fetch is
+blocked from the authoring environment — so it is built to work either way.
+→ `docs/ops/obs/csgn-ticker.html`
+
+**2026-08-10 · ticker · Upcoming football gets its own windowed boards.** WEEK 0 (Aug 29),
+CFB WK 1 (Sep 3–7) and NFL WK 1 (Sep 9–14) are leagues with a fixed `dateWindow` rather than
+a widened range on the live NFL/CFB pills — a game three weeks out sitting beside a live one
+is how you confuse a viewer. Each retires itself once its window passes. **This also fixed a
+silent bug:** `shouldKeepEventToday` discarded every event not on the current broadcast day
+*after* the fetch, so `dateRangeDays` had no observable effect at all and MMA, F1, NASCAR and
+both Wimbledon leagues were throwing away the extra days they had just requested. CFB was
+also missing `groups=80` and so was getting a limited group rather than all of FBS.
+→ `docs/ops/obs/csgn-ticker.html`
+
+**2026-08-10 · ticker · The game panel fills instead of pooling dead space in the middle.**
+`.rows` was `flex:0 1 auto` — able to shrink, never to grow — against `.gamebox` on
+`space-between`, so all leftover width collected as one gap. On a pregame CFB card that ran
+to roughly 550px, nearly half the panel. Rows now grow, empty score and logo columns
+collapse (148px and 64px of guaranteed blank on an upcoming game), and `fitText` gained a
+grow branch capped at 1.35× so a short headline no longer sits at its CSS size in a 1,100px
+box. AP/CFP rank chips ship with a reserved slot so ranked and unranked rows still align.
+→ `docs/ops/obs/csgn-ticker.html`
+
 **2026-08-10 · docs · Repo-wide path repair after the reorganisation.** Prose and code
 samples still pointing at `docs/obs/…` were repointed to `docs/ops/obs/…`; archived docs
 were left verbatim by the archive rule. Separately, `docs/ops/obs/README.md`'s quick-start

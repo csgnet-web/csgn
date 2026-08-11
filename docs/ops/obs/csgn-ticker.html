@@ -149,14 +149,18 @@ html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;ba
 .brand img{width:96px;height:96px;border-radius:9px;display:block}
 
 /* ── league pill (static column) ─────────────────────────────────────────── */
-.pill{width:158px;height:110px;flex:none;display:flex;align-items:center;justify-content:center;
-  font-size:30px;font-weight:900;font-style:italic;color:#fff;text-transform:uppercase;letter-spacing:.01em;
-  box-shadow:0 0 8px rgba(0,0,0,.5) inset;background:#222;transition:background .3s;text-align:center;line-height:1.02;padding:0 8px;overflow:hidden;
-  white-space:normal;overflow-wrap:anywhere;hyphens:none}
+/* Column stack: the label centred, the section dots tucked beneath it. The dots
+   used to float bottom-right of the scoreboard, where they read as belonging to
+   the game rather than to the league — under the pill they sit with the thing
+   they actually count. In-flow (not absolute) because .pill clips overflow. */
+.pill{width:158px;height:110px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
+  box-shadow:0 0 8px rgba(0,0,0,.5) inset;background:#222;transition:background .3s;padding:0 8px;overflow:hidden}
+.pill-label{font-size:30px;font-weight:900;font-style:italic;color:#fff;text-transform:uppercase;letter-spacing:.01em;
+  text-align:center;line-height:1.02;white-space:normal;overflow-wrap:anywhere;hyphens:none}
 /* Long multi-word labels ("RIGHT NOW") wrap to two centred lines and step the
    font down a touch so nothing clips the 158px pill; single words stay big. */
-.pill.two{font-size:26px;letter-spacing:0}
-.pill.dk{color:#161616}
+.pill.two .pill-label{font-size:26px;letter-spacing:0}
+.pill.dk .pill-label{color:#161616}
 
 /* ── sports window ───────────────────────────────────────────────────────── */
 .sports{flex:1;position:relative;overflow:hidden;background:linear-gradient(180deg,#161616 0%,var(--red-deep) 140%)}
@@ -171,24 +175,39 @@ html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;ba
 .face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;display:flex;align-items:center;padding:0 22px}
 .face.b{transform:rotateX(180deg)}
 
-/* game panel */
-.gamebox{position:relative;flex:1;height:94px;display:flex;align-items:center;justify-content:space-between;gap:40px;padding:0 30px;color:#fff;
+/* game panel.
+   `justify-content:flex-start`, not space-between: with only two children,
+   space-between dumped ALL the leftover width into one dead gap in the middle
+   of the card, and the comment here used to claim the opposite. The scoreboard
+   block now grows to take that slack (.rows is flex:1) and the status cell sits
+   against it, so the panel reads as one object instead of two pushed apart. */
+.gamebox{position:relative;flex:1;height:94px;display:flex;align-items:center;justify-content:flex-start;gap:34px;padding:0 30px;color:#fff;
   background:radial-gradient(circle at 30% 50%,#0b0b0b 0%,#141414 100%);border-radius:6px;overflow:hidden;
   box-shadow:inset 0 3px 6px rgba(255,255,255,.05),inset 0 -4px 8px rgba(0,0,0,.6)}
 /* stacked two-row scoreboard (away over home) — scores in a fixed right
    column so they align vertically; records ride the main face in grey */
-/* Shrink-to-fit + centred (via .gamebox justify-content) so the score sits
-   right beside the matchup instead of pinned to the far edge with a dead gap;
-   the away/home rows share this block's width so their scores stay aligned. */
-.rows{flex:0 1 auto;display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0;max-width:62%}
+/* The scoreboard block GROWS into the panel. It used to be `flex:0 1 auto` —
+   able to shrink, never to grow — so with .gamebox on space-between every
+   spare pixel pooled into one dead gap in the middle. On a pregame CFB card
+   (no scores, often no records) that gap ran to ~550px, nearly half the panel.
+   Now the rows take the slack and the type has room to be read across a room. */
+.rows{flex:1 1 auto;display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0;max-width:78%}
+/* Columns collapse when they're empty: an upcoming game has no score, and a
+   fixed 128px score column plus its gap is 148px of guaranteed blank on every
+   Week 0 / Week 1 card. `.trow.nologo` does the same for the 44px logo cell. */
 .trow{display:grid;grid-template-columns:44px minmax(0,1fr) 128px;align-items:center;gap:20px;height:44px}
-/* (The old four-column `.trow.hasgb` variant is gone — games-back is inline
-   with the record now, so every row uses the same three-column grid.) */
+.trow.noscore{grid-template-columns:44px minmax(0,1fr) 0}
+.trow.nologo{grid-template-columns:0 minmax(0,1fr) 128px;gap:0 20px}
+.trow.nologo.noscore{grid-template-columns:0 minmax(0,1fr) 0}
 .tlogo{width:42px;height:42px;object-fit:contain;justify-self:center;filter:brightness(1.15)}
 .tname{display:flex;align-items:baseline;gap:14px;min-width:0}
+/* AP / CFP rank, ahead of the abbreviation. Fixed-width so a ranked team and an
+   unranked one still line their names up — the ticker equivalent of a column. */
+.rank{font-size:23px;font-weight:900;color:var(--gold);font-family:var(--mono);line-height:1;flex:none;
+  min-width:38px;text-align:right;text-shadow:0 0 8px rgba(255,207,64,.4)}
+.rank.empty{visibility:hidden}
 /* line-height leaves headroom so descenders/tall glyphs never clip the row bottom */
 .abbr{font-size:40px;font-weight:900;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.08;text-shadow:0 0 6px rgba(0,0,0,.8)}
-/* games-back in the division, to the LEFT of each baseball team */
 /* Games back, inline after the record. Dimmer than the record and preceded by a
    separator dot, so it reads as a second fact about the same team rather than
    competing with the W-L. */
@@ -199,7 +218,14 @@ html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;ba
 .score{font-size:47px;font-weight:900;color:#fff;font-variant-numeric:tabular-nums;line-height:1;text-shadow:0 0 8px rgba(255,255,255,.35)}
 .score.win{color:var(--gold);text-shadow:0 0 10px rgba(255,207,64,.5)}
 .win-arrow{font-size:13px;color:var(--gold)}
+/* Possession. The slot is ALWAYS rendered and toggled with visibility — when
+   it was emitted only for the team with the ball, the flex gap collapsed and
+   both team abbreviations jumped ~23px sideways on every change of possession.
+   Red in the red zone, which the file's own header comment has always claimed
+   and which was never actually true. */
 .poss{width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 7px var(--gold);flex:none;align-self:center}
+.poss.off{visibility:hidden}
+.poss.rz{background:var(--loss);box-shadow:0 0 9px var(--loss)}
 /* status cell — fixed width so every league lines up */
 /* status / game-detail block — sized to read from across a room and fill the
    right side of the panel; FINAL and the TV network are the headline elements. */
@@ -243,6 +269,14 @@ html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;ba
 .event.sub .ev-kick{font-size:20px}
 .event.sub .ev-title{font-size:40px}
 .event.sub .ev-sub{font-size:26px}
+/* RIGHT NOW: two lines, evenly spaced. The default event card is a 22px tag
+   over a 52px headline — two lines, but lopsided, and centred so the spare
+   15px of the 94px box collects as dead air above and below. Here the tag
+   carries real weight, the headline gives a little back, and space-evenly
+   distributes the leading top / middle / bottom instead of pooling it. */
+.event.rn{justify-content:space-evenly;gap:0}
+.event.rn .ev-kick{font-size:28px;letter-spacing:.12em}
+.event.rn .ev-title{font-size:46px}
 /* ── X (tweet) showcase card — ESPN/UFC-style, 30s dwell ──────────────────── */
 .tweet{flex:1;height:94px;display:flex;align-items:center;gap:20px;padding:0 24px;min-width:0}
 .tw-avatar{width:66px;height:66px;border-radius:50%;flex:none;object-fit:cover;background:#1d1d22;border:1px solid rgba(255,255,255,.18)}
@@ -283,24 +317,57 @@ html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;ba
 /* stats face */
 /* ── BottomLine section dots ──────────────────────────────────────────────
    The ESPN BottomLine (2008–11) told you where you were in a league before it
-   told you the score: a row of pips, bottom right, one per game, draws down as
-   the section rolls and resets on the wipe. It's the single cheapest thing a
-   ticker can do to stop feeling like an infinite scroll — you always know how
-   much of the NBA is left.
+   told you the score: a row of pips, one per game, drawing down as the section
+   rolls and resetting on the wipe. It's the single cheapest thing a ticker can
+   do to stop feeling like an infinite scroll — you always know how much of the
+   NBA is left.
 
-   Sits above the rolling .item layers but below the wipe, so scores slide past
-   a fixed progress row and the league change still covers the reset. Capped at
-   14 pips; beyond that the section is long enough that counting stops helping
-   and the overflow rides as a "+N". */
-.secdots{position:absolute;right:12px;bottom:7px;z-index:3;display:flex;align-items:center;gap:5px;pointer-events:none}
+   These live UNDER THE LEAGUE PILL, not over the scoreboard. A progress row
+   floating in the corner of a game card reads as belonging to the game; under
+   the pill it sits with the league it actually counts, and the scoreboard gets
+   its full width back.
+
+   Capped at 5 pips. Past that, counting stops helping and precision starts
+   lying — five is the largest number a person reads without counting. The
+   remainder rides as a "+N", and the window slides so the lit pip is always
+   on screen (see renderSecDots). */
+.secdots{display:flex;align-items:center;justify-content:center;gap:5px;pointer-events:none;height:9px}
 .secdots[hidden]{display:none}
-.secdot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.16);flex:none;
+.secdot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.18);flex:none;
   transition:background .28s ease,box-shadow .28s ease,transform .28s ease}
 /* Already played this pass — drawn down, still visible so the length reads. */
-.secdot.done{background:rgba(255,255,255,.42)}
+.secdot.done{background:rgba(255,255,255,.46)}
 /* The one on screen right now. */
 .secdot.on{background:var(--gold);box-shadow:0 0 7px var(--gold),0 0 13px rgba(255,207,64,.45);transform:scale(1.25)}
-.secdot-more{font-family:var(--cond);font-size:12px;font-weight:800;color:rgba(255,255,255,.42);letter-spacing:.04em;margin-left:2px}
+.secdot-more{font-family:var(--cond);font-size:12px;font-weight:800;color:rgba(255,255,255,.5);letter-spacing:.04em;margin-left:1px}
+
+/* ── MMA fight card ──────────────────────────────────────────────────────────
+   Same shape as the golf board: a static rail naming the event, cards paging
+   beside it. ESPN hands us one scoreboard event per BOUT, so without this a
+   14-fight card is 14 anonymous rows and two minutes of rotation. */
+.fightcard{flex:1;height:94px;display:flex;align-items:stretch;gap:16px;padding:4px 6px;min-width:0}
+.fc-rail{flex:none;width:250px;display:flex;flex-direction:column;justify-content:center;gap:4px;
+  border-right:2px solid rgba(255,255,255,.22);padding-right:16px;min-width:0}
+.fc-event{font-size:30px;font-weight:900;font-style:italic;color:#fff;text-transform:uppercase;line-height:1;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fc-count{font-size:16px;font-weight:800;color:var(--gold);letter-spacing:.08em;text-transform:uppercase;line-height:1}
+.fc-cards{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;min-width:0}
+.fc-card{display:flex;flex-direction:column;justify-content:center;gap:6px;padding:0 14px;
+  background:rgba(255,255,255,.03);border-radius:9px;min-width:0}
+.fc-card.title{background:linear-gradient(90deg,rgba(255,207,64,.16),rgba(255,207,64,.03));
+  box-shadow:inset 0 0 0 1px rgba(255,207,64,.4)}
+.fc-names{font-size:24px;font-weight:900;color:#fff;text-transform:uppercase;line-height:1.05;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fc-vs{font-size:16px;font-weight:700;color:#8a8a94;font-style:italic}
+.fc-meta{display:flex;align-items:center;gap:8px;min-width:0}
+.fc-wc{font-size:14px;font-weight:800;color:#b6b6c0;text-transform:uppercase;letter-spacing:.06em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fc-flag{font-size:13px;font-weight:900;letter-spacing:.1em;border-radius:4px;padding:1px 7px;white-space:nowrap;flex:none}
+.fc-flag.title{color:#140700;background:linear-gradient(90deg,#ffcf40,#ff7a1a)}
+.fc-flag.main{color:#fff;background:rgba(255,35,70,.22);border:1px solid rgba(255,35,70,.55)}
+.fc-res{font-size:14px;font-weight:800;color:var(--gold);white-space:nowrap;flex:none}
+.fc-res.live{color:var(--red)}
+.fc-cards.fcswap>.fc-card{animation:g3in .42s ease-out both}
 
 .stats{flex:1;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:20px;min-width:0}
 .stat-side{display:flex;flex-direction:column;gap:3px;min-width:0}
@@ -379,27 +446,65 @@ html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;ba
 .c-rank.csgn{background:linear-gradient(90deg,#ffcf40,#ff2346);color:#140700}
 .c-tag.pick{background:linear-gradient(90deg,#6db3ff,#1d6fff);color:#00122e;border:none;font-weight:800}
 .c-rank.pick{background:linear-gradient(90deg,#6db3ff,#1d6fff);color:#00122e}
-/* Meme-100 power-ranking leaderboard (top 3) in the dock's middle band */
-/* Sized to be READ from across a room, not squinted at. The old board ran
-   15/17/14px in a 54px band — legible on a monitor, invisible on a stream at
-   720p. Ticker symbols are uppercase with no descenders, so line-height:1 lets
-   a 26px face live comfortably in a 19px row: cap height is what costs space,
-   not the em box. The band also steals 4px back from the card's padding. */
-.ml-list{height:58px;display:flex;flex-direction:column;justify-content:center;gap:1px;position:relative;z-index:2}
-.ml-row{display:grid;grid-template-columns:30px 1fr auto;align-items:center;gap:10px;font-family:var(--cond);line-height:1}
-.ml-rank{font-size:21px;font-weight:900;color:#6db3ff;font-family:var(--mono);text-align:center;line-height:1}
-.ml-sym{font-size:26px;font-weight:800;color:#e8e8ec;letter-spacing:.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1;
-  text-shadow:0 0 8px rgba(0,0,0,.8)}
-.ml-d{font-size:20px;font-weight:900;font-family:var(--mono);line-height:1}
-.ml-d.up{color:var(--green)} .ml-d.down{color:var(--loss)}
-.c-top{display:flex;justify-content:space-between;align-items:center;height:26px;position:relative;z-index:2}
+/* ── The dock's vertical budget ────────────────────────────────────────────
+   .c-layer's content box is 375 × 97px (400 − 1px border − 24px padding wide,
+   110 − 13px padding tall). The three bands MUST sum to ≤97 or the bottom one
+   is clipped by .crypto{overflow:hidden}.
+
+     .c-top 26  +  .c-led 54  +  .c-bot 17  =  97   ✔
+
+   This did not hold before. .c-top declared 26px while .c-sym ran 30px with no
+   line-height at all — a ~36px line box — and because .c-top is a flex item,
+   min-height:auto inflated it and shoved .c-bot off the bottom of every card.
+   Hence: an explicit line-height on every band, and a symbol sized to its band.
+   Change one number here and check the sum. */
+.c-top{display:flex;justify-content:space-between;align-items:center;height:26px;line-height:1;flex:none;position:relative;z-index:2}
 .c-id{display:flex;align-items:center;gap:8px;min-width:0}
-.c-rank{font-size:11px;font-weight:700;color:#141414;background:var(--gold);border-radius:3px;padding:1px 5px;flex:none}
-.c-sym{font-size:30px;color:#e8e8ec;letter-spacing:2px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.c-rank{font-size:11px;font-weight:700;color:#141414;background:var(--gold);border-radius:3px;padding:1px 5px;flex:none;line-height:1.4}
+.c-sym{font-size:26px;line-height:1;color:#e8e8ec;letter-spacing:2px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ── Meme 100 — the holder vote, as the hero ───────────────────────────────
+   This is the flagship token feature, so the number that leads is the one
+   nobody else on television can show: the share of $CSGN vote weight backing
+   each coin. Price change rides along small; the bar behind each row IS the
+   ranking, readable without reading.
+
+   Budget: head 20 + list 75 (3 × 25px rows) + 2px gap = 97. There is no
+   .c-bot on this face — the old one ran "COMMUNITY POWER RANKING" plus
+   "VOL · MC · SOCIAL · $CSGN VOTES", ~411px of content in a 375px row, and
+   it was the tightest line in the file. Removed entirely.
+
+   The old .ml-list declared height:58px while holding three 26px rows = 80px,
+   with no overflow and the same z-index as its neighbours, so it bled ~11px of
+   raw text into the bands above and below. min-height:0 + overflow:hidden now
+   make that structurally impossible: a bad row count clips, it never collides. */
+.c-layer.meme{gap:2px}
+.ml-head{display:flex;justify-content:space-between;align-items:center;height:20px;line-height:1;flex:none;position:relative;z-index:2}
+.ml-title{font-family:var(--cond);font-size:19px;font-weight:900;font-style:italic;color:#e8e8ec;letter-spacing:.06em}
+.ml-note{font-family:var(--cond);font-size:12px;font-weight:800;color:var(--red);letter-spacing:.12em}
+.ml-list{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:0;position:relative;z-index:2}
+.ml-row{position:relative;height:25px;flex:none;display:grid;grid-template-columns:22px 1fr auto;align-items:center;gap:9px;
+  font-family:var(--cond);line-height:1;padding:0 6px 0 2px}
+/* The vote bar. Sits behind the row's text at z-index 0 and is drawn from the
+   left to the coin's share of all votes cast, so the board reads as a bar
+   chart you happen to be able to read the labels of. */
+.ml-bar{position:absolute;left:0;top:2px;bottom:2px;border-radius:3px;
+  background:linear-gradient(90deg,rgba(255,35,70,.42),rgba(255,35,70,.10));z-index:0}
+.ml-row.lead .ml-bar{background:linear-gradient(90deg,rgba(255,207,64,.46),rgba(255,207,64,.10))}
+.ml-rank{position:relative;z-index:1;font-size:16px;font-weight:900;color:#8a8a94;font-family:var(--mono);text-align:center;line-height:1}
+.ml-row.lead .ml-rank{color:var(--gold)}
+.ml-sym{position:relative;z-index:1;font-size:23px;font-weight:800;color:#fff;letter-spacing:.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1;
+  text-shadow:0 0 6px rgba(0,0,0,.9)}
+/* The hero. Gold, mono, tabular so the column doesn't dance as shares move. */
+.ml-share{position:relative;z-index:1;font-size:24px;font-weight:900;font-family:var(--mono);color:var(--gold);line-height:1;
+  font-variant-numeric:tabular-nums;text-shadow:0 0 8px rgba(255,207,64,.45)}
+.ml-share.none{color:#6a6a74;text-shadow:none}
+.ml-d{position:relative;z-index:1;font-size:20px;font-weight:900;font-family:var(--mono);line-height:1}
+.ml-d.up{color:var(--green)} .ml-d.down{color:var(--loss)}
 .c-delta{font-size:16px;flex:none}
 .c-delta.up{color:var(--green);text-shadow:0 0 6px rgba(104,255,122,.6)}
 .c-delta.down{color:var(--loss);text-shadow:0 0 6px rgba(255,75,75,.6)}
-.c-led{height:54px;display:flex;align-items:flex-end;gap:7px;overflow:hidden;position:relative;z-index:2}
+.c-led{height:54px;flex:none;display:flex;align-items:flex-end;gap:7px;overflow:hidden;position:relative;z-index:2}
 .c-led .cur{font-size:30px;color:#cfcfd4;font-weight:700;align-self:flex-end;margin-right:4px;font-family:var(--cond);text-shadow:0 0 8px rgba(255,255,255,.25)}
 .digit{position:relative;width:26px;height:48px;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(5,1fr);gap:1.5px;flex:none}
 .digit.sm{width:17px;height:32px;align-self:flex-end;margin-bottom:1px}
@@ -409,21 +514,32 @@ html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;ba
 .dot{width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px var(--gold);align-self:flex-end;margin:0 4px 3px;flex:none}
 .gap{width:12px;flex:none}
 .c-dash{font-size:34px;color:#333;letter-spacing:6px;align-self:center}
-.c-bot{display:flex;align-items:center;gap:10px;height:18px;font-size:12px;color:#8a8a94;position:relative;z-index:2}
+/* 17px, not 18 — see the budget note above .c-top. The text-shadow is because
+   this band sits over the sparkline's area fill, and 12px grey on a green
+   gradient is a genuine contrast failure without it. */
+.c-bot{display:flex;align-items:center;gap:10px;height:17px;line-height:1;flex:none;font-size:12px;color:#9a9aa4;position:relative;z-index:2;
+  text-shadow:0 1px 3px rgba(0,0,0,.9)}
 .c-tag{font-weight:700;color:#141414;background:#3d3d46;color:#cfcfd6;border-radius:3px;padding:1px 6px;letter-spacing:.08em;flex:none}
 .c-tag.meme{background:rgba(255,35,70,.18);color:#ff8a9c;border:1px solid rgba(255,35,70,.4)}
 .c-tag.top{background:rgba(255,207,64,.14);color:var(--gold);border:1px solid rgba(255,207,64,.35)}
 .c-mv{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* Big 24h chart — fills the dock's right side behind the LED digits (area
    fill + glow line, drawn at 2× for crispness). A left-edge alpha mask
-   fades it out under long prices so the digits always win the overlap. */
-.c-chart{position:absolute;right:8px;bottom:20px;width:210px;height:62px;z-index:1;opacity:.92;
-  -webkit-mask-image:linear-gradient(90deg,transparent 0,rgba(0,0,0,.5) 34%,#000 55%);
-  mask-image:linear-gradient(90deg,transparent 0,rgba(0,0,0,.5) 34%,#000 55%)}
+   fades it out under long prices so the digits always win the overlap.
+
+   The mask stops used to be 34%/55%, tuned for a ~210px "plain" price. A micro
+   price — $0.0₆4821, which is what almost every Meme-100 coin renders as — is
+   267px wide and ends at x≈279, where that mask was still ~78% opaque, so the
+   area fill read straight through the unlit bulbs (#222 is nearly transparent
+   against a bright gradient). Pushed right so the fade clears the widest LED
+   the formatter can produce. */
+.c-chart{position:absolute;right:8px;bottom:20px;width:210px;height:62px;z-index:1;opacity:.9;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0,rgba(0,0,0,.35) 52%,#000 76%);
+  mask-image:linear-gradient(90deg,transparent 0,rgba(0,0,0,.35) 52%,#000 76%)}
 /* soft entry animation every coin swap — the dock breathes instead of popping */
 @keyframes cfade{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
-.c-layer>.c-top{animation:cfade .5s ease-out both}
-.c-layer>.c-led{animation:cfade .5s ease-out .05s both}
+.c-layer>.c-top,.c-layer>.ml-head{animation:cfade .5s ease-out both}
+.c-layer>.c-led,.c-layer>.ml-list{animation:cfade .5s ease-out .05s both}
 .c-layer>.c-bot{animation:cfade .5s ease-out .1s both}
 .c-layer>.c-chart{animation:cfade .6s ease-out .08s both}
 
@@ -466,14 +582,16 @@ html,body{margin:0;width:1930px;height:100vh;min-height:110px;overflow:hidden;ba
   <div class="brand">
     <img id="brand-logo" alt="CSGN" />
   </div>
-  <div class="pill" id="pill">CSGN</div>
+  <!-- League pill: the label, and beneath it the section dots counting this
+       league's items. setPill() writes to #pill-label, never to the pill
+       itself — textContent on the pill would wipe the dots on every change. -->
+  <div class="pill" id="pill">
+    <span class="pill-label" id="pill-label">CSGN</span>
+    <div class="secdots" id="secdots" aria-hidden="true"></div>
+  </div>
   <div class="sports" id="sports">
     <div class="item" id="cur"></div>
     <div class="item" id="nxt" style="transform:translateY(110px)"></div>
-    <!-- BottomLine section dots: one per item in the current league, bottom
-         right, drawing down as the section advances. Outside the .item layers
-         so the roll animation slides the scores past a fixed progress row. -->
-    <div class="secdots" id="secdots" aria-hidden="true"></div>
     <div class="wipe" id="wipe"></div>
   </div>
   <div class="divider"></div>
@@ -803,8 +921,11 @@ const LEAGUES=[
   {key:"mls",type:"scoreboard",sport:"soccer",paths:["usa.1"],label:"MLS",className:"league-mls",separator:"vs"},
   {key:"epl",type:"scoreboard",sport:"soccer",paths:["eng.1"],label:"EPL",className:"league-epl",separator:"vs"},
   {key:"ucl",type:"scoreboard",sport:"soccer",paths:["uefa.champions"],label:"UCL",className:"league-ucl",separator:"vs"},
-  {key:"nfl",type:"scoreboard",sport:"football",paths:["nfl"],label:"NFL",className:"league-nfl"},
-  {key:"cfb",type:"scoreboard",sport:"football",paths:["college-football"],label:"CFB",className:"league-cfb"},
+  // NFL runs Thu→Mon, so a Sunday board should still carry Thursday's result and
+  // Monday's kickoff. CFB needs groups=80 or ESPN answers with a limited group
+  // rather than all of FBS, whatever limit=300 says.
+  {key:"nfl",type:"scoreboard",sport:"football",paths:["nfl"],label:"NFL",className:"league-nfl",dateRangeDays:1},
+  {key:"cfb",type:"scoreboard",sport:"football",paths:["college-football"],label:"CFB",className:"league-cfb",extraParams:{groups:"80"}},
   {key:"xfl",type:"scoreboard",sport:"football",paths:["xfl"],label:"XFL",className:"league-xfl"},
   {key:"nba",type:"scoreboard",sport:"basketball",paths:["nba"],label:"NBA",className:"league-nba"},
   {key:"nhl",type:"scoreboard",sport:"hockey",paths:["nhl"],label:"NHL",className:"league-nhl"},
@@ -821,6 +942,31 @@ const LEAGUES=[
   {key:"f1",type:"event",sport:"racing",paths:["f1"],label:"F1",className:"league-f1",dateRangeDays:2,extraParams:{seasontype:"2",level:"3"}},
   {key:"bananas",type:"banana",label:"🍌",className:"league-banana"},
 ];
+/* ── Season slates ───────────────────────────────────────────────────────────
+   Upcoming football, weeks before it happens, because the hype starts long
+   before the games do and a ticker with nothing on it sells nothing.
+
+   These are LEAGUES with a fixed dateWindow rather than a widened range on the
+   normal NFL/CFB pills: mixing a game three weeks out into the same rotation as
+   a live one is how you confuse a viewer about what's actually on. Each one
+   disappears on its own the day after its window closes — `active()` is checked
+   at fetch time, so nothing needs cleaning up in September.
+
+   Dates: CFB Week 0 is Sat Aug 29 (8 games, USC–San Jose State opening); CFB
+   Week 1 runs Thu Sep 3 – Mon Sep 7; NFL Week 1 runs Wed Sep 9 – Mon Sep 14,
+   opening with Patriots–Seahawks, a Super Bowl LX rematch. */
+const SLATES=[
+  {key:"cfb-wk0",type:"scoreboard",sport:"football",paths:["college-football"],label:"Week 0",className:"league-cfb",
+   dateWindow:{start:"20260829",end:"20260829"},showUntil:"2026-08-30",extraParams:{groups:"80"}},
+  {key:"cfb-wk1",type:"scoreboard",sport:"football",paths:["college-football"],label:"CFB WK 1",className:"league-cfb",
+   dateWindow:{start:"20260903",end:"20260907"},showUntil:"2026-09-08",extraParams:{groups:"80"}},
+  {key:"nfl-wk1",type:"scoreboard",sport:"football",paths:["nfl"],label:"NFL WK 1",className:"league-nfl",
+   dateWindow:{start:"20260909",end:"20260914"},showUntil:"2026-09-15"},
+];
+/** Slates still worth airing: the window hasn't passed yet. */
+function activeSlates(now=new Date(Date.now())){
+  return SLATES.filter((s)=>new Date(`${s.showUntil}T00:00:00Z`)>now);
+}
 /* pills with light backgrounds need dark text */
 const DARK_TEXT_PILLS=new Set(["bananas"]);
 
@@ -895,6 +1041,8 @@ function sameZonedDay(ds,offset=0,tz=TODAY_TZ){
   return zonedYmd(new Date(ds),tz)===zonedYmd(broadcastRef(offset),tz);
 }
 function dateParamForLeague(l){
+  // A fixed window (the season slates) beats anything relative to today.
+  if(l.dateWindow)return l.dateWindow.start===l.dateWindow.end?l.dateWindow.start:`${l.dateWindow.start}-${l.dateWindow.end}`;
   const today=zonedYmd(broadcastRef());
   if(!l.dateRangeDays)return today;
   return `${today}-${zonedYmd(broadcastRef(l.dateRangeDays))}`;
@@ -936,6 +1084,10 @@ function livePeriodLabel(l,period,st){
 function shouldKeepEventToday(l,ev){
   const name=[ev.name,ev.shortName,ev.season?.slug,ev.league?.name].filter(Boolean).join(" ");
   if(l.eventNameIncludes&&!textIncludesAny(name,l.eventNameIncludes))return false;
+  // Leagues that asked for a window keep everything inside it. Without this the
+  // day filter below threw away every extra day that was just fetched, which is
+  // why dateRangeDays had no observable effect on MMA, F1, NASCAR or Wimbledon.
+  if(l.dateWindow||l.dateRangeDays)return true;
   if((l.type==="event"||l.type==="golf")&&l.useDates===false){
     const st=ev.status?.type?.state||ev.competitions?.[0]?.status?.type?.state;
     return st!=="post"||sameZonedDay(ev.date,0);
@@ -978,11 +1130,27 @@ function offensiveLeaderOf(c){
     return name&&val?{name,val}:null;
   }catch{return null}
 }
-/** Division games-back / standing for a baseball team, from whatever the
- *  scoreboard exposes (team.standingSummary or a "x GB" record). Compact ("2.0
- *  GB" or "1st"); empty when the endpoint doesn't carry it. */
-function gamesBackOf(c){
-  const ss=cleanText(c?.team?.standingSummary||c?.standingSummary||"");
+/* ── Division games-back ─────────────────────────────────────────────────────
+   Games-back renders inline after the record ("NYY 92-58 · 2.0 GB") and has
+   done since it was written — the renderer was never the problem. The problem
+   is that its only source was `competitors[].team.standingSummary`, which the
+   SCOREBOARD payload generally omits; that field lives on the standings
+   endpoint. Every lookup path degraded to "" with no logging, so a feature with
+   no data looked exactly like a feature that worked.
+
+   So: keep reading the scoreboard first (free when it's there), and fall back
+   to a standings table fetched once a day. Division standings move at most once
+   per day — polling them per tick would be absurd. */
+const STANDINGS_TTL_MS=6*3600*1000;
+const standingsCache={mlb:{at:0,byTeam:{}}};
+/** Division games-back / standing for a team, from whatever the scoreboard
+ *  exposes (team.standingSummary or a "x GB" record), else the cached
+ *  standings table. Compact ("2.0 GB" or "1st"); empty when nothing carries it.
+ *  @param {object} c competitor
+ *  @param {object} [table] id → summary string, e.g. standingsCache.mlb.byTeam */
+function gamesBackOf(c,table){
+  const fromTable=table&&(table[String(c?.team?.id??c?.id??"")]||"");
+  const ss=cleanText(c?.team?.standingSummary||c?.standingSummary||fromTable||"");
   const gb=ss.match(/([\d.]+)\s*GB/i);
   if(gb)return `${gb[1]} GB`;
   if(/(^|\b)(1st|first|leads)\b/i.test(ss))return "1st";
@@ -991,6 +1159,37 @@ function gamesBackOf(c){
   const recGb=(c?.records||[]).map((r)=>cleanText(r?.summary||"")).find((s)=>/GB/i.test(s));
   const m=recGb&&recGb.match(/([\d.]+)\s*GB/i);
   return m?`${m[1]} GB`:"";
+}
+/** Flatten ESPN's standings tree into {teamId: "2.0 GB"}. Shape varies between
+ *  `children[].standings.entries[]` and a flat `standings.entries[]`, and the
+ *  GB stat is named "gamesBehind" or abbreviated "GB" depending on endpoint —
+ *  so this reads defensively and returns {} rather than throwing. */
+function parseStandingsTable(data){
+  const out={};
+  const groups=data?.children?.length?data.children:[data];
+  for(const g of groups||[]){
+    for(const e of g?.standings?.entries||[]){
+      const id=String(e?.team?.id??"");
+      if(!id)continue;
+      const stat=(e?.stats||[]).find((s)=>/^(gamesBehind|gamesback)$/i.test(s?.name||"")||/^GB$/i.test(s?.abbreviation||""));
+      const v=stat?.displayValue??stat?.value;
+      if(v==null)continue;
+      const n=Number(v);
+      out[id]=(v==="-"||v==="—"||n===0)?"1st":`${Number.isFinite(n)?n.toFixed(1):cleanText(String(v))} GB`;
+    }
+  }
+  return out;
+}
+async function refreshStandings(){
+  const c=standingsCache.mlb;
+  if(Date.now()-c.at<STANDINGS_TTL_MS)return c.byTeam;
+  c.at=Date.now();                       // stamp first — a failure shouldn't retry every tick
+  try{
+    const d=await fetchJson("https://site.api.espn.com/apis/v2/sports/baseball/mlb/standings?level=3");
+    const t=parseStandingsTable(d);
+    if(Object.keys(t).length)c.byTeam=t;
+  }catch(e){console.warn("standings fetch failed",e)}
+  return c.byTeam;
 }
 
 /* ── pitchers (MLB) + national TV ────────────────────────────────────────────
@@ -1084,16 +1283,27 @@ function parseGameEvent(l,ev){
   const leaders={away:leaderOf(away),home:leaderOf(home)};
   const offLeaders=l.sport==="baseball"?{away:offensiveLeaderOf(away),home:offensiveLeaderOf(home)}:null;
   const records={away:recordOf(away),home:recordOf(home)};
-  const gamesBack=l.sport==="baseball"?{away:gamesBackOf(away),home:gamesBackOf(home)}:null;
+  // AP / CFP rank. Present on the scoreboard payload all along, and read here
+  // for the first time — 25 is ESPN's "unranked" sentinel, not a rank.
+  const rankOf=(c)=>{const n=Number(c?.curatedRank?.current);return Number.isFinite(n)&&n>0&&n<25?n:0};
+  const ranks=(rankOf(away)||rankOf(home))?{away:rankOf(away),home:rankOf(home)}:null;
+  const gbTable=l.sport==="baseball"?standingsCache.mlb.byTeam:null;
+  const gamesBack=l.sport==="baseball"?{away:gamesBackOf(away,gbTable),home:gamesBackOf(home,gbTable)}:null;
   const probables=notStarted?probablesOf(l,comp,away,home):null;
   const decisions=final?decisionsOf(l,comp,ev):null;
-  // MMA: surface the weight class and flag championship bouts.
-  let subnote="",titleFight=false;
+  // MMA: weight class, championship flag, and the CARD this bout belongs to.
+  //
+  // The bout note ("Lightweight Title Bout") and the card name ("UFC 330") are
+  // two different facts and used to be read from one chained expression, with
+  // the note first — so the card name was unreachable whenever a note existed,
+  // which is always. They're read separately now.
+  let subnote="",titleFight=false,eventName="";
   if(l.sport==="mma"){
-    const raw=cleanText(comp?.notes?.[0]?.headline||ev?.name||comp?.type?.text||"");
-    titleFight=/\btitle\b|championship|\bbelt\b|undisputed|interim/i.test(raw);
-    const wc=raw.match(/(women'?s\s+)?(strawweight|flyweight|bantamweight|featherweight|lightweight|welterweight|middleweight|light\s*heavyweight|heavyweight|catchweight)/i);
+    const bout=cleanText(comp?.notes?.[0]?.headline||comp?.type?.text||"");
+    titleFight=/\btitle\b|championship|\bbelt\b|undisputed|interim/i.test(bout);
+    const wc=bout.match(/(women'?s\s+)?(strawweight|flyweight|bantamweight|featherweight|lightweight|welterweight|middleweight|light\s*heavyweight|heavyweight|catchweight)/i);
     subnote=wc?cleanText(wc[0]):"";
+    eventName=eventNameOf(ev);
   }
   return [{
     kind:"game",leagueKey:l.key,separator:l.separator||(["soccer","tennis","mma"].includes(l.sport)?"vs":"at"),
@@ -1101,9 +1311,68 @@ function parseGameEvent(l,ev){
     homeLogo:competitorLogo(home),awayLogo:competitorLogo(away),
     homeScore:competitorScore(home,notStarted),awayScore:competitorScore(away,notStarted),
     pregame:notStarted,live,isFinal:final,winner,status:{date:line1,time:line2},sortDate:start,
-    baseball,football,possession,leaders,offLeaders,records,gamesBack,probables,decisions,titleFight,
-    tv:broadcastOf(comp),subnote,
+    baseball,football,possession,leaders,offLeaders,records,ranks,gamesBack,probables,decisions,titleFight,
+    tv:broadcastOf(comp),subnote,eventName,
   }];
+}
+/* ── MMA cards ───────────────────────────────────────────────────────────────
+   ESPN gives each BOUT its own scoreboard event, so a 14-fight card arrives as
+   14 unrelated "Fighter vs Fighter" rows with nothing saying they belong to the
+   same night. These three functions put the card back together: pull the event
+   name off the bout, group bouts under it, and render it the way the golf board
+   renders a tournament — a static rail naming the event, cards paging beside
+   it — so the whole card reads in about fifteen seconds instead of two
+   minutes of rotation. */
+/** The CARD's name ("UFC 330"), never the bout's. `ev.name` on a UFC scoreboard
+ *  is usually the bout ("Makhachev vs. Oliveira"), so a bare name is only
+ *  accepted when it actually looks like a card. */
+function eventNameOf(ev){
+  const cands=[ev?.season?.slug,ev?.league?.name,ev?.shortName,ev?.name].map((s)=>cleanText(s||""));
+  const card=cands.find((s)=>/\b(ufc|bellator|pfl|one)\b/i.test(s)&&!/\bvs\.?\b/i.test(s));
+  if(card)return card.replace(/[-_]+/g," ").toUpperCase();
+  // "UFC 330: Makhachev vs Oliveira" → take the part before the colon.
+  const withColon=cands.find((s)=>/\b(ufc|bellator|pfl|one)\b/i.test(s)&&s.includes(":"));
+  return withColon?cleanText(withColon.split(":")[0]).toUpperCase():"";
+}
+/** Group parsed MMA bouts into one item per card, each carrying pages of 3.
+ *  Main event = the last bout of the night, which is how a card is built and
+ *  how ESPN orders it once sorted by start time. */
+function buildFightCardGroups(items){
+  const byCard=new Map();
+  for(const it of items||[]){
+    const key=it.eventName||"MMA";
+    if(!byCard.has(key))byCard.set(key,[]);
+    byCard.get(key).push(it);
+  }
+  const out=[];
+  for(const [name,bouts] of byCard){
+    const ordered=bouts.slice().sort((a,b)=>new Date(a.sortDate)-new Date(b.sortDate));
+    const flagged=ordered.map((b,i)=>({...b,mainEvent:i===ordered.length-1&&ordered.length>1}));
+    const pages=[];
+    for(let i=0;i<flagged.length;i+=3)pages.push(flagged.slice(i,i+3));
+    out.push({
+      kind:"fightcard",leagueKey:"mma",cardName:name,bouts:flagged,pages,
+      live:flagged.some((b)=>b.live),isFinal:flagged.every((b)=>b.isFinal),pregame:flagged.every((b)=>b.pregame),
+      status:{date:"",time:""},sortDate:flagged[0]?.sortDate||new Date(),
+      dwellMs:Math.max(CONFIG.DWELL_MAIN,pages.length*CONFIG.GOLF_GROUP_MS),
+    });
+  }
+  return out;
+}
+/** One page of up to three bouts. */
+function fightCardsHtml(page){
+  return (page||[]).map((b)=>{
+    // Both flags when both apply — the main event of a card is usually the
+    // title fight, and a broadcast says so twice rather than picking one.
+    const flag=(b.mainEvent?'<span class="fc-flag main">MAIN EVENT</span>':"")
+      +(b.titleFight?'<span class="fc-flag title">★ TITLE</span>':"");
+    const res=b.isFinal?`<span class="fc-res">${esc(b.winner==="away"?b.awayAbbr:b.homeAbbr)} def.</span>`
+      :b.live?'<span class="fc-res live">LIVE</span>':"";
+    return `<div class="fc-card${b.titleFight?" title":""}">
+      <div class="fc-names">${esc(b.awayAbbr)} <span class="fc-vs">vs</span> ${esc(b.homeAbbr)}</div>
+      <div class="fc-meta">${b.subnote?`<span class="fc-wc">${esc(b.subnote)}</span>`:""}${flag}${res}</div>
+    </div>`;
+  }).join("");
 }
 function leadingCompetitor(ev){
   const cs=ev.competitions?.[0]?.competitors||[];
@@ -1213,6 +1482,9 @@ const allData={};
 async function fetchLeague(l){
   if(l.type==="banana"){allData[l.key]=bananasItems(l);return}
   try{
+    // Baseball wants a division standings table for games-back; it's cached for
+    // hours, so this is a no-op on all but the first call of the day.
+    if(l.sport==="baseball")await refreshStandings();
     const data=await fetchScoreboardData(l);
     let events=(data.events||[]).filter((ev)=>shouldKeepEventToday(l,ev));
     events.sort((a,b)=>new Date(a.date||a.competitions?.[0]?.date)-new Date(b.date||b.competitions?.[0]?.date));
@@ -1223,6 +1495,9 @@ async function fetchLeague(l){
       else if(l.type==="event")items.push(...parseGenericEvent(l,ev));
       else items.push(...parseGameEvent(l,ev));
     }
+    // MMA arrives as one event per bout; collapse them back into cards so the
+    // whole night reads as "UFC 330" rather than 14 anonymous rows.
+    if(l.sport==="mma"&&items.length)items=buildFightCardGroups(items);
     if(!items.length)items=manualFallbackItems(l);
     allData[l.key]=items;
   }catch(e){console.error("fetch failed",l.key,e);allData[l.key]=allData[l.key]||[]}
@@ -1267,17 +1542,28 @@ function teamRow(side,g){
   const logo=away?g.awayLogo:g.homeLogo;
   const score=away?g.awayScore:g.homeScore;
   const win=g.isFinal&&g.winner===side;
-  const poss=g.possession===side?'<span class="poss"></span>':"";
+  // The possession slot is always present (see .poss.off) so the abbreviations
+  // don't shift sideways every time the ball changes hands.
+  const hasPoss=g.football||g.possession;
+  const on=g.possession===side;
+  const poss=hasPoss?`<span class="poss${on?"":" off"}${on&&g.football?.redZone?" rz":""}"></span>`:"";
+  // AP / CFP rank, when the payload carries one. A ranked matchup is the single
+  // most important fact about a college football game and it was being thrown
+  // away — curatedRank was parsed for motor racing and nowhere else.
+  const rk=away?g.ranks?.away:g.ranks?.home;
+  const rank=g.ranks?`<span class="rank${rk?"":" empty"}">${rk?esc(String(rk)):"0"}</span>`:"";
   // Division games-back rides INLINE WITH THE RECORD — "NYY 92-58 · 2.0 GB" —
   // rather than in its own left-hand column. Baseball is the sport where the
   // record only means something next to the deficit, and a separate column both
   // cost a logo-width of space and read as unrelated to the numbers beside it.
   const gbTxt=cleanText((away?g.gamesBack?.away:g.gamesBack?.home)||"");
   const gb=gbTxt?`<span class="gb">${esc(gbTxt)}</span>`:"";
-  return `<div class="trow">
+  const noScore=!cleanText(String(score??""));
+  const cls=`trow${noScore?" noscore":""}${logo?"":" nologo"}`;
+  return `<div class="${cls}">
     ${logo?`<img class="tlogo" src="${esc(logo)}" alt="">`:'<span></span>'}
-    <div class="tname">${poss}<span class="abbr">${esc(abbr)}</span>${rec?`<span class="rec">${esc(rec)}</span>`:""}${gb}</div>
-    <div class="scorecell">${win?'<span class="win-arrow">◀</span>':""}<span class="score${win?" win":""}">${esc(score)}</span></div>
+    <div class="tname">${poss}${rank}<span class="abbr">${esc(abbr)}</span>${rec?`<span class="rec">${esc(rec)}</span>`:""}${gb}</div>
+    <div class="scorecell">${win?'<span class="win-arrow">◀</span>':""}${noScore?"":`<span class="score${win?" win":""}">${esc(score)}</span>`}</div>
   </div>`;
 }
 function renderRows(g){
@@ -1286,7 +1572,10 @@ function renderRows(g){
 function renderEventCard(g){
   const rn=g.leagueKey==="rightnow";
   const kc=g.kickerClass||(rn?"rn":"");
-  return `<div class="event${g.subtitle?" sub":""}">
+  // A RIGHT NOW beat is always two lines and gets the evenly-spaced variant;
+  // anything carrying a subtitle takes the tighter three-line one.
+  const variant=g.subtitle?" sub":(rn?" rn":"");
+  return `<div class="event${variant}">
     ${g.kicker?`<div class="ev-kick ${kc}">${esc(g.kicker)}</div>`:""}
     <div class="ev-title${g.feeLine?" ev-fee":""}">${esc(g.title)}</div>
     ${g.subtitle?`<div class="ev-sub">${esc(g.subtitle)}</div>`:""}
@@ -1374,9 +1663,23 @@ function renderStatsFace(g){
   const tag=g.pregame?"Season leaders":"Top performers";
   return grid(side(g.awayAbbr,la),tag,side(g.homeAbbr,lh));
 }
+/** The whole fight card: event rail + a page of bouts. */
+function renderFightCard(g){
+  const n=(g.bouts||[]).length;
+  const chip=g.live?'<span class="live-chip">Live</span>':"";
+  return `<div class="gamebox ${g.live?"live-glow":g.isFinal?"final-shimmer":""}">${chip}
+    <div class="fightcard">
+      <div class="fc-rail">
+        <div class="fc-event">${esc(g.cardName||"MMA")}</div>
+        <div class="fc-count">${n} ${n===1?"BOUT":"BOUTS"}${g.tv?` · ${esc(g.tv)}`:""}</div>
+      </div>
+      <div class="fc-cards">${fightCardsHtml((g.pages||[])[0]||[])}</div>
+    </div></div>`;
+}
 function renderMainFace(g){
   if(g.kind==="tweet")return renderTweet(g);
   if(g.kind==="golf")return renderGolfBoard(g);
+  if(g.kind==="fightcard")return renderFightCard(g);
   if(g.kind==="event"){
     const d1=g.status.date?`<span class="l1">${esc(g.status.date)}</span>`:"";
     const cell=(g.status.date||g.status.time)
@@ -1396,6 +1699,8 @@ function renderItem(g){
 
 /* ═══════════════ sports rotation engine ═══════════════ */
 const elPill=document.getElementById("pill");
+const elPillLabel=document.getElementById("pill-label");
+const elSecDots=document.getElementById("secdots");
 const elCur=document.getElementById("cur");
 const elNxt=document.getElementById("nxt");
 const elWipe=document.getElementById("wipe");
@@ -1403,7 +1708,10 @@ let groups=[],pendingGroups=null,gi=0,ii=0,showingCur=true,stepTimer=null;
 let wipeActive=false,railJumpQueued=false;
 
 function buildGroups(){
-  const leagueGroups=LEAGUES.map((l)=>({league:l,items:(allData[l.key]||[]).slice().sort((a,b)=>new Date(a.sortDate)-new Date(b.sortDate))}))
+  // Season slates ride after the live leagues — upcoming football is context,
+  // not news, so it should never lead a rotation that has real games in it.
+  const boards=[...LEAGUES,...activeSlates()];
+  const leagueGroups=boards.map((l)=>({league:l,items:(allData[l.key]||[]).slice().sort((a,b)=>new Date(a.sortDate)-new Date(b.sortDate))}))
     .filter((g)=>g.items.length>0);
   // Crypto-first lead: Main chyron → Right Now rail → $CSGN beat → governance → slate.
   const lead=[];
@@ -1416,7 +1724,9 @@ function buildGroups(){
   return [...lead,...leagueGroups];
 }
 function setPill(league){
-  elPill.textContent=league.label;
+  // Write to the LABEL, never to the pill — the pill also holds the section
+  // dots, and textContent on the parent would delete them every league change.
+  if(elPillLabel)elPillLabel.textContent=league.label;
   // Multi-word labels ("RIGHT NOW") wrap to two lines with a slightly smaller
   // face so they never clip the pill; single words stay full-size.
   const two=/\s/.test(String(league.label||"").trim());
@@ -1424,17 +1734,30 @@ function setPill(league){
   elPill.style.background=`var(--${league.className})`;
 }
 function currentEls(){return showingCur?{on:elCur,off:elNxt}:{on:elNxt,off:elCur}}
-/** Shrink text until it fits its column so headlines/status can NEVER ellipsize —
- *  step the font down from its CSS size to a floor, then stop. */
+/** Fit text to its column so headlines/status can never ellipsize — and, on a
+ *  short headline, GROW it so the band doesn't sit half empty.
+ *
+ *  This only ever shrank, which is half the reason short content looked lost in
+ *  a 1156px panel: a two-word title sat at its CSS 52px with 800px of air beside
+ *  it. Growth is capped at 1.35× so a one-word beat doesn't turn into a
+ *  billboard, and the shrink floor is unchanged. */
 function fitText(root){
   if(!root||!root.querySelectorAll)return;
   root.querySelectorAll(".ev-title,.ev-sub,.cell .l1,.cell .l2:not(.fin)").forEach((el)=>{
     el.style.fontSize="";                       // start from the CSS-defined size
     const cw=el.clientWidth; if(!cw)return;      // not laid out yet — skip
-    let size=parseFloat(getComputedStyle(el).fontSize)||0; if(!size)return;
-    const min=Math.max(16,size*0.52);
+    const base=parseFloat(getComputedStyle(el).fontSize)||0; if(!base)return;
+    let size=base;
+    const min=Math.max(16,base*0.52);
     let guard=48;
     while(el.scrollWidth>cw+1 && size>min && guard-->0){ size-=1.5; el.style.fontSize=size+"px"; }
+    if(size<base)return;                        // it had to shrink — leave it
+    // Only grow the headline, and only when there is real room going spare.
+    if(!el.classList.contains("ev-title"))return;
+    const max=base*1.35;
+    guard=32;
+    while(el.scrollWidth<=cw-24 && size<max && guard-->0){ size+=1.5; el.style.fontSize=size+"px"; }
+    if(el.scrollWidth>cw+1){ size-=1.5; el.style.fontSize=size+"px"; }  // step back off the edge
   });
 }
 /** FINAL is fitted to the CHANNEL badge's width so it's never wider than the
@@ -1473,24 +1796,31 @@ function hardSwap(g){
   on.classList.add("no-anim");on.style.transform="translateY(0)";void on.offsetHeight;on.classList.remove("no-anim");
   off.classList.add("no-anim");off.style.transform="translateY(110px)";void off.offsetHeight;off.classList.remove("no-anim");
 }
-/** Golf: rotate the sets of 3 INTERNALLY while the rail (tournament + round)
- *  stays static, until the whole leaderboard has shown. */
-let golfTimer=null;
-function startGolfRotation(g){
-  const gr=g.golfGroups;let idx=0;
-  golfTimer=setInterval(()=>{
+/** Page a set of cards INTERNALLY while the rail beside them stays static,
+ *  until every page has shown. Golf uses it for leaderboard sets of three;
+ *  MMA uses it for a fight card. One timer, shared — it used to be
+ *  `golfTimer`, and a second sub-rotating face would have collided with it.
+ *  @param {Array<Array>} pages   sets to page through, first already on screen
+ *  @param {string} sel           container selector inside the live face
+ *  @param {(page:any)=>string} render
+ *  @param {string} swapClass     re-triggers the fade-in animation */
+let subRotateTimer=null;
+function startSubRotation(pages,sel,render,swapClass){
+  let idx=0;
+  subRotateTimer=setInterval(()=>{
     idx++;
-    if(idx>=gr.length){clearInterval(golfTimer);return;} // last set holds until the main advance
+    if(idx>=pages.length){clearInterval(subRotateTimer);return;} // last set holds until the main advance
     const {on}=currentEls();
-    const cards=on&&on.querySelector(".g3-cards");
-    if(!cards){clearInterval(golfTimer);return;}
-    cards.innerHTML=golfCardsHtml(gr[idx]);
-    cards.classList.remove("g3swap");void cards.offsetWidth;cards.classList.add("g3swap"); // re-trigger the fade
+    const box=on&&on.querySelector(sel);
+    if(!box){clearInterval(subRotateTimer);return;}
+    box.innerHTML=render(pages[idx]);
+    box.classList.remove(swapClass);void box.offsetWidth;box.classList.add(swapClass); // re-trigger the fade
   },CONFIG.GOLF_GROUP_MS);
 }
 function scheduleFlipAndAdvance(g){
-  clearInterval(golfTimer);
-  if(g&&g.kind==="golf"&&g.golfGroups&&g.golfGroups.length>1)startGolfRotation(g);
+  clearInterval(subRotateTimer);
+  if(g&&g.kind==="golf"&&g.golfGroups&&g.golfGroups.length>1)startSubRotation(g.golfGroups,".g3-cards",golfCardsHtml,"g3swap");
+  if(g&&g.kind==="fightcard"&&g.pages&&g.pages.length>1)startSubRotation(g.pages,".fc-cards",fightCardsHtml,"fcswap");
   const hasStats=g&&renderStatsFace(g)!==null;
   const dwell=(g&&g.dwellMs)||CONFIG.DWELL_MAIN;   // golf: sets×GOLF_GROUP_MS; tweets 30s; games ~7s
   clearTimeout(stepTimer);
@@ -1559,8 +1889,31 @@ function retriggerRightNow(){
   clearTimeout(stepTimer);
   stepTimer=setTimeout(()=>scheduleFlipAndAdvance(next.items[0]),io+hold);
 }
-/** Max pips before the row stops being countable and starts being clutter. */
-const MAX_SECDOTS=14;
+/** Max pips before the row stops being countable and starts being clutter.
+ *  Five is about the largest number of pips a person reads at a glance without
+ *  actually counting them, and the pill is only 158px wide. */
+const MAX_SECDOTS=5;
+/**
+ * Work out which pips to draw. Pure, so the window maths is testable.
+ *
+ * Past the cap the row becomes a SLIDING WINDOW rather than a truncation: the
+ * lit pip is always on screen and the rest ride as "+N". The old code compared
+ * the cursor against the *visible* count, so once the cursor passed the cap
+ * every pip rendered `done` and none rendered `on` — the progress row silently
+ * stopped working. At a cap of 14 that was rare; at 5 it would be constant.
+ *
+ * @returns {{hidden:boolean,start:number,shown:number,more:number}}
+ */
+function secDotState(total,cursor,max=MAX_SECDOTS){
+  const n=Math.max(0,Number(total)||0);
+  if(n<2)return {hidden:true,start:0,shown:0,more:0};           // one pip says nothing
+  const shown=Math.min(n,max);
+  const cur=Math.min(Math.max(0,Number(cursor)||0),n-1);        // clamp — never trust ii
+  // Centre the cursor in the window where possible, then clamp to the ends so
+  // the row doesn't drift off the last item.
+  const start=Math.min(Math.max(0,cur-Math.floor((shown-1)/2)),n-shown);
+  return {hidden:false,start,shown,more:n-(start+shown)};
+}
 /**
  * Paint the BottomLine section dots: one pip per item in the current league,
  * pips before the cursor drawn down, the current one lit.
@@ -1570,19 +1923,18 @@ const MAX_SECDOTS=14;
  * a single dot communicates nothing and just adds furniture.
  */
 function renderSecDots(){
-  const el=document.getElementById("secdots");
+  const el=elSecDots||document.getElementById("secdots");
   if(!el)return;
-  const items=groups[gi]?.items||[];
-  const total=items.length;
-  if(total<2){el.hidden=true;el.innerHTML="";return}
+  const total=(groups[gi]?.items||[]).length;
+  const {hidden,start,shown,more}=secDotState(total,ii);
+  if(hidden){el.hidden=true;el.innerHTML="";return}
   el.hidden=false;
-  const shown=Math.min(total,MAX_SECDOTS);
   let html="";
-  for(let i=0;i<shown;i++){
+  for(let i=start;i<start+shown;i++){
     const cls=i===ii?"on":(i<ii?"done":"");
     html+=`<span class="secdot ${cls}"></span>`;
   }
-  if(total>shown)html+=`<span class="secdot-more">+${total-shown}</span>`;
+  if(more>0)html+=`<span class="secdot-more">+${more}</span>`;
   el.innerHTML=html;
 }
 function advance(){
@@ -1613,7 +1965,7 @@ function advance(){
   stepTimer=setTimeout(()=>scheduleFlipAndAdvance(next.items[0]),io+hold);
 }
 async function sportsRefresh(){
-  await Promise.all(LEAGUES.map(fetchLeague));
+  await Promise.all([...LEAGUES,...activeSlates()].map(fetchLeague));
   const g=buildGroups();
   if(!groups.length){                       // first load — start immediately
     groups=g;gi=0;ii=0;
@@ -1753,14 +2105,40 @@ function communityPick(){
   const top=rankMemes(cryptoList.filter((c)=>c.tag==="MEME 100"),memeVotes)[0];
   return top&&Number(top.votesCell.tokens)>0?{coin:top,votes:top.votesCell}:null;
 }
-/** Top-5 Meme-100 power ranking as a dock leaderboard card. */
+/** Each ranked coin's share of ALL $CSGN vote weight cast across the meme set,
+ *  as a percentage. This is the number the Meme-100 face leads with: a raw
+ *  token count ("412,000,000 $CSGN") tells a viewer nothing, but "31.4% of the
+ *  vote" is readable by someone who has never heard of us and is comparable
+ *  across any supply or price. Returns [] unchanged when nobody has voted, so
+ *  the caller can say "no votes yet" rather than printing a fake 0%.
+ *  @returns {{sym:string,share:number}[]} same order as `ranked` */
+function memeVoteShares(ranked){
+  const list=Array.isArray(ranked)?ranked:[];
+  const total=list.reduce((s,c)=>s+(Number(c?.votesCell?.tokens)||0),0);
+  return list.map((c)=>({sym:c?.sym,share:total>0?((Number(c?.votesCell?.tokens)||0)/total)*100:0}));
+}
+/** The Meme-100 board: the top 3 by power score, led by their share of the
+ *  holder vote. The bar behind each row is that share, so the ranking reads as
+ *  a chart before anyone reads a label. No .c-bot — see the CSS budget note. */
 function renderMemeLeaderboard(ranked){
-  const rows=ranked.slice(0,3).map((c)=>{const up=(c.chg??0)>=0;
-    return `<div class="ml-row"><span class="ml-rank">${c.powerRank}</span><span class="ml-sym">${esc(c.sym)}</span>
-      <span class="ml-d ${up?"up":"down"}">${up?"▲":"▼"}${c.chg!=null?Math.abs(c.chg).toFixed(1):"–"}%</span></div>`;}).join("");
-  return `<div class="c-top"><div class="c-id"><span class="c-rank pick">☰</span><span class="c-sym">MEME 100</span></div><span class="c-delta up">POWER RANK</span></div>
-    <div class="ml-list">${rows}</div>
-    <div class="c-bot"><span class="c-tag pick">COMMUNITY POWER RANKING</span><span class="c-mv">VOL · MC · SOCIAL · $CSGN VOTES</span></div>`;
+  const top=(ranked||[]).slice(0,3);
+  const shares=memeVoteShares(top);
+  const anyVotes=shares.some((s)=>s.share>0);
+  const rows=top.map((c,i)=>{
+    const up=(c.chg??0)>=0;
+    const share=shares[i].share;
+    // Bars are scaled to the leader, not to 100 — at three coins an absolute
+    // scale leaves the board looking empty, and the comparison that matters is
+    // between these three.
+    const lead=Math.max(...shares.map((s)=>s.share),0);
+    const w=lead>0?Math.max(6,(share/lead)*100):0;
+    return `<div class="ml-row${i===0&&share>0?" lead":""}">
+      ${w>0?`<span class="ml-bar" style="width:${w.toFixed(1)}%"></span>`:""}
+      <span class="ml-rank">${c.powerRank}</span><span class="ml-sym">${esc(c.sym)}</span>
+      <span class="ml-share${share>0?"":" none"}">${anyVotes?share.toFixed(1)+"%":"—"}</span></div>`;
+  }).join("");
+  return `<div class="ml-head"><span class="ml-title">MEME 100</span><span class="ml-note">${anyVotes?"$CSGN HOLDER VOTE":"VOTE AT CSGN.FUN"}</span></div>
+    <div class="ml-list">${rows}</div>`;
 }
 /** The community-chosen memecoin, cyan-accented, featured in the dock rotation. */
 function renderCommunityPick(c,votes){
@@ -1768,7 +2146,8 @@ function renderCommunityPick(c,votes){
   return `<div class="c-top"><div class="c-id"><span class="c-rank pick">▲</span><span class="c-sym">${esc(c.sym)}</span></div>
       <span class="c-delta ${up?"up":"down"}">(24h) ${up?"▲":"▼"} ${c.chg!=null?Math.abs(c.chg).toFixed(2):"–"}%</span></div>
     <div class="c-led">${renderLed(formatLedPrice(c.price))}</div>
-    <div class="c-bot"><span class="c-tag pick">COMMUNITY PICK</span><span class="c-mv">${votes.wallets||0} backers · ${compactNum(votes.tokens||0)} $CSGN power</span></div>`;
+    <div class="c-bot"><span class="c-tag pick">COMMUNITY PICK</span><span class="c-mv">${votes.wallets||0} backers · ${compactNum(votes.tokens||0)} $CSGN power</span></div>
+    ${c.spark?'<canvas class="c-chart" width="420" height="124"></canvas>':""}`;
 }
 /** The network's own coin, brand-accented, featured in the dock rotation. */
 function renderCsgnCoinCard(csgn){
@@ -1993,7 +2372,7 @@ function cryptoTick(){
   // Air the Meme-100 community power ranking (top 5) every ~8th tick.
   if(cryptoTickN%8===0){
     const ranked=rankMemes(cryptoList.filter((x)=>x.tag==="MEME 100"),memeVotes);
-    if(ranked.length>=3){coinShow(renderMemeLeaderboard(ranked),null,"swap","");return;}
+    if(ranked.length>=3){coinShow(renderMemeLeaderboard(ranked),null,"swap","meme");return;}
   }
   if(!cryptoList.length){ // no board and no $CSGN stats yet → branded hold card, never dead
     coinShow(CSGN_HOLD_CARD,null,"swap","");
@@ -2018,7 +2397,10 @@ window.__csgn={formatLedPrice,renderLed,renderItem,renderStatusCell,renderGolfBo
   CONFIG,wipePhases,broadcastRef,dateParamForLeague,sameZonedDay,
   pitcherBrief,broadcastOf,BANANA_BALL_GAMES,bananasItems,renderCoinCard,
   buildCsgnBeatGroup,buildGovernanceGroup,renderBuyCard,shortCountdown,fmtUsd,fmtPriceInline,
-  renderTweet,buildTweetsGroup,renderCsgnCoinCard,normalizeBreaking,applyBreaking,hasHeadroom,buildChyronGroup,fitText,fitCells,buildActionsGroup,golfCardsHtml,rankMemes,renderCommunityPick,renderMemeLeaderboard,compactNum};
+  renderTweet,buildTweetsGroup,renderCsgnCoinCard,normalizeBreaking,applyBreaking,hasHeadroom,buildChyronGroup,fitText,fitCells,buildActionsGroup,golfCardsHtml,rankMemes,renderCommunityPick,renderMemeLeaderboard,compactNum,
+  secDotState,MAX_SECDOTS,gamesBackOf,parseStandingsTable,memeVoteShares,
+  eventNameOf,buildFightCardGroups,fightCardsHtml,renderFightCard,
+  SLATES,activeSlates,shouldKeepEventToday};
 document.documentElement.style.setProperty("--roll-ms",`${CONFIG.ROLL_MS}ms`);
 document.documentElement.style.setProperty("--croll-ms",`${CONFIG.CRYPTO_ROLL_MS}ms`);
 const brandImg=document.getElementById("brand-logo");
