@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Gamepad2, Grid3X3 } from 'lucide-react'
 import { formatESTRange, isSlotClaimable, slotIdentity, type Slot } from '@/lib/slots'
 import { api } from '@/lib/api'
 import { parseXPostId } from '@/lib/xembed'
@@ -12,6 +11,7 @@ import TokenPanel from '@/components/watch/TokenPanel'
 import ScheduleStrip from '@/components/watch/ScheduleStrip'
 import StreamInfoBar from '@/components/watch/StreamInfoBar'
 import GameBanner from '@/components/watch/GameBanner'
+import { JoinStrip } from '@/components/watch/JoinStrip'
 import { WipeOverlay } from '@/components/ui/WipeOverlay'
 
 /** The default strip copy. Whatever an admin sets in config/gameBanner wins;
@@ -201,31 +201,18 @@ export default function Watch() {
           <TokenPanel broadcastUrl={broadcastUrl} />
         </div>
 
-        {/* Game teasers — on-chain minigames, not open yet. Deliberately plain:
-            flat gray, no accent glow, no status pill. The disabled state IS the
-            message, and the label wraps rather than truncating so "Daily lineup
-            game" reads in full at every width. */}
-        <div className="shrink-0 grid grid-cols-2 gap-3 sm:gap-4 px-5 py-5">
-          {[
-            { Icon: Gamepad2, title: 'Starting 5', sub: 'Daily lineup game' },
-            { Icon: Grid3X3, title: 'Squares', sub: 'On-chain grid pool' },
-          ].map(({ Icon, title, sub }) => (
-            <button
-              key={title}
-              disabled
-              className="flex items-center gap-3 sm:gap-4 p-4 sm:p-5 rounded-2xl border border-white/[0.08] bg-white/[0.02] text-left cursor-not-allowed"
-            >
-              <span className="shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-gray-500">
-                <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
-              </span>
-              <span className="min-w-0">
-                <span className="block font-black font-display text-gray-300 text-sm sm:text-lg uppercase tracking-wide leading-tight">{title}</span>
-                <span className="block text-[11px] sm:text-xs text-gray-500 mt-1 leading-snug">{sub}</span>
-                <span className="block text-[10px] sm:text-[11px] uppercase tracking-[0.16em] text-gray-600 mt-1 leading-snug">Coming Soon</span>
-              </span>
-            </button>
-          ))}
-        </div>
+        {/* What used to be here: two permanently disabled "Coming Soon" game
+            tiles, occupying the largest block on the page below the stage. They
+            cost a first-time visitor a scroll and gave back nothing — a dead
+            button is a worse advertisement for a product than no button. The
+            space now carries the pitch and the sign-up, which is what a cold
+            visitor from an ad or an X link actually needs. The games come back
+            here when they are playable, not before. */}
+        <JoinStrip
+          signedIn={Boolean(user)}
+          twitchLinked={Boolean(profile?.twitch?.verified)}
+          onGetStarted={() => window.dispatchEvent(new Event('csgn:openRegister'))}
+        />
       </div>
 
       {/* ── Right: Token panel sidebar (desktop only) ── */}
