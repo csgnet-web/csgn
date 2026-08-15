@@ -30,7 +30,7 @@ The two documents that describe what is actually happening.
 | Doc | What it answers |
 |---|---|
 | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | Getting it running, the rules this codebase keeps, **running your own node**, broadcasting (X, or Restream for Twitch too), PRs and security reports |
-| [`plan-twitch-first-claim.md`](plan-twitch-first-claim.md) | **Implementation plan, not yet built.** Twitch alone creates an account and claims an hour; admins reserve hours for a Twitch handle with no account; the wallet is asked for at payout. Four phases, three open decisions |
+| [`plan-twitch-first-claim.md`](plan-twitch-first-claim.md) | **Implementation plan, not yet built.** Twitch alone creates an account and claims an hour; admins reserve hours for a Twitch handle with no account; the wallet is asked for at payout. Four phases; the three forks are settled — fees stay manual toward a pull-based claim contract |
 | [`signup-flow.md`](signup-flow.md) | **Sign-up, sign-in, and the Twitch problem.** Why federated login cannot work inside Phantom's in-app browser, the three-tap wallet sign-up, and the cross-browser Twitch handoff that replaced it |
 | [`env-setup.md`](env-setup.md) | Every environment variable, which are secret, the payout-wallet key policy, and the **deploy checklist** |
 | [`dry-run.md`](dry-run.md) | **The gated verification runbook.** Local → settlement → payout dry run → **the mainnet money test**. Includes the idempotency test that must never be skipped |

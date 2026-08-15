@@ -3,9 +3,10 @@
 **Audience: the agent implementing this.** Written to be executed against the
 current codebase, not to be admired. Every file path is real; every claim about
 current behaviour was read out of the code on the branch
-`claude/twitch-signup-flow-xbvacz`. Where something is a decision rather than an
-instruction it is marked **DECISION** and must be resolved before the phase that
-depends on it — do not guess and do not silently pick.
+`claude/twitch-signup-flow-xbvacz`. **The three open decisions have been settled
+by the project owner — see §7. Read them before you start; they are not
+suggestions and re-deriving them from first principles will land you somewhere
+else.**
 
 Context you should read first, in this order:
 [signup-flow.md](signup-flow.md) (what the auth does now and why),
@@ -36,7 +37,9 @@ create an account, let alone claim an hour. That is the constraint this removes.
 3. **An admin can reserve an hour for a Twitch handle that has no account.** The
    schedule shows the guest's real display name and avatar immediately.
 4. **The wallet is asked for when money is owed** — after the stream, against a
-   real number, with the fees held (never dropped) until it arrives.
+   real number, with the fees held (never dropped) until it arrives. That ask is
+   also the front-end of where this is going: a pull-based claim contract the
+   streamer withdraws from per account (§5.5).
 
 ---
 
@@ -52,7 +55,7 @@ together machinery that is already here and already tested.
 | `uniqueTwitchUsers/{twitchUserId}` | written by `signupWithPhantom.ts`, `linkTwitch.ts` | The one-Twitch-one-account lock. Create-only, so the database refuses duplicates rather than the code remembering to check. Reservations and Twitch sign-up both key off this. |
 | Custom-token sign-in | `createCustomToken` in `_shared/firebaseAdmin.ts`, `signUpWithPhantom` in `src/contexts/AuthContext.tsx` | Server mints, client exchanges, Firebase user is created by the exchange. Mirror it for Twitch. |
 | In-app notifications | `users/{uid}.notifications[]`, `addUserNotification` in `src/lib/slots.ts`, rendered in `src/pages/Dashboard.tsx` | A working notification channel that costs nothing. Phase 4 starts here, not with email. |
-| The payout ledger | `_shared/payouts.ts`, `_shared/payoutRunner.ts` | Four guarantees, heavily tested. **Do not modify the runner's ordering.** Phase 3 adds a *source*, it does not touch the engine. |
+| The payout ledger | `_shared/payouts.ts`, `_shared/payoutRunner.ts` | Four guarantees, heavily tested, and **out of scope for every phase here.** Creator fees are paid by hand until the claim contract exists (§5.3). Neither file should appear in any diff from this plan. |
 | Claim rules, mirrored | `netlify/functions/claimSlot.ts` and `claimEligibility()` in `src/lib/slotModel.ts` | These two deliberately mirror each other. **Every rule change in this plan must land in both files, in the same commit.** Both carry a comment saying so. |
 
 ---
@@ -62,7 +65,7 @@ together machinery that is already here and already tested.
 Independently shippable and independently valuable: on its own it opens the
 product to every streamer who doesn't hold SOL.
 
-### 1.1 `netlify/functions/signupWithTwitch.ts` *(new)*
+### 3.1 `netlify/functions/signupWithTwitch.ts` *(new)*
 
 Model it on `signupWithPhantom.ts` — read that file's header comment first; the
 security reasoning transfers almost line for line.
@@ -91,19 +94,19 @@ limits creation — but it is not expensive either. Charge account age:
   profile_image_url` from Helix `/users`. **Also capture `created_at`** and put
   it in the `twitch_account` proof claims.
 - Reject sign-up when the Twitch account is younger than `CSGN_MIN_TWITCH_AGE_DAYS`
-  (default **30**), with code `twitch_too_new` and a message that names the real
+  (**settled: default 30**), with code `twitch_too_new` and a message that names the real
   remedy: sign up with a Phantom wallet instead, or come back later.
-- **Fail open on a missing `created_at`**, recording `twitchCheck: 'unavailable'`
+- **Fail open on a missing `created_at`** (settled), recording `twitchCheck: 'unavailable'`
   on the account, exactly as `signupWithPhantom` does with `walletCheck`. Same
   reasoning: this is anti-spam, not anti-fraud, and no money rests on it.
 
-### 1.2 `netlify/functions/loginWithTwitch.ts` *(new)*
+### 3.2 `netlify/functions/loginWithTwitch.ts` *(new)*
 
 A near-copy of `loginWithPhantom.ts`, reading `uniqueTwitchUsers/{id}` instead of
 `uniquePhantomWallets/{address}`. Same posture: **never creates an account,
 never re-links**, 404s for an unknown Twitch id, rate limited.
 
-### 1.3 `claimSlot.ts` — drop the wallet requirement
+### 3.3 `claimSlot.ts` — drop the wallet requirement
 
 Current lines 72–76 require a verified wallet. Change to:
 
@@ -126,7 +129,7 @@ if (!isAdmin && (!user.twitch?.verified || !twitchUsername || !twitchUserId)) {
   one asserting a wallet-less Twitch account **is** eligible.
 - Leave the admin bypass and the email-verification branch exactly as they are.
 
-### 1.4 The modal: two front doors, one account
+### 3.4 The modal: two front doors, one account
 
 `src/components/auth/AuthModal.tsx` is a four-step machine (`connect` → `name` →
 `done` → `email`). Keep the shape; widen step `connect`.
@@ -157,9 +160,12 @@ on 404 go to step `name` with a pre-filled username → create → step `done`.
   and *add your wallet* (secondary, framed as "so we can pay you"); a Phantom
   account keeps today's *watch* / *connect Twitch*.
 
-**DECISION 1.** Do we keep requiring a wallet before a *network* (7pm–3am) slot
-can be claimed? Those hours are CSGN Originals and already admin-gated, so
-probably moot — but say so explicitly rather than discovering it later.
+**Network slots are unchanged.** The 7pm–3am block is CSGN Originals and is
+assigned by an admin, and `claimSlot` already bypasses every gate for
+`role === 'admin'` — so the wallet question never arises on those hours. Change
+nothing about `isNetworkSlot`, the `networkBlockEnabled` check, or the admin
+bypass. Stated here only so nobody "tidies" it while editing the gates
+immediately above it.
 
 ### Phase 1 acceptance
 
@@ -347,7 +353,7 @@ Three surfaces, one sentence, and the sentence always contains a real figure —
 never "add a wallet to get paid" in the abstract:
 
 1. **Immediately after a slot completes** — in-app notification: *"Your hour
-   earned 0.42 SOL. Add a wallet and it goes out with the next payout run."*
+   earned 0.42 SOL. Add a wallet and we can send it."*
 2. **`/account`** — a `Notice tone="warning"` above the fee history whenever
    owed > 0 and no wallet. The `Connection` row for Wallet already shows "Not
    connected"; this makes it consequential.
@@ -363,39 +369,96 @@ Attaching the wallet is the existing flow: `createPhantomChallenge` →
 `isEstablishedWallet` check here** — the sybil gate that left the front door
 belongs at the money door, where it protects something real.
 
-### 5.3 Paying creator fees
+### 5.3 Paying creator fees — by hand, deliberately
 
-**DECISION 2, and it blocks this phase.** `PayoutSource` already lists
-`'creator_fee'`, but the entire ledger is $CSGN-denominated: `PayoutRequest`
-carries `amountCsgn`, every cap in `payouts.ts` is in whole $CSGN, and
-`payoutWallet.ts` signs SPL token transfers. Creator fees are **SOL**
-(`creatorFees.feeOwedSOL`). So one of:
+**Settled: creator fees are paid manually for now.** Do not build a
+`creator_fee` payout source, and do not extend `payoutWallet.ts`.
 
-- **(a) Pay creator fees in $CSGN** at a published conversion. No new transfer
-  code, reuses every cap and guarantee as-is, and it puts the token in
-  streamers' hands. But it is not what the marketing says ("paid in SOL"), so
-  the copy must change with it.
-- **(b) Add native SOL transfers** to `payoutWallet.ts` and a parallel set of
-  SOL-denominated caps. Honest to the pitch and to `docs/marketing-outreach.md`;
-  a real extension of the highest-consequence code in the repository.
-- **(c) Keep paying creator fees by hand** for now, and ship only the accrual,
-  the ask and the hold. **Recommended for the first pass** — at current volume
-  this is a handful of transfers a week, the amounts are small, and automating
-  irreversible money movement is not the thing to rush next to a launch.
+The reason it stays manual is not that automation is hard, it is that the
+automated version we actually want is a *different design* — see §5.5. Building
+an automatic push now means writing SOL transfer code into the
+highest-consequence file in the repository, next to a launch, for a handful of
+small transfers a week, and then throwing it away when the contract lands.
 
-Whichever is chosen: a payout request for a wallet-less uid is **filed, not
-dropped**. Give it `status: 'awaiting_wallet'` in the ledger, exclude it from
-solvency, and retry it on the next run once a wallet appears. `payouts.ts`
-already parks oversized payouts as `needs_review`; follow that pattern exactly
-rather than inventing a second one.
+For the record, since the constraint will not be obvious to whoever reads
+`PayoutSource` and sees `'creator_fee'` already listed: **the ledger is
+$CSGN-denominated end to end.** `PayoutRequest` carries `amountCsgn`, every cap
+in `payouts.ts` is in whole $CSGN, and `payoutWallet.ts` signs SPL token
+transfers. Creator fees are SOL (`creatorFees.feeOwedSOL`). Those two facts do
+not meet without new transfer code, and that code should be written once,
+against the contract, not twice.
+
+### 5.4 What "manual" needs in order to be operable
+
+Paying by hand is only a good decision if the admin can see who is owed what
+without opening Firestore. This is the actual Phase 3 build, and it is small.
+
+**A Payable tab in `src/pages/Admin.tsx`** (sits beside the existing Creator
+Fees tab, `src/components/admin/CreatorFeesTab.tsx`, which already renders
+per-slot fee data — read it before writing a new one; it may just need a second
+view rather than a new component).
+
+One row per member with unpaid fees:
+
+| Member | Twitch | Wallet | Slots | Owed SOL | |
+|---|---|---|---|---|---|
+| NeonTicker04 | @neonticker | `7xKX…gAsU` *(copy)* | 3 | 0.412 | **Mark paid** |
+| SilentRally22 | @silentrally | — *awaiting wallet* | 1 | 0.088 | *(disabled)* |
+
+- Rows are grouped by uid and derived from slots where
+  `creatorFees.feeOwedSOL > 0 && !creatorFees.paidAt` — the same derivation
+  `src/pages/Dashboard.tsx` already does per member, lifted to all members.
+- **Wallet-less members still appear**, greyed, showing what is being held. That
+  list is the nudge list: it tells you exactly who to message, and it is the
+  reason the hold is a feature rather than a leak.
+- **Mark paid** opens a small form taking the transaction signature, and writes
+  `creatorFees.paidAt`, `creatorFees.paidTxSignature` and
+  `creatorFees.paidByUid` onto each slot in the group, in one batch, via a new
+  admin endpoint (`netlify/functions/adminMarkFeesPaid.ts`). Require the
+  signature — a payment record with no hash is a claim, not a receipt, and the
+  whole product's argument is that ours are checkable.
+- Validate the signature is base58 and 64–88 chars. Do **not** verify it
+  on-chain; an RPC round trip that can fail is not worth blocking a bookkeeping
+  write, and a wrong hash is visible the moment anyone clicks it.
+- Write an `auditLog('markFeesPaid', …)` entry. Manual money movement is exactly
+  what the audit log is for.
+
+Once `paidAt` is set, the slot drops out of the member's owed total on
+`/account` and out of the Payable tab. That single field is what makes the
+manual process idempotent, which is the property the automated ledger gets from
+create-only writes.
+
+### 5.5 The end state this is shaped for
+
+The intended destination is a **pull-based claim contract**: the treasury pushes
+into an on-chain program, each account accrues an entitlement, and the streamer
+withdraws whenever they like. From the streamer's side that is fully automatic —
+no payout run to wait for, no admin in the loop.
+
+Two consequences that change what you build *now*, so honour them:
+
+1. **Never introduce a mutable balance field.** Keep deriving the owed total
+   from per-slot `feeOwedSOL` + `paidAt`. A per-slot record with a paid marker
+   migrates cleanly into entitlements; a running balance that drifted from the
+   slots it came from does not, and you will not know which one is wrong.
+2. **The wallet is the entitlement key, and that is the same rule as the hold.**
+   A Twitch-only account has no address to accrue against, on-chain or off. So
+   the behaviour being built here — accrue, hold, ask for a wallet against a
+   real number — is not a stopgap for the contract, it is the contract's
+   front-end, built early. Write the copy so it survives the transition: *"add a
+   wallet so we can pay you"* stays true whether the transfer is a manual
+   `solana transfer` or a withdrawal from a program.
 
 ### Phase 3 acceptance
 
 - [ ] A Twitch-only member completes a slot with fees owed and sees the real figure on `/account` and in their notifications.
-- [ ] Attaching a wallet clears the notice and the fees become payable.
+- [ ] The Payable tab lists that member, greyed, with the held amount.
+- [ ] Attaching a wallet moves them to payable and clears the member-side notice.
 - [ ] A wallet already on another account is refused without corrupting either.
-- [ ] A payout run containing a wallet-less recipient completes, pays everyone else, and files that one for retry. **Prove this with a dry run first** — `adminRunPayouts` is dry-run by default and that default exists for a reason.
+- [ ] Mark paid requires a signature, writes `paidAt` to every slot in the group, and the member's owed total drops to zero.
+- [ ] Marking the same group paid twice does not double-count or clear a slot that was already settled.
 - [ ] The `isEstablishedWallet` gate runs at attach time.
+- [ ] `adminRunPayouts` is untouched. **No file under `_shared/payouts.ts` or `_shared/payoutRunner.ts` appears in this phase's diff.**
 
 ---
 
@@ -468,7 +531,7 @@ infrastructure for a problem you don't have.
 |---|---|---|
 | 1 · Twitch sign-up + claim | Yes | Every streamer on earth can now join and book an hour. **The big one.** |
 | 2 · Reservations + `/go/:code` | Yes, needs 1 | The schedule fills with real names, and booking someone takes one message |
-| 3 · Wallet at payout | Yes, needs 1 | Nobody is owed money they cannot receive |
+| 3 · Wallet at payout | Yes, needs 1 | Nobody is owed money they cannot receive, and the owner has a payable list instead of a Firestore console |
 | 4 · Reminders | Yes, needs 2 | Fewer no-shows |
 
 **Do not merge 1 and 2 into one pull request.** Phase 1 touches the auth and
@@ -497,13 +560,28 @@ and sit for a day on its own.
    handoff, which means a handoff regression is now a total-signup outage rather
    than a degraded second step.
 
-### The three decisions to resolve before coding
+### Decisions — all three settled, do not reopen
 
-1. **DECISION 1** — do network (7pm–3am) slots keep any wallet requirement?
-2. **DECISION 2** — creator fees in $CSGN, in SOL, or by hand for now?
-   *(recommended: by hand; ship accrual + hold + ask first)*
-3. **DECISION 3** — does the Twitch-age sybil gate default to 30 days, and does
-   it fail open? *(recommended: yes and yes, mirroring `walletCheck`)*
+Resolved by the project owner. They are recorded here rather than left as
+options because each one was a real fork, and an implementer who re-derives them
+from first principles will pick differently.
+
+1. **Network slots: unchanged.** The 7pm–3am block is the owner's own, assigned
+   as admin, and `claimSlot` already bypasses every gate for admins. No wallet
+   requirement is added or removed there. See §3.3.
+2. **Creator fees: paid by hand.** No `creator_fee` payout source, no SOL
+   transfer code, nothing under `_shared/payouts.ts` or `_shared/payoutRunner.ts`
+   touched. Phase 3 builds accrual, the hold, the member-side ask, and an admin
+   Payable tab with a mark-paid that records the transaction signature. The
+   destination is a **pull-based claim contract** — treasury pushes, streamers
+   withdraw per account — which is why the transfer code is written once, later,
+   against the contract, rather than twice. See §5.3–§5.5, and honour the two
+   constraints in §5.5: no mutable balance field, and the wallet is the
+   entitlement key.
+3. **Twitch-age sybil gate: 30 days, failing open.** `CSGN_MIN_TWITCH_AGE_DAYS`
+   defaults to 30; a missing or unreadable `created_at` lets the account through
+   and stamps `twitchCheck: 'unavailable'`, mirroring how `walletCheck` already
+   handles an unreachable RPC in `signupWithPhantom.ts`. See §3.1.
 
 ---
 
