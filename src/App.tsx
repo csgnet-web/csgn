@@ -10,7 +10,6 @@ import { lazy, Suspense } from 'react'
 const Watch = lazy(() => import('@/pages/Watch'))
 const Schedule = lazy(() => import('@/pages/Schedule'))
 const About = lazy(() => import('@/pages/About'))
-const StreamerQuickApply = lazy(() => import('@/pages/StreamerQuickApply'))
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
 const PublicProfile = lazy(() => import('@/pages/PublicProfile'))
 const Admin = lazy(() => import('@/pages/Admin'))
@@ -50,7 +49,11 @@ function AppContent() {
             <Route path="/schedule" element={<Schedule />} />
             <Route path="/apply" element={<Navigate to="/schedule" replace />} />
             <Route path="/about" element={<About />} />
-            <Route path="/about/streamer-quick-apply" element={<StreamerQuickApply />} />
+            {/* /about/streamer-quick-apply used to live here: an orphan page,
+                linked from nowhere, describing an application-and-review flow
+                that has not existed since claiming became self-serve. It sent
+                people to csgn.fun/apply, which redirects to /schedule. */}
+            <Route path="/about/streamer-quick-apply" element={<Navigate to="/schedule" replace />} />
             <Route path="/account" element={<Dashboard />} />
             <Route path="/u/:username" element={<PublicProfile />} />
             <Route path="/dashboard" element={<Navigate to="/account" replace />} />

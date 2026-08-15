@@ -21,6 +21,8 @@ import { Notice, EmailNotice, TwitchNotice } from '@/components/ui/Notice'
 import { api } from '@/lib/api'
 import { readTwitchProof, clearTwitchProof } from '@/lib/twitchProof'
 import { storeAuthReturn } from '@/lib/authReturn'
+import { useTwitchLink } from '@/hooks/useTwitchLink'
+import { TwitchHandoffPanel } from '@/components/auth/TwitchHandoffPanel'
 import { Modal } from '@/components/ui/Modal'
 
 /** One connection row. Renders the real state — a missing wallet reads as
@@ -67,7 +69,6 @@ export default function Dashboard() {
   const [liveVolumeSOL, setLiveVolumeSOL] = useState(0)
   const [slotInfo, setSlotInfo] = useState<Slot | null>(null)
   const [feePage, setFeePage] = useState(0)
-  const [linking, setLinking] = useState(false)
   const [linkMsg, setLinkMsg] = useState('')
   const [linkErr, setLinkErr] = useState('')
   const upcomingSlots = useMemo(
@@ -217,25 +218,37 @@ export default function Dashboard() {
   }
 
   /**
-   * Start the Twitch link. Full-page redirect, never a popup: Twitch's login
-   * page offers "Sign in with Apple", and Apple refuses OAuth inside popups and
-   * embedded webviews. A redirect is the only flow that survives every entry
-   * point we actually see, including Phantom's in-app browser.
+   * Start the Twitch link.
+   *
+   * Never a popup, and — inside an in-app browser — not even a redirect. Twitch
+   * offers "Sign in with Apple / Google / Amazon", and every one of those
+   * refuses to run in an embedded webview, which is where most of our members
+   * are standing when they tap this. `useTwitchLink` therefore hands those users
+   * a door into Safari and polls for the result while they stay on this page;
+   * a real browser gets the full-page redirect it always got, and comes back
+   * here because of the 'link' intent below ('signup' would greet a member with
+   * a "Join CSGN" modal on the way back from linking to the account they are
+   * already signed into).
    */
-  const handleConnectTwitch = async () => {
-    setLinking(true); setLinkErr(''); setLinkMsg('')
-    try {
-      const { authUrl } = await api.startTwitchOAuth()
-      // 'link', not 'signup': this member already has an account. The intent is
-      // what keeps ?auth=register off the return URL — sending it would greet
-      // them with a "Join CSGN" modal on the way back from linking Twitch to
-      // the account they're signed into.
-      storeAuthReturn({ path: '/account', intent: 'link' })
-      window.location.href = authUrl
-    } catch {
-      setLinking(false)
-      setLinkErr('Could not open Twitch. Please try again.')
-    }
+  const twitchLink = useTwitchLink({
+    beforeRedirect: () => storeAuthReturn({ path: '/account', intent: 'link' }),
+    onLinked: async (result) => {
+      setLinkErr('')
+      try {
+        const res = await api.linkTwitch(result.twitchProofToken)
+        setLinkMsg(res.alreadyLinked
+          ? `Twitch already connected as ${res.twitch.displayName}.`
+          : `Twitch connected as ${res.twitch.displayName}. You can claim slots now.`)
+        await refreshProfile()
+      } catch (err) {
+        setLinkErr(err instanceof Error ? err.message : 'Could not connect Twitch.')
+      }
+    },
+  })
+
+  const handleConnectTwitch = () => {
+    setLinkErr(''); setLinkMsg('')
+    void twitchLink.start()
   }
 
   const handleDismissNotification = async (notifId: string) => {
@@ -383,15 +396,31 @@ export default function Dashboard() {
                 }
               />
             )}
-            {!twitchLinked && (
+            {!twitchLinked && !twitchLink.handoff && (
               <TwitchNotice
                 action={
-                  <Button variant="secondary" size="sm" isLoading={linking} onClick={handleConnectTwitch}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    isLoading={twitchLink.phase === 'starting' || twitchLink.phase === 'redirecting'}
+                    onClick={handleConnectTwitch}
+                  >
                     Connect Twitch
                   </Button>
                 }
               />
             )}
+            {/* In-app browser: the Twitch hop cannot happen here, so the panel
+                takes the notice's place and waits for Safari to finish it. */}
+            {!twitchLinked && twitchLink.handoff && (
+              <TwitchHandoffPanel
+                href={twitchLink.handoff.href}
+                rawUrl={twitchLink.handoff.rawUrl}
+                browserName={twitchLink.handoff.browserName}
+                onCancel={twitchLink.cancel}
+              />
+            )}
+            {twitchLink.error && <Notice tone="error" compact>{twitchLink.error}</Notice>}
           </div>
         )}
 

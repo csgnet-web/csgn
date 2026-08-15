@@ -283,6 +283,56 @@ number marks it. Still well short of v2.)*
   - New `_shared/cache.ts`: bounded TTL cache, single-flight, bounded fetch —
     with the rule that a failed load is never cached
 
+### v1.20 — August 2026
+**Three taps to an account; a Twitch hop that survives the in-app browser.**
+
+- **Sign-up from Phantom's in-app browser could not be completed at all.**
+  Tapping Connect Twitch opened Twitch's login inside the webview, where
+  "Continue with Google / Apple / Amazon" returns **"Something went wrong"** —
+  those providers refuse to authenticate in an embedded webview by policy
+  (Google answers `disallowed_useragent`), and there is no header or flag that
+  turns it off. The webview's isolated cookie jar means a user signed into
+  Twitch on their phone arrives logged out anyway. Since most users arrive from
+  the Phantom app, that was the funnel
+- **Twitch is out of the sign-up path.** It gates claiming an hour, not having
+  an account (`claimSlot.ts`), and it was the single biggest way to fail the
+  form. Sign-up is now **Continue with Phantom → approve the signature → Create
+  account**, with the username pre-filled from the wallet so the primary button
+  is live on arrival. A registered wallet skips the username step and signs
+  straight in, so signing in and signing up are one door — the wallet already
+  knows which applies
+- **Email and password left the happy path.** Still there as recovery on
+  `/account`, and the form now opens *itself*, with an explanation, for the one
+  rejection it actually solves: a wallet too new to clear the on-chain sybil gate
+- **The Twitch link now works across two browsers.** `startTwitchOAuth` mints a
+  signed `twitch_link` token bound to the OAuth state, and the callback writes
+  every outcome — success *and* failure — under that state. Inside a webview the
+  page no longer navigates: it renders a tap target into Safari/Chrome
+  (`x-safari-https://` on iOS, `intent://` with a fallback URL on Android), a
+  copy-link alternative because the iOS scheme fails silently when a host app
+  declines it, and polls `claimTwitchLink` while the user approves elsewhere.
+  The originating tab fills itself in without a reload; the browser that
+  finished the OAuth holds no token and simply says "go back". Real browsers
+  keep the redirect they always had, and both routes share one hook so
+  `/account` behaves identically to the sign-up modal
+- Failures reach the waiting tab instead of leaving it spinning for five
+  minutes, and the token exchange logs Twitch's own response body — a
+  `redirect_uri` mismatch is now diagnosable instead of generic
+- **`/` asks for the sign-up.** Where two permanently disabled "Coming Soon"
+  game tiles occupied the largest block below the stage, there is now the pitch
+  in one sentence, three checkable facts and a wallet CTA. It disappears once
+  it's answered
+- Removed: `consumeTwitchOAuthResult` (assumed the returning browser was the
+  originating one), `registerDraft` (carried half-typed sign-up fields across a
+  redirect that no longer happens during sign-up), and
+  `/about/streamer-quick-apply` — an orphan page describing an
+  apply-and-review flow that stopped existing when claiming became self-serve
+- New docs: [`docs/signup-flow.md`](docs/signup-flow.md) (how it works and why),
+  [`docs/product-process.md`](docs/product-process.md) (the funnel end to end,
+  the cut list, the path to first users, the six numbers) and
+  [`docs/marketing-outreach.md`](docs/marketing-outreach.md) (positioning, ad
+  copy, outreach scripts, 30-day plan)
+
 ### v1.19 — August 2026
 **Sign-up down to one signature; a Twitch redirect that comes back where it left; X handled honestly.**
 

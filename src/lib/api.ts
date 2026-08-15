@@ -28,6 +28,16 @@ export interface PublicProfile {
 export type TwitchProof = { proofToken: string; twitch: { twitchUserId: string; username: string; displayName: string; profileImageUrl: string } }
 export type TwitchOAuthResult = { twitchProofToken: string; twitchUserId: string; username: string; displayName: string; profileImageUrl: string }
 
+/** What `startTwitchOAuth` hands back. `state` identifies this attempt and
+ *  `linkToken` is the signed bearer that claims its result — see lib/twitchLink.ts. */
+export type TwitchLinkStart = { authUrl: string; state: string; linkToken: string }
+
+/** One poll of the Twitch round trip. `pending` means "still out there". */
+export type TwitchLinkStatus =
+  | { status: 'pending' }
+  | { status: 'failed'; error: string }
+  | ({ status: 'ready' } & TwitchOAuthResult)
+
 export const api = {
   createPhantomChallenge: (walletAddress: string) => functionFetch<{ challengeToken: string; message: string }>('createPhantomChallenge', { method: 'POST', body: JSON.stringify({ walletAddress }) }),
   verifyPhantomSignature: (walletAddress: string, signature: string, challengeToken: string) => functionFetch<{ proofToken: string; walletAddress: string }>('verifyPhantomSignature', { method: 'POST', body: JSON.stringify({ walletAddress, signature, challengeToken }) }),
@@ -38,8 +48,12 @@ export const api = {
    *  no password. Returns a custom token whose exchange creates the auth user. */
   signupWithPhantom: (body: { username: string; phantomProofToken: string; twitchProofToken?: string }) =>
     functionFetch<{ customToken: string }>('signupWithPhantom', { method: 'POST', body: JSON.stringify(body) }),
-  startTwitchOAuth: () => functionFetch<{ authUrl: string }>('startTwitchOAuth', { method: 'POST' }),
-  consumeTwitchOAuthResult: (handoffId: string) => functionFetch<TwitchOAuthResult>('consumeTwitchOAuthResult', { method: 'POST', body: JSON.stringify({ handoffId }) }),
+  startTwitchOAuth: () => functionFetch<TwitchLinkStart>('startTwitchOAuth', { method: 'POST' }),
+  /** Claim the result of a Twitch round trip. Safe to call repeatedly — it
+   *  returns `pending` until some browser finishes the OAuth, and the proof is
+   *  handed out exactly once. This is what lets the flow complete in Safari
+   *  while the user's original tab (in Phantom's in-app browser) waits. */
+  claimTwitchLink: (linkToken: string) => functionFetch<TwitchLinkStatus>('claimTwitchLink', { method: 'POST', body: JSON.stringify({ linkToken }) }),
   /** Twitch is OPTIONAL here — Phantom is the credential, Twitch only gates
    *  claiming a slot. See netlify/functions/finalizeCreateAccount.ts. */
   finalizeCreateAccount: (body: { username: string; phantomProofToken: string; twitchProofToken?: string }) => functionFetch<{ user: unknown }>('finalizeCreateAccount', { method: 'POST', body: JSON.stringify(body) }, true),

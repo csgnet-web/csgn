@@ -1,171 +1,144 @@
-import { useEffect, useState } from 'react'
-import { useLocation, useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { CheckCircle2, Eye, EyeOff, Lock, Mail, Twitch, User, Wallet, X } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Eye, EyeOff, Lock, Mail, PlayCircle, Radio, Twitch, User, Wallet, X } from 'lucide-react'
 import { Notice } from '@/components/ui/Notice'
 import { Button } from '@/components/ui/Button'
+import { TwitchHandoffPanel } from '@/components/auth/TwitchHandoffPanel'
 import { useAuth } from '@/contexts/useAuth'
-import { usePhantomWallet } from '@/hooks/usePhantomWallet'
-import { api, type TwitchProof } from '@/lib/api'
-import { clearTwitchProof, readTwitchProof } from '@/lib/twitchProof'
-import { clearRegisterDraft, readRegisterDraft, storeRegisterDraft } from '@/lib/registerDraft'
+import { getPhantomProvider, usePhantomWallet } from '@/hooks/usePhantomWallet'
+import { useTwitchLink } from '@/hooks/useTwitchLink'
+import { api } from '@/lib/api'
 import { storeAuthReturn } from '@/lib/authReturn'
+import { suggestUsername } from '@/lib/username'
+import { isMobile } from '@/lib/webview'
 import { useScrollLock } from '@/hooks/useScrollLock'
 
 interface AuthModalProps { isOpen: boolean; onClose: () => void; initialMode?: 'login' | 'signup' }
 
-type TwitchState = TwitchProof['twitch'] | null
-
-const TWITCH_ERROR_MESSAGES: Record<string, string> = {
-  duplicate_twitch: 'This Twitch account is already linked to a CSGN account.',
-  oauth_state_expired: 'Twitch verification expired. Please connect Twitch again.',
-  oauth_exchange_failed: 'Twitch sign-in failed. Confirm the Twitch redirect URI matches exactly, then try again.',
-  oauth_failed: 'Twitch verification failed. Please try again.',
-}
-
 /**
- * The sign-up flow, shortest path first.
+ * Three taps to an account.
  *
- * Signing up is one wallet signature and a username. Not because email is
- * unimportant, but because on this product it was never the credential:
- * Phantom has always been mandatory (creator fees are paid to that wallet) and
- * `loginWithPhantom` has always let a returning holder in on a signature alone,
- * so the email and password were a second, weaker key that stopped being used
- * after the first sign-in. What they DID reliably do was cost accounts — three
- * extra fields, a verification round trip that gated slot claims, and a Twitch
- * redirect that came back demanding the password again because it's the one
- * thing we refuse to persist.
+ *   1. Continue with Phantom
+ *   2. Approve the signature in Phantom
+ *   3. Create account   ← the name is already filled in
  *
- * So the wallet button here is not "social login". It is the account:
+ * Everything that used to sit between those taps has been moved to where it is
+ * actually needed, or deleted:
  *
- *   1. Connect Phantom → the signature over a single-use server nonce proves
- *      the wallet. If that wallet already has an account this signs straight
- *      in — one tap, no mode switch, nothing to remember.
- *   2. Pick a username → done.
- *
- * Email and password remain available behind a disclosure, for anyone who wants
- * a credential they can recover without a seed phrase — the one thing a wallet
- * genuinely cannot offer. Both paths land on the same account shape, and the
- * existing email/password sign-in keeps working for every account made before
- * this. See netlify/functions/signupWithPhantom.ts for the security reasoning.
+ *  • **Sign in and sign up are one door.** The wallet already knows which one
+ *    applies. A registered wallet is signed in on tap 2 and never sees a
+ *    username field; a new one lands on it. Making a stranger choose the right
+ *    button first was asking them to know something we know.
+ *  • **The username arrives filled in.** A valid, stable, wallet-derived handle
+ *    (lib/username.ts) means the primary button is live on arrival. Typing is
+ *    now opt-in.
+ *  • **Twitch is out of sign-up entirely.** It gates going on air, not having
+ *    an account (see netlify/functions/claimSlot.ts), and it was the single
+ *    biggest way to fail this form: inside Phantom's in-app browser, Twitch's
+ *    "Continue with Google / Apple / Amazon" buttons return "Something went
+ *    wrong" by design. It now lives one step past the finish line, on a screen
+ *    that can hand the user out to Safari and wait for them (useTwitchLink).
+ *  • **Email and password are out of the happy path.** They were never the
+ *    credential here — `loginWithPhantom` has always let a holder in on a
+ *    signature — and they cost three fields and a round trip. They stay
+ *    reachable for the accounts that have them, and they appear automatically
+ *    for the one case that needs them: a wallet too new to clear the on-chain
+ *    sign-up check.
  */
+
+type Step =
+  /** The single button. Sign-in and sign-up both start here. */
+  | 'connect'
+  /** New wallet: name it and go. */
+  | 'name'
+  /** Account exists. One question: watch, or go on air? */
+  | 'done'
+  /** Email + password — legacy sign-in, and the new-wallet fallback. */
+  | 'email'
+
 export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalProps) {
-  const { signIn, signUp, signUpWithPhantom, signInWithPhantom } = useAuth()
-  const { connect, signMessage, isConnecting, error: walletError, needsPhantom, deeplink, isMobile } = usePhantomWallet()
-  const [email, setEmail] = useState('')
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
+  const { signIn, signUp, signUpWithPhantom, signInWithPhantom, refreshProfile } = useAuth()
+  const { connect, signMessage, isConnecting, error: walletError, needsPhantom, deeplink } = usePhantomWallet()
+  const navigate = useNavigate()
+
+  const [step, setStep] = useState<Step>('connect')
+  const [intent, setIntent] = useState<'login' | 'signup'>(initialMode)
   const [phantomProofToken, setPhantomProofToken] = useState('')
   const [verifiedWallet, setVerifiedWallet] = useState('')
-  const [twitchProofToken, setTwitchProofToken] = useState('')
-  const [twitch, setTwitch] = useState<TwitchState>(null)
+  const [username, setUsername] = useState('')
+  const [createdName, setCreatedName] = useState('')
+  const [twitchName, setTwitchName] = useState('')
+
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  /** True once a wallet has been rejected as too new — the only case where the
+   *  email + password sign-up is a genuinely better answer than "try again". */
+  const [emailSignupFallback, setEmailSignupFallback] = useState(false)
+
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [verifying, setVerifying] = useState<'phantom' | 'twitch' | null>(null)
-  const [returnedFromTwitch, setReturnedFromTwitch] = useState(false)
-  // The classic email + password sign-up, revealed on request. Off by default:
-  // the wallet path is both shorter and the stronger credential, so making
-  // people opt out of it is the right way round.
-  const [emailMode, setEmailMode] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+  /** Phantom is not injected on this device — offer the door, don't make them
+   *  discover it by waiting three seconds for a failure. */
+  const [providerMissing, setProviderMissing] = useState(false)
 
-  const [mode, setMode] = useState<'login' | 'signup'>(initialMode)
-  const isRegister = mode === 'signup'
-  const [searchParams, setSearchParams] = useSearchParams()
-  const location = useLocation()
+  useScrollLock(isOpen)
 
-  // Sync mode to the initialMode prop whenever the modal opens so that
-  // reopening via "Sign In" after previously switching to signup resets correctly.
+  const reset = useCallback(() => {
+    setStep('connect'); setError(''); setLoading(false); setVerifying(false)
+    setPhantomProofToken(''); setVerifiedWallet(''); setUsername(''); setCreatedName(''); setTwitchName('')
+    setEmail(''); setPassword(''); setConfirmPassword(''); setEmailSignupFallback(false)
+  }, [])
+
   useEffect(() => {
-    if (isOpen) setMode(initialMode)
-  }, [isOpen, initialMode])
+    if (isOpen) { reset(); setIntent(initialMode) }
+  }, [isOpen, initialMode, reset])
 
-  // On open, pick up any Twitch proof handed back by the OAuth redirect flow
-  // (stored in sessionStorage) and surface any twitchError carried in the URL.
+  // Mobile browsers have no extension, so a missing provider means the user is
+  // not in Phantom's in-app browser. Checked after a beat because injection is
+  // asynchronous and a flash of "Open in Phantom" for someone who IS in Phantom
+  // is worse than showing it a moment late.
   useEffect(() => {
-    if (!isOpen || !isRegister) return
-
-    // Restore any in-progress register fields saved before a Twitch redirect.
-    // Read-once: clear immediately so later effect runs don't clobber edits.
-    const draft = readRegisterDraft()
-    if (draft) {
-      setEmail(draft.email); setUsername(draft.username); setEmailMode(draft.emailMode)
-      if (draft.phantomProofToken) {
-        setPhantomProofToken(draft.phantomProofToken); setVerifiedWallet(draft.verifiedWallet)
-        setReturnedFromTwitch(true)
-      }
-      clearRegisterDraft()
-    }
-
-    const proof = readTwitchProof()
-    if (proof) { setTwitchProofToken(proof.proofToken); setTwitch(proof.twitch); setVerifying(null) }
-
-    const twitchError = searchParams.get('twitchError')
-    if (twitchError) {
-      setError(TWITCH_ERROR_MESSAGES[twitchError] || TWITCH_ERROR_MESSAGES.oauth_failed)
-      setVerifying(null)
-    }
-
-    // Clean the OAuth flow params so a refresh doesn't re-trigger anything.
-    if (searchParams.has('auth') || searchParams.has('twitch') || searchParams.has('twitchError')) {
-      const next = new URLSearchParams(searchParams)
-      next.delete('auth'); next.delete('twitch'); next.delete('twitchError')
-      setSearchParams(next, { replace: true })
-    }
-  }, [isOpen, isRegister, searchParams, setSearchParams])
-
-  const reset = () => {
-    setError(''); setEmail(''); setUsername(''); setPassword(''); setConfirmPassword('')
-    setPhantomProofToken(''); setVerifiedWallet(''); setTwitchProofToken(''); setTwitch(null); setVerifying(null)
-    setReturnedFromTwitch(false); setEmailMode(false)
-    clearRegisterDraft()
-  }
-
-  const switchMode = () => {
-    setError(''); setPassword(''); setConfirmPassword('')
-    setPhantomProofToken(''); setVerifiedWallet(''); setTwitchProofToken(''); setTwitch(null); setVerifying(null)
-    setReturnedFromTwitch(false); setEmailMode(false)
-    clearRegisterDraft()
-    setMode(m => m === 'login' ? 'signup' : 'login')
-  }
+    if (!isOpen) return
+    const id = setTimeout(() => setProviderMissing(!getPhantomProvider()), 1200)
+    return () => clearTimeout(id)
+  }, [isOpen])
 
   const handleClose = () => { reset(); onClose() }
 
-  /** Login view: prove the wallet, then exchange that proof for a session. */
-  const loginWithPhantom = async () => {
-    setError(''); setVerifying('phantom')
-    try {
-      const address = await connect()
-      if (!address) return
-      const challenge = await api.createPhantomChallenge(address)
-      const signature = await signMessage(challenge.message)
-      if (!signature) return
-      const verified = await api.verifyPhantomSignature(address, signature, challenge.challengeToken)
-      await signInWithPhantom(verified.proofToken)
-      handleClose()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not sign in with Phantom.')
-    } finally { setVerifying(null) }
-  }
+  /**
+   * Link Twitch to the account that now exists. On a real browser this is a
+   * full-page redirect that lands on /account; inside an in-app browser the
+   * hook keeps us here and polls while the user approves in Safari.
+   */
+  const twitchLink = useTwitchLink({
+    beforeRedirect: () => storeAuthReturn({ path: '/account', intent: 'link' }),
+    onLinked: async (result) => {
+      try {
+        const res = await api.linkTwitch(result.twitchProofToken)
+        setTwitchName(res.twitch.displayName || res.twitch.username)
+        await refreshProfile()
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not connect Twitch.')
+      }
+    },
+  })
 
   /**
-   * Sign-up view: prove the wallet, then take whichever branch the wallet is
-   * already on. A wallet that HAS an account signs straight in rather than
-   * being told it's a duplicate — from the member's side "sign up" and "sign
-   * in" are the same intent (get me into my account) and the wallet already
-   * knows which one applies, so making them pick the right button first was
-   * pure friction. A new wallet lands on the username step.
+   * The one button. Prove the wallet, then let the wallet decide what happens:
+   * a registered one is signed straight in, a new one goes to the name step.
+   * `loginWithPhantom` 404s for an unlinked wallet and never creates anything,
+   * so a failure there is information, not an error.
    */
-  const connectPhantom = async () => {
-    setError(''); setVerifying('phantom')
+  const continueWithPhantom = async () => {
+    setError(''); setVerifying(true)
     try {
-      // ALWAYS go through connect() — it guarantees a live provider session.
-      // Trusting the cached `walletAddress` here is what silently killed
-      // registration: a returning user skipped the connect step and the
-      // signature prompt never appeared. Reconnecting an approved wallet is
-      // promptless, so this costs nothing.
+      // ALWAYS through connect(): a cached address is not a live provider
+      // session, and signing against one that was never connected is what used
+      // to make the signature prompt silently never appear.
       const address = await connect()
       if (!address) return
       const challenge = await api.createPhantomChallenge(address)
@@ -175,281 +148,285 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalP
       setPhantomProofToken(verified.proofToken)
       setVerifiedWallet(verified.walletAddress)
 
-      // Already registered? Then this was a sign-in all along. loginWithPhantom
-      // 404s for an unlinked wallet and never creates anything, so a failure
-      // here just means "new wallet" — fall through to the username step.
-      if (!emailMode) {
-        try {
-          await signInWithPhantom(verified.proofToken)
-          handleClose()
-        } catch { /* not linked yet — continue registering */ }
+      try {
+        await signInWithPhantom(verified.proofToken)
+        handleClose()
+        return
+      } catch {
+        /* no account on this wallet yet — that's a sign-up */
       }
+      setIntent('signup')
+      setUsername((current) => current || suggestUsername(verified.walletAddress))
+      setStep('name')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not verify Phantom wallet.')
-    } finally { setVerifying(null) }
+      setError(err instanceof Error ? err.message : 'Could not verify your Phantom wallet.')
+    } finally { setVerifying(false) }
   }
 
-  const connectTwitch = async () => {
-    setError(''); setVerifying('twitch')
-    try {
-      const { authUrl } = await api.startTwitchOAuth()
-      // Persist the in-progress form AND where to come back to, then redirect
-      // (no popup / window.opener) so this works inside mobile in-app browsers
-      // like Phantom on iPhone. Returning to the page they left — rather than
-      // always to the home page — is what makes the round trip feel like one
-      // step instead of a detour; the wallet proof survives it, so on the
-      // wallet path there is nothing to re-enter at all.
-      storeRegisterDraft({ email, username, phantomProofToken, verifiedWallet, emailMode })
-      storeAuthReturn({ path: `${location.pathname}${location.search}`, intent: 'signup' })
-      window.location.href = authUrl
-    } catch (err) {
-      setVerifying(null)
-      setError(err instanceof Error ? err.message : 'Could not start Twitch verification.')
-    }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const createAccount = async (e: React.FormEvent) => {
     e.preventDefault(); setLoading(true); setError('')
     try {
-      if (isRegister) {
-        if (!phantomProofToken) throw new Error('Connect your Phantom wallet to create an account.')
-        // Twitch is optional here by design — it gates claiming a slot, not
-        // having an account. See finalizeCreateAccount.ts for why that matters
-        // (Apple sign-in inside Twitch cannot complete in an embedded webview).
-        const proofs = { phantomProofToken, twitchProofToken: twitchProofToken || undefined }
-        if (emailMode) {
-          if (password !== confirmPassword) throw new Error('Passwords do not match.')
-          await signUp(email, password, username, proofs)
-        } else {
-          await signUpWithPhantom(username, proofs)
-        }
-        clearTwitchProof()
-        clearRegisterDraft()
+      await signUpWithPhantom(username.trim(), { phantomProofToken })
+      setCreatedName(username.trim())
+      setStep('done')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Sign up failed. Please try again.'
+      // A brand-new wallet with no on-chain history is refused by the sybil
+      // gate (signupWithPhantom.ts). That is the one rejection where "try
+      // again" is useless advice, so the email route opens itself instead of
+      // hiding behind a link the user has no reason to look for.
+      if (/no Solana activity/i.test(message)) {
+        setEmailSignupFallback(true)
+        setStep('email')
+        setError('This wallet has no Solana activity yet, so we can\'t use it on its own. Create your account with an email and password — the wallet stays attached.')
       } else {
-        await signIn(email, password)
+        setError(message)
       }
-      handleClose()
-    } catch (err: unknown) {
-      const code = err instanceof Error && 'code' in err ? String((err as { code?: string }).code || '') : ''
-      if (err instanceof Error && err.message) setError(err.message)
-      else if (code === 'auth/invalid-credential') setError('Invalid email or password.')
-      else setError(isRegister ? 'Sign up failed. Please try again.' : 'Sign in failed. Please try again.')
     } finally { setLoading(false) }
   }
 
-  useScrollLock(isOpen)
+  const submitEmail = async (e: React.FormEvent) => {
+    e.preventDefault(); setLoading(true); setError('')
+    try {
+      if (emailSignupFallback) {
+        if (password !== confirmPassword) throw new Error('Those passwords do not match.')
+        await signUp(email.trim(), password, username.trim(), { phantomProofToken })
+        setCreatedName(username.trim())
+        setStep('done')
+      } else {
+        await signIn(email.trim(), password)
+        handleClose()
+      }
+    } catch (err: unknown) {
+      const code = err instanceof Error && 'code' in err ? String((err as { code?: string }).code || '') : ''
+      if (code === 'auth/invalid-credential') setError('That email and password do not match an account.')
+      else if (err instanceof Error && err.message) setError(err.message)
+      else setError('Sign in failed. Please try again.')
+    } finally { setLoading(false) }
+  }
 
-  // The wallet is proven — the rest of the form is worth showing. Before that,
-  // asking for a username is asking someone to fill in a field for an account
-  // that may turn out to already exist.
-  const walletReady = Boolean(phantomProofToken)
-  // The wallet button leads in both modes. It only steps aside on sign-in when
-  // the member has explicitly asked for the email form (sign-up always needs the
-  // wallet, so there it is never hidden).
-  const showWalletFirst = isRegister || !emailMode
   const inputClass = 'w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50'
+  const showPhantomDoor = needsPhantom || providerMissing
+  const usernameValid = /^[A-Za-z0-9_]{3,20}$/.test(username.trim())
+
+  const heading =
+    step === 'name' ? 'Pick your name'
+      : step === 'done' ? "You're on CSGN"
+        : step === 'email' ? (emailSignupFallback ? 'Create your account' : 'Sign in with email')
+          : intent === 'signup' ? 'Join CSGN' : 'Welcome back'
+
+  const subheading =
+    step === 'name' ? 'One field, already filled in. Change it or keep it.'
+      : step === 'done' ? 'Your account is live. What do you want to do first?'
+        : step === 'email' ? (emailSignupFallback ? 'Your wallet stays attached — this just gives it a way in.' : 'For accounts created before wallet sign-in.')
+          : 'One signature. No email, no password, about ten seconds.'
 
   return (
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4" style={{ height: '100dvh' }}>
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={handleClose} />
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative w-full max-w-md max-h-[92vh] bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 12 }} className="relative w-full max-w-md max-h-[92vh] bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
             <div className="relative px-6 sm:px-8 pt-6 sm:pt-8 pb-4">
               <button type="button" onClick={handleClose} aria-label="Close" className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-white/5 cursor-pointer"><X className="w-5 h-5" aria-hidden /></button>
-              <img src="https://pbs.twimg.com/profile_images/1966988305255276544/3Qz3tNAa_200x200.jpg" alt="CSGN" className="w-12 h-12 rounded-xl object-cover mb-4 shadow-lg" />
-              <h2 className="text-2xl font-bold font-display text-white">{isRegister ? 'Join CSGN' : 'Welcome back'}</h2>
-              <p className="text-sm text-gray-400 mt-1">
-                {isRegister
-                  ? emailMode
-                    ? 'Email, password and a Phantom wallet. Twitch is optional — add it when you want to go on air.'
-                    : 'Your wallet and a username. That is the whole sign-up.'
-                  : emailMode
-                    ? 'Sign in with the email and password on your account.'
-                    : 'Your wallet is your sign-in. One signature, no password to remember.'}
-              </p>
+              <img src="/csgn-logo.jpg" alt="" className="w-12 h-12 rounded-xl object-cover mb-4 shadow-lg" />
+              <h2 className="text-2xl font-bold font-display text-white">{heading}</h2>
+              <p className="text-sm text-gray-400 mt-1">{subheading}</p>
             </div>
+
             <div className="px-6 sm:px-8 pb-8 sm:pb-10 space-y-4 overflow-y-auto max-h-[calc(100dvh-13rem)] overscroll-contain">
-              <form onSubmit={handleSubmit} className="space-y-3">
-                {error && <Notice tone="error" compact>{error}</Notice>}
+              {error && <Notice tone="error" compact>{error}</Notice>}
 
-                {/* ── The wallet is the primary action in BOTH modes. ──
-                       Signing in, the Ed25519 signature over a single-use server
-                       nonce IS the credential — a returning holder has never
-                       needed the password, so burying this under an email field
-                       was asking most of our members for the weaker of the two
-                       keys they hold. Signing up, it does even more: it proves
-                       the wallet, and if that wallet already has an account it
-                       just signs them in.
-
-                       Email and password stay reachable one tap below, because a
-                       seed phrase is the one credential nobody can reset. ── */}
-                {showWalletFirst && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={isRegister ? connectPhantom : loginWithPhantom}
-                      disabled={loading || isConnecting || verifying === 'phantom'}
-                      className={`w-full h-14 rounded-xl border text-base font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-60 ${
-                        walletReady
-                          ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300'
-                          : 'bg-[#ab9ff2] border-transparent text-black hover:bg-[#bcb0f5]'
-                      }`}
-                    >
-                      {walletReady ? <CheckCircle2 className="w-5 h-5" aria-hidden /> : <Wallet className="w-5 h-5" aria-hidden />}
-                      {walletReady
-                        ? 'Wallet verified'
-                        : verifying === 'phantom'
-                          ? 'Check Phantom…'
-                          : isRegister ? 'Continue with Phantom' : 'Sign in with Phantom'}
-                    </button>
-                    {verifiedWallet && <p className="text-xs text-emerald-300 truncate">{verifiedWallet}</p>}
-                    {!walletReady && !needsPhantom && (
-                      <p className="text-[11px] text-gray-500 leading-relaxed">
-                        {isRegister
-                          ? "You'll sign a one-line message to prove the wallet — no transaction, no fee, nothing approved. Already have an account on this wallet? This signs you in."
-                          : "You'll sign a one-line message to prove the wallet — no transaction, no fee, nothing approved."}
-                      </p>
-                    )}
-                    {walletError && <Notice tone="error" compact>{walletError}</Notice>}
-                    {/* Mobile browsers have no extension — the only way to approve a
-                        signature is Phantom's in-app browser, so offer the door
-                        instead of leaving the user stuck on "not detected". */}
-                    {needsPhantom && (
+              {/* ── Step 1: the only button ─────────────────────────────── */}
+              {step === 'connect' && (
+                <div className="space-y-3">
+                  {showPhantomDoor ? (
+                    <>
                       <a
-                        href={isMobile ? deeplink : 'https://phantom.app/download'}
-                        target={isMobile ? undefined : '_blank'}
+                        href={isMobile() ? deeplink : 'https://phantom.app/download'}
+                        target={isMobile() ? undefined : '_blank'}
                         rel="noopener noreferrer"
-                        className="flex items-center justify-center gap-2 h-11 rounded-xl bg-[#ab9ff2] text-black text-sm font-bold hover:bg-[#bcb0f5] transition-colors"
+                        className="w-full h-14 rounded-xl bg-[#ab9ff2] hover:bg-[#bcb0f5] text-black text-base font-bold flex items-center justify-center gap-2 transition-colors"
                       >
-                        <Wallet className="w-4 h-4" aria-hidden />
-                        {isMobile ? 'Open in Phantom browser' : 'Install Phantom'}
+                        <Wallet className="w-5 h-5" aria-hidden />
+                        {isMobile() ? 'Continue in Phantom' : 'Install Phantom'}
                       </a>
-                    )}
-                  </>
-                )}
+                      <p className="text-[11px] text-gray-500 leading-relaxed">
+                        {isMobile()
+                          ? 'This reopens CSGN inside Phantom, where your wallet can sign. Takes one tap and you land right back here.'
+                          : 'Phantom is the wallet CSGN pays creator fees to. Install it, reload, and this becomes a one-click sign-in.'}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={continueWithPhantom}
+                        disabled={isConnecting || verifying}
+                        className="w-full h-14 rounded-xl bg-[#ab9ff2] hover:bg-[#bcb0f5] text-black text-base font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-60 cursor-pointer"
+                      >
+                        <Wallet className="w-5 h-5" aria-hidden />
+                        {verifying ? 'Check Phantom…' : 'Continue with Phantom'}
+                      </button>
+                      <p className="text-[11px] text-gray-500 leading-relaxed">
+                        You'll sign a one-line message to prove the wallet — no transaction, no fee, nothing approved.
+                        Already have an account on this wallet? This signs you in.
+                      </p>
+                    </>
+                  )}
+                  {walletError && <Notice tone="error" compact>{walletError}</Notice>}
 
-                {/* Sign-up: gated on a proven wallet — asking for a username
-                    before that is asking someone to fill a field for an account
-                    that may already exist. Sign-in: gated on the member choosing
-                    the email route, so the default view is one button. */}
-                {(isRegister ? walletReady : emailMode) && (
-                  <>
-                    {isRegister && (
-                      <>
-                        <label className="block text-sm font-medium text-gray-300 mb-1.5 pt-1">Username</label>
-                        <div className="relative">
-                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                          <input value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} placeholder="csgn_user" required minLength={3} maxLength={20} disabled={loading} autoFocus autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-                        </div>
-
-                        <button type="button" onClick={connectTwitch} disabled={loading || verifying === 'twitch'} className={`w-full h-12 rounded-xl border text-sm font-medium flex items-center justify-center gap-2 ${twitchProofToken ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}>
-                          {twitchProofToken ? <CheckCircle2 className="w-4 h-4" /> : <Twitch className="w-4 h-4" />}
-                          {twitchProofToken ? twitch?.displayName || 'Twitch Connected' : verifying === 'twitch' ? 'Opening Twitch…' : 'Connect Twitch (optional)'}
-                        </button>
-                        {/* Required vs. optional, said once, where the decision is
-                            made. Without this the buttons look identical and a
-                            user who can't finish Twitch assumes sign-up is broken. */}
-                        {!twitchProofToken && (
-                          <p className="text-[11px] text-gray-500 leading-relaxed">
-                            You'll need Twitch to claim an hour and go on air — but not to have an account.
-                            Connect it any time from your profile.
-                          </p>
-                        )}
-                        {returnedFromTwitch && emailMode && !password && (
-                          <Notice tone="warning" compact>Twitch connected. Re-enter your password to finish — we never keep it across the redirect.</Notice>
-                        )}
-                      </>
-                    )}
-
-                    {/* Email + password: always on for sign-in, opt-in for sign-up. */}
-                    {(!isRegister || emailMode) && (
-                      <>
-                        <label className="block text-sm font-medium text-gray-300 mb-1.5">Email</label>
-                        <div className="relative">
-                          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} placeholder="you@example.com" required disabled={loading} autoComplete="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-                        </div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
-                        <div className="relative">
-                          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                          <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="Enter password" required minLength={6} disabled={loading} autoComplete={isRegister ? 'new-password' : 'current-password'} />
-                          <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showPassword ? <EyeOff className="w-4 h-4" aria-hidden /> : <Eye className="w-4 h-4" aria-hidden />}</button>
-                        </div>
-                        {isRegister && (
-                          <>
-                            <label className="block text-sm font-medium text-gray-300 mb-1.5">Confirm Password</label>
-                            <div className="relative">
-                              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                              <input type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" placeholder="Confirm password" required minLength={6} disabled={loading} autoComplete="new-password" />
-                              <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} aria-label={showConfirmPassword ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showConfirmPassword ? <EyeOff className="w-4 h-4" aria-hidden /> : <Eye className="w-4 h-4" aria-hidden />}</button>
-                            </div>
-                          </>
-                        )}
-                      </>
-                    )}
-
-                    <Button variant="primary" size="lg" className="w-full" type="submit" isLoading={loading}>{isRegister ? 'Create Account' : 'Sign In'}</Button>
-                  </>
-                )}
-
-                {/* The escape hatch, stated as the trade-off it is rather than as
-                    a second equal option: a password is the only credential here
-                    that survives losing a seed phrase. It also stays reachable
-                    after a failed submit — a wallet too new to pass the sign-up
-                    checks needs a way forward that isn't "come back later" — and
-                    it sits below the wallet button because Phantom is required on
-                    BOTH paths, so there is never a version of this form that
-                    skips it. */}
-                {isRegister && walletReady && !emailMode && (
                   <button
                     type="button"
-                    onClick={() => setEmailMode(true)}
+                    onClick={() => { setError(''); setEmailSignupFallback(false); setStep('email') }}
                     className="w-full text-xs text-gray-500 hover:text-gray-300 underline cursor-pointer pt-1"
                   >
-                    Also add an email and password (lets you recover the account without your wallet)
+                    Sign in with an email and password instead
                   </button>
-                )}
+                </div>
+              )}
 
-                {/* Sign-in's secondary route. Every account made before wallet
-                    sign-up has a password, and some members will add one for
-                    recovery, so this can never go away — it just stops being the
-                    thing people see first. */}
-                {!isRegister && !emailMode && (
-                  <>
-                    <div className="flex items-center gap-3 py-1">
-                      <span className="h-px flex-1 bg-white/10" />
-                      <span className="text-[11px] uppercase tracking-widest text-gray-500">or</span>
-                      <span className="h-px flex-1 bg-white/10" />
+              {/* ── Step 2: the one field, pre-answered ─────────────────── */}
+              {step === 'name' && (
+                <form onSubmit={createAccount} className="space-y-3">
+                  <div className="flex items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2.5">
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" aria-hidden />
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-emerald-200">Wallet verified</p>
+                      <p className="text-[11px] font-mono text-emerald-300/80 truncate">{verifiedWallet}</p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => { setError(''); setEmailMode(true) }}
-                      className="w-full h-12 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors"
-                    >
-                      <Mail className="w-4 h-4" aria-hidden />
-                      Sign in with email and password
-                    </button>
-                  </>
-                )}
+                  </div>
 
-                {/* ...and the way back, so choosing email isn't a one-way door. */}
-                {!isRegister && emailMode && (
+                  <label htmlFor="csgn-username" className="block text-sm font-medium text-gray-300">Your name on the network</label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" aria-hidden />
+                    <input
+                      id="csgn-username"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      onFocus={(e) => e.currentTarget.select()}
+                      className={inputClass}
+                      required minLength={3} maxLength={20}
+                      disabled={loading}
+                      autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false}
+                    />
+                  </div>
+                  <p className="text-[11px] text-gray-500">3–20 characters. Letters, numbers and underscores.</p>
+
+                  <Button variant="primary" size="lg" className="w-full" type="submit" isLoading={loading} disabled={!usernameValid}>
+                    Create account
+                  </Button>
+                </form>
+              )}
+
+              {/* ── Step 3: one question, not a checklist ───────────────── */}
+              {step === 'done' && (
+                <div className="space-y-3">
+                  <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3">
+                    <p className="text-sm font-semibold text-emerald-100">Welcome, {createdName}.</p>
+                    <p className="text-xs text-emerald-300/80 mt-0.5">Your wallet is your sign-in from now on — one tap, every time.</p>
+                  </div>
+
+                  <Button
+                    variant="primary" size="lg" className="w-full"
+                    leftIcon={<PlayCircle className="w-4 h-4" aria-hidden />}
+                    onClick={() => { handleClose(); navigate('/watch') }}
+                  >
+                    Watch what's live
+                  </Button>
+
+                  {twitchName ? (
+                    <Notice tone="success" compact>Twitch connected as {twitchName}. You can claim an hour on the schedule.</Notice>
+                  ) : twitchLink.handoff ? (
+                    <TwitchHandoffPanel
+                      href={twitchLink.handoff.href}
+                      rawUrl={twitchLink.handoff.rawUrl}
+                      browserName={twitchLink.handoff.browserName}
+                      onCancel={twitchLink.cancel}
+                    />
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void twitchLink.start()}
+                        disabled={twitchLink.phase === 'starting' || twitchLink.phase === 'redirecting'}
+                        className="w-full h-12 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-60 cursor-pointer"
+                      >
+                        <Radio className="w-4 h-4" aria-hidden />
+                        {twitchLink.phase === 'starting' || twitchLink.phase === 'redirecting' ? 'Opening Twitch…' : 'I want to go on air — connect Twitch'}
+                      </button>
+                      <p className="text-[11px] text-gray-500 leading-relaxed">
+                        Only streamers need this. Connect the channel you broadcast from and every open hour on
+                        the schedule becomes claimable — you can also do it later from your account.
+                      </p>
+                    </>
+                  )}
+                  {twitchLink.error && <Notice tone="error" compact>{twitchLink.error}</Notice>}
+
+                  <button type="button" onClick={handleClose} className="w-full text-xs text-gray-500 hover:text-gray-300 underline cursor-pointer pt-1">
+                    Done for now
+                  </button>
+                </div>
+              )}
+
+              {/* ── The email route: legacy sign-in, and the new-wallet fallback ── */}
+              {step === 'email' && (
+                <form onSubmit={submitEmail} className="space-y-3">
+                  {emailSignupFallback && (
+                    <>
+                      <label htmlFor="csgn-username-email" className="block text-sm font-medium text-gray-300">Your name on the network</label>
+                      <div className="relative">
+                        <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" aria-hidden />
+                        <input id="csgn-username-email" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} required minLength={3} maxLength={20} disabled={loading} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                      </div>
+                    </>
+                  )}
+
+                  <label htmlFor="csgn-email" className="block text-sm font-medium text-gray-300">Email</label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" aria-hidden />
+                    <input id="csgn-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} placeholder="you@example.com" required disabled={loading} autoComplete="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                  </div>
+
+                  <label htmlFor="csgn-password" className="block text-sm font-medium text-gray-300">Password</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" aria-hidden />
+                    <input id="csgn-password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" required minLength={6} disabled={loading} autoComplete={emailSignupFallback ? 'new-password' : 'current-password'} />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 cursor-pointer">{showPassword ? <EyeOff className="w-4 h-4" aria-hidden /> : <Eye className="w-4 h-4" aria-hidden />}</button>
+                  </div>
+
+                  {emailSignupFallback && (
+                    <>
+                      <label htmlFor="csgn-password-confirm" className="block text-sm font-medium text-gray-300">Confirm password</label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" aria-hidden />
+                        <input id="csgn-password-confirm" type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputClass} required minLength={6} disabled={loading} autoComplete="new-password" />
+                      </div>
+                    </>
+                  )}
+
+                  <Button variant="primary" size="lg" className="w-full" type="submit" isLoading={loading}>
+                    {emailSignupFallback ? 'Create account' : 'Sign in'}
+                  </Button>
+
                   <button
                     type="button"
-                    onClick={() => { setError(''); setEmailMode(false) }}
-                    className="w-full text-xs text-gray-500 hover:text-gray-300 underline cursor-pointer pt-1"
+                    onClick={() => { setError(''); setStep(phantomProofToken ? 'name' : 'connect') }}
+                    className="w-full text-xs text-gray-500 hover:text-gray-300 underline cursor-pointer pt-1 flex items-center justify-center gap-1"
                   >
-                    Sign in with Phantom instead
+                    Use Phantom instead <ArrowRight className="w-3 h-3" aria-hidden />
                   </button>
-                )}
-                <p className="text-sm text-center text-gray-500 mt-2">
-                  {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
-                  <button type="button" onClick={switchMode} className="text-primary-400 hover:text-primary-300 underline cursor-pointer">
-                    {isRegister ? 'Sign in' : 'Create one'}
-                  </button>
+                </form>
+              )}
+
+              {/* One line of orientation, and only where it can still change
+                  what the user does. On the done screen it would be noise. */}
+              {step === 'connect' && (
+                <p className="text-xs text-center text-gray-600 leading-relaxed">
+                  <Twitch className="w-3 h-3 inline mb-0.5" aria-hidden /> Streaming on CSGN needs a Twitch channel —
+                  you'll connect it after your account exists, not before.
                 </p>
-              </form>
+              )}
             </div>
           </motion.div>
         </div>

@@ -124,16 +124,32 @@ Only omit these public project-id keys. Do not omit actual backend secrets from 
 - [ ] Twitch application redirect URI exactly matches `TWITCH_REDIRECT_URI` character-for-character; local should use `http://localhost:8888/.netlify/functions/twitchOAuthCallback` and production should use `https://csgn.fun/.netlify/functions/twitchOAuthCallback`.
 - [ ] Twitch client ID/secret are backend-only Netlify variables.
 - [ ] OAuth callback is reachable directly at `/.netlify/functions/twitchOAuthCallback` in local Netlify dev and production.
-- [ ] `twitchOAuthCallback` never leaves the user on the function URL: it always redirects to `${CSGN_ALLOWED_ORIGIN}/auth/twitch/complete?handoffId=...` on success or `${CSGN_ALLOWED_ORIGIN}/?auth=register&twitchError=...` on failure.
+- [ ] `twitchOAuthCallback` never leaves the user on the function URL: it always redirects to `${CSGN_ALLOWED_ORIGIN}/auth/twitch/complete?state=...` on success or `${CSGN_ALLOWED_ORIGIN}/auth/twitch/complete?state=...&twitchError=...` on failure.
 
-## Twitch mobile OAuth test (Phantom on iPhone)
+## Sign-up test (Phantom on iPhone) — the path most users take
 - [ ] Open CSGN in the Phantom mobile browser on an iPhone.
-- [ ] Tap GET STARTED to open the register modal.
-- [ ] Tap Connect Twitch (full-page redirect, no popup).
-- [ ] Approve the Twitch authorization prompt.
-- [ ] Confirm the browser returns to the app and never stays on `/.netlify/functions/twitchOAuthCallback`.
-- [ ] Confirm the register modal reopens and shows Twitch connected with the Twitch username.
-- [ ] Confirm Create Account can be completed without reconnecting Twitch.
+- [ ] Tap GET STARTED. The modal shows ONE button: Continue with Phantom.
+- [ ] Approve the signature. A username is already filled in; tap Create account.
+- [ ] Total taps from GET STARTED to an account: three. No email, no password, no Twitch.
+- [ ] Sign out, tap Continue with Phantom again — it signs straight back in with no username step.
+
+## Twitch link test (Phantom on iPhone) — the cross-browser handoff
+- [ ] Signed in inside Phantom's browser, tap "connect Twitch".
+- [ ] Confirm the page does NOT navigate to Twitch. It shows "Finish in Safari" with a
+      button, a copy-link fallback, and a waiting indicator.
+- [ ] Tap "Open Twitch in Safari". Safari opens `id.twitch.tv/oauth2/authorize`.
+- [ ] Confirm Twitch's "Continue with Google / Apple / Amazon" buttons WORK there
+      (this is the whole point — they return "Something went wrong" inside the webview).
+- [ ] Approve. Safari lands on `/auth/twitch/complete` and reads "You're verified… you can close this tab".
+- [ ] Switch back to Phantom WITHOUT reloading. The panel has already turned green with the
+      Twitch display name, within a few seconds.
+- [ ] Repeat with a Twitch account already linked to another CSGN account: the Phantom tab
+      must show "already connected to another CSGN account" rather than spinning until timeout.
+
+## Twitch link test (desktop / mobile Safari) — the redirect path
+- [ ] From /account, tap Connect Twitch. The tab navigates to Twitch and back.
+- [ ] `/auth/twitch/complete` claims the proof and returns to /account, which shows
+      "Twitch connected as …".
 
 ## Local test checklist
 - [ ] Run `npm test`.
@@ -144,14 +160,18 @@ Only omit these public project-id keys. Do not omit actual backend secrets from 
 ## User acceptance test checklist
 - [ ] Public visitors can open CSGN.fun and watch the network.
 - [ ] GET STARTED opens the register modal.
-- [ ] Registration requires email, username, password, confirm password, verified Phantom, and verified Twitch.
+- [ ] Registration requires a verified Phantom wallet and a username — nothing else. Twitch is
+      offered after the account exists and gates only slot claims; email is offered on /account
+      as account recovery.
 - [ ] Take Slot while logged out opens registration and resumes the pending claim after account creation.
 - [ ] Verified users can claim no more than two future/live slots.
 
 ## Security test checklist
 - [ ] Frontend cannot directly create trusted `users/{uid}` documents.
 - [ ] Frontend cannot directly write `slots`, `config`, `public/currentBroadcast`, unique locks, OAuth states, Twitch OAuth results, Phantom challenges, or audit logs.
-- [ ] `twitchOAuthResults` is backend-only (`allow read, write: if false;`) and `consumeTwitchOAuthResult` never returns Twitch access tokens or `TWITCH_CLIENT_SECRET`.
+- [ ] `twitchOAuthResults` is backend-only (`allow read, write: if false;`) and `claimTwitchLink` never returns Twitch access tokens or `TWITCH_CLIENT_SECRET`.
+- [ ] `claimTwitchLink` refuses a request without a valid `twitch_link` proof token, and hands each
+      result out exactly once (a second call returns `handoff_used`).
 - [ ] User functions reject missing or invalid Firebase ID tokens.
 - [ ] Admin functions reject non-admin users.
 - [ ] Phantom verification fails if the challenge expires, is reused, or the signature is invalid.
