@@ -72,6 +72,15 @@ export const api = {
   },
   publicProfile: (username: string) => functionFetch<{ profile: PublicProfile | null }>(`publicProfiles?username=${encodeURIComponent(username)}`),
   claimSlot: (slotId: string) => functionFetch<{ ok: boolean; slotId: string }>('claimSlot', { method: 'POST', body: JSON.stringify({ slotId }) }, true),
+  /** Admin: record a manual SOL creator-fee transfer against a member's slots.
+   *  The signature is the receipt — the server validates its shape, skips any
+   *  slot that is already settled, and stamps the whole group in one batch. */
+  markFeesPaid: (slotIds: string[], txSignature: string) =>
+    functionFetch<{ ok: boolean; marked: number; skipped: string[]; totalSOL: number }>(
+      'adminMarkFeesPaid',
+      { method: 'POST', body: JSON.stringify({ slotIds, txSignature }) },
+      true,
+    ),
   /** Admin: re-type every slot by its ET airtime (7 PM–3 AM network, rest open). */
   normalizeSlots: () => functionFetch<{ normalized: number; retyped: number }>('adminNormalizeExistingSlots', { method: 'POST' }, true),
   /** Close a vote and recompute its tally from live on-chain balances.

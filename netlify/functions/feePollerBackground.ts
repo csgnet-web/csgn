@@ -35,17 +35,22 @@ import { queryCollection, countCollection, getDoc, writeDoc, commitWrites, creat
 import { buildExpectedSlotsForDate, buildSlotDoc } from './_shared/schedule'
 import { deriveNowLive, deriveUpNext, type OnAirSlot } from './_shared/onAir'
 import { readLiveWeights, settleTally, type BallotRow } from './_shared/settleVotes'
-import { fetchJson } from './_shared/cache'
+import { fetchJson, memo } from './_shared/cache'
 import { getDoc as getLockDoc, writeDoc as writeLockDoc } from './_shared/firebaseAdmin'
 import {
   buildTokenStatsDoc,
   fetchDexData,
   resolvePumpFeeTier,
   formatTierRange,
+  payableAirtime,
+  airtimeStartMs,
+  airtimeAppliesToSlot,
   PUMP_FUN_FEE_TIERS,
   STREAMER_SHARE_OF_CREATOR_FEE,
+  type AirtimeResult,
   type DexData,
 } from './_shared/feeCalc'
+import { sampleTwitchStream, twitchAppToken, twitchLoginFromUrl } from './_shared/twitch'
 
 const POLL_INTERVAL_MS = 15_000
 
@@ -66,7 +71,11 @@ interface CreatorFees {
   snapshotLockedAt?: string
   paidAt?: string
   declineReason?: string
+  feeOwedSOL?: number
   feeOwedUSD?: number
+  /** What the volume produced, before verified airtime is applied. */
+  grossFeeSOL?: number
+  grossFeeUSD?: number
 }
 
 interface StreamActivity {
@@ -76,6 +85,12 @@ interface StreamActivity {
   firstLiveAt?: string
   lastLiveAt?: string
   liveCheckCount?: number
+  /** Samples taken, live or not — the fairness denominator. See payableAirtime. */
+  checkCount?: number
+  peakViewers?: number
+  viewerSampleSum?: number
+  lastTitle?: string
+  lastGameName?: string
   checkpoints?: string[]
 }
 
@@ -100,69 +115,43 @@ interface SlotRow {
 
 /* ─── Twitch Helix: verify the slot's channel is actually live ─── */
 
-let cachedTwitchToken: { token: string; exp: number } | null = null
-
-async function twitchAppToken(): Promise<string | null> {
-  const clientId = process.env.TWITCH_CLIENT_ID
-  const clientSecret = process.env.TWITCH_CLIENT_SECRET
-  if (!clientId || !clientSecret) return null
-  const now = Date.now()
-  if (cachedTwitchToken && cachedTwitchToken.exp > now + 60_000) return cachedTwitchToken.token
-  try {
-    const data = await fetchJson<{ access_token?: string; expires_in?: number }>(
-      'https://id.twitch.tv/oauth2/token',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, grant_type: 'client_credentials' }).toString(),
-      },
-    )
-    if (!data?.access_token) return null
-    cachedTwitchToken = { token: data.access_token, exp: now + (data.expires_in ?? 3600) * 1000 }
-    return cachedTwitchToken.token
-  } catch {
-    return null
-  }
-}
-
-function twitchLoginFromUrl(url?: string): string | null {
-  if (!url) return null
-  const match = String(url).match(/twitch\.tv\/([^/?#]+)/i)
-  return match ? match[1].replace(/^@/, '').toLowerCase() : null
-}
-
-async function isTwitchChannelLive(login: string, token: string): Promise<boolean> {
-  try {
-    const data = await fetchJson<{ data?: unknown[] }>(
-      `https://api.twitch.tv/helix/streams?user_login=${encodeURIComponent(login)}`,
-      { headers: { 'Client-Id': process.env.TWITCH_CLIENT_ID || '', Authorization: `Bearer ${token}` } },
-    )
-    return Array.isArray(data?.data) && data.data.length > 0
-  } catch {
-    return false
-  }
-}
-
 /**
  * Once a minute, sample whether the active slot's Twitch channel is actually
  * broadcasting and append a timestamp to the slot's streamActivity log. Kept in
  * a separate top-level field so the fee-poll writes never clobber it.
+ *
+ * Two things this counts, and the difference between them decides money:
+ * `liveCheckCount` is how often the channel was up, `checkCount` is how often
+ * we ASKED. A sample we failed to take — no token, Helix down, request timed
+ * out — increments neither, because the streamer must never be docked for our
+ * outage (see payableAirtime).
+ *
+ * Returns the record it wrote so the caller can use this minute's numbers
+ * without re-reading the doc.
  */
-async function logSlotActivity(row: SlotRow | null): Promise<void> {
+async function logSlotActivity(row: SlotRow | null): Promise<StreamActivity | null> {
   try {
-    if (!row) return
+    if (!row) return null
     const slot = row.data
     const login = twitchLoginFromUrl(slot.streamUrl)
-    if (!login) return
+    if (!login) return null
     const token = await twitchAppToken()
-    if (!token) return
+    if (!token) return null
 
-    const live = await isTwitchChannelLive(login, token)
+    const sample = await sampleTwitchStream(login, token)
+    // No answer at all is not an answer of "offline" — drop the sample entirely.
+    if (!sample) return null
+
+    const live = sample.live
     const nowISO = new Date().toISOString()
     const prev = slot.streamActivity ?? {}
     const prevCheckpoints = Array.isArray(prev.checkpoints) ? prev.checkpoints : []
     // Keep the last ~4h of per-minute samples (well within a 2h slot + buffer).
     const checkpoints = live ? [...prevCheckpoints, nowISO].slice(-240) : prevCheckpoints
+    // Slots sampled before checkCount existed carry live samples with no
+    // denominator. Seeding from liveCheckCount says "we asked at least this
+    // often", which is true and keeps a mid-flight slot at a sane ratio.
+    const prevCheckCount = prev.checkCount ?? prev.liveCheckCount ?? 0
 
     const streamActivity: StreamActivity = {
       channel: login,
@@ -171,13 +160,22 @@ async function logSlotActivity(row: SlotRow | null): Promise<void> {
       firstLiveAt: prev.firstLiveAt ?? (live ? nowISO : undefined),
       lastLiveAt: live ? nowISO : prev.lastLiveAt,
       liveCheckCount: (prev.liveCheckCount ?? 0) + (live ? 1 : 0),
+      checkCount: prevCheckCount + 1,
+      peakViewers: Math.max(prev.peakViewers ?? 0, sample.viewerCount),
+      // Live samples only — an offline channel's zero would drag the average
+      // toward "nobody watched" rather than measuring the broadcast.
+      viewerSampleSum: (prev.viewerSampleSum ?? 0) + (live ? sample.viewerCount : 0),
+      lastTitle: sample.title || prev.lastTitle,
+      lastGameName: sample.gameName || prev.lastGameName,
       checkpoints,
     }
 
     const slotId = row.path.split('/').pop()!
     await writeDoc(`slots/${slotId}`, { streamActivity }, { merge: true })
+    return streamActivity
   } catch (err) {
     console.error('[feePoller] logSlotActivity error:', err)
+    return null
   }
 }
 
@@ -619,7 +617,22 @@ async function fetchNextSlot(): Promise<SlotRow | null> {
   }
 }
 
-async function pollAndWrite(dexData: DexData, active: SlotRow | null, tick: number): Promise<void> {
+/**
+ * The verified-airtime verdict for a slot, or null when the rule does not
+ * reach it (a slot that started before the cutover keeps its original terms
+ * forever — see airtimeAppliesToSlot).
+ */
+export function slotAirtime(slot: SlotDoc, startMs: number): (AirtimeResult & { liveCheckCount: number; checkCount: number }) | null {
+  if (!airtimeAppliesToSlot(slot.startTime, startMs)) return null
+  const activity = slot.streamActivity ?? {}
+  const liveCheckCount = activity.liveCheckCount ?? 0
+  // Same backfill as logSlotActivity: no denominator means "at least as many
+  // asks as live answers", which lands on full credit rather than a penalty.
+  const checkCount = activity.checkCount ?? activity.liveCheckCount ?? 0
+  return { liveCheckCount, checkCount, ...payableAirtime({ liveCheckCount, checkCount }) }
+}
+
+async function pollAndWrite(dexData: DexData, active: SlotRow | null, tick: number, airtimeStart: number): Promise<void> {
   try {
     if (!active) return
 
@@ -639,12 +652,34 @@ async function pollAndWrite(dexData: DexData, active: SlotRow | null, tick: numb
     if (existing?.paymentStatus === 'paid' || existing?.paymentStatus === 'declined') return
     if (existing?.snapshotLockedAt) return
 
+    // ── Snapshot lock: the hour is over, so freeze what it owes ──
+    //
+    // This is where the number stops moving. The gross stays on the record as
+    // what the volume produced; feeOwed keeps its meaning — what we owe — and
+    // becomes gross × the verified-airtime fraction. An hour nobody streamed
+    // settles as 'void' rather than 'pending', so it leaves the admin's payout
+    // queue instead of sitting there as a judgement call.
     if (slotData.endTime && Date.now() > new Date(slotData.endTime).getTime()) {
-      await writeDoc(
-        `slots/${slotId}`,
-        { 'creatorFees.snapshotLockedAt': new Date().toISOString(), 'creatorFees.updatedAt': new Date().toISOString() },
-        { merge: true },
-      )
+      const nowISO = new Date().toISOString()
+      const lock: Record<string, unknown> = {
+        'creatorFees.snapshotLockedAt': nowISO,
+        'creatorFees.updatedAt': nowISO,
+      }
+      const airtime = slotAirtime(slotData, airtimeStart)
+      if (airtime) {
+        // grossFee* is written on every poll below; the feeOwed fallback covers
+        // a slot whose numbers an admin entered by hand and that this poller
+        // therefore never accrued.
+        const grossSOL = existing?.grossFeeSOL ?? existing?.feeOwedSOL ?? 0
+        const grossUSD = existing?.grossFeeUSD ?? existing?.feeOwedUSD ?? 0
+        lock['creatorFees.grossFeeSOL'] = grossSOL
+        lock['creatorFees.grossFeeUSD'] = grossUSD
+        lock['creatorFees.airtime'] = airtime
+        lock['creatorFees.feeOwedSOL'] = grossSOL * airtime.fraction
+        lock['creatorFees.feeOwedUSD'] = grossUSD * airtime.fraction
+        lock['creatorFees.paymentStatus'] = airtime.reason === 'no_show' ? 'void' : 'pending'
+      }
+      await writeDoc(`slots/${slotId}`, lock, { merge: true })
       return
     }
 
@@ -704,11 +739,22 @@ async function pollAndWrite(dexData: DexData, active: SlotRow | null, tick: numb
       })
       .sort((a, b) => b.volumeSOL - a.volumeSOL)
 
+    // Apply verified airtime to the RUNNING number too, not just at the lock.
+    // /watch and /account read this field straight off the slot doc, and a
+    // payable meter that only rises while the streamer is genuinely on air is
+    // the whole retention mechanic — it also means the client never needs its
+    // own copy of the rule. Early in an hour the sample count is below
+    // AIRTIME_MIN_SAMPLES, so it reads `unverified` and shows the full amount.
+    const airtime = slotAirtime(slotData, airtimeStart)
+    const payableSOL = airtime ? feeSOL * airtime.fraction : feeSOL
+    const payableUSD = airtime ? feeUSD * airtime.fraction : feeUSD
+
     const updatedFees = {
       tradingVolumeSOL: deltaVolumeSOL,
       tradingVolumeUSD: estimatedSlotVolumeUsd,
-      feeOwedSOL: feeSOL,
-      feeOwedUSD: feeUSD,
+      feeOwedSOL: payableSOL,
+      feeOwedUSD: payableUSD,
+      ...(airtime ? { grossFeeSOL: feeSOL, grossFeeUSD: feeUSD, airtime } : {}),
       marketCapSOL,
       creatorFeeRate: tier.creatorFeeRate,
       streamerShareRate: tier.creatorFeeRate * STREAMER_SHARE_OF_CREATOR_FEE,
@@ -745,6 +791,9 @@ async function pollAndWrite(dexData: DexData, active: SlotRow | null, tick: numb
  *  see the header: this must never be able to reject the scheduled run. */
 const MIN_RUN_INTERVAL_MS = 45_000
 const RUN_LOCK_PATH = 'config/feePollerRun'
+/** config/season only carries the airtime cutover today, and moving that date
+ *  is a deliberate, rare admin act — an hour of staleness costs nothing. */
+const SEASON_CONFIG_TTL_MS = 60 * 60 * 1000
 
 /**
  * The lock decision, with the I/O taken out so every case is testable.
@@ -801,8 +850,18 @@ export const handler = async () => {
   const active = pickActiveSlot(rows)
 
   // Sample real Twitch activity for the active slot (1 Helix call/min) so the
-  // Creator Fees log can prove the streamer was actually live, not intermission.
-  await logSlotActivity(active)
+  // Creator Fees log can prove the streamer was actually live, not intermission
+  // — and so this minute's sample is in the denominator the fee is scaled by.
+  // Patched onto the row we already hold so the first poll tick below sees the
+  // sample it just took instead of a minute-old one.
+  const sampled = await logSlotActivity(active)
+  if (active && sampled) active.data.streamActivity = sampled
+
+  // When verified airtime started deciding money. One cheap read, cached per
+  // container, because the answer changes roughly never.
+  const airtimeStart = airtimeStartMs(
+    await memo('config:season', SEASON_CONFIG_TTL_MS, () => getDoc<{ airtimeStartAt?: string }>('config/season')),
+  )
 
   // Re-anchor the Meme-100 to what voters actually still hold (every 30 min).
   await settleMemeVote()
@@ -822,7 +881,7 @@ export const handler = async () => {
           console.error('[feePoller] tokenStats write error:', err)
         }
       }
-      await pollAndWrite(dexData, active, i)
+      await pollAndWrite(dexData, active, i, airtimeStart)
     }
     if (i < 3) await sleep(POLL_INTERVAL_MS)
   }

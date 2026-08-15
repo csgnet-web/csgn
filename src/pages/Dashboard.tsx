@@ -10,6 +10,7 @@ import { db } from '@/config/firebase'
 import { useAuth } from '@/contexts/useAuth'
 import type { UserNotification } from '@/contexts/AuthContext'
 import { fetchSlotsByAssignee, type Slot } from '@/lib/slots'
+import { airtimeLabel, airtimeNote, airtimeTone, readAirtime } from '@/lib/airtime'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -88,6 +89,10 @@ export default function Dashboard() {
     () => slotHistory.find((s) => Date.now() >= new Date(s.startTime).getTime() && Date.now() < new Date(s.endTime).getTime()) ?? null,
     [slotHistory],
   )
+  // The server's verdict for the hour on the clock, read never recomputed.
+  const liveAirtime = readAirtime(liveAssignedSlot?.creatorFees?.airtime)
+  const liveAirtimeLabel = airtimeLabel(liveAirtime)
+  const liveAirtimeNote = airtimeNote(liveAirtime)
 
   // Creator Fee History — newest first, paginated 10 at a time so the page
   // stays clean; the back arrow walks toward older history.
@@ -532,11 +537,19 @@ export default function Dashboard() {
             <p className="mt-2 text-sm text-emerald-300 leading-snug">
               Live now ({new Date(liveAssignedSlot.startTime).toLocaleTimeString()}–{new Date(liveAssignedSlot.endTime).toLocaleTimeString()}):
               {' '}${liveEstimateUSD.toFixed(2)} ({liveEstimateSOL.toFixed(6)} SOL)
+              {liveAirtimeLabel && <span className="text-emerald-400/80"> · {liveAirtimeLabel}</span>}
             </p>
+          )}
+          {/* Same figure, same wording as /watch — the payable amount and the
+              airtime behind it, so the two surfaces can never disagree. */}
+          {liveAssignedSlot && liveAirtimeNote && (
+            <p className={`mt-1 text-xs leading-snug ${airtimeTone(liveAirtime)}`}>{liveAirtimeNote}</p>
           )}
           {liveAssignedSlot && liveVolumeSOL > 0 && (
             <p className="mt-1.5 text-xs text-gray-500 leading-relaxed break-words">
-              {liveVolumeSOL.toFixed(4)} SOL × tier creator fee × 30% = {liveEstimateSOL.toFixed(6)} SOL
+              {liveVolumeSOL.toFixed(4)} SOL × tier creator fee × 30%
+              {liveAirtime && liveAirtime.fraction < 1 ? ` × ${Math.round(liveAirtime.fraction * 100)}% airtime` : ''}
+              {' '}= {liveEstimateSOL.toFixed(6)} SOL
               {liveAssignedSlot.creatorFees?.marketCapTierLabel ? ` (${liveAssignedSlot.creatorFees.marketCapTierLabel})` : ''}
             </p>
           )}
@@ -578,6 +591,7 @@ export default function Dashboard() {
               pagedFees.map((slot) => {
                 const activity = slot.streamActivity
                 const liveMinutes = activity?.liveCheckCount ?? 0
+                const airtime = readAirtime(slot.creatorFees?.airtime)
                 return (
                   <div key={slot.id} className="border border-white/[0.08] rounded-lg p-3">
                     {/* min-w-0 on both columns is what stops a long slot label
@@ -588,7 +602,15 @@ export default function Dashboard() {
                         <p className="text-xs text-gray-500 mt-0.5 leading-snug">
                           {new Date(slot.startTime).toLocaleString()} – {new Date(slot.endTime).toLocaleString()}
                         </p>
-                        {activity && (
+                        {/* A settled hour shows the verdict that decided the
+                            amount; an hour from before verified airtime shipped
+                            still shows the raw sample count it always did. */}
+                        {airtime ? (
+                          <p className={`text-[11px] mt-1.5 flex items-start gap-1 leading-snug ${airtimeTone(airtime)}`}>
+                            <Radio className="w-3 h-3 shrink-0 mt-px" />
+                            <span>{airtimeLabel(airtime) ?? 'No live checks recorded'} — {airtimeNote(airtime)}</span>
+                          </p>
+                        ) : activity && (
                           <p className={`text-[11px] mt-1.5 flex items-start gap-1 leading-snug ${liveMinutes > 0 ? 'text-emerald-400' : 'text-gray-500'}`}>
                             <Radio className="w-3 h-3 shrink-0 mt-px" />
                             <span>

@@ -48,7 +48,6 @@ import {
   acceptSlotRequest,
   declineSlotRequest,
   updateCreatorFees,
-  markFeesPaid,
   declineFeesPayment,
   formatESTRange,
   isNetworkSlot,
@@ -120,6 +119,9 @@ function XSourceHint({ url }: { url: string }) {
 interface UserData {
   uid: string
   displayName: string
+  /** Handle, for telling two members with the same display name apart on the
+   *  Creator Fees payout groups. */
+  username?: string
   email: string
   role: string
   walletAddress?: string
@@ -895,11 +897,17 @@ export default function Admin() {
     setFeeActionLoading(null)
   }
 
-  const handleMarkPaid = async (slot: Slot) => {
-    if (!slot.assignedUid) return
-    setFeeActionLoading(slot.id)
+  /** Settle every outstanding hour for one member against one transfer. The
+   *  server owns this: it validates the signature, skips anything already
+   *  settled, writes the batch and the audit entry, and notifies the member. */
+  const handleMarkGroupPaid = async (uid: string, groupSlots: Slot[], txSignature: string) => {
+    if (!uid || groupSlots.length === 0) return
+    setFeeActionLoading(uid)
     try {
-      await markFeesPaid(slot.id)
+      const result = await api.markFeesPaid(groupSlots.map((s) => s.id), txSignature)
+      if (result.skipped.length > 0) {
+        setActionError(`${result.marked} marked paid. ${result.skipped.length} already settled and left alone.`)
+      }
       await loadFeeSlots()
     } catch (err: any) {
       setActionError(err?.message || 'Failed to mark as paid.')
@@ -1957,7 +1965,7 @@ export default function Admin() {
                 setFeeMarketCap(slot.creatorFees?.marketCapSOL?.toString() ?? '')
                 setFeeWallet(slot.creatorFees?.streamerWalletAddress ?? users.find((u) => u.uid === slot.assignedUid)?.walletAddress ?? '')
               }}
-              onMarkPaid={handleMarkPaid}
+              onMarkGroupPaid={handleMarkGroupPaid}
               onDecline={handleDeclineFee}
             />
 

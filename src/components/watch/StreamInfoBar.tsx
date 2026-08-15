@@ -1,4 +1,5 @@
 import { Radio } from 'lucide-react'
+import { airtimeLabel, airtimeTone, readAirtime } from '@/lib/airtime'
 import type { Slot } from '@/lib/slots'
 
 /**
@@ -29,10 +30,16 @@ export default function StreamInfoBar({
    *  gray) rather than shouting a name, so the row reads as "available". */
   stageOpen?: boolean
 }) {
+  // Already the PAYABLE number — the server applies verified airtime to
+  // feeOwed* on every poll, so this meter only climbs while the channel is
+  // genuinely on air. That is the entire reason not to cut out early, and it is
+  // why the airtime sits directly under it rather than in a tooltip.
   const liveFeeSOL = currentSlot?.creatorFees?.feeOwedSOL ?? 0
   const liveFeeUSD = currentSlot?.creatorFees?.feeOwedUSD ?? 0
   const liveVolumeSOL = currentSlot?.creatorFees?.tradingVolumeSOL ?? 0
   const liveShareRate = currentSlot?.creatorFees?.streamerShareRate ?? (liveVolumeSOL > 0 ? liveFeeSOL / liveVolumeSOL : 0)
+  const airtime = readAirtime(currentSlot?.creatorFees?.airtime)
+  const airtimeText = airtimeLabel(airtime)
 
   // Remounting the <p> via key replays the shake animation on every fee change
   // without effect-driven state.
@@ -79,6 +86,9 @@ export default function StreamInfoBar({
         <p className="text-[11px] font-mono text-gray-400 mt-1">
           {liveFeeSOL > 0 ? liveFeeSOL.toFixed(4) : '0.00'} SOL
         </p>
+        {airtimeText && (
+          <p className={`text-[10px] font-mono mt-0.5 ${airtimeTone(airtime)}`}>{airtimeText}</p>
+        )}
         {liveVolumeSOL > 0 && (
           <p className="text-[10px] text-gray-600 mt-0.5">
             {liveVolumeSOL.toFixed(1)} vol · {(liveShareRate * 100).toFixed(2)}%

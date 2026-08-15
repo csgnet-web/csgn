@@ -4,6 +4,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db } from '@/config/firebase'
+import type { SlotAirtime } from './airtime'
 
 /* ─── Constants ─── */
 
@@ -38,13 +39,23 @@ export type { SlotType, SlotStatus, SlotIdentity, SlotIdentityOptions } from './
 export { SLOT_STATUSES, normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable, slotIdentity, assignmentStatus, toMillis } from './slotModel'
 import { normalizeSlot, isNetworkSlot, type SlotType, type SlotStatus } from './slotModel'
 
-export type FeePaymentStatus = 'pending' | 'paid' | 'declined'
+/** `void` is a slot the server settled at zero because the channel never went
+ *  live — decided, not awaiting a decision, so it leaves the payout queue. */
+export type FeePaymentStatus = 'pending' | 'paid' | 'declined' | 'void'
 
 export interface CreatorFees {
   tradingVolumeSOL: number     // admin inputs trading volume in SOL during slot
   tradingVolumeUSD?: number
+  /** What we owe: gross × the verified-airtime fraction. */
   feeOwedSOL: number           // tradingVolumeSOL * (tierCreatorFeeRate * 0.30)
   feeOwedUSD?: number
+  /** What the volume produced, before airtime. Absent on slots that ran before
+   *  verified airtime shipped, where feeOwed IS the gross. */
+  grossFeeSOL?: number
+  grossFeeUSD?: number
+  /** The server's airtime verdict — see netlify/functions/_shared/feeCalc.ts.
+   *  Read it, never recompute it. */
+  airtime?: SlotAirtime
   marketCapSOL?: number
   creatorFeeRate?: number
   streamerShareRate?: number
@@ -73,6 +84,9 @@ export interface CreatorFees {
   paymentStatus: FeePaymentStatus
   streamerWalletAddress: string
   paidAt?: string
+  /** On-chain receipt for the manual SOL transfer, and who recorded it. */
+  paidTxSignature?: string
+  paidByUid?: string
   declinedAt?: string
   declineReason?: string
   snapshotLockedAt?: unknown
@@ -96,6 +110,11 @@ export interface StreamActivity {
   firstLiveAt?: string      // ISO of the first time it was seen live this slot
   lastLiveAt?: string       // ISO of the most recent time it was seen live
   liveCheckCount?: number   // number of live samples (~minutes, 1 check/min)
+  checkCount?: number       // samples TAKEN, live or not — the fairness denominator
+  peakViewers?: number      // highest concurrent viewers seen this slot
+  viewerSampleSum?: number  // ÷ liveCheckCount = average concurrent viewers
+  lastTitle?: string        // stream title on the most recent live sample
+  lastGameName?: string     // Twitch category on the most recent live sample
   checkpoints?: string[]    // ISO timestamps sampled while the channel was live
 }
 
@@ -788,35 +807,11 @@ export async function updateCreatorFees(slotId: string, fees: CreatorFees): Prom
   await updateDoc(doc(db, SLOTS_COLLECTION, slotId), { creatorFees: fees })
 }
 
-/** Admin: mark creator fees as paid. */
-export async function markFeesPaid(slotId: string): Promise<void> {
-  const ref = doc(db, SLOTS_COLLECTION, slotId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) throw new Error('Slot not found')
-
-  const slot = snap.data() as Slot
-  const fees = slot.creatorFees
-  if (!fees) throw new Error('No fee record for this slot')
-
-  const updatedFees: CreatorFees = {
-    ...fees,
-    paymentStatus: 'paid',
-    paidAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  }
-
-  await updateDoc(ref, { creatorFees: updatedFees })
-
-  if (slot.assignedUid) {
-    await addUserNotification(slot.assignedUid, {
-      type: 'fee_paid',
-      slotId: slot.id,
-      slotLabel: slot.label,
-      slotStart: slot.startTime,
-      message: `Your creator fee payment of ${updatedFees.feeOwedSOL.toFixed(4)} SOL for ${slot.label} has been sent to your wallet!`,
-    })
-  }
-}
+// Marking fees paid is NOT here. It requires the on-chain signature of the
+// transfer that actually moved the SOL, is applied to a member's whole
+// outstanding group in one batch, and writes an audit entry — all of which
+// belongs on the server. See netlify/functions/adminMarkFeesPaid.ts, reached
+// through `api.markFeesPaid`.
 
 /** Admin: decline creator fee payment with reason. */
 export async function declineFeesPayment(slotId: string, reason: string): Promise<void> {
