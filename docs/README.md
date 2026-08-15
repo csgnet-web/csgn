@@ -6,6 +6,7 @@
 |---|---|
 | Get our first users | [`product-process.md`](product-process.md) |
 | Open the door to non-crypto streamers | [`plan-twitch-first-claim.md`](plan-twitch-first-claim.md) |
+| Make payouts honest, and give streamers a reason to come back | [`plan-network-growth.md`](plan-network-growth.md) |
 | Write the ads, DMs and posts | [`marketing-outreach.md`](marketing-outreach.md) |
 | Know what we're doing this week | [`campaign.md`](campaign.md) |
 | Ship code / run my own node | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) |
@@ -31,6 +32,7 @@ The two documents that describe what is actually happening.
 |---|---|
 | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | Getting it running, the rules this codebase keeps, **running your own node**, broadcasting (X, or Restream for Twitch too), PRs and security reports |
 | [`plan-twitch-first-claim.md`](plan-twitch-first-claim.md) | **Implementation plan, not yet built.** Twitch alone creates an account and claims an hour; admins reserve hours for a Twitch handle with no account; the wallet is asked for at payout. Four phases; the three forks are settled — fees stay manual toward a pull-based claim contract |
+| [`plan-network-growth.md`](plan-network-growth.md) | **Implementation plan, not yet built.** Pro-rate the creator fee by verified live minutes (the poller already samples them and nothing reads them), then an always-on season leaderboard and a raid chain down the schedule. Four parts, A first and alone |
 | [`signup-flow.md`](signup-flow.md) | **Sign-up, sign-in, and the Twitch problem.** Why federated login cannot work inside Phantom's in-app browser, the three-tap wallet sign-up, and the cross-browser Twitch handoff that replaced it |
 | [`env-setup.md`](env-setup.md) | Every environment variable, which are secret, the payout-wallet key policy, and the **deploy checklist** |
 | [`dry-run.md`](dry-run.md) | **The gated verification runbook.** Local → settlement → payout dry run → **the mainnet money test**. Includes the idempotency test that must never be skipped |

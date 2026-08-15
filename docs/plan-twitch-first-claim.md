@@ -371,6 +371,13 @@ belongs at the money door, where it protects something real.
 
 ### 5.3 Paying creator fees — by hand, deliberately
 
+> **Superseded in part by [plan-network-growth.md](plan-network-growth.md)
+> Part A.** That plan pro-rates the fee by verified live minutes, which is what
+> makes the *number* trustworthy enough to automate. The conclusion below is
+> unchanged — the *transfer* stays manual, because the blocker is the SOL/$CSGN
+> denomination mismatch, not the amount. Build Part A first; the Payable view in
+> §5.4 is the same build described there as A6.
+
 **Settled: creator fees are paid manually for now.** Do not build a
 `creator_fee` payout source, and do not extend `payoutWallet.ts`.
 
