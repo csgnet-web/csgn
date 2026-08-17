@@ -468,6 +468,10 @@ export default function Player() {
   }, [broadcast])
 
   // ── Firestore: admin-managed intermission VOD playlist ──
+  //
+  // The FALLBACK, not the main event. Holder airtime (below) fills intermission
+  // when there is any; this is what plays when there isn't, and it is the reason
+  // an empty schedule can never become dead air.
   useEffect(() => {
     const unsub = onSnapshot(
       doc(db, 'config', 'vodPlaylist'),
@@ -476,6 +480,31 @@ export default function Player() {
         setVodItems(Array.isArray(items) ? items.filter((i) => typeof i?.url === 'string' && i.url) : [])
       },
       () => setVodItems([]),
+    )
+    return unsub
+  }, [])
+
+  // ── Firestore: the holder-airtime schedule ──
+  //
+  // Pre-computed server-side (feePollerBackground → public/airtimeSchedule) and
+  // read here as-is. The ordering is deliberately NOT recomputed on the client:
+  // members are shown the exact minute their clip airs, and a client that
+  // re-derived the running order would make that preview a lie. Segments whose
+  // window has already passed are dropped rather than replayed late.
+  const [airtimeItems, setAirtimeItems] = useState<VodItem[]>([])
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, 'public', 'airtimeSchedule'),
+      (snap) => {
+        const raw = snap.exists() ? (snap.data().items as Array<Record<string, unknown>> | undefined) : undefined
+        const nowMs = Date.now()
+        setAirtimeItems(
+          (Array.isArray(raw) ? raw : [])
+            .filter((i) => typeof i?.url === 'string' && i.url && Date.parse(String(i.endsAt ?? '')) > nowMs)
+            .map((i) => ({ url: String(i.url), title: String(i.title ?? '') })),
+        )
+      },
+      () => setAirtimeItems([]),
     )
     return unsub
   }, [])
@@ -898,7 +927,13 @@ export default function Player() {
         <StatusCard variant="brb" streamerName={streamerName} slotLabel={slotLabel} />
       )}
 
-      {state.mode === 'INTERMISSION' && <VodRotator items={vodItems} />}
+      {/* Holder-uploaded airtime runs the gap between live hours; the
+          admin playlist is what plays when nobody has uploaded anything.
+          A claimed hour going live pre-empts both — it takes /player out of
+          INTERMISSION entirely, which is why there is no priority check here. */}
+      {state.mode === 'INTERMISSION' && (
+        <VodRotator items={airtimeItems.length > 0 ? airtimeItems : vodItems} />
+      )}
 
       <WipeOverlay
         visible={showWipe}

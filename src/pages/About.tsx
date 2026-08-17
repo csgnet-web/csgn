@@ -56,7 +56,10 @@ export default function About() {
             you get one is that you take it.
           </p>
           <p className="mt-3 text-base text-gray-400 leading-relaxed">
-            That's the whole idea. Everything below is how it works.
+            There are two ways to be on it. <strong className="text-white">Go live</strong> — claim
+            an empty hour and stream it from your own channel. Or{' '}
+            <strong className="text-white">send a clip</strong>, and it airs between the live hours
+            without you being there. That's the whole idea. Everything below is how it works.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link to="/schedule"><Button variant="primary" size="md">See what's open</Button></Link>
@@ -81,20 +84,40 @@ export default function About() {
           </p>
         </Section>
 
+        <Section title="Two ways to get on">
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            <Term label="Take an hour and go live">
+              You stream to your own channel as usual; we put it on the network for those two
+              hours. You earn a cut of the fees the token generates while you're on. This is the
+              headline act, and it beats everything else on the schedule.
+            </Term>
+            <Term label="Send a clip and let it run">
+              Upload something short. It goes in the rotation that fills the gaps between live
+              hours, so the channel is never dark and you never had to be awake for it.
+            </Term>
+          </div>
+          <p>
+            Live always wins. If somebody claims the hour your clip was going to air in, their
+            stream takes it and your clip moves to the next opening — nothing is lost, it just
+            waits.
+          </p>
+        </Section>
+
         <Section title="Claiming an hour">
           <p>
             Open blocks run from 3 AM to 7 PM ET. From 7 PM to 3 AM we run our own programming —
             CSGN Originals — so those hours aren't claimable.
           </p>
-          <p>You need two things:</p>
+          <p>You need a Twitch channel, and that's the only hard requirement:</p>
           <div className="grid gap-2.5 sm:grid-cols-2">
-            <Term label="A wallet">
-              Connect Phantom. It's how you sign in — signing a message is the whole account, no
-              email and no password — and it's where your share of the fees goes.
-            </Term>
             <Term label="A Twitch channel">
-              You stream to your own channel as normal. We put it on the network. This is also what
+              You stream to your own channel as normal. We put it on the network. It's also what
               stops one person claiming the whole week.
+            </Term>
+            <Term label="A wallet — later, not now">
+              You need somewhere to receive the fees you earn, so we ask for a wallet when there's
+              money waiting for you, not when you sign up. Nothing is lost while you don't have
+              one; it's held until you connect it.
             </Term>
           </div>
           <p>
@@ -106,6 +129,46 @@ export default function About() {
             While you're on air you earn <strong className="text-white">30% of $CSGN's trading
             fees</strong> for the whole block. Not a tip jar, not a share of ad revenue that doesn't
             exist yet — a cut of what the token actually generates while you're the one on screen.
+          </p>
+          <p>
+            We check your channel about once a minute and pay for the share of those checks that
+            found you actually broadcasting. Cut out for ten minutes and it costs you nothing —
+            there's a wide grace band — but claiming an hour and never going live pays nothing,
+            because nothing aired. If our own checks fail, that's our problem and you're paid in
+            full.
+          </p>
+        </Section>
+
+        <Section title="Clips, and how airtime is shared">
+          <p>
+            Between the live hours, the channel plays clips that members sent in. How much of that
+            time is yours depends on how much $CSGN you hold —{' '}
+            <strong className="text-white">hold twice as much, get twice as much airtime.</strong>
+          </p>
+          <p>Three things keep that from being the whole story:</p>
+          <div className="grid gap-2.5">
+            <Term label="Everyone gets a floor">
+              Hold nothing and you still get a slice of every day. The token decides how loud you
+              are, never whether you're allowed on. That rule doesn't bend.
+            </Term>
+            <Term label="Nobody gets the channel">
+              There's a ceiling on how much of a day one member can take, however large their bag.
+              A network one person can buy outright isn't a network.
+            </Term>
+            <Term label="Nothing airs unseen">
+              Every clip is reviewed before it goes out. It's a real broadcast — one bad upload is
+              everyone's problem, so there's no version of this where things air first and get
+              checked later.
+            </Term>
+          </div>
+          <p>
+            Clips don't earn a share of the fees; the live hours do. What you get for holding is
+            the airtime itself — the audience, not a payout.
+          </p>
+          <p className="text-gray-500">
+            <strong className="text-gray-300">Not open yet.</strong> The scheduler that decides when
+            each clip airs is built and running; the upload screen isn't finished, so right now the
+            rotation plays what we put in it.
           </p>
         </Section>
 
@@ -156,13 +219,14 @@ export default function About() {
         <Section title="Your profile">
           <p>
             Your profile is at <span className="font-mono text-gray-300">/account</span>. It shows
-            your slots and what they earned, your $CSGN holdings and what they entitle you to, your
-            game record, and your Meme 100 vote — which you can change from there any time.
+            your slots and what they earned, how many minutes of each you were actually live, your
+            $CSGN holdings and what they entitle you to, and your Meme 100 vote — which you can
+            change from there any time.
           </p>
           <p>
             Other members can find you at{' '}
             <span className="font-mono text-gray-300">csgn.fun/u/yourname</span>. That page shows
-            your name, your Twitch, your slots and your winnings.{' '}
+            your name, your Twitch and your slots.{' '}
             <strong className="text-white">It does not show your wallet address, and it does not
             show an email if you gave one.</strong> Both are visible to you and nobody else — neither
             is in any response another member can reach.
@@ -176,15 +240,15 @@ export default function About() {
             <p className="mt-1 font-mono text-xs text-gray-300 break-all">{CSGN_MINT}</p>
           </div>
           <p className="text-gray-500">
-            Nothing on this site is financial advice. The games pay real tokens to real people and
-            the token can go to zero like any other. Don't put in money you need.
+            Nothing on this site is financial advice. The token can go to zero like any other.
+            Don't put in money you need.
           </p>
         </Section>
 
         <Section title="Open source">
           <p>
-            All of it. The player, the schedule, the games, the payout ledger, the broadcast
-            graphics — MIT licensed, on{' '}
+            All of it. The player, the schedule, the airtime scheduler, the payout ledger, the
+            broadcast graphics — MIT licensed, on{' '}
             <a
               href="https://github.com/csgnet-web/csgn"
               target="_blank"
@@ -200,7 +264,8 @@ export default function About() {
         <section className="border-t border-white/[0.08] pt-8">
           <p className="text-base text-white font-medium">There's an empty hour on the schedule.</p>
           <p className="mt-2 text-sm text-gray-400 leading-relaxed">
-            Go look at it. If it's still open, it's yours.
+            Go look at it. If it's still open, it's yours — and if you don't want to be live at 3 AM,
+            send a clip instead.
           </p>
           <Link to="/schedule" className="inline-block mt-5">
             <Button variant="primary" size="md">See the schedule</Button>

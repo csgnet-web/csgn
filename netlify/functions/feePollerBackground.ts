@@ -51,6 +51,11 @@ import {
   type DexData,
 } from './_shared/feeCalc'
 import { sampleTwitchStream, twitchAppToken, twitchLoginFromUrl } from './_shared/twitch'
+import {
+  airtimeShares, deriveAirtimeWindows, windowSeconds, buildAirtimeSchedule,
+  type AirtimeClip, type AirtimeMember, type TimeRange,
+} from './_shared/airtime'
+import { getCsgnBalance } from './_shared/solana'
 
 const POLL_INTERVAL_MS = 15_000
 
@@ -455,24 +460,68 @@ interface DexPair {
   info?: { imageUrl?: string }
 }
 
-/** Candidate Solana mints from DexScreener's discovery feeds. */
+/**
+ * Search terms used to discover coins BY TRADING, not by promotion.
+ *
+ * Every Solana memecoin of any size trades against one of these, so searching
+ * them returns pairs ranked by real market activity. Deliberately generic — a
+ * list of ticker names here would put us straight back to curating by hand.
+ */
+const MEME_SEARCH_TERMS = ['SOL', 'USDC', 'WSOL']
+
+/**
+ * Candidate Solana mints.
+ *
+ * TWO KINDS OF SOURCE, and the difference is the whole point of this function.
+ *
+ * `token-boosts` and `token-profiles` are PROMOTIONAL feeds: they list coins
+ * whose teams paid DexScreener for a boost, or who recently filled in a profile.
+ * That is a fine signal of intent and a terrible signal of size. On its own it
+ * meant the "Meme 100" was really "the hundred coins someone paid to promote" —
+ * a genuinely large, heavily traded coin whose team never bought a boost could
+ * not appear on the board at all, however much volume it did.
+ *
+ * The search feed is the corrective: it returns pairs by actual market activity
+ * against the majors, so a coin earns its way onto the board by being traded.
+ * Both sets are merged, then every candidate is enriched with real pool state
+ * and ranked by 24h volume, so promotion can put a coin in front of us but only
+ * trading can rank it.
+ *
+ * Each source degrades independently — `fetchJson` returns null on any failure,
+ * and a missing feed just means fewer candidates this run, never an empty board.
+ */
 async function discoverSolanaMints(): Promise<string[]> {
-  type Row = { chainId?: string; tokenAddress?: string }
-  const [boosts, profiles] = await Promise.all([
-    fetchJson<Row[]>('https://api.dexscreener.com/token-boosts/top/v1'),
-    fetchJson<Row[]>('https://api.dexscreener.com/token-profiles/latest/v1'),
+  type PromoRow = { chainId?: string; tokenAddress?: string }
+  const [boosts, profiles, ...searches] = await Promise.all([
+    fetchJson<PromoRow[]>('https://api.dexscreener.com/token-boosts/top/v1'),
+    fetchJson<PromoRow[]>('https://api.dexscreener.com/token-profiles/latest/v1'),
+    ...MEME_SEARCH_TERMS.map((term) =>
+      fetchJson<{ pairs?: DexPair[] }>(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(term)}`),
+    ),
   ])
-  const out: string[] = []
+
   const seen = new Set<string>()
+  const add = (mint: string, into: string[]) => {
+    if (!SOLANA_MINT_RE.test(mint) || seen.has(mint) || MEME_BOARD_EXCLUDE.has(mint)) return
+    seen.add(mint)
+    into.push(mint)
+  }
+
+  // Traded first, so that when the discovery cap bites it is the promoted tail
+  // that gets dropped rather than the coins with real volume behind them.
+  const traded: string[] = []
+  const searchPairs = searches.flatMap((s) => s?.pairs ?? [])
+    .filter((p) => !p.chainId || p.chainId === 'solana')
+    .sort((a, b) => (b.volume?.h24 ?? 0) - (a.volume?.h24 ?? 0))
+  for (const pair of searchPairs) add(String(pair.baseToken?.address || ''), traded)
+
+  const promoted: string[] = []
   for (const row of [...(boosts || []), ...(profiles || [])]) {
     if (row?.chainId !== 'solana') continue
-    const mint = String(row.tokenAddress || '')
-    if (!SOLANA_MINT_RE.test(mint) || seen.has(mint) || MEME_BOARD_EXCLUDE.has(mint)) continue
-    seen.add(mint)
-    out.push(mint)
-    if (out.length >= MEME_DISCOVERY_CAP) break
+    add(String(row.tokenAddress || ''), promoted)
   }
-  return out
+
+  return [...traded, ...promoted].slice(0, MEME_DISCOVERY_CAP)
 }
 
 /** Deepest-liquidity Solana pair per mint. */
@@ -556,6 +605,9 @@ async function refreshMemeBoard(): Promise<void> {
     await writeDoc('public/memeBoard', {
       coins,
       source: 'onchain',
+      // Published so the board is auditable: how many candidates we looked at,
+      // and how many cleared the on-chain gates to actually make it on air.
+      discovery: { candidates: candidates.length, qualified: coins.length },
       thresholds: {
         minLiquidityUsd: MIN_LIQUIDITY_USD,
         minVolumeH24Usd: MIN_VOLUME_H24_USD,
@@ -565,6 +617,155 @@ async function refreshMemeBoard(): Promise<void> {
     })
   } catch (err) {
     console.warn('refreshMemeBoard failed', err)
+  }
+}
+
+/* ─── Holder airtime: build the schedule the channel runs on ─── */
+
+/** Rebuild cadence. Long enough to cost nothing, short enough that a clip
+ *  approved now is on the air within the hour. */
+const AIRTIME_REBUILD_INTERVAL_MS = 10 * 60 * 1000
+/** How far ahead the published schedule runs. The preview a member is shown
+ *  ("your clip airs at 2:04 PM") is only honest out to this horizon. */
+const AIRTIME_HORIZON_MS = 6 * 60 * 60 * 1000
+/** Ceiling on approved clips considered per rebuild — a cost guard, not a rule. */
+const AIRTIME_MAX_CLIPS = 400
+
+interface ClipDoc {
+  uid?: string
+  username?: string
+  url?: string
+  title?: string
+  seconds?: number
+  order?: number
+  status?: string
+}
+
+/**
+ * Publish `public/airtimeSchedule` — the ordered, timestamped playlist /player
+ * runs whenever nobody is live.
+ *
+ * The shape of the day falls out of subtraction rather than a branch: claimed
+ * slots and (when enabled) the owner's 7 PM–3 AM block arrive as blocked ranges,
+ * and whatever is left is holder inventory. Toggling the block off hands those
+ * hours back with no other change — that is the owner's 16-hour / 24-hour switch,
+ * and it needs no migration because allocation is by proportion of whatever
+ * inventory exists.
+ *
+ * Balances are read LIVE, per rebuild, for the members who actually have
+ * approved content. Never a stored snapshot: `master-plan.md` §5.1 documents the
+ * attack, where a stored weight lets a holder sell — or cycle the bag to a fresh
+ * wallet — and keep the airtime anyway.
+ */
+async function refreshAirtimeSchedule(): Promise<void> {
+  try {
+    const existing = await getDoc<{ builtAt?: string }>('public/airtimeSchedule')
+    const last = Date.parse(existing?.builtAt || '')
+    if (Number.isFinite(last) && Date.now() - last < AIRTIME_REBUILD_INTERVAL_MS) return
+
+    const nowMs = Date.now()
+    const horizonEndMs = nowMs + AIRTIME_HORIZON_MS
+
+    // Everything that outranks holder content, as blocked ranges.
+    const meta = await getDoc<{ networkBlockEnabled?: boolean }>(SCHEDULE_META_PATH)
+    const networkBlockEnabled = meta?.networkBlockEnabled !== false // absent = on
+    const upcoming = await queryCollection(
+      'slots',
+      [
+        fieldFilter('endTime', 'GREATER_THAN', new Date(nowMs).toISOString()),
+        fieldFilter('endTime', 'LESS_THAN', new Date(horizonEndMs + 4 * 60 * 60 * 1000).toISOString()),
+      ],
+      [order('endTime', 'ASCENDING')],
+      40,
+    )
+    const blocked: TimeRange[] = []
+    for (const row of upcoming) {
+      const s = row.data as SlotDoc & { type?: string }
+      const startMs = Date.parse(String(s.startTime ?? ''))
+      const endMs = Date.parse(String(s.endTime ?? ''))
+      if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue
+      // A claimed hour is someone's booking; the network block is the owner's.
+      const claimed = s.status === 'confirmed' || s.status === 'live'
+      const ownerBlock = networkBlockEnabled && String(s.type || '') === 'network'
+      if (claimed || ownerBlock) blocked.push({ startMs, endMs })
+    }
+
+    const windows = deriveAirtimeWindows(nowMs, horizonEndMs, blocked)
+    const inventory = windowSeconds(windows)
+    if (inventory <= 0) {
+      await writeDoc('public/airtimeSchedule', {
+        items: [], inventorySeconds: 0, networkBlockEnabled,
+        builtAt: new Date(nowMs).toISOString(), horizonEndsAt: new Date(horizonEndMs).toISOString(),
+      })
+      return
+    }
+
+    // Approved clips only. Nothing airs unreviewed — see docs/plan-decentralized-tv.md §5.1.
+    const clipRows = await queryCollection(
+      'clips',
+      [fieldFilter('status', 'EQUAL', 'approved')],
+      [order('order', 'ASCENDING')],
+      AIRTIME_MAX_CLIPS,
+    )
+    const clips: AirtimeClip[] = clipRows.flatMap((row) => {
+      const c = row.data as ClipDoc
+      const seconds = Math.floor(Number(c.seconds) || 0)
+      if (!c.uid || !c.url || seconds <= 0) return []
+      return [{
+        clipId: row.path.split('/').pop()!,
+        uid: String(c.uid),
+        username: String(c.username || ''),
+        url: String(c.url),
+        title: String(c.title || ''),
+        seconds,
+        order: Number(c.order) || 0,
+      }]
+    })
+    if (clips.length === 0) return
+
+    // Live balances, one RPC per uploading member — bounded by who has content.
+    const secondsByUid = new Map<string, number>()
+    const walletByUid = new Map<string, string>()
+    for (const clip of clips) secondsByUid.set(clip.uid, (secondsByUid.get(clip.uid) ?? 0) + clip.seconds)
+    await Promise.all([...secondsByUid.keys()].map(async (uid) => {
+      const user = await getDoc<{ phantom?: { walletAddress?: string; verified?: boolean } }>(`users/${uid}`)
+      const wallet = user?.phantom?.verified ? String(user.phantom.walletAddress || '') : ''
+      if (wallet) walletByUid.set(uid, wallet)
+    }))
+    const balances = new Map<string, number>()
+    await Promise.all([...walletByUid].map(async ([uid, wallet]) => {
+      try {
+        balances.set(uid, await getCsgnBalance(wallet))
+      } catch {
+        // A balance we cannot read is read as zero, which still earns the floor.
+        // Failing toward "no airtime" would let an RPC hiccup silence somebody.
+        balances.set(uid, 0)
+      }
+    }))
+
+    const dex = await memo('airtime:supply', 10 * 60_000, () => fetchDexData())
+    const supply = dex && dex.priceUsd > 0 ? dex.marketCapUsd / dex.priceUsd : 1_000_000_000
+
+    const members: AirtimeMember[] = [...secondsByUid].map(([uid, clipSeconds]) => ({
+      uid,
+      balance: balances.get(uid) ?? 0,
+      clipSeconds,
+    }))
+
+    const allocations = airtimeShares(members, inventory, supply)
+    const items = buildAirtimeSchedule(allocations, clips, windows)
+
+    await writeDoc('public/airtimeSchedule', {
+      items,
+      inventorySeconds: inventory,
+      networkBlockEnabled,
+      allocations: allocations.map((a) => ({ uid: a.uid, seconds: a.seconds, capped: a.capped })),
+      builtAt: new Date(nowMs).toISOString(),
+      horizonEndsAt: new Date(horizonEndMs).toISOString(),
+    })
+    console.log(`[feePoller] airtime schedule: ${items.length} segments across ${allocations.length} members, ${inventory}s inventory (block ${networkBlockEnabled ? 'on' : 'off'})`)
+  } catch (err) {
+    console.error('[feePoller] refreshAirtimeSchedule error:', err)
   }
 }
 
@@ -862,6 +1063,9 @@ export const handler = async () => {
   const airtimeStart = airtimeStartMs(
     await memo('config:season', SEASON_CONFIG_TTL_MS, () => getDoc<{ airtimeStartAt?: string }>('config/season')),
   )
+
+  // Rebuild the holder-airtime playlist the channel runs on between live hours.
+  await refreshAirtimeSchedule()
 
   // Re-anchor the Meme-100 to what voters actually still hold (every 30 min).
   await settleMemeVote()
