@@ -1,14 +1,15 @@
 /**
- * A holder's standing across the games — the numbers the profile page shows.
+ * What a $CSGN bag is, as numbers the product can render.
  *
- * All pure. Balance and token stats come in; entitlements and formatted labels
- * come out. The point of putting this here rather than inline in the page is
- * that "what does my bag entitle me to" is the same question the server asks
- * when it accepts an entry, so both sides read one rule.
+ * Balance in, share of supply out. This is deliberately separate from any one
+ * feature that *uses* a share: the Right Now rail asks "is this holder over the
+ * threshold", a profile asks "how big am I", and the broadcast asks "how much of
+ * the hour is theirs". All three need one answer to "how much of the supply does
+ * this wallet hold", computed one way.
+ *
+ * Nothing here spends, locks or burns anything — holding is the whole
+ * interaction, and every label is written to say so.
  */
-
-import { squaresAllowance, MAX_SQUARES_PER_WALLET } from './squares'
-import { lineupAllowance, MAX_LINEUPS } from './startingFive'
 
 /**
  * Fallback circulating supply for $CSGN — the pump.fun standard 1B.
@@ -67,48 +68,17 @@ export function formatTokens(n: number): string {
   return String(Math.round(n))
 }
 
-/**
- * Lifetime game record, written server-side onto the user doc by the settlement
- * job. Every field is optional because that job doesn't exist yet — the profile
- * renders honest zeroes and empty states rather than inventing numbers.
- */
-export interface GameStats {
-  startingFiveEntries?: number
-  startingFivePerfect?: number
-  startingFiveBestRank?: number
-  squaresBoards?: number
-  squaresPeriodsWon?: number
-  /** Lifetime $CSGN paid out across all games. */
-  winningsCsgn?: number
-  /** ISO of the most recent win, for "last won" copy. */
-  lastWonAt?: string
-}
-
 export interface HolderStanding {
   balance: number
   supply: number
   sharePct: number
   shareLabel: string
   balanceLabel: string
-  /** Squares this wallet may hold on a board. */
-  squares: number
-  squaresMax: number
-  /** Starting 5 lineups this wallet may enter per slate. */
-  lineups: number
-  lineupsMax: number
   /** True when there is no connected wallet to read a balance from. */
   disconnected: boolean
 }
 
-/**
- * Everything the profile's holder panel needs, from a balance and the live
- * token stats.
- *
- * A disconnected wallet still gets the free allowances rather than zeroes,
- * because that IS the entitlement — one square and one lineup are free to
- * everybody, and showing a stranger "0 entries" would be both wrong and the
- * worst possible first impression of the games.
- */
+/** Everything a holder card needs, from a balance and the live token stats. */
 export function holderStanding(
   balance: number | null,
   stats: { marketCapUsd?: number; priceUsd?: number } | null,
@@ -123,33 +93,28 @@ export function holderStanding(
     sharePct,
     shareLabel: formatSharePct(sharePct),
     balanceLabel: formatTokens(held),
-    squares: squaresAllowance(held, supply),
-    squaresMax: MAX_SQUARES_PER_WALLET,
-    lineups: lineupAllowance(held, supply),
-    lineupsMax: MAX_LINEUPS,
     disconnected: balance == null,
   }
 }
 
 /**
- * How much more $CSGN would buy the next entry — the single most motivating
- * number that can appear on a holder's profile, and the reason the allowance
- * curve is worth surfacing at all.
+ * How much more $CSGN would move this wallet up a step on some holding curve —
+ * the single most motivating number that can appear on a holder's profile.
  *
  * Returns null at the cap (nothing left to earn) so the caller renders a "maxed"
  * state instead of an impossible target. Binary search over the curve rather
- * than inverting it algebraically, because the curve is defined by the
- * allowance function and should stay that way — invert it here and the two drift
- * the first time anyone retunes it.
+ * than inverting it algebraically, because the curve is defined by the function
+ * passed in and should stay that way — invert it here and the two drift the
+ * first time anyone retunes it.
  */
-export function tokensToNextEntry(
+export function tokensToNextStep(
   balance: number,
   supply: number,
-  allowanceFor: (held: number, supply: number) => number,
+  stepFor: (held: number, supply: number) => number,
   max: number,
 ): number | null {
   const held = Math.max(0, Number(balance) || 0)
-  const current = allowanceFor(held, supply)
+  const current = stepFor(held, supply)
   if (current >= max) return null
 
   let lo = held
@@ -157,7 +122,7 @@ export function tokensToNextEntry(
   // 60 iterations halves the range far below one token — exact for our purposes.
   for (let i = 0; i < 60; i++) {
     const mid = (lo + hi) / 2
-    if (allowanceFor(mid, supply) > current) hi = mid
+    if (stepFor(mid, supply) > current) hi = mid
     else lo = mid
   }
   const needed = Math.ceil(hi - held)

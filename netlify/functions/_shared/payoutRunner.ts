@@ -239,49 +239,9 @@ async function reconcileStragglers(
 
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
-/* ─── Turning a settled game into payout requests ─── */
+/* ─── Turning a settled thing into payout requests ─── */
 
-/**
- * Squares: one request per period the winner took. The sourceId carries the
- * period key so a wallet winning two periods produces two distinct payouts
- * rather than colliding on one id — the exact case the `payoutId` doc warns
- * about.
- */
-export function squaresPayoutRequests(
-  boardId: string,
-  results: Array<{ periodKey: string; label: string; winner: { wallet: string; displayName: string } | null; payoutCsgn: number }>,
-): PayoutRequest[] {
-  return results
-    .filter((r) => r.winner && r.payoutCsgn > 0)
-    .map((r) => ({
-      source: 'squares' as const,
-      sourceId: `${boardId}:${r.periodKey}`,
-      wallet: r.winner!.wallet,
-      displayName: r.winner!.displayName,
-      amountCsgn: r.payoutCsgn,
-      note: `Squares — ${r.label}`,
-    }))
-}
-
-/** Starting 5: one request per paid finishing position on the slate. */
-export function startingFivePayoutRequests(
-  slateId: string,
-  payouts: Array<{ rank: number; wallet: string; displayName: string; payoutCsgn: number }>,
-): PayoutRequest[] {
-  return payouts
-    .filter((p) => p.payoutCsgn > 0)
-    .map((p) => ({
-      source: 'starting5' as const,
-      sourceId: `${slateId}:rank${p.rank}:${p.wallet}`,
-      wallet: p.wallet,
-      displayName: p.displayName,
-      amountCsgn: p.payoutCsgn,
-      note: `Starting 5 — ${ordinal(p.rank)} place`,
-    }))
-}
-
-function ordinal(n: number): string {
-  const s = ['th', 'st', 'nd', 'rd']
-  const v = n % 100
-  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`
-}
+// The two builders that lived here (Squares and Starting 5) went with those
+// games. A new source adds its own builder beside this comment and a value to
+// the `PayoutSource` union — that is the sanctioned way to feed this engine.
+// See docs/payout-wallet.md for what such a builder must not do.

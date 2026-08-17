@@ -1,77 +1,27 @@
 /**
- * WHEN THE GAMES RUN — and what the banner on /watch says about it.
+ * THE STRIP beside LIVE/OFFLINE on /watch — headline, clock, rotating lines.
  *
- * Starting 5 is daily. Squares is weekly. Both need the same three answers on
- * every render: is there a game up, when does the clock hit zero, and what do we
- * call it. This module is those three answers as pure functions, so the banner,
- * the admin preview, and (later) the settlement job all agree without a round
- * trip.
+ * Driven entirely by `config/broadcastBanner`, which is the point: this used to
+ * be four hardcoded strings, so announcing anything on the network required a
+ * deploy. An operator now sets the headline and the countdown target from
+ * Broadcast Control and the strip follows, the same way `config/ticker` drives
+ * the on-air chyron.
  *
- * The banner itself is admin-driven through `config/gameBanner`. That's the
- * point: the strip on /watch used to be four hardcoded strings, which meant
- * announcing anything required a deploy. Now an operator sets the game, the
- * headline and the countdown target from Broadcast Control, and the strip
- * follows — the same pattern `config/ticker` already uses for the on-air chyron.
+ * Pure functions only — the banner, the admin preview and anything that later
+ * wants to count down to an airing all read one answer without a round trip.
  */
-
-export type GameId = 'starting5' | 'squares' | 'none'
-
-export const GAME_LABELS: Record<GameId, string> = {
-  starting5: 'Starting 5',
-  squares: 'Squares',
-  none: '',
-}
-
-/* ─── Cadence ─── */
-
-/**
- * Squares runs once a week. Stored as an ET weekday + hour so the board always
- * lands on the same wall-clock slot regardless of daylight saving — the same
- * DST-aware approach `_shared/schedule.ts` already takes for the slot template.
- */
-export interface GameCadence {
-  /** 0 = Sunday. Squares' entry deadline weekday, ET. */
-  squaresDayET: number
-  /** ET hour (0-23) Squares entries close and the digits are drawn. */
-  squaresHourET: number
-  /** ET hour Starting 5 locks each day. */
-  startingFiveLockHourET: number
-}
-
-export const DEFAULT_CADENCE: GameCadence = {
-  squaresDayET: 0,   // Sunday
-  squaresHourET: 13, // 1 PM ET — kickoff of the early window
-  startingFiveLockHourET: 12,
-}
-
-export function normalizeCadence(raw: unknown): GameCadence {
-  const d = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
-  const int = (v: unknown, min: number, max: number, fallback: number): number => {
-    const n = Number(v)
-    return Number.isInteger(n) && n >= min && n <= max ? n : fallback
-  }
-  return {
-    squaresDayET: int(d.squaresDayET, 0, 6, DEFAULT_CADENCE.squaresDayET),
-    squaresHourET: int(d.squaresHourET, 0, 23, DEFAULT_CADENCE.squaresHourET),
-    startingFiveLockHourET: int(d.startingFiveLockHourET, 0, 23, DEFAULT_CADENCE.startingFiveLockHourET),
-  }
-}
-
-/* ─── The banner document ─── */
 
 export type BannerMode = 'auto' | 'manual' | 'off'
 
-export interface GameBannerDoc {
+export interface BroadcastBannerDoc {
   /**
-   * `auto`   — headline and countdown derived from the active game's schedule
-   * `manual` — the operator's own headline, countdown and lines
-   * `off`    — fall back to the network's default rotating copy
+   * `auto`/`manual` — show the operator's headline, countdown and lines
+   * `off`           — fall back to the network's default rotating copy
    */
   mode: BannerMode
-  game: GameId
-  /** Big line, e.g. "STARTING 5 — TONIGHT'S SLATE". */
+  /** Big line, e.g. "TONIGHT — OPEN STAGE". */
   headline: string
-  /** What the clock is counting to, e.g. "LOCKS IN". Kept short — it sits inline. */
+  /** What the clock is counting to, e.g. "STARTS IN". Kept short — it sits inline. */
   countdownLabel: string
   /** ISO target. Empty or past → no clock, just the rotating lines. */
   countdownTo: string
@@ -83,21 +33,20 @@ export interface GameBannerDoc {
 }
 
 export const DEFAULT_BANNER_LINES = [
-  'STARTING 5 — 100,000 $CSGN FOR A PERFECT CARD',
-  'SQUARES — WEEKLY BOARD, FREE TO ENTER',
   "CSGN: CRYPTO'S ENTERTAINMENT FLAGSHIP",
   'CONNECT YOUR TWITCH AND GO LIVE ON CSGN',
+  'EVERY HOUR PAYS 30% OF THE FEES IT GENERATES',
+  '24/7 — SOMEBODY IS ALWAYS ON',
 ] as const
 
 /** The banner is a 3D prism rotating 90° per face, so it is always four faces —
  *  fewer leaves a blank quarter-turn, more never comes back around. */
 export const BANNER_FACES = 4
 
-export function normalizeBanner(raw: unknown): GameBannerDoc {
+export function normalizeBanner(raw: unknown): BroadcastBannerDoc {
   const d = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
   const str = (v: unknown, max = 120): string => String(v ?? '').trim().slice(0, max)
   const mode = d.mode === 'manual' || d.mode === 'off' ? d.mode : 'auto'
-  const game: GameId = d.game === 'starting5' || d.game === 'squares' ? d.game : 'none'
 
   const rawLines = Array.isArray(d.lines) ? d.lines.map((l) => str(l)).filter(Boolean) : []
   // Pad to exactly four faces by cycling what we were given, so a partial edit
@@ -108,7 +57,6 @@ export function normalizeBanner(raw: unknown): GameBannerDoc {
 
   return {
     mode,
-    game,
     headline: str(d.headline),
     countdownLabel: str(d.countdownLabel, 24) || 'STARTS IN',
     countdownTo: str(d.countdownTo, 40),
@@ -169,7 +117,6 @@ export interface ResolvedBanner {
   /** Present when kind is 'rotating'. Always exactly four faces. */
   lines?: string[]
   href?: string
-  game: GameId
 }
 
 /**
@@ -181,7 +128,7 @@ export interface ResolvedBanner {
  * nobody's on air), and a missing document behaves exactly like `off`.
  */
 export function resolveBanner(
-  banner: GameBannerDoc | null,
+  banner: BroadcastBannerDoc | null,
   nowMs: number,
   fallbackLines: readonly string[],
 ): ResolvedBanner {
@@ -191,20 +138,19 @@ export function resolveBanner(
       : Array.from({ length: BANNER_FACES }, (_, i) => lines[i % lines.length])
 
   if (!banner || banner.mode === 'off') {
-    return { kind: 'rotating', lines: pad4(fallbackLines), game: 'none' }
+    return { kind: 'rotating', lines: pad4(fallbackLines) }
   }
 
   const countdown = banner.countdownTo ? formatCountdown(banner.countdownTo, nowMs) : null
   if (countdown && !countdown.expired) {
     return {
       kind: 'countdown',
-      headline: banner.headline || `${GAME_LABELS[banner.game]}`.toUpperCase() || 'UP NEXT',
+      headline: banner.headline || 'UP NEXT',
       label: banner.countdownLabel,
       countdown,
       href: banner.href || undefined,
-      game: banner.game,
     }
   }
 
-  return { kind: 'rotating', lines: pad4(banner.lines), href: banner.href || undefined, game: banner.game }
+  return { kind: 'rotating', lines: pad4(banner.lines), href: banner.href || undefined }
 }

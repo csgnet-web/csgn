@@ -11,7 +11,7 @@ import {
   normalizeMemeBoard, rankMemeBoard, searchBoard, shortMint, compactUsd, memePrice,
   type MemeCoin, type VoteCell,
 } from '@/lib/games/memeBoard'
-import { formatTokens } from '@/lib/games/profile'
+import { formatTokens } from '@/lib/holdings'
 
 /**
  * THE MEME 100 — a ranked board you pick from.

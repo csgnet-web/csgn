@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { resolveBanner, type GameBannerDoc } from '@/lib/games/schedule'
+import { resolveBanner, type BroadcastBannerDoc } from '@/lib/broadcastBanner'
 
 /**
  * The strip beside LIVE/OFFLINE on /watch.
  *
  * Two shapes, decided by `resolveBanner`:
  *
- *   • a live COUNTDOWN to the next game moment (locks, tip-off, draw)
+ *   • a live COUNTDOWN to whatever is next on the network
  *   • the rotating 3D prism of headline lines, when no clock is running
  *
- * Both are driven by `config/gameBanner`, so an operator changes what this says
+ * Both are driven by `config/broadcastBanner`, so an operator changes what this says
  * from Broadcast Control instead of shipping a deploy — which is what the four
  * hardcoded strings here used to require.
  *
@@ -20,11 +20,11 @@ import { resolveBanner, type GameBannerDoc } from '@/lib/games/schedule'
  * a countdown is actually running, so an idle page isn't re-rendering once a
  * second for nothing.
  */
-export default function GameBanner({
+export default function BroadcastBanner({
   banner,
   fallbackLines,
 }: {
-  banner: GameBannerDoc | null
+  banner: BroadcastBannerDoc | null
   fallbackLines: readonly string[]
 }) {
   const [nowMs, setNowMs] = useState(() => Date.now())

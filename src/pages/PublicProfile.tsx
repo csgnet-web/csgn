@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, Radio, Trophy, Twitch } from 'lucide-react'
+import { ArrowLeft, Radio, Twitch } from 'lucide-react'
 import { api, type PublicProfile as Profile } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
-import { formatTokens } from '@/lib/games/profile'
 import RecommendedProfiles from '@/components/account/RecommendedProfiles'
 
 /**
@@ -68,7 +67,6 @@ export default function PublicProfile() {
   const initial = (profile.displayName || profile.username).trim().charAt(0).toUpperCase() || '?'
   const stats: Array<[string, string]> = [
     ['Slots streamed', String(profile.slots)],
-    ['$CSGN won', formatTokens(profile.winnings)],
     ['Role', profile.role],
   ]
 
@@ -125,13 +123,6 @@ export default function PublicProfile() {
             {profile.displayName} hasn't streamed a slot yet.
           </p>
         )}
-        {profile.winnings > 0 && (
-          <p className="flex items-center gap-2 text-xs text-gray-500">
-            <Trophy className="w-3.5 h-3.5 shrink-0 text-amber-400/70" />
-            {formatTokens(profile.winnings)} $CSGN won across Squares and Starting 5.
-          </p>
-        )}
-
         <RecommendedProfiles excludeUsername={profile.username} />
       </div>
     </div>

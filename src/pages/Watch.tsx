@@ -10,11 +10,11 @@ import OfflinePanel from '@/components/watch/OfflinePanel'
 import TokenPanel from '@/components/watch/TokenPanel'
 import ScheduleStrip from '@/components/watch/ScheduleStrip'
 import StreamInfoBar from '@/components/watch/StreamInfoBar'
-import GameBanner from '@/components/watch/GameBanner'
+import BroadcastBanner from '@/components/watch/BroadcastBanner'
 import { JoinStrip } from '@/components/watch/JoinStrip'
 import { WipeOverlay } from '@/components/ui/WipeOverlay'
 
-/** The default strip copy. Whatever an admin sets in config/gameBanner wins;
+/** The default strip copy. Whatever an admin sets in config/broadcastBanner wins;
  *  this is what shows before anything has been configured. */
 const bannerItems = [
   'STARTING 5 — 100,000 $CSGN FOR A PERFECT CARD',
@@ -47,7 +47,7 @@ export default function Watch() {
   }, [showSignupNotice, navigate, location.pathname])
 
   const { user, profile } = useAuth()
-  const { currentSlot, allSlots, manualOverride, networkBlockEnabled, gameBanner } = useLiveSlot()
+  const { currentSlot, allSlots, manualOverride, networkBlockEnabled, broadcastBanner } = useLiveSlot()
   const [claiming, setClaiming] = useState(false)
   const [claimError, setClaimError] = useState('')
   const [showWipe, setShowWipe] = useState(false)
@@ -158,7 +158,7 @@ export default function Watch() {
             <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-white animate-pulse' : 'bg-gray-500'}`} />
             <span className="text-white font-black tracking-[0.25em] text-sm uppercase">{isLive ? 'LIVE' : 'OFFLINE'}</span>
           </div>
-          <GameBanner banner={gameBanner} fallbackLines={banner} />
+          <BroadcastBanner banner={broadcastBanner} fallbackLines={banner} />
         </div>
 
         {/* Broadcast stage — X embeds self-size (max 550px wide), so this is a

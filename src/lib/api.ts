@@ -22,7 +22,6 @@ export interface PublicProfile {
   twitch: string
   bio: string
   slots: number
-  winnings: number
 }
 
 export type TwitchProof = { proofToken: string; twitch: { twitchUserId: string; username: string; displayName: string; profileImageUrl: string } }

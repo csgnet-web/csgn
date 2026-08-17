@@ -152,11 +152,9 @@ Practically, this means a holder always has a live standing ballot across:
 | **The Draft** | every open hour | who goes on air next (§3) |
 | **Meme-100** | continuous | the community pick on the power ranking |
 | **The Spotlight** | continuous | which coin the jukebox features between paid plays |
-| **Tomorrow's slate** | daily | which coins make the Starting 5 board |
-| **Squares axes** | daily | what the board is scored on |
 | **Network questions** | as raised | schedule, formats, treasury policy |
 
-Six standing positions, one balance, nothing escrowed. Set them once and they
+Four standing positions, one balance, nothing escrowed. Set them once and they
 persist until you change them or sell.
 
 ### 2.4 Where the square-root curve applies instead
@@ -166,13 +164,15 @@ promoted. A network's audience *should* be weighted by ownership, that's what
 ownership is for, and §11.8 is right that a curator spending real weight to put
 himself on air is honest rather than a rule-break.
 
-It is wrong for **games**, where linear weight means one wallet buys the
-leaderboard and the game stops being a game. So Squares allowances and Starting 5
-entry counts use a square-root curve on supply share instead
-(`src/lib/games/squares.ts`, `startingFive.ts`) — influence grows with stake,
-sub-linearly, and everyone gets one free entry regardless of holdings.
+It is wrong wherever linear weight means one wallet simply buys the whole
+surface and the thing stops being a network. The two games that used a
+square-root curve on supply share for exactly that reason have been removed, but
+**the rule outlives them** and the next holder-weighted surface inherits it:
+influence grows with stake, sub-linearly, and there is a floor everybody gets
+regardless of holdings.
 
-**The rule: linear where ownership should decide, sqrt where fun should.**
+**The rule: linear where ownership should decide, sqrt where participation
+should.** See §2.5 for the cap that has to sit on top of either.
 
 ### 2.5 Quorum and the anti-capture cap
 

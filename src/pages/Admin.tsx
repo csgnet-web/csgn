@@ -22,7 +22,7 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import TickerControlsCard from '@/components/admin/TickerControlsCard'
-import GameControlsCard from '@/components/admin/GameControlsCard'
+import BroadcastBannerCard from '@/components/admin/BroadcastBannerCard'
 import { CreatorFeesTab } from '@/components/admin/CreatorFeesTab'
 import { VoteHistoryTab } from '@/components/admin/VoteHistoryTab'
 import { isVoteOpen, type VoteRecord } from '@/lib/votes'
@@ -1442,9 +1442,8 @@ export default function Admin() {
               </div>
             )} />
 
-            {/* Game Control — the /watch strip (game, headline, countdown) plus
-                the Starting 5 purse/prize mode and the weekly Squares cadence. */}
-            <GameControlsCard />
+            {/* The /watch strip — headline, countdown and rotating lines. */}
+            <BroadcastBannerCard />
 
           </div>
         )}

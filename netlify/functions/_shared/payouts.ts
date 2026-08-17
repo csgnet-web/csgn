@@ -96,7 +96,7 @@ export function resolveLimits(raw: unknown): PayoutLimits {
 /* ─── What a payout is ─── */
 
 /** Where a payout came from. Every disbursement is attributable to a game. */
-export type PayoutSource = 'squares' | 'starting5' | 'slot_vote' | 'creator_fee' | 'manual'
+export type PayoutSource = 'slot_vote' | 'creator_fee' | 'manual'
 
 export type PayoutStatus =
   /** Claimed in the ledger, nothing signed yet. */
@@ -119,7 +119,7 @@ export interface PayoutRequest {
   displayName: string
   /** Whole $CSGN. Fractions are not payable and are floored at build time. */
   amountCsgn: number
-  /** Human-readable reason, shown in the winner's history: "Squares — Final". */
+  /** Human-readable reason, shown in the recipient's history. */
   note: string
 }
 
@@ -198,7 +198,7 @@ export interface BatchContext {
  *
  * Multiple requests to the same wallet from the same source are MERGED, not
  * emitted twice, because they'd collide on the same idempotency key. This is a
- * real case: one wallet holding two winning squares on the same board.
+ * real case: one wallet owed for two separate things from the same source.
  */
 export function buildPayoutBatch(requests: PayoutRequest[], ctx: BatchContext): PayoutBatch {
   const { limits } = ctx

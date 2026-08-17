@@ -46,7 +46,7 @@ vi.mock('@/contexts/useAuth', () => ({ useAuth: () => authState }))
 vi.mock('@/contexts/useLiveSlot', () => ({
   useLiveSlot: () => ({
     currentSlot: null, allSlots: [], manualOverride: null, nowMs: Date.now(),
-    slotsReady: true, networkBlockEnabled: true, gameBanner: null,
+    slotsReady: true, networkBlockEnabled: true, broadcastBanner: null,
     tokenStats: { marketCapUsd: 4_000_000, priceUsd: 0.004 },
   }),
 }))
@@ -182,42 +182,19 @@ describe('connections', () => {
   })
 })
 
-describe('the games panel', () => {
-  it('shows both games with their cadence', async () => {
-    await render()
-    expect(text()).toContain('Starting 5')
-    expect(text()).toContain('Squares')
-    expect(text()).toContain('Daily')
-    expect(text()).toContain('Weekly')
-  })
-
-  it('shows the 100,000 $CSGN perfect-card purse', async () => {
-    await render()
-    expect(text()).toContain('100.0K $CSGN')
-    expect(text()).toContain('Perfect card (5/5)')
-  })
-
-  it('renders honest zeroes rather than invented stats', async () => {
-    await render()
-    expect(text()).toContain('Entries')
-    expect(text()).toContain('Perfect cards')
-    // No settlement job has run, so lifetime winnings are zero, not fabricated.
-    expect(text()).toContain('0 $CSGN won')
-  })
-})
-
 describe('the holder panel', () => {
-  it('translates the balance into supply share and entitlements', async () => {
+  it('translates the balance into a supply share', async () => {
     await render()
     expect(text()).toContain('10.00M')     // balance
     expect(text()).toContain('1.00%')      // share of a 1B supply
-    expect(text()).toContain('Squares per board')
-    expect(text()).toContain('Starting 5 lineups')
   })
 
-  it('says the allowance is maxed instead of showing an impossible target', async () => {
+  // Every gate on this card is a PROMOTION gate. If one of them ever starts
+  // deciding whether somebody may take part at all, master-plan.md §5 is broken
+  // and this test should be the thing that says so.
+  it('names the promotion gate the bag actually opens', async () => {
     await render()
-    expect(text()).toContain('Maxed')
+    expect(text()).toContain('Right Now rail')
   })
 
   it('states that nothing is locked or spent', async () => {

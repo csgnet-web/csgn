@@ -46,7 +46,6 @@ export interface PublicProfile {
   /** Lifetime slots streamed — the one number that says "this member is real". */
   slots: number
   /** Lifetime $CSGN won across the games. */
-  winnings: number
 }
 
 type UserRow = Record<string, unknown>
@@ -65,7 +64,6 @@ export function toPublicProfile(row: UserRow): PublicProfile | null {
   if (row.status === 'disabled') return null
 
   const twitch = (row.twitch ?? {}) as Record<string, unknown>
-  const stats = (row.gameStats ?? {}) as Record<string, unknown>
   const linked = twitch.verified === true
 
   return {
@@ -76,14 +74,13 @@ export function toPublicProfile(row: UserRow): PublicProfile | null {
     twitch: linked ? str(twitch.username, 40) : '',
     bio: str(row.bio, 200),
     slots: num(row.slotsCompleted),
-    winnings: num(stats.winningsCsgn),
   }
 }
 
 /**
  * Rank members for the "Members to watch" rail.
  *
- * Linked-Twitch first, then by slots streamed, then by winnings. The ordering is
+ * Linked-Twitch first, then by slots streamed. The ordering is
  * a value judgement and worth stating: we surface people who can actually GO
  * LIVE, because the point of discovery here is finding someone to watch — not
  * ranking members by how much they hold. A leaderboard by bag size would be
@@ -94,7 +91,6 @@ export function rankProfiles(profiles: PublicProfile[]): PublicProfile[] {
     const live = Number(Boolean(b.twitch)) - Number(Boolean(a.twitch))
     if (live !== 0) return live
     if (b.slots !== a.slots) return b.slots - a.slots
-    if (b.winnings !== a.winnings) return b.winnings - a.winnings
     return a.username.localeCompare(b.username)
   })
 }

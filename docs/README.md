@@ -35,8 +35,8 @@ The two documents that describe what is actually happening.
 | [`plan-network-growth.md`](plan-network-growth.md) | **Implementation plan, not yet built.** Pro-rate the creator fee by verified live minutes (the poller already samples them and nothing reads them), then an always-on season leaderboard and a raid chain down the schedule. Four parts, A first and alone |
 | [`signup-flow.md`](signup-flow.md) | **Sign-up, sign-in, and the Twitch problem.** Why federated login cannot work inside Phantom's in-app browser, the three-tap wallet sign-up, and the cross-browser Twitch handoff that replaced it |
 | [`env-setup.md`](env-setup.md) | Every environment variable, which are secret, the payout-wallet key policy, and the **deploy checklist** |
-| [`dry-run.md`](dry-run.md) | **The gated verification runbook.** Local → settlement → payout dry run → **the mainnet money test**. Includes the idempotency test that must never be skipped |
-| [`games-and-payouts.md`](games-and-payouts.md) | Squares (weekly, pooled, 500k to the winner), Starting 5 (daily, free, 100k perfect card), and the payout ledger's four guarantees |
+| [`dry-run.md`](dry-run.md) | **The gated verification runbook.** Local → payout dry run → **the mainnet money test**. Includes the idempotency test that must never be skipped |
+| [`payout-wallet.md`](payout-wallet.md) | The $CSGN payout ledger's four guarantees and crash recovery. **Retained but unwired** — the games that used it were removed; the contract the next caller inherits |
 | [`backend-hardening.md`](backend-hardening.md) | **Cost, scale and the attacks that actually happen.** The read amplifier that was there, the caching/timeout/body-cap primitives, and the six questions a new endpoint has to answer |
 | [`ops-cost-security-runbook.md`](ops-cost-security-runbook.md) | Firestore cost control, security posture, incident steps |
 
@@ -88,8 +88,6 @@ a decision was made; **not** authoritative on what we're doing now.
 
 | | |
 |---|---|
-| Starting 5 | Daily · **free** · 100,000 $CSGN for a perfect card (5/5) · rolls over if nobody goes perfect |
-| Squares | Weekly · **6,250 $CSGN per square**, 20% rake · **500,000 to the winner** of a full board |
 | Payout wallet | `EftavCt6Tk2bzWJ9Dnz7cAvfa5RAnh8S9vZcrorV7Hmv` |
 | Treasury | `CSGNUgUpBqTNM7EBZSMeA5jzPLFNR2hELhLjbHLpbEY4` |
 | $CSGN mint | `GFV7fphvprMr1PYpYGPJort2QP7JJLEp3J1Buu7Zpump` |

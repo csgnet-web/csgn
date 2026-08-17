@@ -1,6 +1,5 @@
 import { createContext } from 'react'
 import type { User } from 'firebase/auth'
-import type { GameStats } from '@/lib/games/profile'
 
 export interface UserNotification {
   id: string
@@ -40,10 +39,6 @@ export interface UserProfile {
   socialLinks?: { twitter?: string; twitch?: string }
   notifications?: UserNotification[]
   xp?: number
-  /** Lifetime Squares / Starting 5 record, written server-side by the game
-   *  settlement job. Absent until that job runs, which is why every field of
-   *  GameStats is optional and the profile renders defensible zeroes. */
-  gameStats?: GameStats
 }
 
 export interface AuthContextType {

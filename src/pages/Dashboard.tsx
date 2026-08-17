@@ -15,7 +15,6 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import MemeVoteCard from '@/components/MemeVoteCard'
-import GamesPanel from '@/components/account/GamesPanel'
 import HolderPanel from '@/components/account/HolderPanel'
 import RecommendedProfiles from '@/components/account/RecommendedProfiles'
 import { Notice, EmailNotice, TwitchNotice } from '@/components/ui/Notice'
@@ -517,13 +516,8 @@ export default function Dashboard() {
           </div>
         </section>
 
-        {/* ── Games + holdings ──
-            Side by side on desktop, stacked on mobile. This is the gamification
-            surface: what you've won, and what your bag entitles you to next. */}
-        <div className="grid gap-6 lg:grid-cols-2">
-          <GamesPanel stats={profile?.gameStats} />
-          <HolderPanel walletAddress={savedWallet} />
-        </div>
+        {/* ── Holdings ── what the bag entitles you to. */}
+        <HolderPanel walletAddress={savedWallet} />
 
         {/* Change your Meme-100 token vote from your profile, any time */}
         <MemeVoteCard />

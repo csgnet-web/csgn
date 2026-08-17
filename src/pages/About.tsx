@@ -153,36 +153,6 @@ export default function About() {
           </p>
         </Section>
 
-        <Section title="The games">
-          <p>
-            Two, and they work on opposite principles on purpose.
-          </p>
-          <div className="grid gap-2.5 sm:grid-cols-2">
-            <Term label="Starting 5 — daily, free">
-              Pick five coins off the day's slate, one from each size tier, and name a captain. Go
-              5-for-5 and you take a share of 100,000 $CSGN. Nobody goes perfect, the jackpot rolls
-              into tomorrow. It's free to enter — how many lineups you get depends on what you hold,
-              and everybody gets at least one.
-            </Term>
-            <Term label="Squares — weekly, paid">
-              The office pool. Buy squares on a 10×10 grid, digits get drawn after entries close,
-              and the winner takes 500,000 $CSGN on a full board. This is the one game that costs
-              money: the prize is the entry pool minus a published rake. A short board pays a
-              shorter prize — we don't pretend otherwise.
-            </Term>
-          </div>
-          <p>
-            Both draws are reproducible. The random numbers come from a Solana blockhash sampled
-            <em> after</em> entries close, run through a published function — so nobody, including
-            us, could know the result while the game was open, and anyone can re-derive it
-            afterwards.
-          </p>
-          <p className="text-gray-500">
-            Neither game is open yet. The engines are built and tested; the boards go live once the
-            first slate runs.
-          </p>
-        </Section>
-
         <Section title="Your profile">
           <p>
             Your profile is at <span className="font-mono text-gray-300">/account</span>. It shows
