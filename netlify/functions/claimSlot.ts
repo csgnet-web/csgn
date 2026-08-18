@@ -57,8 +57,10 @@ export const handler = withHttp(async (event) => {
   // Email verification is required only of accounts that HAVE an email. A
   // wallet-only account (signupWithPhantom) never gave one, and gating it on a
   // verification it can never complete would make the account unusable. The
-  // checks that actually matter are below and unchanged: a verified wallet to be
-  // paid into, and a verified Twitch channel to put on air.
+  // check that actually matters is below: a verified Twitch channel to put on
+  // air. A WALLET IS NOT REQUIRED TO CLAIM — it is required to be PAID, which
+  // happens after the hour airs. Fees for a member without one are held rather
+  // than dropped (see adminMarkFeesPaid + the Creator Fees tab).
   // Mirrored by claimEligibility() in src/lib/slotModel.ts — change both.
   if (!isAdmin && authUser.email && authUser.email_verified !== true) {
     throw forbidden('Email verification required before claiming slots')
@@ -69,11 +71,14 @@ export const handler = withHttp(async (event) => {
     user.twitch?.username || (isAdmin ? (user.twitchUsername || user.socialLinks?.twitch || twitchUsernameFromDefaultUrl()) : ''),
   )
   const twitchUserId = user.twitch?.twitchUserId || (isAdmin ? `admin:${twitchUsername}` : '')
+  // Empty when they have not connected one yet, and that is allowed. It is
+  // stamped onto the slot so the payout tab knows where to send the fee — an
+  // empty string there reads as "held until they connect a wallet".
   const walletAddress = user.phantom?.walletAddress || (isAdmin ? (user.walletAddress || 'admin') : '')
-  if (!isAdmin && (!user.phantom?.verified || !walletAddress || !user.twitch?.verified || !twitchUsername || !twitchUserId)) {
-    throw forbidden('Verified Phantom and Twitch are required')
+  if (!isAdmin && (!user.twitch?.verified || !twitchUsername || !twitchUserId)) {
+    throw forbidden('Connect Twitch to claim a slot — it is the channel the network puts on air.')
   }
-  if (!twitchUsername || !twitchUserId || !walletAddress) throw forbidden('A Twitch channel and wallet are required to claim slots')
+  if (!twitchUsername || !twitchUserId) throw forbidden('A Twitch channel is required to claim slots')
 
   const slot = await getDoc<SlotDoc>(`slots/${slotId}`, transaction)
   if (!slot) throw notFound('Slot not found')

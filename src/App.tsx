@@ -19,6 +19,7 @@ const TwitchComplete = lazy(() => import('@/pages/TwitchComplete'))
 const Participate = lazy(() => import('@/pages/Participate'))
 const Treasury = lazy(() => import('@/pages/Treasury'))
 const Studio = lazy(() => import('@/pages/Studio'))
+const EmailComplete = lazy(() => import('@/pages/EmailComplete'))
 
 function Loading() {
   return (
@@ -67,6 +68,7 @@ function AppContent() {
             <Route path="/player" element={<Player />} />
             <Route path="/terms" element={<Terms />} />
             <Route path="/auth/twitch/complete" element={<TwitchComplete />} />
+            <Route path="/auth/email/complete" element={<EmailComplete />} />
           </Routes>
         </AnimatePresence>
       </Suspense>

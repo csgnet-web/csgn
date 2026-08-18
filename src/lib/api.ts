@@ -80,6 +80,13 @@ export const api = {
       { method: 'POST', body: JSON.stringify({ slotIds, txSignature }) },
       true,
     ),
+  /** Create the CSGN profile for a Firebase user who signed in with Google, X
+   *  or an email link. Idempotent — answers `created: false` if one exists. */
+  finalizeSocialAccount: (username?: string) =>
+    functionFetch<{ created: boolean; user: unknown }>(
+      'finalizeSocialAccount', { method: 'POST', body: JSON.stringify({ username }) }, true,
+    ),
+
   /* ── Clips: a member's reel of links that air between live hours ── */
 
   /** Your clips, your slice of the day, and when you are next on. One call so

@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import TickerControlsCard from '@/components/admin/TickerControlsCard'
 import BroadcastBannerCard from '@/components/admin/BroadcastBannerCard'
+import MemeBoardCard from '@/components/admin/MemeBoardCard'
 import { CreatorFeesTab } from '@/components/admin/CreatorFeesTab'
 import ClipQueueTab from '@/components/admin/ClipQueueTab'
 import { VoteHistoryTab } from '@/components/admin/VoteHistoryTab'
@@ -1447,6 +1448,9 @@ export default function Admin() {
 
             {/* The /watch strip — headline, countdown and rotating lines. */}
             <BroadcastBannerCard />
+
+            {/* Meme 100 — what's on the board, plus the pin/deny levers. */}
+            <MemeBoardCard />
 
           </div>
         )}

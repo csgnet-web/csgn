@@ -1,436 +1,304 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowRight, CheckCircle2, Eye, EyeOff, Lock, Mail, PlayCircle, Radio, Twitch, User, Wallet, X } from 'lucide-react'
-import { Notice } from '@/components/ui/Notice'
-import { Button } from '@/components/ui/Button'
-import { TwitchHandoffPanel } from '@/components/auth/TwitchHandoffPanel'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Loader2, Mail, Wallet, X } from 'lucide-react'
 import { useAuth } from '@/contexts/useAuth'
-import { getPhantomProvider, usePhantomWallet } from '@/hooks/usePhantomWallet'
-import { useTwitchLink } from '@/hooks/useTwitchLink'
 import { api } from '@/lib/api'
-import { storeAuthReturn } from '@/lib/authReturn'
+import { getPhantomProvider, usePhantomWallet } from '@/hooks/usePhantomWallet'
+import { CsgnLogo } from '@/components/ui/CsgnLogo'
 import { suggestUsername } from '@/lib/username'
-import { isMobile } from '@/lib/webview'
-import { useScrollLock } from '@/hooks/useScrollLock'
+import { isEmbeddedBrowser, openInSystemBrowser, systemBrowserName } from '@/lib/webview'
+
+/**
+ * SIGN IN OR SIGN UP — one sheet, four doors, no fork.
+ *
+ * ── What this replaced, and why ────────────────────────────────────────────
+ *
+ * The old modal was a wallet-first funnel: connect Phantom, approve a
+ * signature, pass an on-chain history check, pick a name. Good for a crypto
+ * native and a locked door for everyone else — a person with no wallet could
+ * not create an account AT ALL, which put the entire non-crypto creator market
+ * on the wrong side of the product.
+ *
+ * ── The rules this screen follows ──────────────────────────────────────────
+ *
+ * 1. NO SIGN-IN / SIGN-UP CHOICE. The provider already knows whether this
+ *    person has been here. Asking a stranger to pick the right button first is
+ *    asking them to know something we know.
+ * 2. NO WALLET REQUIRED. It is offered, because holders want it and it is where
+ *    fees land — but it is one option among four, not the gate.
+ * 3. NO PASSWORD. Google, X and an email link. Nothing to invent, nothing to
+ *    forget, nothing to leak.
+ * 4. ONE SCREEN. Every extra step here costs people, and the things we used to
+ *    ask for (a username, a Twitch channel) are either derivable or only needed
+ *    later — so they are asked for later, in context.
+ */
 
 interface AuthModalProps { isOpen: boolean; onClose: () => void; initialMode?: 'login' | 'signup' }
 
-/**
- * Three taps to an account.
- *
- *   1. Continue with Phantom
- *   2. Approve the signature in Phantom
- *   3. Create account   ← the name is already filled in
- *
- * Everything that used to sit between those taps has been moved to where it is
- * actually needed, or deleted:
- *
- *  • **Sign in and sign up are one door.** The wallet already knows which one
- *    applies. A registered wallet is signed in on tap 2 and never sees a
- *    username field; a new one lands on it. Making a stranger choose the right
- *    button first was asking them to know something we know.
- *  • **The username arrives filled in.** A valid, stable, wallet-derived handle
- *    (lib/username.ts) means the primary button is live on arrival. Typing is
- *    now opt-in.
- *  • **Twitch is out of sign-up entirely.** It gates going on air, not having
- *    an account (see netlify/functions/claimSlot.ts), and it was the single
- *    biggest way to fail this form: inside Phantom's in-app browser, Twitch's
- *    "Continue with Google / Apple / Amazon" buttons return "Something went
- *    wrong" by design. It now lives one step past the finish line, on a screen
- *    that can hand the user out to Safari and wait for them (useTwitchLink).
- *  • **Email and password are out of the happy path.** They were never the
- *    credential here — `loginWithPhantom` has always let a holder in on a
- *    signature — and they cost three fields and a round trip. They stay
- *    reachable for the accounts that have them, and they appear automatically
- *    for the one case that needs them: a wallet too new to clear the on-chain
- *    sign-up check.
- */
-
-type Step =
-  /** The single button. Sign-in and sign-up both start here. */
-  | 'connect'
-  /** New wallet: name it and go. */
-  | 'name'
-  /** Account exists. One question: watch, or go on air? */
-  | 'done'
-  /** Email + password — legacy sign-in, and the new-wallet fallback. */
-  | 'email'
-
-export function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalProps) {
-  const { signIn, signUp, signUpWithPhantom, signInWithPhantom, refreshProfile } = useAuth()
-  const { connect, signMessage, isConnecting, error: walletError, needsPhantom, deeplink } = usePhantomWallet()
-  const navigate = useNavigate()
-
-  const [step, setStep] = useState<Step>('connect')
-  const [intent, setIntent] = useState<'login' | 'signup'>(initialMode)
-  const [phantomProofToken, setPhantomProofToken] = useState('')
-  const [verifiedWallet, setVerifiedWallet] = useState('')
-  const [username, setUsername] = useState('')
-  const [createdName, setCreatedName] = useState('')
-  const [twitchName, setTwitchName] = useState('')
-
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  /** True once a wallet has been rejected as too new — the only case where the
-   *  email + password sign-up is a genuinely better answer than "try again". */
-  const [emailSignupFallback, setEmailSignupFallback] = useState(false)
-
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [verifying, setVerifying] = useState(false)
-  /** Phantom is not injected on this device — offer the door, don't make them
-   *  discover it by waiting three seconds for a failure. */
-  const [providerMissing, setProviderMissing] = useState(false)
-
-  useScrollLock(isOpen)
-
-  const reset = useCallback(() => {
-    setStep('connect'); setError(''); setLoading(false); setVerifying(false)
-    setPhantomProofToken(''); setVerifiedWallet(''); setUsername(''); setCreatedName(''); setTwitchName('')
-    setEmail(''); setPassword(''); setConfirmPassword(''); setEmailSignupFallback(false)
-  }, [])
-
-  useEffect(() => {
-    if (isOpen) { reset(); setIntent(initialMode) }
-  }, [isOpen, initialMode, reset])
-
-  // Mobile browsers have no extension, so a missing provider means the user is
-  // not in Phantom's in-app browser. Checked after a beat because injection is
-  // asynchronous and a flash of "Open in Phantom" for someone who IS in Phantom
-  // is worse than showing it a moment late.
-  useEffect(() => {
-    if (!isOpen) return
-    const id = setTimeout(() => setProviderMissing(!getPhantomProvider()), 1200)
-    return () => clearTimeout(id)
-  }, [isOpen])
-
-  const handleClose = () => { reset(); onClose() }
-
-  /**
-   * Link Twitch to the account that now exists. On a real browser this is a
-   * full-page redirect that lands on /account; inside an in-app browser the
-   * hook keeps us here and polls while the user approves in Safari.
-   */
-  const twitchLink = useTwitchLink({
-    beforeRedirect: () => storeAuthReturn({ path: '/account', intent: 'link' }),
-    onLinked: async (result) => {
-      try {
-        const res = await api.linkTwitch(result.twitchProofToken)
-        setTwitchName(res.twitch.displayName || res.twitch.username)
-        await refreshProfile()
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Could not connect Twitch.')
-      }
-    },
-  })
-
-  /**
-   * The one button. Prove the wallet, then let the wallet decide what happens:
-   * a registered one is signed straight in, a new one goes to the name step.
-   * `loginWithPhantom` 404s for an unlinked wallet and never creates anything,
-   * so a failure there is information, not an error.
-   */
-  const continueWithPhantom = async () => {
-    setError(''); setVerifying(true)
-    try {
-      // ALWAYS through connect(): a cached address is not a live provider
-      // session, and signing against one that was never connected is what used
-      // to make the signature prompt silently never appear.
-      const address = await connect()
-      if (!address) return
-      const challenge = await api.createPhantomChallenge(address)
-      const signature = await signMessage(challenge.message)
-      if (!signature) return
-      const verified = await api.verifyPhantomSignature(address, signature, challenge.challengeToken)
-      setPhantomProofToken(verified.proofToken)
-      setVerifiedWallet(verified.walletAddress)
-
-      try {
-        await signInWithPhantom(verified.proofToken)
-        handleClose()
-        return
-      } catch {
-        /* no account on this wallet yet — that's a sign-up */
-      }
-      setIntent('signup')
-      setUsername((current) => current || suggestUsername(verified.walletAddress))
-      setStep('name')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not verify your Phantom wallet.')
-    } finally { setVerifying(false) }
-  }
-
-  const createAccount = async (e: React.FormEvent) => {
-    e.preventDefault(); setLoading(true); setError('')
-    try {
-      await signUpWithPhantom(username.trim(), { phantomProofToken })
-      setCreatedName(username.trim())
-      setStep('done')
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Sign up failed. Please try again.'
-      // A brand-new wallet with no on-chain history is refused by the sybil
-      // gate (signupWithPhantom.ts). That is the one rejection where "try
-      // again" is useless advice, so the email route opens itself instead of
-      // hiding behind a link the user has no reason to look for.
-      if (/no Solana activity/i.test(message)) {
-        setEmailSignupFallback(true)
-        setStep('email')
-        setError('This wallet has no Solana activity yet, so we can\'t use it on its own. Create your account with an email and password — the wallet stays attached.')
-      } else {
-        setError(message)
-      }
-    } finally { setLoading(false) }
-  }
-
-  const submitEmail = async (e: React.FormEvent) => {
-    e.preventDefault(); setLoading(true); setError('')
-    try {
-      if (emailSignupFallback) {
-        if (password !== confirmPassword) throw new Error('Those passwords do not match.')
-        await signUp(email.trim(), password, username.trim(), { phantomProofToken })
-        setCreatedName(username.trim())
-        setStep('done')
-      } else {
-        await signIn(email.trim(), password)
-        handleClose()
-      }
-    } catch (err: unknown) {
-      const code = err instanceof Error && 'code' in err ? String((err as { code?: string }).code || '') : ''
-      if (code === 'auth/invalid-credential') setError('That email and password do not match an account.')
-      else if (err instanceof Error && err.message) setError(err.message)
-      else setError('Sign in failed. Please try again.')
-    } finally { setLoading(false) }
-  }
-
-  const inputClass = 'w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50'
-  const showPhantomDoor = needsPhantom || providerMissing
-  const usernameValid = /^[A-Za-z0-9_]{3,20}$/.test(username.trim())
-
-  const heading =
-    step === 'name' ? 'Pick your name'
-      : step === 'done' ? "You're on CSGN"
-        : step === 'email' ? (emailSignupFallback ? 'Create your account' : 'Sign in with email')
-          : intent === 'signup' ? 'Join CSGN' : 'Welcome back'
-
-  const subheading =
-    step === 'name' ? 'One field, already filled in. Change it or keep it.'
-      : step === 'done' ? 'Your account is live. What do you want to do first?'
-        : step === 'email' ? (emailSignupFallback ? 'Your wallet stays attached — this just gives it a way in.' : 'For accounts created before wallet sign-in.')
-          : 'One signature. No email, no password, about ten seconds.'
-
+/** Brand marks drawn inline. Two SVGs beat a dependency, and these two never
+ *  change — a wrong-coloured Google "G" is the fastest way to look untrustworthy
+ *  on the one screen where trust is the entire ask. */
+function GoogleMark() {
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4" style={{ height: '100dvh' }}>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={handleClose} />
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 12 }} className="relative w-full max-w-md max-h-[92vh] bg-[#0c0c1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
-            <div className="relative px-6 sm:px-8 pt-6 sm:pt-8 pb-4">
-              <button type="button" onClick={handleClose} aria-label="Close" className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-white/5 cursor-pointer"><X className="w-5 h-5" aria-hidden /></button>
-              <img src="/csgn-logo.jpg" alt="" className="w-12 h-12 rounded-xl object-cover mb-4 shadow-lg" />
-              <h2 className="text-2xl font-bold font-display text-white">{heading}</h2>
-              <p className="text-sm text-gray-400 mt-1">{subheading}</p>
-            </div>
-
-            <div className="px-6 sm:px-8 pb-8 sm:pb-10 space-y-4 overflow-y-auto max-h-[calc(100dvh-13rem)] overscroll-contain">
-              {error && <Notice tone="error" compact>{error}</Notice>}
-
-              {/* ── Step 1: the only button ─────────────────────────────── */}
-              {step === 'connect' && (
-                <div className="space-y-3">
-                  {showPhantomDoor ? (
-                    <>
-                      <a
-                        href={isMobile() ? deeplink : 'https://phantom.app/download'}
-                        target={isMobile() ? undefined : '_blank'}
-                        rel="noopener noreferrer"
-                        className="w-full h-14 rounded-xl bg-[#ab9ff2] hover:bg-[#bcb0f5] text-black text-base font-bold flex items-center justify-center gap-2 transition-colors"
-                      >
-                        <Wallet className="w-5 h-5" aria-hidden />
-                        {isMobile() ? 'Continue in Phantom' : 'Install Phantom'}
-                      </a>
-                      <p className="text-[11px] text-gray-500 leading-relaxed">
-                        {isMobile()
-                          ? 'This reopens CSGN inside Phantom, where your wallet can sign. Takes one tap and you land right back here.'
-                          : 'Phantom is the wallet CSGN pays creator fees to. Install it, reload, and this becomes a one-click sign-in.'}
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={continueWithPhantom}
-                        disabled={isConnecting || verifying}
-                        className="w-full h-14 rounded-xl bg-[#ab9ff2] hover:bg-[#bcb0f5] text-black text-base font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-60 cursor-pointer"
-                      >
-                        <Wallet className="w-5 h-5" aria-hidden />
-                        {verifying ? 'Check Phantom…' : 'Continue with Phantom'}
-                      </button>
-                      <p className="text-[11px] text-gray-500 leading-relaxed">
-                        You'll sign a one-line message to prove the wallet — no transaction, no fee, nothing approved.
-                        Already have an account on this wallet? This signs you in.
-                      </p>
-                    </>
-                  )}
-                  {walletError && <Notice tone="error" compact>{walletError}</Notice>}
-
-                  <button
-                    type="button"
-                    onClick={() => { setError(''); setEmailSignupFallback(false); setStep('email') }}
-                    className="w-full text-xs text-gray-500 hover:text-gray-300 underline cursor-pointer pt-1"
-                  >
-                    Sign in with an email and password instead
-                  </button>
-                </div>
-              )}
-
-              {/* ── Step 2: the one field, pre-answered ─────────────────── */}
-              {step === 'name' && (
-                <form onSubmit={createAccount} className="space-y-3">
-                  <div className="flex items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2.5">
-                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" aria-hidden />
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-emerald-200">Wallet verified</p>
-                      <p className="text-[11px] font-mono text-emerald-300/80 truncate">{verifiedWallet}</p>
-                    </div>
-                  </div>
-
-                  <label htmlFor="csgn-username" className="block text-sm font-medium text-gray-300">Your name on the network</label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" aria-hidden />
-                    <input
-                      id="csgn-username"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      onFocus={(e) => e.currentTarget.select()}
-                      className={inputClass}
-                      required minLength={3} maxLength={20}
-                      disabled={loading}
-                      autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false}
-                    />
-                  </div>
-                  <p className="text-[11px] text-gray-500">3–20 characters. Letters, numbers and underscores.</p>
-
-                  <Button variant="primary" size="lg" className="w-full" type="submit" isLoading={loading} disabled={!usernameValid}>
-                    Create account
-                  </Button>
-                </form>
-              )}
-
-              {/* ── Step 3: one question, not a checklist ───────────────── */}
-              {step === 'done' && (
-                <div className="space-y-3">
-                  <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3">
-                    <p className="text-sm font-semibold text-emerald-100">Welcome, {createdName}.</p>
-                    <p className="text-xs text-emerald-300/80 mt-0.5">Your wallet is your sign-in from now on — one tap, every time.</p>
-                  </div>
-
-                  <Button
-                    variant="primary" size="lg" className="w-full"
-                    leftIcon={<PlayCircle className="w-4 h-4" aria-hidden />}
-                    onClick={() => { handleClose(); navigate('/watch') }}
-                  >
-                    Watch what's live
-                  </Button>
-
-                  {twitchName ? (
-                    <Notice tone="success" compact>Twitch connected as {twitchName}. You can claim an hour on the schedule.</Notice>
-                  ) : twitchLink.handoff ? (
-                    <TwitchHandoffPanel
-                      href={twitchLink.handoff.href}
-                      rawUrl={twitchLink.handoff.rawUrl}
-                      browserName={twitchLink.handoff.browserName}
-                      onCancel={twitchLink.cancel}
-                    />
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => void twitchLink.start()}
-                        disabled={twitchLink.phase === 'starting' || twitchLink.phase === 'redirecting'}
-                        className="w-full h-12 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-60 cursor-pointer"
-                      >
-                        <Radio className="w-4 h-4" aria-hidden />
-                        {twitchLink.phase === 'starting' || twitchLink.phase === 'redirecting' ? 'Opening Twitch…' : 'I want to go on air — connect Twitch'}
-                      </button>
-                      <p className="text-[11px] text-gray-500 leading-relaxed">
-                        Only streamers need this. Connect the channel you broadcast from and every open hour on
-                        the schedule becomes claimable — you can also do it later from your account.
-                      </p>
-                    </>
-                  )}
-                  {twitchLink.error && <Notice tone="error" compact>{twitchLink.error}</Notice>}
-
-                  <button type="button" onClick={handleClose} className="w-full text-xs text-gray-500 hover:text-gray-300 underline cursor-pointer pt-1">
-                    Done for now
-                  </button>
-                </div>
-              )}
-
-              {/* ── The email route: legacy sign-in, and the new-wallet fallback ── */}
-              {step === 'email' && (
-                <form onSubmit={submitEmail} className="space-y-3">
-                  {emailSignupFallback && (
-                    <>
-                      <label htmlFor="csgn-username-email" className="block text-sm font-medium text-gray-300">Your name on the network</label>
-                      <div className="relative">
-                        <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" aria-hidden />
-                        <input id="csgn-username-email" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} required minLength={3} maxLength={20} disabled={loading} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-                      </div>
-                    </>
-                  )}
-
-                  <label htmlFor="csgn-email" className="block text-sm font-medium text-gray-300">Email</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" aria-hidden />
-                    <input id="csgn-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} placeholder="you@example.com" required disabled={loading} autoComplete="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-                  </div>
-
-                  <label htmlFor="csgn-password" className="block text-sm font-medium text-gray-300">Password</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" aria-hidden />
-                    <input id="csgn-password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary-500/50" required minLength={6} disabled={loading} autoComplete={emailSignupFallback ? 'new-password' : 'current-password'} />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 cursor-pointer">{showPassword ? <EyeOff className="w-4 h-4" aria-hidden /> : <Eye className="w-4 h-4" aria-hidden />}</button>
-                  </div>
-
-                  {emailSignupFallback && (
-                    <>
-                      <label htmlFor="csgn-password-confirm" className="block text-sm font-medium text-gray-300">Confirm password</label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" aria-hidden />
-                        <input id="csgn-password-confirm" type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputClass} required minLength={6} disabled={loading} autoComplete="new-password" />
-                      </div>
-                    </>
-                  )}
-
-                  <Button variant="primary" size="lg" className="w-full" type="submit" isLoading={loading}>
-                    {emailSignupFallback ? 'Create account' : 'Sign in'}
-                  </Button>
-
-                  <button
-                    type="button"
-                    onClick={() => { setError(''); setStep(phantomProofToken ? 'name' : 'connect') }}
-                    className="w-full text-xs text-gray-500 hover:text-gray-300 underline cursor-pointer pt-1 flex items-center justify-center gap-1"
-                  >
-                    Use Phantom instead <ArrowRight className="w-3 h-3" aria-hidden />
-                  </button>
-                </form>
-              )}
-
-              {/* One line of orientation, and only where it can still change
-                  what the user does. On the done screen it would be noise. */}
-              {step === 'connect' && (
-                <p className="text-xs text-center text-gray-600 leading-relaxed">
-                  <Twitch className="w-3 h-3 inline mb-0.5" aria-hidden /> Streaming on CSGN needs a Twitch channel —
-                  you'll connect it after your account exists, not before.
-                </p>
-              )}
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
+    <svg viewBox="0 0 48 48" className="w-5 h-5" aria-hidden="true">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+    </svg>
   )
 }
+
+function XMark() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white" aria-hidden="true">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  )
+}
+
+/** One door. Same height, same weight, same distance from the eye — because
+ *  making one of them look like the "real" one is how you end up back with a
+ *  wallet-first funnel wearing a different coat. */
+function Door({
+  icon, label, onClick, busy, disabled,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+  busy?: boolean
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy || disabled}
+      className="w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-white/[0.09] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.14] transition-colors text-left disabled:opacity-50 disabled:cursor-wait cursor-pointer"
+    >
+      <span className="w-10 h-10 shrink-0 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center">
+        {busy ? <Loader2 className="w-4 h-4 text-gray-400 animate-spin" /> : icon}
+      </span>
+      <span className="text-[15px] font-medium text-white">{label}</span>
+    </button>
+  )
+}
+
+export function AuthModal({ isOpen, onClose }: AuthModalProps) {
+  const {
+    signInWithGoogle, signInWithX, sendEmailLink,
+    signUpWithPhantom, signInWithPhantom, refreshProfile,
+  } = useAuth()
+  const { connect, signMessage } = usePhantomWallet()
+
+  const [pending, setPending] = useState<'google' | 'x' | 'wallet' | 'email' | null>(null)
+  const [error, setError] = useState('')
+  const [email, setEmail] = useState('')
+  const [emailSent, setEmailSent] = useState(false)
+
+  // Reset on CLOSE rather than in an effect on `isOpen`: the effect version
+  // writes state during render-commit and the modal is unmounted a moment later
+  // anyway, so the work was never seen.
+  const close = () => {
+    setPending(null); setError(''); setEmail(''); setEmailSent(false)
+    onClose()
+  }
+
+  // Escape closes, like every other sheet on the site.
+  useEffect(() => {
+    if (!isOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen])
+
+  if (!isOpen) return null
+
+  const run = async (key: 'google' | 'x' | 'wallet' | 'email', fn: () => Promise<void>) => {
+    setPending(key)
+    setError('')
+    try {
+      await fn()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Something went wrong. Try again.'
+      // Firebase's raw codes are not sentences a person can act on.
+      setError(
+        message.includes('popup-closed-by-user') || message.includes('cancelled-popup-request')
+          ? ''
+          : message.includes('account-exists-with-different-credential')
+            ? 'You already have an account using a different sign-in. Use that one and you can link this after.'
+            : message.includes('operation-not-allowed')
+              ? 'That sign-in method is not switched on for this site yet.'
+              : message,
+      )
+    }
+    setPending(null)
+  }
+
+  /**
+   * The wallet door. Still the fastest route for a holder, and the only one
+   * that arrives already able to be PAID — so it stays, just not as the gate.
+   * Tries sign-in first: `loginWithPhantom` 404s for an unknown wallet without
+   * creating anything, so we branch on the answer rather than asking the user
+   * which they meant.
+   */
+  const continueWithWallet = () => run('wallet', async () => {
+    if (!getPhantomProvider()) {
+      if (isEmbeddedBrowser()) {
+        openInSystemBrowser(window.location.href)
+        throw new Error(`Opening in ${systemBrowserName()} — your wallet can sign there.`)
+      }
+      throw new Error('No Phantom wallet found on this device. Use Google, X or email instead.')
+    }
+    // connect() and signMessage() both answer null when the user declines or
+    // the provider vanishes mid-flow; neither is an error worth a stack trace.
+    const address = await connect()
+    if (!address) throw new Error('Wallet connection was cancelled.')
+    const challenge = await api.createPhantomChallenge(address)
+    const signature = await signMessage(challenge.message)
+    if (!signature) throw new Error('Signature was cancelled.')
+    const verified = await api.verifyPhantomSignature(address, signature, challenge.challengeToken)
+    try {
+      await signInWithPhantom(verified.proofToken)
+    } catch {
+      // No account for this wallet yet — make one, with a derived handle.
+      await signUpWithPhantom(suggestUsername(address), { phantomProofToken: verified.proofToken })
+    }
+    await refreshProfile()
+    close()
+  })
+
+  const submitEmail = () => run('email', async () => {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) throw new Error('Enter a valid email address.')
+    await sendEmailLink(email.trim())
+    setEmailSent(true)
+  })
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={close}
+        className="absolute inset-0 bg-black/80 backdrop-blur-sm cursor-default"
+      />
+
+      <div className="relative w-full sm:max-w-md bg-[#080a0f] border border-white/[0.08] rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto">
+        {/* Grab handle — the sheet is draggable-looking on a phone, which is
+            what a phone user expects a bottom sheet to be. */}
+        <div className="sm:hidden pt-3 pb-1 flex justify-center">
+          <div className="w-10 h-1 rounded-full bg-white/20" />
+        </div>
+        <button
+          type="button"
+          onClick={close}
+          aria-label="Close"
+          className="hidden sm:flex absolute right-4 top-4 w-8 h-8 items-center justify-center rounded-lg text-gray-500 hover:text-white hover:bg-white/5 cursor-pointer"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
+        <div className="px-6 pb-8 pt-6 sm:pt-10">
+          <div className="flex justify-center">
+            <CsgnLogo className="h-8 w-auto" />
+          </div>
+
+          <h2 className="mt-8 text-center text-2xl sm:text-3xl font-bold text-white">
+            Sign in or sign up
+          </h2>
+
+          {emailSent ? (
+            <div className="mt-8 text-center">
+              <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center mx-auto">
+                <Mail className="w-5 h-5 text-emerald-400" />
+              </div>
+              <p className="mt-4 text-sm text-white font-medium">Check your email</p>
+              <p className="mt-2 text-xs text-gray-400 leading-relaxed">
+                We sent a sign-in link to <span className="text-gray-200 font-mono">{email}</span>.
+                Open it on this device and you're in — there's no password to make.
+              </p>
+              <button
+                type="button"
+                onClick={() => { setEmailSent(false); setEmail('') }}
+                className="mt-4 text-xs text-gray-500 hover:text-gray-300 underline underline-offset-2 cursor-pointer"
+              >
+                Use a different address
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="mt-8 space-y-3">
+                <Door
+                  icon={<GoogleMark />}
+                  label="Continue with Google"
+                  busy={pending === 'google'}
+                  disabled={pending !== null}
+                  onClick={() => run('google', async () => { await signInWithGoogle(); close() })}
+                />
+                <Door
+                  icon={<XMark />}
+                  label="Continue with X"
+                  busy={pending === 'x'}
+                  disabled={pending !== null}
+                  onClick={() => run('x', async () => { await signInWithX(); close() })}
+                />
+                <Door
+                  icon={<Wallet className="w-4 h-4 text-gray-300" />}
+                  label="Continue with wallet"
+                  busy={pending === 'wallet'}
+                  disabled={pending !== null}
+                  onClick={continueWithWallet}
+                />
+
+                {/* Email sits last and looks like the others, because it is the
+                    others: one field, one tap, a link back. */}
+                <div className="w-full flex items-center gap-3 pl-4 pr-2 py-2 rounded-xl border border-white/[0.09] bg-white/[0.02] focus-within:border-white/[0.18] transition-colors">
+                  <span className="w-10 h-10 shrink-0 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center">
+                    <Mail className="w-4 h-4 text-gray-300" />
+                  </span>
+                  <input
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') submitEmail() }}
+                    placeholder="your@email.com"
+                    disabled={pending !== null}
+                    className="flex-1 min-w-0 bg-transparent text-[15px] text-white placeholder-gray-600 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={submitEmail}
+                    disabled={pending !== null || !email.trim()}
+                    className="shrink-0 px-3 py-2 text-sm font-medium text-gray-400 hover:text-white disabled:opacity-40 disabled:hover:text-gray-400 cursor-pointer"
+                  >
+                    {pending === 'email' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit'}
+                  </button>
+                </div>
+              </div>
+
+              {error && (
+                <p className="mt-4 text-center text-xs text-red-300 leading-relaxed">{error}</p>
+              )}
+
+              <p className="mt-6 text-center text-[11px] text-gray-500 leading-relaxed">
+                No wallet needed to watch, post a clip or claim an hour.
+                You'll be asked for one when you've actually earned fees.
+              </p>
+            </>
+          )}
+
+          <p className="mt-8 text-center text-[11px] text-gray-600">
+            <Link to="/terms" onClick={close} className="hover:text-gray-400 underline underline-offset-2">Terms of Service</Link>
+            <span className="mx-1.5">·</span>
+            <Link to="/terms" onClick={close} className="hover:text-gray-400 underline underline-offset-2">Privacy Policy</Link>
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default AuthModal

@@ -14,6 +14,10 @@ import { useScrollLock } from '@/hooks/useScrollLock'
 const navLinks = [
   { href: '/watch', label: 'Watch Live', live: true },
   { href: '/schedule', label: 'Schedule' },
+  // Studio sits in the main nav, not behind the account menu: putting a clip on
+  // the network is a thing to DO, and the whole point of the link model is that
+  // it takes one paste. Burying it two taps deep would undo that.
+  { href: '/studio', label: 'Studio' },
   { href: '/about', label: 'About' },
 ]
 

@@ -212,7 +212,6 @@ describe('claim eligibility — one rule, mirroring the server', () => {
   it('names ONE missing thing at a time, in the order the server checks them', () => {
     expect(claimEligibility(null, null).reason).toBe('signed_out')
     expect(claimEligibility({ email: 'member@example.com', emailVerified: false }, ready).reason).toBe('email_unverified')
-    expect(claimEligibility(verified, { ...ready, phantom: undefined }).reason).toBe('no_wallet')
     expect(claimEligibility(verified, { ...ready, twitch: { verified: false } }).reason).toBe('no_twitch')
     expect(claimEligibility(verified, { ...ready, status: 'disabled' }).reason).toBe('inactive')
   })
@@ -227,7 +226,6 @@ describe('claim eligibility — one rule, mirroring the server', () => {
 
   it('always offers an action for anything the member can fix themselves', () => {
     for (const profile of [
-      { ...ready, phantom: undefined },
       { ...ready, twitch: { verified: false } },
     ]) {
       const r = claimEligibility(verified, profile)
@@ -253,7 +251,16 @@ describe('claim eligibility — one rule, mirroring the server', () => {
 
   it('still blocks a wallet-only account on the gates that DO apply', () => {
     expect(claimEligibility(walletOnly, { ...ready, twitch: { verified: false } }).reason).toBe('no_twitch')
-    expect(claimEligibility(walletOnly, { ...ready, phantom: undefined }).reason).toBe('no_wallet')
+  })
+
+  // A WALLET IS NOT A CLAIM GATE. It is where fees land, which matters after an
+  // hour airs, not before it is booked. Requiring one up front locked out every
+  // streamer without crypto — the exact population this network wants most.
+  // Fees earned without a wallet are held, never dropped. Mirrors claimSlot.ts.
+  it('lets a member with no wallet claim an hour', () => {
+    expect(claimEligibility(verified, { ...ready, phantom: undefined })).toEqual({ ok: true })
+    expect(claimEligibility(verified, { ...ready, phantom: { verified: false } })).toEqual({ ok: true })
+    expect(claimEligibility(walletOnly, { ...ready, phantom: undefined })).toEqual({ ok: true })
   })
 
   it('treats a twitch record with no username as unlinked', () => {

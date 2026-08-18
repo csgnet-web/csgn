@@ -277,13 +277,18 @@ export function claimEligibility(
       actionLabel: 'Resend email', actionHref: '/account',
     }
   }
-  if (!profile.phantom?.verified || !(profile.phantom?.walletAddress || profile.walletAddress)) {
-    return {
-      ok: false, reason: 'no_wallet',
-      message: 'Connect your Phantom wallet — it is where your creator fees get paid.',
-      actionLabel: 'Connect wallet', actionHref: '/account',
-    }
-  }
+  // NO WALLET CHECK HERE, deliberately.
+  //
+  // A wallet protects one thing: where SOL lands. That matters when we owe
+  // somebody money, which is AFTER an hour has aired — not before they book it.
+  // Requiring it up front meant a streamer with no crypto could not claim an
+  // hour at all, which was the single biggest thing standing between this
+  // network and the people it wants on it.
+  //
+  // Fees earned without a wallet are HELD, never dropped: the Creator Fees tab
+  // shows those members greyed with the amount waiting, and `adminMarkFeesPaid`
+  // cannot settle a slot until there is somewhere to send it. The 'no_wallet'
+  // blocker below is kept in the union for that payout-time prompt.
   if (!profile.twitch?.verified || !profile.twitch?.username) {
     return {
       ok: false, reason: 'no_twitch',

@@ -519,6 +519,22 @@ export default function Dashboard() {
         {/* ── Holdings ── what the bag entitles you to. */}
         <HolderPanel walletAddress={savedWallet} />
 
+        {/* The bag's most concrete use: minutes of television. Linked rather
+            than duplicated — /studio reads the live allocation and this page
+            should never render a second, staler copy of that number. */}
+        <Link
+          to="/studio"
+          className="flex items-center justify-between gap-3 rounded-xl border border-primary-500/20 bg-primary-500/[0.06] px-5 py-4 hover:bg-primary-500/[0.1] transition-colors"
+        >
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white">Your studio</p>
+            <p className="mt-0.5 text-xs text-gray-400 leading-relaxed">
+              Post a clip and it airs between the live hours. How much time you get follows what you hold.
+            </p>
+          </div>
+          <span className="text-primary-300 text-sm shrink-0">Open →</span>
+        </Link>
+
         {/* Change your Meme-100 token vote from your profile, any time */}
         <MemeVoteCard />
 

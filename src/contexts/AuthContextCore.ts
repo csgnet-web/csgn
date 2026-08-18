@@ -48,6 +48,12 @@ export interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>
   /** Wallet login — exchanges a verified Phantom proof for a Firebase session. */
   signInWithPhantom: (phantomProofToken: string) => Promise<void>
+  /** One tap, no password, no wallet. Creates the CSGN profile on first use. */
+  signInWithGoogle: () => Promise<void>
+  signInWithX: () => Promise<void>
+  /** Email link sign-in: send the link, then redeem it on the landing page. */
+  sendEmailLink: (email: string) => Promise<void>
+  completeEmailLink: (href: string, fallbackEmail?: string) => Promise<void>
   signUp: (email: string, password: string, username: string, proofs: { phantomProofToken: string; twitchProofToken?: string }) => Promise<void>
   /** Wallet-only sign-up — no email, no password. See
    *  netlify/functions/signupWithPhantom.ts for why the wallet alone is enough. */
