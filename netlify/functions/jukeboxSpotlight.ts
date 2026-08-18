@@ -44,7 +44,10 @@ import { requireString } from './_shared/validators'
 import { checkRateLimit, clientIp } from './_shared/rateLimit'
 import { verifySplPayment, CSGN_MINT_ADDRESS, CSGN_TOKEN_DECIMALS } from './_shared/solana'
 import { bumpOnAirAction } from './_shared/onAirActions'
-import { nextJukeboxFloor, JUKEBOX_BASE_FLOOR_CSGN, JUKEBOX_TTL_MS } from './_shared/jukebox'
+import {
+  nextJukeboxFloor, pushJukeboxWinner, JUKEBOX_BASE_FLOOR_CSGN, JUKEBOX_TTL_MS,
+  type JukeboxWinner,
+} from './_shared/jukebox'
 
 type WalletProof = { type: string; walletAddress: string; exp: number; iat: number; jti: string }
 type Body = { proofToken?: string; signature?: string; symbol?: string; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }
@@ -70,9 +73,10 @@ export const handler = withHttp(async (event) => {
   if (await getDoc(`spotlightPays/${signature}`)) throw conflict('That payment has already been used for a spotlight.', 'signature_used')
 
   // The floor is derived from the standing bid, never typed by an admin.
-  const [ticker, cfg] = await Promise.all([
+  const [ticker, cfg, published] = await Promise.all([
     getDoc<{ spotlight?: SpotlightDoc }>('config/ticker'),
     getDoc<{ jukeboxFloorCsgn?: number }>('config/tokenGates'),
+    getDoc<{ history?: JukeboxWinner[] }>('public/jukebox'),
   ])
   const baseFloor = Number(cfg?.jukeboxFloorCsgn) > 0 ? Number(cfg!.jukeboxFloorCsgn) : JUKEBOX_BASE_FLOOR_CSGN
   const standing = ticker?.spotlight ?? {}
@@ -121,6 +125,16 @@ export const handler = withHttp(async (event) => {
     bidAt: nowISO,
     expiresAt: new Date(Date.now() + JUKEBOX_TTL_MS).toISOString(),
     baseFloorCsgn: baseFloor,
+    ttlMs: JUKEBOX_TTL_MS,
+    // The outgoing holder joins the history. Published on the same document so
+    // the whole panel — who holds it, for how long, who held it before, and
+    // what each of them paid — is one read.
+    history: pushJukeboxWinner(published?.history, {
+      symbol: standing.symbol,
+      bidCsgn: Number(standing.bidCsgn) || 0,
+      bidAt: standing.bidAt ?? null,
+      wallet: standing.wallet,
+    }),
     // What the NEXT bid must pay, computed here so the page never re-implements
     // the auction rule — it reads this until `expiresAt`, then reads the floor.
     // The server re-derives it authoritatively on every bid regardless, so a

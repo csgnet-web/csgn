@@ -22,6 +22,7 @@ interface VoteCfg { id: string; question: string; options: string[]; startISO?: 
  *  decides the price — the auction rule lives in
  *  netlify/functions/_shared/jukebox.ts and the server re-derives it on every
  *  bid. This is the stored verdict, read for display. */
+interface JukeboxWinner { symbol: string; bidCsgn: number; wonAt: string; wallet: string }
 interface JukeboxDoc {
   symbol: string
   bidCsgn: number
@@ -29,8 +30,25 @@ interface JukeboxDoc {
   expiresAt: string | null
   nextBidCsgn: number
   baseFloorCsgn: number
+  history: JukeboxWinner[]
 }
 const JUKEBOX_BASE_FLOOR_CSGN = 250_000
+/** Mirrors JUKEBOX_TTL_MS in netlify/functions/_shared/jukebox.ts. Display only
+ *  — the server decides when a bid actually expires; this just sizes the bar. */
+const JUKEBOX_TTL_MS = 12 * 60 * 60 * 1000
+
+/** A countdown, in the units somebody actually reads at each scale. Hours and
+ *  minutes far out, minutes and seconds in the last hour — because "11h 04m" is
+ *  what you want at the start of a reign and "04:12" is what you want at the
+ *  end, when the auction is about to reopen. */
+function countdown(msLeft: number): string {
+  const total = Math.max(0, Math.floor(msLeft / 1000))
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const sec = total % 60
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`
+  return `${m}:${String(sec).padStart(2, '0')}`
+}
 interface Cell { tokens: number; wallets: number }
 type Tally = Record<string, Cell>
 
@@ -60,7 +78,10 @@ export default function Participate() {
   // both impure and, worse, a screen that never notices the auction reopened.
   const [nowMs, setNowMs] = useState(() => Date.now())
   useEffect(() => {
-    const t = setInterval(() => setNowMs(Date.now()), 30_000)
+    // One second, because the jukebox panel shows a live countdown and a clock
+    // that only moves every thirty seconds reads as broken. One setState a
+    // second on a page this size costs nothing measurable.
+    const t = setInterval(() => setNowMs(Date.now()), 1_000)
     return () => clearInterval(t)
   }, [])
 
@@ -97,6 +118,7 @@ export default function Participate() {
         expiresAt: d.expiresAt ? String(d.expiresAt) : null,
         nextBidCsgn: Number(d.nextBidCsgn) || 0,
         baseFloorCsgn: Number(d.baseFloorCsgn) || JUKEBOX_BASE_FLOOR_CSGN,
+        history: Array.isArray(d.history) ? (d.history as JukeboxWinner[]) : [],
       } : null)
     }, () => {})
   }, [])
@@ -236,6 +258,9 @@ export default function Participate() {
       // parameter the server validates as base58 — so every vote was rejected
       // with `bad_mint` before it ever reached the tally.
       const res = await api.voteMeme(proof, memePick.address)
+      // Hand the board the tallies the server just computed. No extra read, and
+      // the ranking moves under the person who moved it.
+      window.dispatchEvent(new CustomEvent('csgn:memeVoted', { detail: { tallies: res.tallies } }))
       setMemeMsg(`Vote counted — ${fmtToken(res.weight)} $CSGN of power behind $${res.symbol}.`)
       loadBalance(addr)
     } catch (e) {
@@ -455,28 +480,52 @@ export default function Participate() {
             The highest live bid holds the <span className="text-amber-300 font-semibold">crypto spotlight</span> on the
             broadcast. Bids are in <span className="text-amber-300 font-semibold">$CSGN</span> and go straight to the{' '}
             <span className="text-amber-300 font-semibold">CSGN treasury</span> — recycled into creator payouts and
-            distribution, never burned. A winning bid holds for six hours, then the floor resets.
+            distribution, never burned. A winning bid holds for <span className="text-amber-300 font-semibold">twelve hours</span>,
+            then the floor resets and the spotlight reopens.
           </p>
 
-          {/* WHO HOLDS IT NOW. An auction with an invisible standing bid is a
-              price list with extra steps — the number to beat is the product. */}
-          <div className="flex flex-wrap items-end justify-between gap-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] p-4">
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.16em] text-amber-400/80">On the spotlight</p>
-              <p className="mt-1 text-2xl font-black font-display text-white">
-                {holdsSpotlight ? `$${jukebox!.symbol}` : 'Open'}
-              </p>
-              <p className="mt-0.5 text-xs text-gray-500">
-                {holdsSpotlight
-                  ? `${fmtToken(jukebox!.bidCsgn)} $CSGN · holds until ${new Date(jukebox!.expiresAt!).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
-                  : 'No live bid — it opens at the floor.'}
-              </p>
+          {/* WHO HOLDS IT NOW, FOR HOW LONG, AND WHAT IT COST.
+              An auction with an invisible standing bid is a price list with
+              extra steps — the number to beat is the product, and the clock
+              running down on it is what makes the whole thing feel live. */}
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.05] p-4">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-[0.16em] text-amber-400/80">On the spotlight</p>
+                <p className="mt-1 text-2xl font-black font-display text-white truncate">
+                  {holdsSpotlight ? `$${jukebox!.symbol}` : 'Open'}
+                </p>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  {holdsSpotlight
+                    ? <>Won with <span className="font-mono text-amber-300">{fmtFull(jukebox!.bidCsgn)} $CSGN</span></>
+                    : 'No live bid — it opens at the floor.'}
+                </p>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Next bid from</p>
+                <p className="mt-1 font-mono text-lg font-bold text-amber-300 tabular-nums">{fmtFull(minBid)}</p>
+                <p className="text-[10px] text-gray-600">$CSGN</p>
+              </div>
             </div>
-            <div className="text-right">
-              <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Next bid from</p>
-              <p className="mt-1 font-mono text-lg font-bold text-amber-300 tabular-nums">{fmtFull(minBid)}</p>
-              <p className="text-[10px] text-gray-600">$CSGN</p>
-            </div>
+
+            {/* THE CLOCK. A twelve-hour reign with no visible countdown is just
+                a number that changes when you happen to reload. */}
+            {holdsSpotlight && (
+              <div className="mt-3 pt-3 border-t border-amber-500/15">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Holds for</span>
+                  <span className="font-mono text-sm font-bold text-white tabular-nums">
+                    {countdown(jukeboxExpiresMs - nowMs)}
+                  </span>
+                </div>
+                <div className="mt-1.5 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-amber-500 to-yellow-400 transition-[width] duration-1000 ease-linear"
+                    style={{ width: `${Math.max(0, Math.min(100, ((jukeboxExpiresMs - nowMs) / JUKEBOX_TTL_MS) * 100))}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {!walletAddress ? (
@@ -523,6 +572,28 @@ export default function Participate() {
 
           {spotMsg && <p className="text-sm text-emerald-400 flex items-center gap-1.5"><Check className="w-4 h-4" /> {spotMsg}</p>}
           {spotErr && <p className="text-sm text-red-400 flex items-center gap-1.5"><AlertCircle className="w-4 h-4" /> {spotErr}</p>}
+
+          {/* PREVIOUS WINNERS. An auction with no visible history has no
+              reference price — a first-time bidder cannot tell whether the
+              floor is cheap or absurd. This is the comparable. */}
+          {(jukebox?.history?.length ?? 0) > 0 && (
+            <div className="pt-3 border-t border-white/[0.06]">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Previous winners</p>
+              <ul className="mt-2 space-y-1.5">
+                {jukebox!.history.slice(0, 6).map((w, i) => (
+                  <li key={`${w.symbol}-${w.wonAt}-${i}`} className="flex items-baseline justify-between gap-3 text-[11px]">
+                    <span className="font-semibold text-gray-300 truncate">${w.symbol}</span>
+                    <span className="flex items-baseline gap-2 shrink-0">
+                      <span className="font-mono text-amber-300/80 tabular-nums">{fmtToken(w.bidCsgn)}</span>
+                      <span className="text-gray-600">
+                        {new Date(w.wonAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </Card>
       </section>
 

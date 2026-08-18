@@ -349,3 +349,32 @@ describe('airtimeQuote — what a bag is worth on its own', () => {
     expect(root.seconds).toBeGreaterThan(linear.seconds)
   })
 })
+
+describe('airtimeQuote — the inventory-of-zero trap', () => {
+  const SUPPLY_B = 1_000_000_000
+
+  it('quotes zero for a real bag when inventory is zero — which is WHY inventory must not come from a cache', () => {
+    // This is the arithmetic behind the "1.89M $CSGN, 0 seconds" report. The
+    // balance was read correctly and multiplied by an inventory of nothing,
+    // because the caller took inventory from a published schedule document that
+    // had never been written. The function is right; the caller was wrong.
+    // Pinned here so the relationship is documented rather than rediscovered.
+    expect(airtimeQuote(1_890_000, 0, SUPPLY_B).seconds).toBe(0)
+  })
+
+  it('gives that same bag real seconds the moment there is open air', () => {
+    const SIX_HOURS = 6 * 60 * 60
+    const q = airtimeQuote(1_890_000, SIX_HOURS, SUPPLY_B)
+    expect(q.seconds).toBeGreaterThan(0)
+    // 1.89M of a billion is ~0.189% — of six hours that is ~40 seconds.
+    expect(q.seconds).toBe(Math.floor(SIX_HOURS * (1_890_000 / SUPPLY_B)))
+  })
+
+  it('is unaffected by whether the holder has any clips at all', () => {
+    // The quote takes a balance and an inventory. There is deliberately no way
+    // to pass it a clip count, so approval cannot gate it.
+    const a = airtimeQuote(1_890_000, 21_600, SUPPLY_B)
+    const b = airtimeQuote(1_890_000, 21_600, SUPPLY_B)
+    expect(a).toEqual(b)
+  })
+})

@@ -93,7 +93,16 @@ interface ClipDoc {
  * the member can act on three of them. Returning the reason is what lets the
  * page say "link your wallet" instead of "0 seconds".
  */
-export type AirtimeBlockReason = 'ok' | 'no_clips' | 'no_wallet' | 'no_balance' | 'no_inventory'
+export type AirtimeBlockReason =
+  | 'ok'
+  | 'no_clips'
+  | 'no_wallet'
+  /** We could not reach the chain. NOT the same as holding nothing, and the
+   *  difference has to reach the screen — conflating them is how a rate limit
+   *  gets read as "my tokens don't count". */
+  | 'unreadable'
+  | 'no_balance'
+  | 'no_inventory'
 
 export interface AirtimeRebuildResult {
   built: boolean
@@ -113,6 +122,60 @@ export interface AirtimeRebuildResult {
  */
 export type SupplyProvider = () => Promise<number>
 
+/**
+ * HOW MUCH OPEN AIR THERE IS, computed from the schedule itself.
+ *
+ * Extracted because reading it off the PUBLISHED playlist was a live bug with a
+ * bad failure mode. `myClips` did `Number(schedule?.inventorySeconds) || 0`, and
+ * `airtimeQuote` floors to zero when inventory is zero — so if
+ * `public/airtimeSchedule` had never been written (the poller had not run, or
+ * the last rebuild bailed because nobody had an approved clip), a member holding
+ * 1.89 MILLION $CSGN was quoted zero seconds. Their balance was read correctly
+ * and then multiplied by an inventory of nothing.
+ *
+ * An entitlement must not depend on a cache existing. This derives the open air
+ * from the slots themselves, every time, which is three cheap reads and cannot
+ * be stale.
+ */
+export interface OpenAir {
+  inventorySeconds: number
+  networkBlockEnabled: boolean
+  windows: TimeRange[]
+  horizonEndMs: number
+}
+
+export async function openAirInventory(nowMs = Date.now()): Promise<OpenAir> {
+  const horizonEndMs = nowMs + AIRTIME_HORIZON_MS
+
+  const meta = await getDoc<{ networkBlockEnabled?: boolean }>(SCHEDULE_META_PATH)
+  const networkBlockEnabled = meta?.networkBlockEnabled !== false // absent = on
+
+  const upcoming = await queryCollection(
+    'slots',
+    [
+      fieldFilter('endTime', 'GREATER_THAN', new Date(nowMs).toISOString()),
+      fieldFilter('endTime', 'LESS_THAN', new Date(horizonEndMs + 4 * 60 * 60 * 1000).toISOString()),
+    ],
+    [order('endTime', 'ASCENDING')],
+    40,
+  )
+
+  const blocked: TimeRange[] = []
+  for (const row of upcoming) {
+    const slot = row.data as SlotRow
+    const startMs = Date.parse(String(slot.startTime ?? ''))
+    const endMs = Date.parse(String(slot.endTime ?? ''))
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue
+    // A claimed hour is someone's booking; the network block is the owner's.
+    const claimed = slot.status === 'confirmed' || slot.status === 'live'
+    const ownerBlock = networkBlockEnabled && String(slot.type || '') === 'network'
+    if (claimed || ownerBlock) blocked.push({ startMs, endMs })
+  }
+
+  const windows = deriveAirtimeWindows(nowMs, horizonEndMs, blocked)
+  return { inventorySeconds: windowSeconds(windows), networkBlockEnabled, windows, horizonEndMs }
+}
+
 const DEFAULT_SUPPLY = 1_000_000_000
 
 export async function refreshAirtimeSchedule(
@@ -127,34 +190,9 @@ export async function refreshAirtimeSchedule(
     }
 
     const nowMs = Date.now()
-    const horizonEndMs = nowMs + AIRTIME_HORIZON_MS
-
-    // Everything that outranks holder content, as blocked ranges.
-    const meta = await getDoc<{ networkBlockEnabled?: boolean }>(SCHEDULE_META_PATH)
-    const networkBlockEnabled = meta?.networkBlockEnabled !== false // absent = on
-    const upcoming = await queryCollection(
-      'slots',
-      [
-        fieldFilter('endTime', 'GREATER_THAN', new Date(nowMs).toISOString()),
-        fieldFilter('endTime', 'LESS_THAN', new Date(horizonEndMs + 4 * 60 * 60 * 1000).toISOString()),
-      ],
-      [order('endTime', 'ASCENDING')],
-      40,
-    )
-    const blocked: TimeRange[] = []
-    for (const row of upcoming) {
-      const s = row.data as SlotRow
-      const startMs = Date.parse(String(s.startTime ?? ''))
-      const endMs = Date.parse(String(s.endTime ?? ''))
-      if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue
-      // A claimed hour is someone's booking; the network block is the owner's.
-      const claimed = s.status === 'confirmed' || s.status === 'live'
-      const ownerBlock = networkBlockEnabled && String(s.type || '') === 'network'
-      if (claimed || ownerBlock) blocked.push({ startMs, endMs })
-    }
-
-    const windows = deriveAirtimeWindows(nowMs, horizonEndMs, blocked)
-    const inventory = windowSeconds(windows)
+    // One source for "how much open air is there", shared with myClips so a
+    // member's quoted entitlement and the playlist can never disagree.
+    const { inventorySeconds: inventory, networkBlockEnabled, windows, horizonEndMs } = await openAirInventory(nowMs)
     if (inventory <= 0) {
       await writeDoc('public/airtimeSchedule', {
         items: [], allocations: [], inventorySeconds: 0, networkBlockEnabled,

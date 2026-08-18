@@ -8,7 +8,7 @@
 import { requireUser } from './_shared/auth'
 import { getDoc, queryCollection, fieldFilter } from './_shared/firebaseAdmin'
 import { json, requireMethod, withHttp } from './_shared/http'
-import { refreshAirtimeSchedule, type AirtimeBlockReason } from './_shared/airtimeSchedule'
+import { refreshAirtimeSchedule, openAirInventory, type AirtimeBlockReason } from './_shared/airtimeSchedule'
 import { getCsgnBalance } from './_shared/solana'
 import { airtimeQuote } from './_shared/airtime'
 import { fetchJson } from './_shared/cache'
@@ -95,17 +95,29 @@ export const handler = withHttp(async (event) => {
   const approvedCount = clips.filter((c) => c.status === 'approved').length
 
   let balance: number | null = null
+  let balanceError = ''
   if (wallet) {
     try {
       balance = await getCsgnBalance(wallet)
-    } catch {
+    } catch (err) {
       // null means "we could not read it", which the UI states plainly rather
-      // than rendering as a zero the member would read as an accusation.
+      // than rendering as a zero the member would read as an accusation about
+      // their own wallet. The reason travels too — "every RPC is throttling us"
+      // and "you hold nothing" are opposite problems and looked identical.
       balance = null
+      balanceError = err instanceof Error ? err.message : 'Could not read the chain.'
     }
   }
 
-  const inventory = Number(schedule?.inventorySeconds) || 0
+  // COMPUTED, NOT READ FROM THE PUBLISHED SCHEDULE.
+  //
+  // This used to be `Number(schedule?.inventorySeconds) || 0`, and airtimeQuote
+  // floors to zero when inventory is zero — so whenever `public/airtimeSchedule`
+  // had not been written yet, a member's balance was read correctly and then
+  // multiplied by an inventory of nothing. That is the "1.89 million $CSGN,
+  // 0 seconds" report: not a balance bug at all, an inventory-of-zero bug.
+  const openAir = await openAirInventory(nowMs)
+  const inventory = openAir.inventorySeconds
   const quote = airtimeQuote(balance ?? 0, inventory, await circulatingSupply())
   const scheduledSeconds = Number(mine?.seconds) || 0
 
@@ -114,7 +126,8 @@ export const handler = withHttp(async (event) => {
   let reason: AirtimeBlockReason = 'ok'
   if (quote.seconds <= 0) {
     if (!wallet) reason = 'no_wallet'
-    else if ((balance ?? 0) <= 0) reason = 'no_balance'
+    else if (balance === null) reason = 'unreadable'
+    else if (balance <= 0) reason = 'no_balance'
     else reason = 'no_inventory'
   } else if (approvedCount === 0) {
     // They have airtime and nothing to put in it. Not a failure — a next step.
@@ -141,7 +154,7 @@ export const handler = withHttp(async (event) => {
       /** Share of circulating supply, as a fraction, for the 1:1 explainer. */
       supplyShare: quote.supplyShare,
       inventorySeconds: inventory,
-      networkBlockEnabled: schedule?.networkBlockEnabled !== false,
+      networkBlockEnabled: openAir.networkBlockEnabled,
       builtAt: schedule?.builtAt ?? null,
       /** Which of the four states this is. 'ok' when there is airtime and content. */
       reason,
@@ -149,6 +162,8 @@ export const handler = withHttp(async (event) => {
       walletAddress: wallet,
       /** Live $CSGN balance; null when unread, not when zero. */
       balance,
+      /** Why the balance could not be read, when it could not. */
+      balanceError,
     },
     airings,
   })

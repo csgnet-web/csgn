@@ -108,6 +108,12 @@ export default function Meme100Board() {
     () => {},
   ), [])
 
+  // ── VOTE WEIGHTS, LIVE ──
+  //
+  // ONE document listener for the whole board. The tallies for all hundred
+  // coins live in a single `public/memeVote` doc, so a vote anywhere costs
+  // every open client exactly one document read — not one per coin, and not a
+  // poll. Re-ranking a hundred rows in the browser afterwards is free.
   useEffect(() => onSnapshot(
     doc(db, 'public', 'memeVote'),
     (snap) => {
@@ -116,6 +122,19 @@ export default function Meme100Board() {
     },
     () => {},
   ), [])
+
+  // The voter's OWN vote, applied instantly and with no read at all. `voteMeme`
+  // already returns the new tallies, so the person who just moved the ranking
+  // sees it move — rather than waiting on a round trip through Firestore for
+  // information their own request handed back.
+  useEffect(() => {
+    const onVoted = (e: Event) => {
+      const detail = (e as CustomEvent<{ tallies?: Record<string, VoteCell> }>).detail
+      if (detail?.tallies && typeof detail.tallies === 'object') setVotes(detail.tallies)
+    }
+    window.addEventListener('csgn:memeVoted', onVoted)
+    return () => window.removeEventListener('csgn:memeVoted', onVoted)
+  }, [])
 
   const coins = useMemo(() => rankMemeBoard(raw, votes), [raw, votes])
 
@@ -146,10 +165,22 @@ export default function Meme100Board() {
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="px-2 text-xs font-mono text-gray-500 tabular-nums whitespace-nowrap">
-              {safePage * PAGE_SIZE + 1}–{Math.min(coins.length, (safePage + 1) * PAGE_SIZE)}
-              <span className="text-gray-700"> / {coins.length}</span>
-            </span>
+            {/* A hundred rows is ten pages, and ten taps to reach the bottom is
+                a list nobody finishes. The range is a SELECT so any block of ten
+                is one gesture away — arrows for browsing, the dropdown for
+                going somewhere. */}
+            <select
+              value={safePage}
+              onChange={(e) => setPage(Number(e.target.value))}
+              aria-label="Jump to a block of ten"
+              className="px-2 py-1.5 rounded-lg bg-white/[0.04] border border-white/10 text-xs font-mono text-gray-300 tabular-nums cursor-pointer hover:bg-white/[0.07] focus:outline-none focus:border-primary-500/50"
+            >
+              {Array.from({ length: pageCount }, (_, i) => (
+                <option key={i} value={i} className="bg-surface-900">
+                  {i * PAGE_SIZE + 1}–{Math.min(coins.length, (i + 1) * PAGE_SIZE)} of {coins.length}
+                </option>
+              ))}
+            </select>
             <button
               type="button"
               onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
@@ -202,7 +233,16 @@ export default function Meme100Board() {
                     )}
 
                     <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-bold text-white truncate">${coin.symbol}</span>
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-sm font-bold text-white truncate">${coin.symbol}</span>
+                        {/* Only the TAIL is marked. Badging every row would be
+                            noise; badging the marginal ones is information. */}
+                        {coin.tier === 'tail' && (
+                          <span className="shrink-0 text-[8px] uppercase tracking-wider text-gray-600 border border-white/[0.08] rounded px-1 py-px">
+                            Thin
+                          </span>
+                        )}
+                      </span>
                       <span className="block text-[11px] text-gray-500 truncate">
                         {memePrice(coin.priceUsd)} · {compactUsd(coin.volumeH24Usd)} vol
                       </span>

@@ -7,9 +7,29 @@ const CSGN_MINT = 'GFV7fphvprMr1PYpYGPJort2QP7JJLEp3J1Buu7Zpump'
 // pump.fun standard. $CSGN uses 6 decimals; used to convert a UI token price into
 // the raw base-unit amount the on-chain transfer is verified against.
 const CSGN_DECIMALS = 6
-// Configure a paid/less-throttled RPC via SOLANA_RPC_URL in Netlify; the public
-// endpoint is the fallback and is fine at low request volume.
-const RPC_URL = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com'
+/**
+ * RPC endpoints, tried in order.
+ *
+ * `api.mainnet-beta.solana.com` is rate-limited per source IP and returns 403 or
+ * 429 to serverless platforms with any regularity at all — every Netlify
+ * function in a region shares an egress pool with everybody else's. A single
+ * endpoint therefore meant a member's $CSGN balance read as UNREADABLE, and the
+ * UI rendered that as zero: the exact "I hold 1.89 million and it says 0 seconds"
+ * report, arriving from a throttle rather than from anything about their wallet.
+ *
+ * So there is a list. `SOLANA_RPC_URL` (a paid endpoint — Helius, QuickNode,
+ * Triton) goes first when configured and should be configured before launch;
+ * the public endpoints below are a real fallback rather than a single point of
+ * failure. Set SOLANA_RPC_URL and this list is never reached.
+ */
+const RPC_URLS: string[] = [
+  process.env.SOLANA_RPC_URL || '',
+  'https://api.mainnet-beta.solana.com',
+  // Public, no key required, different operators — so one provider throttling
+  // us is not the whole chain going dark.
+  'https://solana-rpc.publicnode.com',
+  'https://rpc.ankr.com/solana',
+].filter(Boolean)
 
 /**
  * Hard ceiling on an RPC call. Netlify bills wall-clock and kills the
@@ -24,11 +44,40 @@ const RPC_URL = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.c
  */
 const RPC_TIMEOUT_MS = 8_000
 
+/**
+ * POST to the first RPC that answers.
+ *
+ * A non-OK status is a FAILOVER, not a result: 403 and 429 are what throttling
+ * looks like, and treating either as "the chain said no" is how a rate limit
+ * becomes a member's balance reading zero. Only when every endpoint has failed
+ * does this throw — and it throws with all of their errors, so the log says
+ * which ones and why rather than just "RPC error".
+ */
 async function rpcFetch(body: string): Promise<Response> {
+  const failures: string[] = []
+
+  for (const url of RPC_URLS) {
+    try {
+      const res = await rpcFetchOne(url, body)
+      if (res.ok) return res
+      failures.push(`${hostOf(url)} → ${res.status}`)
+    } catch (err) {
+      failures.push(`${hostOf(url)} → ${err instanceof Error ? err.message : 'failed'}`)
+    }
+  }
+
+  throw new Error(`Every Solana RPC failed: ${failures.join(', ')}`)
+}
+
+const hostOf = (url: string): string => {
+  try { return new URL(url).hostname } catch { return url }
+}
+
+async function rpcFetchOne(url: string, body: string): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS)
   try {
-    return await fetch(RPC_URL, {
+    return await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
@@ -36,7 +85,7 @@ async function rpcFetch(body: string): Promise<Response> {
     })
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error(`Solana RPC timed out after ${RPC_TIMEOUT_MS}ms`)
+      throw new Error(`timed out after ${RPC_TIMEOUT_MS}ms`)
     }
     throw err
   } finally {

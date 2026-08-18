@@ -139,10 +139,12 @@ export const api = {
       inventorySeconds: number
       networkBlockEnabled: boolean; builtAt: string | null
       /** Which state this is — see myClips.ts. */
-      reason: 'ok' | 'no_clips' | 'no_wallet' | 'no_balance' | 'no_inventory'
+      reason: 'ok' | 'no_clips' | 'no_wallet' | 'unreadable' | 'no_balance' | 'no_inventory'
       walletAddress: string
       /** null means unread, not zero. */
       balance: number | null
+      /** Why it could not be read, when it could not. */
+      balanceError: string
     }
     airings: Array<{ startsAt: string; seconds: number; clipId: string }>
   }>('myClips', {}, true),

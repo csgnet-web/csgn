@@ -29,6 +29,11 @@
 /* ─── Shape ─── */
 
 export interface MemeCoin {
+  /** Which discovery tier this coin cleared — 'pinned', 'core', 'wide' or
+   *  'tail'. The board fills from the strictest tier down, so this is how far
+   *  we had to relax to find a hundred names. Shown on the row so a marginal
+   *  coin is never presented as if it cleared the same bar as the leaders. */
+  tier?: string
   /** Solana mint. THE identity — symbols are decoration. */
   address: string
   symbol: string
@@ -106,6 +111,7 @@ export function normalizeMemeCoin(raw: unknown): MemeCoin | null {
     priceChangeH24Pct: Number.isFinite(Number(d.priceChangeH24Pct)) ? Number(d.priceChangeH24Pct) : 0,
     pairUrl: String(d.pairUrl ?? '').trim().slice(0, 300) || `https://dexscreener.com/solana/${address}`,
     priced: priceUsd > 0,
+    tier: String(d.tier ?? '').trim().slice(0, 12) || undefined,
   }
 }
 

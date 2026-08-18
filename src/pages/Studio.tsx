@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/contexts/useAuth'
 import { LowerThird } from '@/components/broadcast/LowerThird'
+import { JUPITER_SWAP_URL } from '@/config/token'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { proveWallet } from '@/lib/walletProof'
 import { SignInWall } from '@/components/auth/SignInWall'
@@ -67,11 +68,12 @@ interface Airtime {
   networkBlockEnabled: boolean
   builtAt: string | null
   /** Which of the four zeroes this is, decided server-side. 'ok' when > 0. */
-  reason: 'ok' | 'no_clips' | 'no_wallet' | 'no_balance' | 'no_inventory'
+  reason: 'ok' | 'no_clips' | 'no_wallet' | 'unreadable' | 'no_balance' | 'no_inventory'
   /** The wallet the allowance was counted against, or '' when none is linked. */
   walletAddress: string
   /** Live $CSGN balance. null means we could not read it — NOT that it is zero. */
   balance: number | null
+  balanceError: string
 }
 
 const STATUS: Record<string, { label: string; dot: string; text: string }> = {
@@ -209,12 +211,6 @@ function CropRow({
   )
 }
 
-/** Jupiter, pre-loaded with our mint. The fastest path from "I want more
- *  airtime" to actually holding more, which is the only reason the button
- *  exists. */
-export const JUPITER_SWAP_URL =
-  'https://jup.ag/swap/SOL-GFV7fphvprMr1PYpYGPJort2QP7JJLEp3J1Buu7Zpump'
-
 /** A supply share as something a person reads. Tiny fractions are the norm
  *  here, so this never rounds a real holding down to "0%". */
 function formatShare(fraction: number): string {
@@ -246,12 +242,27 @@ const shortWallet = (a: string): string => (a && a.length > 9 ? `${a.slice(0, 4)
 function ZeroAirtime({
   reason, balance, onLinkWallet, linking, error,
 }: {
-  reason: 'ok' | 'no_clips' | 'no_wallet' | 'no_balance' | 'no_inventory'
+  reason: 'ok' | 'no_clips' | 'no_wallet' | 'unreadable' | 'no_balance' | 'no_inventory'
   balance: number | null
   onLinkWallet: () => void
   linking: boolean
   error: string
 }) {
+  // A read we could not make is NOT a balance of zero, and saying so is the
+  // difference between "the network is having a moment" and "your tokens do
+  // not count" — which is what a bare 0 said to a member holding 1.89M.
+  if (reason === 'unreadable') {
+    return (
+      <div className="relative mt-4 rounded-xl border border-amber-500/30 bg-amber-500/[0.07] p-4">
+        <p className="text-sm font-bold text-white">We couldn't read your balance just now.</p>
+        <p className="mt-1 text-[11px] text-gray-400 leading-relaxed">
+          Your wallet is linked and your tokens are exactly where you left them — Solana's public
+          RPC is rate-limiting us. This clears on its own; reload in a minute.
+        </p>
+      </div>
+    )
+  }
+
   if (reason === 'no_clips') {
     return (
       <div className="relative mt-4 rounded-xl border border-live/25 bg-live/[0.06] p-4">
@@ -511,10 +522,25 @@ export default function Studio() {
 
           <div className="relative flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">Airtime today</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">Your airtime today</p>
               <p className="mt-1 text-5xl font-black font-display text-white leading-none tracking-tight tabular-nums">
                 {airtimeLabel(allowance)}
               </p>
+              {/* THE RATIO, SPELLED OUT. This is the entire product promise and
+                  it was previously only inferable from a sentence below the
+                  fold. Three numbers, in the order somebody checks them: what
+                  you hold, what share of supply that is, what it buys. */}
+              {airtime?.balance != null && (
+                <p className="mt-2 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[11px]">
+                  <span className="font-mono text-white">{fmtCsgn(airtime.balance)} $CSGN</span>
+                  <span className="text-gray-600">=</span>
+                  <span className="font-mono text-primary-300">{formatShare(airtime.supplyShare)}</span>
+                  <span className="text-gray-500">of supply</span>
+                  <span className="text-gray-600">=</span>
+                  <span className="font-mono text-primary-300">{formatShare(airtime.supplyShare)}</span>
+                  <span className="text-gray-500">of the open air</span>
+                </p>
+              )}
             </div>
             {/* Straight to a Jupiter swap for our mint. "Hold more" used to go
                 to /account, which is a settings page — it told somebody who had
@@ -549,6 +575,17 @@ export default function Studio() {
                 {airtimeLabel(Math.max(0, allowance - approvedSeconds))} spare
               </span>
             </div>
+
+            {/* WHAT IS ACTUALLY SCHEDULED, next to what is earned. Two different
+                questions — "what did my bag buy" and "what is on the playlist
+                right now" — and showing only the first made the gap between
+                them look like a bug when it is just the review queue. */}
+            {(airtime?.scheduledSeconds ?? 0) > 0 && (
+              <p className="mt-2 text-[11px] text-gray-500">
+                <span className="font-mono text-live">{airtimeLabel(airtime!.scheduledSeconds)}</span>{' '}
+                already laid down on the next six hours of playlist.
+              </p>
+            )}
           </div>
 
           {hasAirtime ? (
@@ -618,7 +655,125 @@ export default function Studio() {
           </Button>
         </section>
 
-        {/* ── 3. Your look ── */}
+        {/* ── 3. The reel ── */}
+        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-white/[0.06] flex items-center justify-between gap-3">
+            <h2 className="text-sm font-bold text-white flex items-center gap-2">
+              <Clapperboard className="w-4 h-4 text-gray-400" /> Running order
+              <span className="text-gray-600 font-normal">({sorted.length})</span>
+            </h2>
+            <span className="text-[10px] uppercase tracking-wider text-gray-600">Top airs first</span>
+          </div>
+
+          {loadingClips ? (
+            <div className="p-10 text-center"><div className="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto" /></div>
+          ) : sorted.length === 0 ? (
+            <div className="p-10 text-center">
+              <p className="text-sm text-gray-300 font-medium">Nothing in your reel yet</p>
+              <p className="mt-1 text-xs text-gray-500">Paste a link above. It's on television once it's checked.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-white/[0.05]">
+              <AnimatePresence initial={false}>
+                {sorted.map((clip, index) => {
+                  const status = STATUS[clip.status] ?? STATUS.pending
+                  return (
+                    <motion.div
+                      key={clip.id}
+                      layout
+                      initial={{ opacity: 0, y: -8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className={`p-3.5 flex gap-3 ${justAdded === clip.id ? 'bg-primary-500/[0.07]' : ''}`}
+                    >
+                      <div className="flex flex-col items-center gap-1 pt-1 shrink-0">
+                        <button
+                          onClick={() => void move(clip, -1)}
+                          disabled={busy || index === 0}
+                          className="text-gray-600 hover:text-white disabled:opacity-20 text-xs cursor-pointer"
+                          aria-label="Move up"
+                        >▲</button>
+                        <GripVertical className="w-3 h-3 text-gray-700" />
+                        <button
+                          onClick={() => void move(clip, 1)}
+                          disabled={busy || index === sorted.length - 1}
+                          className="text-gray-600 hover:text-white disabled:opacity-20 text-xs cursor-pointer"
+                          aria-label="Move down"
+                        >▼</button>
+                      </div>
+
+                      <Poster platform={clip.platform} thumbnailUrl={clip.thumbnailUrl} className="w-24 h-[54px] shrink-0" />
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm font-semibold text-white truncate">{clip.title || 'Untitled clip'}</p>
+                          <button
+                            onClick={() => void remove(clip)}
+                            disabled={busy}
+                            className="shrink-0 text-gray-700 hover:text-primary-400 disabled:opacity-30 cursor-pointer"
+                            aria-label="Remove"
+                          ><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
+
+                        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                          <span className={`inline-flex items-center gap-1 font-semibold ${status.text}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />{status.label}
+                          </span>
+                          <span className="text-gray-600">{CLIP_PLATFORM_LABELS[clip.platform as ClipPlatform] ?? clip.platform}</span>
+                          <span className="font-mono text-gray-500" title={clip.measured ? 'Runtime read from the platform' : 'The platform would not give a runtime, so this is our default'}>
+                            {clipLength(clip.seconds)}{!clip.measured && '*'}
+                          </span>
+                          <a href={clip.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-gray-600 hover:text-cyan-400">
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </p>
+
+                        {clip.rejectReason && (
+                          <p className="mt-1.5 text-[11px] text-primary-400 leading-snug">{clip.rejectReason}</p>
+                        )}
+
+                        <CropRow clip={clip} allowance={allowance} busy={busy} onCrop={crop} />
+                      </div>
+                    </motion.div>
+                  )
+                })}
+              </AnimatePresence>
+            </div>
+          )}
+        </section>
+
+        {/* ── 4. When you're on ── */}
+        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
+          <h2 className="text-sm font-bold text-white flex items-center gap-2">
+            <Clock className="w-4 h-4 text-gray-400" /> You're on at
+          </h2>
+          {airings.length === 0 ? (
+            <p className="mt-2.5 text-xs text-gray-500 leading-relaxed">
+              Nothing scheduled yet. Approved clips land in the next rebuild and the exact times
+              show up here.
+            </p>
+          ) : (
+            <>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {airings.map((a, i) => (
+                  <span
+                    key={`${a.clipId}-${i}`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-live/25 bg-live/[0.08] px-2.5 py-1.5 text-xs font-bold font-mono text-live"
+                  >
+                    <Radio className="w-3 h-3" />
+                    {new Date(a.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-3 text-[11px] text-gray-500 leading-relaxed">
+                Real times — this is the schedule the broadcast runs from. If somebody claims one of
+                those two-hour blocks and goes live, their stream wins and your clip moves to the
+                next opening.
+              </p>
+            </>
+          )}
+        </section>
+        {/* ── 5. Your on-air look — LAST, on purpose ── */}
         <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-primary-400" />
@@ -708,124 +863,6 @@ export default function Studio() {
           )}
         </section>
 
-        {/* ── 4. The reel ── */}
-        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-white/[0.06] flex items-center justify-between gap-3">
-            <h2 className="text-sm font-bold text-white flex items-center gap-2">
-              <Clapperboard className="w-4 h-4 text-gray-400" /> Running order
-              <span className="text-gray-600 font-normal">({sorted.length})</span>
-            </h2>
-            <span className="text-[10px] uppercase tracking-wider text-gray-600">Top airs first</span>
-          </div>
-
-          {loadingClips ? (
-            <div className="p-10 text-center"><div className="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto" /></div>
-          ) : sorted.length === 0 ? (
-            <div className="p-10 text-center">
-              <p className="text-sm text-gray-300 font-medium">Nothing in your reel yet</p>
-              <p className="mt-1 text-xs text-gray-500">Paste a link above. It's on television once it's checked.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-white/[0.05]">
-              <AnimatePresence initial={false}>
-                {sorted.map((clip, index) => {
-                  const status = STATUS[clip.status] ?? STATUS.pending
-                  return (
-                    <motion.div
-                      key={clip.id}
-                      layout
-                      initial={{ opacity: 0, y: -8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className={`p-3.5 flex gap-3 ${justAdded === clip.id ? 'bg-primary-500/[0.07]' : ''}`}
-                    >
-                      <div className="flex flex-col items-center gap-1 pt-1 shrink-0">
-                        <button
-                          onClick={() => void move(clip, -1)}
-                          disabled={busy || index === 0}
-                          className="text-gray-600 hover:text-white disabled:opacity-20 text-xs cursor-pointer"
-                          aria-label="Move up"
-                        >▲</button>
-                        <GripVertical className="w-3 h-3 text-gray-700" />
-                        <button
-                          onClick={() => void move(clip, 1)}
-                          disabled={busy || index === sorted.length - 1}
-                          className="text-gray-600 hover:text-white disabled:opacity-20 text-xs cursor-pointer"
-                          aria-label="Move down"
-                        >▼</button>
-                      </div>
-
-                      <Poster platform={clip.platform} thumbnailUrl={clip.thumbnailUrl} className="w-24 h-[54px] shrink-0" />
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-semibold text-white truncate">{clip.title || 'Untitled clip'}</p>
-                          <button
-                            onClick={() => void remove(clip)}
-                            disabled={busy}
-                            className="shrink-0 text-gray-700 hover:text-primary-400 disabled:opacity-30 cursor-pointer"
-                            aria-label="Remove"
-                          ><Trash2 className="w-3.5 h-3.5" /></button>
-                        </div>
-
-                        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
-                          <span className={`inline-flex items-center gap-1 font-semibold ${status.text}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />{status.label}
-                          </span>
-                          <span className="text-gray-600">{CLIP_PLATFORM_LABELS[clip.platform as ClipPlatform] ?? clip.platform}</span>
-                          <span className="font-mono text-gray-500" title={clip.measured ? 'Runtime read from the platform' : 'The platform would not give a runtime, so this is our default'}>
-                            {clipLength(clip.seconds)}{!clip.measured && '*'}
-                          </span>
-                          <a href={clip.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-gray-600 hover:text-cyan-400">
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        </p>
-
-                        {clip.rejectReason && (
-                          <p className="mt-1.5 text-[11px] text-primary-400 leading-snug">{clip.rejectReason}</p>
-                        )}
-
-                        <CropRow clip={clip} allowance={allowance} busy={busy} onCrop={crop} />
-                      </div>
-                    </motion.div>
-                  )
-                })}
-              </AnimatePresence>
-            </div>
-          )}
-        </section>
-
-        {/* ── 5. When you're on ── */}
-        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
-          <h2 className="text-sm font-bold text-white flex items-center gap-2">
-            <Clock className="w-4 h-4 text-gray-400" /> You're on at
-          </h2>
-          {airings.length === 0 ? (
-            <p className="mt-2.5 text-xs text-gray-500 leading-relaxed">
-              Nothing scheduled yet. Approved clips land in the next rebuild and the exact times
-              show up here.
-            </p>
-          ) : (
-            <>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {airings.map((a, i) => (
-                  <span
-                    key={`${a.clipId}-${i}`}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-live/25 bg-live/[0.08] px-2.5 py-1.5 text-xs font-bold font-mono text-live"
-                  >
-                    <Radio className="w-3 h-3" />
-                    {new Date(a.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                  </span>
-                ))}
-              </div>
-              <p className="mt-3 text-[11px] text-gray-500 leading-relaxed">
-                Real times — this is the schedule the broadcast runs from. If somebody claims one of
-                those two-hour blocks and goes live, their stream wins and your clip moves to the
-                next opening.
-              </p>
-            </>
-          )}
-        </section>
 
         <p className="text-[11px] text-gray-600 leading-relaxed px-1">
           Every clip is watched by a person before it airs. We never host your video — we point at

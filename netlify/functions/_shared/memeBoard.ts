@@ -45,9 +45,13 @@
  * seconds ago with $200 of liquidity lands on the broadcast next to real coins,
  * and the vote legitimises it. So a coin has to clear all of:
  *
- *   • MIN_LIQUIDITY_USD  — someone can actually trade it
- *   • MIN_VOLUME_H24_USD — it is actually being traded
- *   • MIN_PAIR_AGE_MS    — it has survived longer than a launch snipe
+ *   • liquidity — someone can actually trade it
+ *   • 24h volume — it is actually being traded
+ *   • pair age  — it has survived longer than a launch snipe
+ *
+ * These are TIERED (see `TIERS` below) rather than a single set: the board fills
+ * from the strictest tier down until it has a hundred names, so the top is
+ * always the strongest coins available and only the tail is ever marginal.
  *
  * A DENYLIST (`config/memeBoard.deny`) remains, because "it cleared the numbers"
  * is not the same as "we are happy to put it on television". An ALLOWLIST
@@ -97,9 +101,40 @@ const MEME_DISCOVERY_CAP = 600
  * merely large. The safety story is unchanged in kind; it is calibrated to the
  * actual candidate pool rather than an imagined one.
  */
-const MIN_LIQUIDITY_USD = 15_000
-const MIN_VOLUME_H24_USD = 25_000
-const MIN_PAIR_AGE_MS = 6 * 60 * 60 * 1000
+/**
+ * TIERED THRESHOLDS, filled in order.
+ *
+ * A single set of gates has one failure mode and we hit it twice: tune them for
+ * safety and the board comes back with five coins; tune them for volume and a
+ * rug that launched ninety seconds ago goes on television. Neither is
+ * acceptable and there is no single pair of numbers that is both.
+ *
+ * So the board is filled in PASSES. Everything clearing tier 1 goes on first;
+ * if there are still slots left, tier 2 fills them; then tier 3. A coin's tier
+ * travels with it, so the UI can mark the tail honestly rather than presenting
+ * a marginal coin as if it cleared the same bar as the leaders.
+ *
+ * This is what makes "the Meme 100" a hundred names on a quiet day and still
+ * the strongest hundred available on a busy one — the top of the board is
+ * always tier 1, and relaxation only ever affects the tail.
+ */
+interface Tier {
+  name: 'core' | 'wide' | 'tail'
+  minLiquidityUsd: number
+  minVolumeH24Usd: number
+  minPairAgeMs: number
+}
+
+const TIERS: Tier[] = [
+  // Real money, real trading, survived a day. The coins we would put on air
+  // with no caveat at all.
+  { name: 'core', minLiquidityUsd: 25_000, minVolumeH24Usd: 50_000, minPairAgeMs: 24 * 60 * 60 * 1000 },
+  // Genuinely traded, a few hours old. Most of a normal board.
+  { name: 'wide', minLiquidityUsd: 10_000, minVolumeH24Usd: 15_000, minPairAgeMs: 6 * 60 * 60 * 1000 },
+  // The tail. Still has to be tradeable and still has to have survived an
+  // hour — this is a lower bar, not the absence of one.
+  { name: 'tail', minLiquidityUsd: 3_000, minVolumeH24Usd: 3_000, minPairAgeMs: 60 * 60 * 1000 },
+]
 
 /**
  * A coin whose 24h volume is a large multiple of its liquidity is either
@@ -173,8 +208,12 @@ const MEME_SEARCH_TERMS = [
  */
 async function discoverSolanaMints(): Promise<string[]> {
   type PromoRow = { chainId?: string; tokenAddress?: string }
-  const [boosts, profiles, ...searches] = await Promise.all([
+  const [boosts, boostsLatest, profiles, ...searches] = await Promise.all([
     fetchJson<PromoRow[]>('https://api.dexscreener.com/token-boosts/top/v1'),
+    // `latest` churns much faster than `top` and surfaces coins mid-run rather
+    // than after they have already peaked — which for a board about what is
+    // happening now is the more useful half of the promotional feed.
+    fetchJson<PromoRow[]>('https://api.dexscreener.com/token-boosts/latest/v1'),
     fetchJson<PromoRow[]>('https://api.dexscreener.com/token-profiles/latest/v1'),
     ...MEME_SEARCH_TERMS.map((term) =>
       fetchJson<{ pairs?: DexPair[] }>(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(term)}`),
@@ -197,7 +236,7 @@ async function discoverSolanaMints(): Promise<string[]> {
   for (const pair of searchPairs) add(String(pair.baseToken?.address || ''), traded)
 
   const promoted: string[] = []
-  for (const row of [...(boosts || []), ...(profiles || [])]) {
+  for (const row of [...(boosts || []), ...(boostsLatest || []), ...(profiles || [])]) {
     if (row?.chainId !== 'solana') continue
     add(String(row.tokenAddress || ''), promoted)
   }
@@ -289,37 +328,53 @@ export async function refreshMemeBoard({ force = false } = {}): Promise<MemeBoar
     const now = Date.now()
     const pinnedSet = new Set(pinned)
 
-    const qualifies = (address: string, p: DexPair | undefined): boolean => {
-      // Pinned coins bypass the thresholds — that's what pinning means, and it's
-      // how $CSGN stays on its own board on a quiet day.
-      if (pinnedSet.has(address)) return true
+    const clearsTier = (p: DexPair | undefined, tier: Tier): boolean => {
       if (!p) return false
       const liquidity = p.liquidity?.usd ?? 0
       const volume = p.volume?.h24 ?? 0
-      if (liquidity < MIN_LIQUIDITY_USD) return false
-      if (volume < MIN_VOLUME_H24_USD) return false
+      if (liquidity < tier.minLiquidityUsd) return false
+      if (volume < tier.minVolumeH24Usd) return false
       // A pair with no creation timestamp is unknowable, not young — treating
       // it as brand new excluded a chunk of legitimately old coins.
-      if (p.pairCreatedAt && now - p.pairCreatedAt < MIN_PAIR_AGE_MS) return false
-      // Wash-trade smell: enormous volume against a thin pool. Not banned —
-      // that is sometimes just a coin having a day — but it has to be deep
-      // enough that the volume could plausibly be real.
+      if (p.pairCreatedAt && now - p.pairCreatedAt < tier.minPairAgeMs) return false
+      // Wash-trade smell: enormous volume against a thin pool. Applies at EVERY
+      // tier, including the tail — relaxing size is a judgement call, letting
+      // through an obvious laundromat is not.
       if (liquidity > 0 && volume / liquidity > SUSPICIOUS_TURNOVER && liquidity < SUSPICIOUS_MIN_LIQUIDITY_USD) return false
       return true
     }
 
-    const coins = candidates
+    const usable = candidates
       .filter((address) => !denied.has(address))
-      .filter((address) => qualifies(address, enriched.get(address)))
-      .map((address) => toBoardCoin(address, enriched.get(address)))
+      .map((address) => ({ address, pair: enriched.get(address), coin: toBoardCoin(address, enriched.get(address)) }))
       // A coin with no readable pair enriches to an all-zero row. Those are not
       // a board, they are placeholders — and a row reading "$ · $0" on air is
       // worse than one fewer coin.
-      .filter((c) => c.symbol && c.priceUsd > 0)
-      // Volume is the honest "what is actually happening" sort for the board
-      // itself; the app re-ranks by power score once holder votes are folded in.
-      .sort((a, b) => b.volumeH24Usd - a.volumeH24Usd)
-      .slice(0, MEME_BOARD_SIZE)
+      .filter((row) => row.coin.symbol && row.coin.priceUsd > 0)
+
+    const chosen = new Map<string, ReturnType<typeof toBoardCoin> & { tier: string }>()
+
+    // Pinned first and unconditionally — that is what pinning means, and it is
+    // how $CSGN stays on its own board on a quiet day.
+    for (const row of usable) {
+      if (pinnedSet.has(row.address)) chosen.set(row.address, { ...row.coin, tier: 'pinned' })
+    }
+
+    // Then each tier in turn, best-volume first within the tier, until full.
+    for (const tier of TIERS) {
+      if (chosen.size >= MEME_BOARD_SIZE) break
+      const passing = usable
+        .filter((row) => !chosen.has(row.address) && clearsTier(row.pair, tier))
+        .sort((a, b) => b.coin.volumeH24Usd - a.coin.volumeH24Usd)
+      for (const row of passing) {
+        if (chosen.size >= MEME_BOARD_SIZE) break
+        chosen.set(row.address, { ...row.coin, tier: tier.name })
+      }
+    }
+
+    // Volume is the honest "what is actually happening" sort for the board
+    // itself; the app re-ranks by power score once holder votes are folded in.
+    const coins = [...chosen.values()].sort((a, b) => b.volumeH24Usd - a.volumeH24Usd)
 
     // Never publish an empty board over a good one — a discovery-feed outage
     // would otherwise wipe the ballot mid-vote.
@@ -332,12 +387,18 @@ export async function refreshMemeBoard({ force = false } = {}): Promise<MemeBoar
       source: 'onchain',
       // Published so the board is auditable: how many candidates we looked at,
       // and how many cleared the on-chain gates to actually make it on air.
-      discovery: { candidates: candidates.length, qualified: coins.length },
-      thresholds: {
-        minLiquidityUsd: MIN_LIQUIDITY_USD,
-        minVolumeH24Usd: MIN_VOLUME_H24_USD,
-        minPairAgeHours: MIN_PAIR_AGE_MS / 3_600_000,
+      discovery: {
+        candidates: candidates.length,
+        qualified: coins.length,
+        // How many came from each tier, so a thin board is legible at a glance
+        // rather than a mystery: "40 core, 60 tail" says something very
+        // different from "100 core".
+        byTier: coins.reduce<Record<string, number>>((acc, c) => {
+          acc[c.tier] = (acc[c.tier] ?? 0) + 1
+          return acc
+        }, {}),
       },
+      tiers: TIERS,
       updatedAt: new Date().toISOString(),
     })
     return { ok: true, coins: coins.length, candidates: candidates.length, skipped: false, reason: 'built' }

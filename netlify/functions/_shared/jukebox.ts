@@ -14,11 +14,13 @@ export const JUKEBOX_BASE_FLOOR_CSGN = 250_000
 /**
  * How long a winning bid holds the spotlight.
  *
- * Six hours, which is three network blocks. Long enough that winning is worth
- * paying for, short enough that one payment cannot buy the channel for a week
- * and that a quiet night resets to the opening price by morning.
+ * TWELVE HOURS — half a broadcast day, six network blocks. Long enough that
+ * winning is genuinely worth paying for and that a buyer sees their coin
+ * through a full daytime and a full evening audience, short enough that one
+ * payment cannot buy the channel for a week and that a quiet night resets to
+ * the opening price by the following morning.
  */
-export const JUKEBOX_TTL_MS = 6 * 60 * 60 * 1000
+export const JUKEBOX_TTL_MS = 12 * 60 * 60 * 1000
 
 /**
  * The minimum raise, as a multiple of the standing bid.
@@ -55,4 +57,44 @@ export function nextJukeboxFloor(standing: StandingBid, baseFloor: number, nowMs
 export function jukeboxBidLive(standing: StandingBid, nowMs: number): boolean {
   const at = Date.parse(standing?.bidAt ?? '')
   return Number.isFinite(at) && nowMs - at < JUKEBOX_TTL_MS && (Number(standing?.bidCsgn) || 0) > 0
+}
+
+
+/** A past winner, as published to `public/jukebox.history`. Kept small on
+ *  purpose — this is a leaderboard, not a ledger, and the ledger already
+ *  exists in `spotlightPays/{signature}`. */
+export interface JukeboxWinner {
+  symbol: string
+  bidCsgn: number
+  wonAt: string
+  wallet: string
+}
+
+/** How many past winners the published doc carries. Enough to show a real
+ *  history, small enough that the document stays a single cheap read. */
+export const JUKEBOX_HISTORY_SIZE = 10
+
+/**
+ * Fold a new winner into the history.
+ *
+ * Newest first, capped, and the CURRENT holder is not in it — history means
+ * "who held it before", and listing the sitting champion twice on one screen
+ * reads as a bug.
+ */
+export function pushJukeboxWinner(
+  history: JukeboxWinner[] | undefined,
+  previous: { symbol?: string; bidCsgn?: number; bidAt?: string | null; wallet?: string } | null,
+): JukeboxWinner[] {
+  const list = Array.isArray(history) ? history.slice() : []
+  // The outgoing holder joins the history — but only if there actually was one
+  // and it was a real bid, not an empty slot.
+  if (previous && previous.symbol && Number(previous.bidCsgn) > 0 && previous.bidAt) {
+    list.unshift({
+      symbol: String(previous.symbol).toUpperCase().slice(0, 12),
+      bidCsgn: Number(previous.bidCsgn),
+      wonAt: String(previous.bidAt),
+      wallet: String(previous.wallet || ''),
+    })
+  }
+  return list.slice(0, JUKEBOX_HISTORY_SIZE)
 }
