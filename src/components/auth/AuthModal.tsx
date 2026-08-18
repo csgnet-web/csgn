@@ -7,6 +7,7 @@ import { getPhantomProvider, usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { CsgnLogo } from '@/components/ui/CsgnLogo'
 import { suggestUsername } from '@/lib/username'
 import { isEmbeddedBrowser, openInSystemBrowser, systemBrowserName } from '@/lib/webview'
+import { SOCIAL_AUTH_ENABLED, SOCIAL_AUTH_SOON_LABEL } from '@/config/authProviders'
 
 /**
  * SIGN IN OR SIGN UP — one sheet, four doors, no fork.
@@ -61,25 +62,38 @@ function XMark() {
  *  making one of them look like the "real" one is how you end up back with a
  *  wallet-first funnel wearing a different coat. */
 function Door({
-  icon, label, onClick, busy, disabled,
+  icon, label, onClick, busy, disabled, soon,
 }: {
   icon: React.ReactNode
   label: string
   onClick: () => void
   busy?: boolean
   disabled?: boolean
+  /** Not yet configured. Renders shut and inert rather than throwing
+   *  `auth/operation-not-allowed` at whoever taps it. */
+  soon?: boolean
 }) {
   return (
     <button
       type="button"
-      onClick={onClick}
-      disabled={busy || disabled}
-      className="w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-white/[0.09] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.14] transition-colors text-left disabled:opacity-50 disabled:cursor-wait cursor-pointer"
+      onClick={soon ? undefined : onClick}
+      disabled={soon || busy || disabled}
+      aria-disabled={soon || undefined}
+      className={
+        soon
+          ? 'w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-white/[0.05] bg-white/[0.01] text-left opacity-45 cursor-not-allowed'
+          : 'w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-white/[0.09] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.14] transition-colors text-left disabled:opacity-50 disabled:cursor-wait cursor-pointer'
+      }
     >
-      <span className="w-10 h-10 shrink-0 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center">
+      <span className={`w-10 h-10 shrink-0 rounded-lg border flex items-center justify-center ${soon ? 'bg-white/[0.02] border-white/[0.04] grayscale' : 'bg-white/[0.04] border-white/[0.06]'}`}>
         {busy ? <Loader2 className="w-4 h-4 text-gray-400 animate-spin" /> : icon}
       </span>
-      <span className="text-[15px] font-medium text-white">{label}</span>
+      <span className={`text-[15px] font-medium ${soon ? 'text-gray-500' : 'text-white'}`}>{label}</span>
+      {soon && (
+        <span className="ml-auto shrink-0 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-600 border border-white/[0.07] rounded px-1.5 py-0.5">
+          {SOCIAL_AUTH_SOON_LABEL}
+        </span>
+      )}
     </button>
   )
 }
@@ -234,6 +248,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
                   label="Continue with Google"
                   busy={pending === 'google'}
                   disabled={pending !== null}
+                  soon={!SOCIAL_AUTH_ENABLED}
                   onClick={() => run('google', async () => { await signInWithGoogle(); close() })}
                 />
                 <Door
@@ -241,6 +256,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
                   label="Continue with X"
                   busy={pending === 'x'}
                   disabled={pending !== null}
+                  soon={!SOCIAL_AUTH_ENABLED}
                   onClick={() => run('x', async () => { await signInWithX(); close() })}
                 />
                 <Door
@@ -253,9 +269,13 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
                 {/* Email sits last and looks like the others, because it is the
                     others: one field, one tap, a link back. */}
-                <div className="w-full flex items-center gap-3 pl-4 pr-2 py-2 rounded-xl border border-white/[0.09] bg-white/[0.02] focus-within:border-white/[0.18] transition-colors">
-                  <span className="w-10 h-10 shrink-0 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center">
-                    <Mail className="w-4 h-4 text-gray-300" />
+                <div className={`w-full flex items-center gap-3 pl-4 pr-2 py-2 rounded-xl border transition-colors ${
+                  SOCIAL_AUTH_ENABLED
+                    ? 'border-white/[0.09] bg-white/[0.02] focus-within:border-white/[0.18]'
+                    : 'border-white/[0.05] bg-white/[0.01] opacity-45 cursor-not-allowed'
+                }`}>
+                  <span className={`w-10 h-10 shrink-0 rounded-lg border flex items-center justify-center ${SOCIAL_AUTH_ENABLED ? 'bg-white/[0.04] border-white/[0.06]' : 'bg-white/[0.02] border-white/[0.04]'}`}>
+                    <Mail className={`w-4 h-4 ${SOCIAL_AUTH_ENABLED ? 'text-gray-300' : 'text-gray-600'}`} />
                   </span>
                   <input
                     type="email"
@@ -265,17 +285,23 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
                     onChange={(e) => setEmail(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') submitEmail() }}
                     placeholder="your@email.com"
-                    disabled={pending !== null}
-                    className="flex-1 min-w-0 bg-transparent text-[15px] text-white placeholder-gray-600 focus:outline-none"
+                    disabled={!SOCIAL_AUTH_ENABLED || pending !== null}
+                    className="flex-1 min-w-0 bg-transparent text-[15px] text-white placeholder-gray-600 focus:outline-none disabled:cursor-not-allowed"
                   />
-                  <button
-                    type="button"
-                    onClick={submitEmail}
-                    disabled={pending !== null || !email.trim()}
-                    className="shrink-0 px-3 py-2 text-sm font-medium text-gray-400 hover:text-white disabled:opacity-40 disabled:hover:text-gray-400 cursor-pointer"
-                  >
-                    {pending === 'email' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit'}
-                  </button>
+                  {SOCIAL_AUTH_ENABLED ? (
+                    <button
+                      type="button"
+                      onClick={submitEmail}
+                      disabled={pending !== null || !email.trim()}
+                      className="shrink-0 px-3 py-2 text-sm font-medium text-gray-400 hover:text-white disabled:opacity-40 disabled:hover:text-gray-400 cursor-pointer"
+                    >
+                      {pending === 'email' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit'}
+                    </button>
+                  ) : (
+                    <span className="shrink-0 mr-1 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-600 border border-white/[0.07] rounded px-1.5 py-0.5">
+                      {SOCIAL_AUTH_SOON_LABEL}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -284,8 +310,9 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
               )}
 
               <p className="mt-6 text-center text-[11px] text-gray-500 leading-relaxed">
-                No wallet needed to watch, post a clip or claim a block.
-                You'll be asked for one when you've actually earned fees.
+                {SOCIAL_AUTH_ENABLED
+                  ? "No wallet needed to watch, post a clip or claim a block. You'll be asked for one when you've actually earned fees."
+                  : 'Google, X and email sign-in are being switched on shortly. Until then a Phantom wallet is the way in — and it is what your airtime and fees are paid against anyway.'}
               </p>
             </>
           )}

@@ -32,7 +32,16 @@ export interface UserProfile {
   createdAt: unknown
   updatedAt?: unknown
   phantom?: { verified: boolean; walletAddress: string; verifiedAt: unknown }
-  twitch?: { verified: boolean; twitchUserId: string; username: string; displayName: string; profileImageUrl: string; verifiedAt: unknown }
+  twitch?: {
+    verified: boolean; twitchUserId: string; username: string; displayName: string
+    profileImageUrl: string; verifiedAt: unknown
+    /** Permission for CSGN to forward any stream on this channel. Absent on
+     *  accounts linked before the grant existed, which reads as "not granted"
+     *  — the only safe way to read a missing permission. */
+    forwardConsent?: boolean
+    forwardConsentAt?: unknown
+    forwardConsentVersion?: number | null
+  }
   bio?: string
   walletAddress?: string
   twitchUsername?: string

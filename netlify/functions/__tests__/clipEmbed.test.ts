@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  parseClipUrl, clipKey, clampClipSeconds, applyTrim, supportsTrim,
-  CLIP_FALLBACK_SECONDS, CLIP_MAX_SECONDS,
+  parseClipUrl, clipKey, clampClipSeconds, applyTrim, supportsTrim, boundClipTrim,
+  CLIP_MIN_SECONDS, CLIP_FALLBACK_SECONDS, CLIP_MAX_SECONDS,
 } from '../_shared/clipEmbed'
 
 describe('parseClipUrl — YouTube', () => {
@@ -158,5 +158,57 @@ describe('applyTrim', () => {
     expect(supportsTrim('youtube')).toBe(true)
     expect(supportsTrim('tiktok')).toBe(false)
     expect(supportsTrim('instagram')).toBe(false)
+  })
+})
+
+describe('boundClipTrim', () => {
+  it('keeps a normal crop exactly as asked', () => {
+    expect(boundClipTrim(120, 10, 40)).toEqual({ startSeconds: 10, endSeconds: 40, seconds: 30 })
+  })
+
+  it('NEVER returns a negative start, however short the source', () => {
+    // The bug this function was extracted for: the old inline arithmetic
+    // computed `Math.min(source - 5, requested)`, which for a 3-second video is
+    // Math.min(-2, 0) === -2, and shipped `?start=-2` to the player.
+    for (const source of [1, 2, 3, 4, 5]) {
+      const t = boundClipTrim(source, 0, 0)
+      expect(t.startSeconds).toBeGreaterThanOrEqual(0)
+      expect(t.endSeconds).toBeGreaterThanOrEqual(0)
+    }
+    expect(boundClipTrim(3, 99, 0).startSeconds).toBe(0)
+  })
+
+  it('airs a too-short video whole rather than inventing a crop', () => {
+    expect(boundClipTrim(4, 2, 3)).toEqual({ startSeconds: 0, endSeconds: 0, seconds: 5 })
+  })
+
+  it('stores an end at or past the source as 0, meaning "play to the end"', () => {
+    expect(boundClipTrim(60, 10, 60).endSeconds).toBe(0)
+    expect(boundClipTrim(60, 10, 900).endSeconds).toBe(0)
+  })
+
+  it('refuses to let the start run past a minimum window from the end', () => {
+    const t = boundClipTrim(60, 59, 0)
+    expect(t.startSeconds).toBe(55)
+  })
+
+  it('forces at least the minimum window when the end is asked for before it', () => {
+    const t = boundClipTrim(120, 30, 31)
+    expect(t.endSeconds - t.startSeconds).toBeGreaterThanOrEqual(CLIP_MIN_SECONDS)
+  })
+
+  it('treats an unmeasured source as uncroppable and falls back', () => {
+    expect(boundClipTrim(0, 5, 10)).toEqual({ startSeconds: 0, endSeconds: 0, seconds: CLIP_FALLBACK_SECONDS })
+  })
+
+  it('ignores junk input instead of propagating NaN into a URL', () => {
+    const t = boundClipTrim(120, 'abc', null)
+    expect(t).toEqual({ startSeconds: 0, endSeconds: 0, seconds: 120 })
+  })
+
+  it('produces a start applyTrim can safely render', () => {
+    const yt = parseClipUrl('https://youtu.be/dQw4w9WgXcQ')!
+    const t = boundClipTrim(3, 99, 0)
+    expect(applyTrim(yt, t)).not.toContain('start=-')
   })
 })

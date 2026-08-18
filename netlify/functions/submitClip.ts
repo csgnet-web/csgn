@@ -15,7 +15,7 @@ import { getDoc, queryCollection, writeDoc, fieldFilter } from './_shared/fireba
 import { json, parseJson, requireMethod, withHttp } from './_shared/http'
 import { checkRateLimit, clientIp } from './_shared/rateLimit'
 import { parseClipUrl, clipKey, clampClipSeconds } from './_shared/clipEmbed'
-import { fetchClipMeta } from './_shared/clipMeta'
+import { fetchClipMeta, resolveShortLink } from './_shared/clipMeta'
 
 /** Per member. A reel, not a channel — and a bound on the review queue. */
 const MAX_CLIPS_PER_MEMBER = 25
@@ -31,10 +31,16 @@ export const handler = withHttp(async (event) => {
   await checkRateLimit(clientIp(event), 'submitClip', 20)
 
   const body = parseJson<Body>(event)
-  const parsed = parseClipUrl(String(body.url ?? ''))
+  const submitted = String(body.url ?? '')
+
+  // Try the pasted link as-is first — the overwhelmingly common case, and it
+  // costs no network call. Only a link the pure parser cannot place gets the
+  // redirect round trip, and only if it is a short-link host we recognise.
+  let parsed = parseClipUrl(submitted)
+  if (!parsed) parsed = parseClipUrl(await resolveShortLink(submitted))
   if (!parsed) {
     throw badRequest(
-      'Paste a link to a YouTube, TikTok or Instagram post. Short links (vm.tiktok.com) need to be opened first so we get the real one.',
+      'Paste a link to a YouTube, TikTok or Instagram post — the address of the post itself, not a profile or a search page.',
       'unsupported_clip_url',
     )
   }

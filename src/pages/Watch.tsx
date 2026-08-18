@@ -11,7 +11,6 @@ import TokenPanel from '@/components/watch/TokenPanel'
 import ScheduleStrip from '@/components/watch/ScheduleStrip'
 import StreamInfoBar from '@/components/watch/StreamInfoBar'
 import BroadcastBanner from '@/components/watch/BroadcastBanner'
-import { ConversionHero } from '@/components/watch/ConversionHero'
 import { WipeOverlay } from '@/components/ui/WipeOverlay'
 
 /** The default strip copy. Whatever an admin sets in config/broadcastBanner wins;
@@ -204,14 +203,13 @@ export default function Watch() {
           <TokenPanel broadcastUrl={broadcastUrl} />
         </div>
 
-        {/* What used to be here: two permanently disabled "Coming Soon" game
-            tiles, occupying the largest block on the page below the stage. They
-            cost a first-time visitor a scroll and gave back nothing — a dead
-            button is a worse advertisement for a product than no button. The
-            space now carries the pitch and the sign-up, which is what a cold
-            visitor from an ad or an X link actually needs. The games come back
-            here when they are playable, not before. */}
-        <ConversionHero signedIn={Boolean(user)} />
+        {/* The page ENDS at the token panel, deliberately.
+            What used to sit below here — first two dead "Coming Soon" game
+            tiles, then a pitch block with three sign-up cards — was a second
+            page bolted under a broadcast. Somebody who came to watch a stream
+            was handed a brochure the moment they scrolled past the links, and a
+            brochure under a live video reads as a landing page, not a channel.
+            The ways in are the tab bar, permanently, one tap away. */}
       </div>
 
       {/* ── Right: Token panel sidebar (desktop only) ── */}

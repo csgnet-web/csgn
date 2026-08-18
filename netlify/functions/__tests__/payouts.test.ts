@@ -471,7 +471,11 @@ describe('a payout run', () => {
     })
 
     expect(result.paid).toBe(0)
-    expect(result.review).toHaveLength(1)
+    // `review` is the COUNT (it is what goes into the stored run summary);
+    // `reviewRecords` carries the parked payouts themselves. These used to be
+    // the same field declared two incompatible ways — see RunResult.
+    expect(result.review).toBe(1)
+    expect(result.reviewRecords).toHaveLength(1)
     expect([...h.ledger.values()][0].status).toBe('needs_review')
     expect(h.broadcasts).toHaveLength(0)
   })

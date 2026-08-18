@@ -1,0 +1,37 @@
+{
+  /**
+   * TYPECHECK THE SERVERLESS BACKEND.
+   *
+   * Until this file existed, nothing did. `tsconfig.node.json` includes exactly
+   * one file (vite.config.ts) and `tsconfig.app.json` covers `src`, so every
+   * function under `netlify/` — the entire trust boundary, the payout maths, the
+   * on-chain verification — was compiled by esbuild at deploy time with types
+   * erased and never checked. A property that did not exist, a wrong argument
+   * count, a null that was not handled: none of it failed a build. It failed in
+   * production, or silently did the wrong thing.
+   *
+   * Included in the root project references so `npm run build` checks it too.
+   */
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.functions.tsbuildinfo",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["netlify/**/*.ts"]
+}

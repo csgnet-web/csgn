@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { ChevronLeft, ChevronRight, ExternalLink, Info } from 'lucide-react'
 import { db } from '@/config/firebase'
+import { api } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import {
   normalizeMemeBoard, rankMemeBoard, compactUsd, memePrice, POWER_WEIGHTS,
@@ -14,9 +15,9 @@ import {
  * Three decisions, all pointed at the same thing: this is a recruiting surface,
  * so it has to work for someone who has never signed in.
  *
- *  1. PUBLIC. It reads `public/memeBoard` and `public/memeVote`, both of which
- *     are world-readable by ID. A visitor sees the real board — not a teaser,
- *     and not a sign-in wall over the one thing worth looking at.
+ *  1. PUBLIC. It reads the board from an unauthenticated function, so a visitor
+ *     sees the real thing — not a teaser, and not a sign-in wall over the one
+ *     part of the page worth looking at.
  *  2. TEN AT A TIME. A hundred rows is a scroll nobody finishes; ten is a page
  *     you read. Arrows rather than infinite scroll, because an endless list and
  *     a bottom tab bar fight each other on a phone.
@@ -41,17 +42,70 @@ function scoreTone(score: number): string {
   return 'text-gray-400'
 }
 
+/** Why the board is empty, in the visitor's language. Four different causes
+ *  used to render the same sentence, which is how this stayed broken. */
+const EMPTY_COPY: Record<string, { title: string; body: string }> = {
+  no_candidates: {
+    title: 'Market data is unavailable',
+    body: "We read the board from live Solana pools and that feed isn't answering right now. It comes back on its own.",
+  },
+  none_qualified: {
+    title: 'Nothing cleared the bar',
+    body: 'Coins need real liquidity, real 24h volume and more than a day of trading history to make the board. Nothing did on this pass.',
+  },
+  busy: {
+    title: 'The board is building',
+    body: "It's assembled from what's actually trading on Solana and refreshes every few minutes.",
+  },
+  failed: {
+    title: "Couldn't load the board",
+    body: 'Something went wrong on our side reading the market data. Try again in a moment.',
+  },
+}
+const EMPTY_DEFAULT = EMPTY_COPY.busy
+
 export default function Meme100Board() {
   const [raw, setRaw] = useState<MemeCoin[]>([])
   const [votes, setVotes] = useState<Record<string, VoteCell>>({})
   const [page, setPage] = useState(0)
   const [openId, setOpenId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [emptyReason, setEmptyReason] = useState<string | null>(null)
 
+  // THE BOARD COMES FROM THE FUNCTION, not from Firestore.
+  //
+  // The direct `onSnapshot` read needed the rules file deployed AND the
+  // scheduled poller to have run at least once; when either was untrue the page
+  // showed "the board is building" forever with nothing in the console. The
+  // endpoint reads through firebase-admin and builds on demand, so neither can
+  // silence it — and it says WHY when the result really is empty.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await api.memeBoard()
+        if (cancelled) return
+        const coins = normalizeMemeBoard(res.coins)
+        setRaw(coins)
+        setEmptyReason(coins.length === 0 ? (res.reason ?? 'busy') : null)
+      } catch {
+        if (!cancelled) setEmptyReason('failed')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  // Live updates on top of it. The snapshot is a bonus, not the source: if the
+  // rules deny it or nothing has been published yet, the fetched board stands.
   useEffect(() => onSnapshot(
     doc(db, 'public', 'memeBoard'),
-    (snap) => { setRaw(normalizeMemeBoard(snap.exists() ? snap.data()?.coins : [])); setLoading(false) },
-    () => setLoading(false),
+    (snap) => {
+      const coins = normalizeMemeBoard(snap.exists() ? snap.data()?.coins : [])
+      if (coins.length > 0) { setRaw(coins); setEmptyReason(null) }
+    },
+    () => {},
   ), [])
 
   useEffect(() => onSnapshot(
@@ -114,9 +168,11 @@ export default function Meme100Board() {
           <div className="p-10 text-center"><div className="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto" /></div>
         ) : coins.length === 0 ? (
           <div className="p-8 text-center">
-            <p className="text-sm text-gray-300 font-medium">The board is building</p>
-            <p className="mt-1 text-xs text-gray-500">
-              It's assembled from what's actually trading on Solana and refreshes every few minutes.
+            <p className="text-sm text-gray-300 font-medium">
+              {(EMPTY_COPY[emptyReason ?? ''] ?? EMPTY_DEFAULT).title}
+            </p>
+            <p className="mt-1 text-xs text-gray-500 max-w-sm mx-auto leading-relaxed">
+              {(EMPTY_COPY[emptyReason ?? ''] ?? EMPTY_DEFAULT).body}
             </p>
           </div>
         ) : (

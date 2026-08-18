@@ -95,3 +95,61 @@ export async function sampleTwitchStream(login: string, token: string): Promise<
     startedAt: String(stream.started_at || ''),
   }
 }
+
+
+/**
+ * Sample MANY channels in one request.
+ *
+ * Helix accepts up to 100 `user_login` parameters per call, which is the whole
+ * reason a permanently-on live roster is affordable: watching every member of
+ * the network costs one request per 100 members per minute, not one per member.
+ * Sampling them individually would put the network's own rate limit between us
+ * and knowing who is on.
+ *
+ * Returns a map keyed by the lowercased login. A login ABSENT from the map was
+ * not answered for — same distinction as `sampleTwitchStream` returning null,
+ * and just as important: an unanswered channel must never be recorded as
+ * offline, because those samples decide who gets paid.
+ */
+export async function sampleTwitchStreams(
+  logins: string[],
+  token: string,
+): Promise<Map<string, TwitchStreamSample>> {
+  const out = new Map<string, TwitchStreamSample>()
+  const clean = [...new Set(logins.map((l) => String(l || '').trim().toLowerCase()).filter(Boolean))]
+
+  for (let i = 0; i < clean.length; i += 100) {
+    const batch = clean.slice(i, i + 100)
+    const qs = batch.map((l) => `user_login=${encodeURIComponent(l)}`).join('&')
+    const data = await fetchJson<{ data?: Array<{ user_login?: string; viewer_count?: number; title?: string; game_name?: string; started_at?: string }> }>(
+      `https://api.twitch.tv/helix/streams?${qs}`,
+      { headers: { 'Client-Id': process.env.TWITCH_CLIENT_ID || '', Authorization: `Bearer ${token}` } },
+    )
+    // A batch we could not read leaves its logins out of the map entirely.
+    // Marking them offline here would silently zero the airtime of everyone in
+    // a batch that happened to time out.
+    if (!data || !Array.isArray(data.data)) continue
+
+    const liveNow = new Set<string>()
+    for (const stream of data.data) {
+      const login = String(stream.user_login || '').toLowerCase()
+      if (!login) continue
+      liveNow.add(login)
+      out.set(login, {
+        live: true,
+        viewerCount: Math.max(0, Number(stream.viewer_count) || 0),
+        title: String(stream.title || '').slice(0, 140),
+        gameName: String(stream.game_name || '').slice(0, 60),
+        startedAt: String(stream.started_at || ''),
+      })
+    }
+    // Helix omits offline channels from the response rather than listing them,
+    // so every login in a batch we DID read and did not get back is genuinely
+    // offline — a real answer, not a missing one.
+    for (const login of batch) {
+      if (!liveNow.has(login)) out.set(login, { live: false, viewerCount: 0, title: '', gameName: '', startedAt: '' })
+    }
+  }
+
+  return out
+}

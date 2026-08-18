@@ -6,7 +6,9 @@ import {
   Radio, Scissors, Sparkles, Trash2, TrendingUp,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/useAuth'
-import { useAuthModal } from '@/contexts/useAuthModal'
+import { usePhantomWallet } from '@/hooks/usePhantomWallet'
+import { proveWallet } from '@/lib/walletProof'
+import { SignInWall } from '@/components/auth/SignInWall'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import {
@@ -60,6 +62,12 @@ interface Airtime {
   inventorySeconds: number
   networkBlockEnabled: boolean
   builtAt: string | null
+  /** Which of the four zeroes this is, decided server-side. 'ok' when > 0. */
+  reason: 'ok' | 'no_clips' | 'no_wallet' | 'no_balance' | 'no_inventory'
+  /** The wallet the allowance was counted against, or '' when none is linked. */
+  walletAddress: string
+  /** Live $CSGN balance. null means we could not read it — NOT that it is zero. */
+  balance: number | null
 }
 
 const STATUS: Record<string, { label: string; dot: string; text: string }> = {
@@ -100,26 +108,13 @@ function Poster({ platform, thumbnailUrl, className = '' }: { platform: string; 
 /* ─── Signed out ─── */
 
 function LockedStudio() {
-  const { openAuth } = useAuthModal()
   return (
-    <div className="min-h-screen pt-24 lg:pt-28 pb-24 px-4">
-      <div className="max-w-md mx-auto text-center">
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary-600 to-primary-500 flex items-center justify-center mx-auto shadow-[0_12px_40px_-12px_rgba(255,35,70,0.6)]">
-          <Clapperboard className="w-7 h-7 text-white" />
-        </div>
-        <h1 className="mt-6 text-3xl font-black font-display text-white tracking-tight">Get on television.</h1>
-        <p className="mt-3 text-sm text-gray-400 leading-relaxed">
-          Post a link to something you already made. It airs on CSGN between the live blocks —
-          you don't have to be there, and you don't need a wallet.
-        </p>
-        {/* The sheet opens over this page. No bounce to another screen that
-            then asks them to come back. */}
-        <Button variant="primary" size="lg" className="mt-7 w-full" onClick={openAuth}>
-          Sign in to post
-        </Button>
-        <p className="mt-4 text-[11px] text-gray-600">Google, X, wallet or email. No password.</p>
-      </div>
-    </div>
+    <SignInWall
+      Icon={Clapperboard}
+      title="Get on television."
+      body="Post a link to something you already made. It airs on CSGN between the live blocks — you don't have to be there."
+      cta="Sign in to post"
+    />
   )
 }
 
@@ -210,6 +205,92 @@ function CropRow({
   )
 }
 
+/** $CSGN, readably. A raw 1800000 on a card is a number people misread. */
+const fmtCsgn = (n: number): string =>
+  n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(Math.round(n))
+
+const shortWallet = (a: string): string => (a && a.length > 9 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a || '—')
+
+/**
+ * ZERO SECONDS, EXPLAINED.
+ *
+ * Four unrelated situations produce an allowance of zero and the member can act
+ * on three of them. The screen used to say "hold $CSGN" for all four — so a
+ * member holding 1.8 million $CSGN who had signed up with Google, and therefore
+ * had no wallet on file, was told to go buy a token they already owned, with no
+ * control anywhere in the app that would have fixed it.
+ *
+ * The server names the cause (`myClips` → `airtime.reason`); this renders one
+ * next action for it and nothing else.
+ */
+function ZeroAirtime({
+  reason, balance, onLinkWallet, linking, error,
+}: {
+  reason: 'ok' | 'no_clips' | 'no_wallet' | 'no_balance' | 'no_inventory'
+  balance: number | null
+  onLinkWallet: () => void
+  linking: boolean
+  error: string
+}) {
+  if (reason === 'no_clips') {
+    return (
+      <div className="relative mt-4 rounded-xl border border-white/[0.1] bg-white/[0.03] p-4">
+        <p className="text-sm font-bold text-white">Post a clip to get on air.</p>
+        <p className="mt-1 text-[11px] text-gray-400 leading-relaxed">
+          Airtime is only worked out for members with something approved to play. Add a link below —
+          we review it, and your share of the day appears here once it clears.
+        </p>
+      </div>
+    )
+  }
+
+  if (reason === 'no_wallet') {
+    return (
+      <div className="relative mt-4 rounded-xl border border-primary-500/25 bg-primary-500/[0.07] p-4">
+        <p className="text-sm font-bold text-white">Connect your wallet to claim your airtime.</p>
+        <p className="mt-1 text-[11px] text-gray-400 leading-relaxed">
+          Your share of the day is worked out from the $CSGN you hold, and we have no wallet on file
+          for this account yet — so it is currently counting zero. Connecting one is a signature, not
+          a transaction: nothing moves and nothing is approved for spending.
+        </p>
+        <Button variant="primary" size="sm" className="mt-3" isLoading={linking} onClick={onLinkWallet}>
+          Connect wallet
+        </Button>
+        {error && <p className="mt-2 text-[11px] text-red-300">{error}</p>}
+      </div>
+    )
+  }
+
+  if (reason === 'no_balance') {
+    return (
+      <div className="relative mt-4 rounded-xl border border-primary-500/25 bg-primary-500/[0.07] p-4">
+        <p className="text-sm font-bold text-white">Hold $CSGN to get airtime.</p>
+        <p className="mt-1 text-[11px] text-gray-400 leading-relaxed">
+          Airtime is shared out by holdings — that is what the token is for. Watching, claiming a
+          two-hour block and going live are all free and always will be; this part is not.
+          {balance === null
+            ? ' We could not read your balance just now, so this may simply be a bad connection to the chain — reload in a minute before buying anything.'
+            : ' Your linked wallet is holding none right now.'}
+        </p>
+        <Link to="/participate" className="inline-block mt-3">
+          <Button variant="primary" size="sm">Get $CSGN</Button>
+        </Link>
+      </div>
+    )
+  }
+
+  // no_inventory — they did everything right and the day is simply full.
+  return (
+    <div className="relative mt-4 rounded-xl border border-white/[0.1] bg-white/[0.03] p-4">
+      <p className="text-sm font-bold text-white">No open air in the next few hours.</p>
+      <p className="mt-1 text-[11px] text-gray-400 leading-relaxed">
+        Live blocks and the 7 PM–3 AM network block outrank clips, and right now they cover the
+        schedule. Your reel is queued and picks up its share as soon as a gap opens.
+      </p>
+    </div>
+  )
+}
+
 export default function Studio() {
   const { user, loading } = useAuth()
   const [clips, setClips] = useState<Clip[]>([])
@@ -225,6 +306,10 @@ export default function Studio() {
   const [title, setTitle] = useState('')
   const [justAdded, setJustAdded] = useState('')
 
+  const { connect, signMessage } = usePhantomWallet()
+  const [linkingWallet, setLinkingWallet] = useState(false)
+  const [walletError, setWalletError] = useState('')
+
   const load = useCallback(async () => {
     try {
       const res = await api.myClips()
@@ -239,6 +324,32 @@ export default function Studio() {
     }
     setLoadingClips(false)
   }, [])
+
+  /**
+   * Attach a wallet to this account.
+   *
+   * A SIGNATURE, NOT A TRANSACTION — the wallet signs a challenge string, which
+   * proves control without moving anything or granting any spending approval.
+   * That distinction is worth stating on the button, because "connect wallet"
+   * has been trained by enough drainers that a careful person is right to pause.
+   */
+  const linkWallet = useCallback(async () => {
+    setWalletError('')
+    setLinkingWallet(true)
+    try {
+      const addr = await connect()
+      if (!addr) throw new Error('Wallet connection was cancelled.')
+      const proof = await proveWallet(addr, signMessage)
+      await api.linkPhantom(proof)
+      // Reload rather than patching state: linking changes the allowance, and
+      // the server recomputes it on this call. Two sources for one number is
+      // how they end up disagreeing.
+      await load()
+    } catch (err) {
+      setWalletError(err instanceof Error ? err.message : 'Could not link that wallet.')
+    }
+    setLinkingWallet(false)
+  }, [connect, signMessage, load])
 
   useEffect(() => {
     if (!user) return
@@ -404,25 +515,32 @@ export default function Studio() {
           </div>
 
           {hasAirtime ? (
-            <p className="relative mt-3 text-[11px] text-gray-500 leading-relaxed">
-              Out of {airtimeLabel(airtime?.inventorySeconds ?? 0)} of open air today
-              {airtime?.networkBlockEnabled === false && ' — the 7 PM–3 AM block is open right now, so there is more of it'}.
-              Your share follows your $CSGN: hold twice as much, get twice as much.
-              {airtime?.capped && ' You are at the per-member ceiling, which exists so no one holder can take the whole channel.'}
-            </p>
-          ) : (
-            /* Airtime is the one thing the token buys, so a member holding none
-               is told exactly that — not shown a zero and left to work it out. */
-            <div className="relative mt-4 rounded-xl border border-primary-500/25 bg-primary-500/[0.07] p-4">
-              <p className="text-sm font-bold text-white">Hold $CSGN to get airtime.</p>
-              <p className="mt-1 text-[11px] text-gray-400 leading-relaxed">
-                Airtime is shared out by holdings — that is what the token is for. Watching, claiming
-                a two-hour block and going live are all free and always will be; this part is not.
+            <>
+              <p className="relative mt-3 text-[11px] text-gray-500 leading-relaxed">
+                Out of {airtimeLabel(airtime?.inventorySeconds ?? 0)} of open air today
+                {airtime?.networkBlockEnabled === false && ' — the 7 PM–3 AM block is open right now, so there is more of it'}.
+                Your share follows your $CSGN: hold twice as much, get twice as much.
+                {airtime?.capped && ' You are at the per-member ceiling, which exists so no one holder can take the whole channel.'}
               </p>
-              <Link to="/participate" className="inline-block mt-3">
-                <Button variant="primary" size="sm">Get $CSGN</Button>
-              </Link>
-            </div>
+              {airtime?.balance != null && (
+                <p className="relative mt-1.5 text-[11px] text-gray-600">
+                  Counted against <span className="font-mono text-gray-400">{fmtCsgn(airtime.balance)} $CSGN</span> in{' '}
+                  <span className="font-mono">{shortWallet(airtime.walletAddress)}</span>.
+                </p>
+              )}
+            </>
+          ) : (
+            /* FOUR DIFFERENT ZEROES, four different things to do about it.
+               This block used to say "hold $CSGN" for all of them — including to
+               a member who held plenty but had never linked a wallet, which is
+               both wrong and unfixable from the screen telling them. */
+            <ZeroAirtime
+              reason={airtime?.reason ?? 'no_clips'}
+              balance={airtime?.balance ?? null}
+              onLinkWallet={() => void linkWallet()}
+              linking={linkingWallet}
+              error={walletError}
+            />
           )}
         </section>
 

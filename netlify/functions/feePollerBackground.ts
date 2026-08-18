@@ -35,7 +35,8 @@ import { queryCollection, countCollection, getDoc, writeDoc, commitWrites, creat
 import { buildExpectedSlotsForDate, buildSlotDoc } from './_shared/schedule'
 import { deriveNowLive, deriveUpNext, type OnAirSlot } from './_shared/onAir'
 import { readLiveWeights, settleTally, type BallotRow } from './_shared/settleVotes'
-import { fetchJson, memo } from './_shared/cache'
+import { memo } from './_shared/cache'
+import { refreshMemeBoard } from './_shared/memeBoard'
 import { getDoc as getLockDoc, writeDoc as writeLockDoc } from './_shared/firebaseAdmin'
 import {
   buildTokenStatsDoc,
@@ -51,11 +52,8 @@ import {
   type DexData,
 } from './_shared/feeCalc'
 import { sampleTwitchStream, twitchAppToken, twitchLoginFromUrl } from './_shared/twitch'
-import {
-  airtimeShares, deriveAirtimeWindows, windowSeconds, buildAirtimeSchedule,
-  type AirtimeClip, type AirtimeMember, type TimeRange,
-} from './_shared/airtime'
-import { getCsgnBalance } from './_shared/solana'
+import { refreshAirtimeSchedule } from './_shared/airtimeSchedule'
+import { refreshLiveRoster } from './_shared/liveRoster'
 
 const POLL_INTERVAL_MS = 15_000
 
@@ -106,6 +104,8 @@ interface SlotDoc {
   endTime?: string
   streamUrl?: string
   walletAddress?: string
+  /** Who holds this block. The real "someone took this" — see claimSlot.ts. */
+  assignedUid?: string
   assignedName?: string
   streamTitle?: string
   creatorFees?: CreatorFees
@@ -394,404 +394,6 @@ async function advanceSlotLifecycles(): Promise<SlotRow[]> {
  * almost nothing, often enough that the on-air power ranking reflects real,
  * currently-held conviction rather than everything anyone ever felt.
  */
-/**
- * Seed and refresh public/memeBoard FROM ON-CHAIN ACTIVITY.
- *
- * Discovery, not curation. The board used to be a hand-typed list of mints,
- * which meant the "Meme 100" was really "the coins someone remembered to add".
- * Now it's assembled from what is actually trading on Solana right now:
- *
- *   1. DISCOVER — DexScreener's boosted-token and latest-profile feeds give a
- *      wide, constantly-churning set of Solana mints that people are actively
- *      promoting and trading.
- *   2. ENRICH — read the real pool state for each mint. Deepest-liquidity pair
- *      wins, because a thin pair quotes a price nobody can trade at.
- *   3. FILTER — apply hard on-chain thresholds (below). This is the step that
- *      turns a firehose into a board.
- *   4. RANK — by 24h volume, and keep the top MEME_BOARD_SIZE.
- *
- * The thresholds are the whole safety story, because this list goes ON AIR and
- * is the ballot for a token-weighted vote. Without them, a rug minted ninety
- * seconds ago with $200 of liquidity lands on the broadcast next to real coins,
- * and the vote legitimises it. So a coin has to clear all of:
- *
- *   • MIN_LIQUIDITY_USD  — someone can actually trade it
- *   • MIN_VOLUME_H24_USD — it is actually being traded
- *   • MIN_PAIR_AGE_MS    — it has survived longer than a launch snipe
- *
- * A DENYLIST (`config/memeBoard.deny`) remains, because "it cleared the numbers"
- * is not the same as "we are happy to put it on television". An ALLOWLIST
- * (`config/memeBoard.mints`) still works too and is always included regardless
- * of thresholds — that's how $CSGN itself stays on its own board.
- */
-
-const MEME_BOARD_INTERVAL_MS = 5 * 60 * 1000
-/** DexScreener accepts up to 30 comma-separated addresses per request. */
-const DEX_TOKENS_BATCH = 30
-/** How many coins the published board carries. */
-const MEME_BOARD_SIZE = 60
-/** Discovery cap — how many candidate mints we're willing to enrich per run. */
-const MEME_DISCOVERY_CAP = 120
-
-/* On-chain quality gates. A coin must clear ALL of these to be discovered. */
-const MIN_LIQUIDITY_USD = 25_000
-const MIN_VOLUME_H24_USD = 50_000
-const MIN_PAIR_AGE_MS = 24 * 60 * 60 * 1000
-
-const SOLANA_MINT_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
-/** Wrapped SOL and the major stables are not memecoins. */
-const MEME_BOARD_EXCLUDE = new Set([
-  'So11111111111111111111111111111111111111112',
-  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-  'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
-])
-
-interface DexPair {
-  chainId?: string
-  pairCreatedAt?: number
-  baseToken?: { address?: string; symbol?: string; name?: string }
-  priceUsd?: string
-  marketCap?: number
-  fdv?: number
-  volume?: { h24?: number }
-  priceChange?: { h24?: number }
-  url?: string
-  liquidity?: { usd?: number }
-  info?: { imageUrl?: string }
-}
-
-/**
- * Search terms used to discover coins BY TRADING, not by promotion.
- *
- * Every Solana memecoin of any size trades against one of these, so searching
- * them returns pairs ranked by real market activity. Deliberately generic — a
- * list of ticker names here would put us straight back to curating by hand.
- */
-const MEME_SEARCH_TERMS = ['SOL', 'USDC', 'WSOL']
-
-/**
- * Candidate Solana mints.
- *
- * TWO KINDS OF SOURCE, and the difference is the whole point of this function.
- *
- * `token-boosts` and `token-profiles` are PROMOTIONAL feeds: they list coins
- * whose teams paid DexScreener for a boost, or who recently filled in a profile.
- * That is a fine signal of intent and a terrible signal of size. On its own it
- * meant the "Meme 100" was really "the hundred coins someone paid to promote" —
- * a genuinely large, heavily traded coin whose team never bought a boost could
- * not appear on the board at all, however much volume it did.
- *
- * The search feed is the corrective: it returns pairs by actual market activity
- * against the majors, so a coin earns its way onto the board by being traded.
- * Both sets are merged, then every candidate is enriched with real pool state
- * and ranked by 24h volume, so promotion can put a coin in front of us but only
- * trading can rank it.
- *
- * Each source degrades independently — `fetchJson` returns null on any failure,
- * and a missing feed just means fewer candidates this run, never an empty board.
- */
-async function discoverSolanaMints(): Promise<string[]> {
-  type PromoRow = { chainId?: string; tokenAddress?: string }
-  const [boosts, profiles, ...searches] = await Promise.all([
-    fetchJson<PromoRow[]>('https://api.dexscreener.com/token-boosts/top/v1'),
-    fetchJson<PromoRow[]>('https://api.dexscreener.com/token-profiles/latest/v1'),
-    ...MEME_SEARCH_TERMS.map((term) =>
-      fetchJson<{ pairs?: DexPair[] }>(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(term)}`),
-    ),
-  ])
-
-  const seen = new Set<string>()
-  const add = (mint: string, into: string[]) => {
-    if (!SOLANA_MINT_RE.test(mint) || seen.has(mint) || MEME_BOARD_EXCLUDE.has(mint)) return
-    seen.add(mint)
-    into.push(mint)
-  }
-
-  // Traded first, so that when the discovery cap bites it is the promoted tail
-  // that gets dropped rather than the coins with real volume behind them.
-  const traded: string[] = []
-  const searchPairs = searches.flatMap((s) => s?.pairs ?? [])
-    .filter((p) => !p.chainId || p.chainId === 'solana')
-    .sort((a, b) => (b.volume?.h24 ?? 0) - (a.volume?.h24 ?? 0))
-  for (const pair of searchPairs) add(String(pair.baseToken?.address || ''), traded)
-
-  const promoted: string[] = []
-  for (const row of [...(boosts || []), ...(profiles || [])]) {
-    if (row?.chainId !== 'solana') continue
-    add(String(row.tokenAddress || ''), promoted)
-  }
-
-  return [...traded, ...promoted].slice(0, MEME_DISCOVERY_CAP)
-}
-
-/** Deepest-liquidity Solana pair per mint. */
-async function enrichMints(mints: string[]): Promise<Map<string, DexPair>> {
-  const best = new Map<string, DexPair>()
-  for (let i = 0; i < mints.length; i += DEX_TOKENS_BATCH) {
-    const batch = mints.slice(i, i + DEX_TOKENS_BATCH)
-    const data = await fetchJson<{ pairs?: DexPair[] }>(
-      `https://api.dexscreener.com/latest/dex/tokens/${batch.join(',')}`,
-    )
-    for (const pair of data?.pairs || []) {
-      if (pair.chainId && pair.chainId !== 'solana') continue
-      const addr = pair.baseToken?.address
-      if (!addr) continue
-      const prev = best.get(addr)
-      if (!prev || (pair.liquidity?.usd ?? 0) > (prev.liquidity?.usd ?? 0)) best.set(addr, pair)
-    }
-  }
-  return best
-}
-
-const toBoardCoin = (address: string, p: DexPair | undefined) => ({
-  address,
-  symbol: String(p?.baseToken?.symbol || '').toUpperCase().slice(0, 12),
-  name: String(p?.baseToken?.name || '').slice(0, 60),
-  imageUrl: String(p?.info?.imageUrl || ''),
-  priceUsd: Number(p?.priceUsd) || 0,
-  marketCapUsd: Number(p?.marketCap ?? p?.fdv) || 0,
-  volumeH24Usd: Number(p?.volume?.h24) || 0,
-  priceChangeH24Pct: Number(p?.priceChange?.h24) || 0,
-  liquidityUsd: Number(p?.liquidity?.usd) || 0,
-  pairUrl: String(p?.url || `https://dexscreener.com/solana/${address}`),
-})
-
-async function refreshMemeBoard(): Promise<void> {
-  try {
-    const existing = await getDoc<{ updatedAt?: string }>('public/memeBoard')
-    const last = Date.parse(existing?.updatedAt || '')
-    if (Number.isFinite(last) && Date.now() - last < MEME_BOARD_INTERVAL_MS) return
-
-    const cfg = await getDoc<{ mints?: unknown; deny?: unknown }>('config/memeBoard')
-    const clean = (v: unknown) => (Array.isArray(v) ? v : [])
-      .map((m) => String(m ?? '').trim())
-      .filter((m) => SOLANA_MINT_RE.test(m))
-    const pinned = clean(cfg?.mints).slice(0, 40)
-    const denied = new Set(clean(cfg?.deny))
-
-    const discovered = (await discoverSolanaMints()).filter((m) => !denied.has(m))
-    const candidates = [...new Set([...pinned, ...discovered])].slice(0, MEME_DISCOVERY_CAP + pinned.length)
-    if (candidates.length === 0) return
-
-    const enriched = await enrichMints(candidates)
-    const now = Date.now()
-    const pinnedSet = new Set(pinned)
-
-    const qualifies = (address: string, p: DexPair | undefined): boolean => {
-      // Pinned coins bypass the thresholds — that's what pinning means, and it's
-      // how $CSGN stays on its own board on a quiet day.
-      if (pinnedSet.has(address)) return true
-      if (!p) return false
-      if ((p.liquidity?.usd ?? 0) < MIN_LIQUIDITY_USD) return false
-      if ((p.volume?.h24 ?? 0) < MIN_VOLUME_H24_USD) return false
-      const age = p.pairCreatedAt ? now - p.pairCreatedAt : 0
-      if (age < MIN_PAIR_AGE_MS) return false
-      return true
-    }
-
-    const coins = candidates
-      .filter((address) => !denied.has(address))
-      .filter((address) => qualifies(address, enriched.get(address)))
-      .map((address) => toBoardCoin(address, enriched.get(address)))
-      // Volume is the honest "what is actually happening" sort for the board
-      // itself; the app re-ranks by power score once holder votes are folded in.
-      .sort((a, b) => b.volumeH24Usd - a.volumeH24Usd)
-      .slice(0, MEME_BOARD_SIZE)
-
-    // Never publish an empty board over a good one — a discovery-feed outage
-    // would otherwise wipe the ballot mid-vote.
-    if (coins.length === 0) return
-
-    await writeDoc('public/memeBoard', {
-      coins,
-      source: 'onchain',
-      // Published so the board is auditable: how many candidates we looked at,
-      // and how many cleared the on-chain gates to actually make it on air.
-      discovery: { candidates: candidates.length, qualified: coins.length },
-      thresholds: {
-        minLiquidityUsd: MIN_LIQUIDITY_USD,
-        minVolumeH24Usd: MIN_VOLUME_H24_USD,
-        minPairAgeHours: MIN_PAIR_AGE_MS / 3_600_000,
-      },
-      updatedAt: new Date().toISOString(),
-    })
-  } catch (err) {
-    console.warn('refreshMemeBoard failed', err)
-  }
-}
-
-/* ─── Holder airtime: build the schedule the channel runs on ─── */
-
-/** Rebuild cadence. Long enough to cost nothing, short enough that a clip
- *  approved now is on the air within the hour. */
-const AIRTIME_REBUILD_INTERVAL_MS = 10 * 60 * 1000
-/** How far ahead the published schedule runs. The preview a member is shown
- *  ("your clip airs at 2:04 PM") is only honest out to this horizon. */
-const AIRTIME_HORIZON_MS = 6 * 60 * 60 * 1000
-/** Ceiling on approved clips considered per rebuild — a cost guard, not a rule. */
-const AIRTIME_MAX_CLIPS = 400
-
-interface ClipDoc {
-  uid?: string
-  username?: string
-  /** What /player loads in an iframe — built server-side from the member's link. */
-  embedUrl?: string
-  /** Where the post actually lives, for credit and for the review queue. */
-  sourceUrl?: string
-  thumbnailUrl?: string
-  platform?: string
-  title?: string
-  seconds?: number
-  sourceSeconds?: number
-  trimStartSeconds?: number
-  trimEndSeconds?: number
-  order?: number
-  status?: string
-}
-
-/**
- * Publish `public/airtimeSchedule` — the ordered, timestamped playlist /player
- * runs whenever nobody is live.
- *
- * The shape of the day falls out of subtraction rather than a branch: claimed
- * slots and (when enabled) the owner's 7 PM–3 AM block arrive as blocked ranges,
- * and whatever is left is holder inventory. Toggling the block off hands those
- * hours back with no other change — that is the owner's 16-hour / 24-hour switch,
- * and it needs no migration because allocation is by proportion of whatever
- * inventory exists.
- *
- * Balances are read LIVE, per rebuild, for the members who actually have
- * approved content. Never a stored snapshot: `master-plan.md` §5.1 documents the
- * attack, where a stored weight lets a holder sell — or cycle the bag to a fresh
- * wallet — and keep the airtime anyway.
- */
-async function refreshAirtimeSchedule(): Promise<void> {
-  try {
-    const existing = await getDoc<{ builtAt?: string }>('public/airtimeSchedule')
-    const last = Date.parse(existing?.builtAt || '')
-    if (Number.isFinite(last) && Date.now() - last < AIRTIME_REBUILD_INTERVAL_MS) return
-
-    const nowMs = Date.now()
-    const horizonEndMs = nowMs + AIRTIME_HORIZON_MS
-
-    // Everything that outranks holder content, as blocked ranges.
-    const meta = await getDoc<{ networkBlockEnabled?: boolean }>(SCHEDULE_META_PATH)
-    const networkBlockEnabled = meta?.networkBlockEnabled !== false // absent = on
-    const upcoming = await queryCollection(
-      'slots',
-      [
-        fieldFilter('endTime', 'GREATER_THAN', new Date(nowMs).toISOString()),
-        fieldFilter('endTime', 'LESS_THAN', new Date(horizonEndMs + 4 * 60 * 60 * 1000).toISOString()),
-      ],
-      [order('endTime', 'ASCENDING')],
-      40,
-    )
-    const blocked: TimeRange[] = []
-    for (const row of upcoming) {
-      const s = row.data as SlotDoc & { type?: string }
-      const startMs = Date.parse(String(s.startTime ?? ''))
-      const endMs = Date.parse(String(s.endTime ?? ''))
-      if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue
-      // A claimed hour is someone's booking; the network block is the owner's.
-      const claimed = s.status === 'confirmed' || s.status === 'live'
-      const ownerBlock = networkBlockEnabled && String(s.type || '') === 'network'
-      if (claimed || ownerBlock) blocked.push({ startMs, endMs })
-    }
-
-    const windows = deriveAirtimeWindows(nowMs, horizonEndMs, blocked)
-    const inventory = windowSeconds(windows)
-    if (inventory <= 0) {
-      await writeDoc('public/airtimeSchedule', {
-        items: [], inventorySeconds: 0, networkBlockEnabled,
-        builtAt: new Date(nowMs).toISOString(), horizonEndsAt: new Date(horizonEndMs).toISOString(),
-      })
-      return
-    }
-
-    // Approved clips only. Nothing airs unreviewed — see docs/plan-decentralized-tv.md §5.1.
-    const clipRows = await queryCollection(
-      'clips',
-      [fieldFilter('status', 'EQUAL', 'approved')],
-      [order('order', 'ASCENDING')],
-      AIRTIME_MAX_CLIPS,
-    )
-    const clips: AirtimeClip[] = clipRows.flatMap((row) => {
-      const c = row.data as ClipDoc
-      const seconds = Math.floor(Number(c.seconds) || 0)
-      if (!c.uid || !c.embedUrl || seconds <= 0) return []
-      // The published embed carries the member's crop, so /player loads a URL
-      // that already starts and ends where they said. Applying it here rather
-      // than at playback keeps the broadcast dumb: it plays what it is given.
-      const start = Math.max(0, Math.floor(Number(c.trimStartSeconds) || 0))
-      const end = Math.max(0, Math.floor(Number(c.trimEndSeconds) || 0))
-      const cropped = c.platform === 'youtube' && (start > 0 || end > start)
-        ? `${c.embedUrl}${start > 0 ? `&start=${start}` : ''}${end > start ? `&end=${end}` : ''}`
-        : String(c.embedUrl)
-      return [{
-        clipId: row.path.split('/').pop()!,
-        uid: String(c.uid),
-        username: String(c.username || ''),
-        url: cropped,
-        platform: String(c.platform || ''),
-        sourceUrl: String(c.sourceUrl || ''),
-        title: String(c.title || ''),
-        seconds,
-        order: Number(c.order) || 0,
-      }]
-    })
-    if (clips.length === 0) return
-
-    // Live balances, one RPC per uploading member — bounded by who has content.
-    const secondsByUid = new Map<string, number>()
-    const walletByUid = new Map<string, string>()
-    const lookByUid = new Map<string, string>()
-    for (const clip of clips) secondsByUid.set(clip.uid, (secondsByUid.get(clip.uid) ?? 0) + clip.seconds)
-    await Promise.all([...secondsByUid.keys()].map(async (uid) => {
-      const user = await getDoc<{ phantom?: { walletAddress?: string; verified?: boolean }; onAirLook?: string }>(`users/${uid}`)
-      const wallet = user?.phantom?.verified ? String(user.phantom.walletAddress || '') : ''
-      if (wallet) walletByUid.set(uid, wallet)
-      // The member's chosen lower-third colour travels with their segments, so
-      // the broadcast does not have to look anything up at playback.
-      lookByUid.set(uid, String(user?.onAirLook || 'signal'))
-    }))
-    for (const clip of clips) clip.look = lookByUid.get(clip.uid) ?? 'signal'
-    const balances = new Map<string, number>()
-    await Promise.all([...walletByUid].map(async ([uid, wallet]) => {
-      try {
-        balances.set(uid, await getCsgnBalance(wallet))
-      } catch {
-        // A balance we cannot read is read as zero, which still earns the floor.
-        // Failing toward "no airtime" would let an RPC hiccup silence somebody.
-        balances.set(uid, 0)
-      }
-    }))
-
-    const dex = await memo('airtime:supply', 10 * 60_000, () => fetchDexData())
-    const supply = dex && dex.priceUsd > 0 ? dex.marketCapUsd / dex.priceUsd : 1_000_000_000
-
-    const members: AirtimeMember[] = [...secondsByUid].map(([uid, clipSeconds]) => ({
-      uid,
-      balance: balances.get(uid) ?? 0,
-      clipSeconds,
-    }))
-
-    const allocations = airtimeShares(members, inventory, supply)
-    const items = buildAirtimeSchedule(allocations, clips, windows)
-
-    await writeDoc('public/airtimeSchedule', {
-      items,
-      inventorySeconds: inventory,
-      networkBlockEnabled,
-      allocations: allocations.map((a) => ({ uid: a.uid, seconds: a.seconds, capped: a.capped })),
-      builtAt: new Date(nowMs).toISOString(),
-      horizonEndsAt: new Date(horizonEndMs).toISOString(),
-    })
-    console.log(`[feePoller] airtime schedule: ${items.length} segments across ${allocations.length} members, ${inventory}s inventory (block ${networkBlockEnabled ? 'on' : 'off'})`)
-  } catch (err) {
-    console.error('[feePoller] refreshAirtimeSchedule error:', err)
-  }
-}
-
 const MEME_SETTLE_INTERVAL_MS = 30 * 60 * 1000
 const MEME_SETTLE_MAX_BALLOTS = 150
 
@@ -1087,8 +689,19 @@ export const handler = async () => {
     await memo('config:season', SEASON_CONFIG_TTL_MS, () => getDoc<{ airtimeStartAt?: string }>('config/season')),
   )
 
+  // Sample every consenting member's Twitch channel — one Helix request per 100
+  // of them — so the operator's board knows who is live and the minute counters
+  // that decide the fee split keep ticking. This is what lets a streamer sign up
+  // once and never think about the schedule again.
+  await refreshLiveRoster(active?.data.assignedUid ?? null)
+
   // Rebuild the holder-airtime playlist the channel runs on between live hours.
-  await refreshAirtimeSchedule()
+  // Supply is injected so this module's cached DexScreener read is reused
+  // rather than the scheduler making a second one of its own.
+  await refreshAirtimeSchedule(async () => {
+    const dex = await memo('airtime:supply', 10 * 60_000, () => fetchDexData())
+    return dex && dex.priceUsd > 0 ? dex.marketCapUsd / dex.priceUsd : 0
+  })
 
   // Re-anchor the Meme-100 to what voters actually still hold (every 30 min).
   await settleMemeVote()
@@ -1102,7 +715,7 @@ export const handler = async () => {
       lastDex = dexData
       if (!tokenStatsWritten) {
         try {
-          await writeDoc('public/tokenStats', buildTokenStatsDoc(dexData), { merge: false })
+          await writeDoc('public/tokenStats', { ...buildTokenStatsDoc(dexData) }, { merge: false })
           tokenStatsWritten = true
         } catch (err) {
           console.error('[feePoller] tokenStats write error:', err)

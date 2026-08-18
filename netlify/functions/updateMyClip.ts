@@ -10,7 +10,7 @@ import { auditLog } from './_shared/audit'
 import { badRequest, forbidden, notFound } from './_shared/errors'
 import { commitWrites, deleteWrite, getDoc, updateWrite } from './_shared/firebaseAdmin'
 import { json, parseJson, requireMethod, withHttp } from './_shared/http'
-import { clampClipSeconds, CLIP_MIN_SECONDS } from './_shared/clipEmbed'
+import { boundClipTrim } from './_shared/clipEmbed'
 
 // No raw `seconds`. Length comes from the platform on submit — a member never
 // types a duration. What they CAN do is crop: pick which part of their own video
@@ -61,13 +61,12 @@ export const handler = withHttp(async (event) => {
       const source = Math.max(0, Math.floor(Number(clip.sourceSeconds) || 0))
       if (source <= 0) throw badRequest('This clip has no measured length to crop.', 'not_croppable')
 
-      const start = Math.min(source - CLIP_MIN_SECONDS, Math.max(0, Math.floor(Number(body.trimStartSeconds) || 0)))
-      const rawEnd = Math.floor(Number(body.trimEndSeconds) || 0)
-      const end = rawEnd > 0 ? Math.min(source, Math.max(start + CLIP_MIN_SECONDS, rawEnd)) : source
-
-      patch.trimStartSeconds = start
-      patch.trimEndSeconds = end === source ? 0 : end
-      patch.seconds = clampClipSeconds(end - start)
+      // boundClipTrim, not inline arithmetic — it is unit-tested and it is the
+      // only thing that knows how a crop maps onto a real video.
+      const bounded = boundClipTrim(source, body.trimStartSeconds, body.trimEndSeconds)
+      patch.trimStartSeconds = bounded.startSeconds
+      patch.trimEndSeconds = bounded.endSeconds
+      patch.seconds = bounded.seconds
       // A crop changes what airs, so it goes back through review. Otherwise
       // "approve the clean thirty seconds, then move the window" is an
       // unreviewed edit to the broadcast.

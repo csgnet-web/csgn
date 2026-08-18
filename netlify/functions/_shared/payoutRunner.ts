@@ -64,8 +64,21 @@ export interface RunOptions {
 export interface RunResult extends RunSummary {
   dryRun: boolean
   solvency: ReturnType<typeof checkSolvency>
-  /** Payouts parked for a human. */
-  review: PayoutRecord[]
+  /**
+   * Payouts parked for a human, in full.
+   *
+   * SEPARATE FROM `review`, which RunSummary defines as a COUNT. This used to
+   * redeclare `review` as the array, which does not actually satisfy the
+   * interface it extends — and because nothing typechecked `netlify/` until
+   * tsconfig.functions.json existed, the mismatch compiled and shipped. The
+   * consequence was live: `writeRunSummary` persisted the whole array of
+   * payout records — wallets and amounts — into the run summary document,
+   * where every other field is a scalar and a reader expects a number.
+   *
+   * The records stay in the returned result, where the caller can act on them.
+   * They no longer go into the stored summary.
+   */
+  reviewRecords: PayoutRecord[]
 }
 
 /* ─── The run ─── */
@@ -120,7 +133,8 @@ export async function runPayouts(deps: RunnerDeps, opts: RunOptions): Promise<Ru
     sourceId: opts.sourceId,
     requested: opts.requests.length,
     paid,
-    review: batch.review,
+    review: batch.review.length,
+    reviewRecords: batch.review,
     skipped: batch.skipped.length,
     totalCsgn: batch.totalCsgn,
     signatures,
@@ -136,7 +150,7 @@ export async function runPayouts(deps: RunnerDeps, opts: RunOptions): Promise<Ru
   if (!solvency.ok) {
     errors.push(`insolvent: ${solvency.reason}`)
     const result = summary(0, true)
-    await deps.writeRunSummary(result)
+    await deps.writeRunSummary(toStoredSummary(result))
     return result
   }
 
@@ -188,8 +202,27 @@ export async function runPayouts(deps: RunnerDeps, opts: RunOptions): Promise<Ru
   }
 
   const result = summary(paid, true)
-  await deps.writeRunSummary(result)
+  await deps.writeRunSummary(toStoredSummary(result))
   return result
+}
+
+/** The summary as it is STORED: scalars only. The full review records and the
+ *  solvency working stay in the returned result for the caller. */
+function toStoredSummary(result: RunResult): RunSummary {
+  return {
+    runId: result.runId,
+    startedAt: result.startedAt,
+    ...(result.finishedAt ? { finishedAt: result.finishedAt } : {}),
+    source: result.source,
+    sourceId: result.sourceId,
+    requested: result.requested,
+    paid: result.paid,
+    review: result.review,
+    skipped: result.skipped,
+    totalCsgn: result.totalCsgn,
+    signatures: result.signatures,
+    errors: result.errors,
+  }
 }
 
 /* ─── Recovery ─── */

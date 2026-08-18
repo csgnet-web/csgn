@@ -1,32 +1,60 @@
-// Coin Jukebox — the SOL spotlight (TouchTunes for crypto TV). Anyone pays SOL to
-// put their coin in the broadcast's rising spotlight; no need to hold or burn
-// $CSGN. The SOL lands in the CSGN treasury, which recycles it into distribution,
-// creator payouts and liquidity — nothing is burned. Dead simple for the user
-// ("pay SOL, my coin goes on TV"). This endpoint is the trust boundary: it
-// re-reads the confirmed on-chain payment before granting anything, and each
-// payment signature is redeemable once.
-//
-// ⚠️  The on-chain payment + verification have not been run against a live mainnet
-//     transaction in this repo — dry-run with a tiny payment before going public.
+/**
+ * THE COIN JUKEBOX — an open auction for the broadcast spotlight, in $CSGN.
+ *
+ * ── What changed, and why ──────────────────────────────────────────────────
+ *
+ * This used to be a FIXED PRICE in either SOL or $CSGN. Two problems with that,
+ * and they compound:
+ *
+ *  1. A fixed price is either too cheap or too expensive, and it is wrong in a
+ *     different direction every week as the token moves. There is no number an
+ *     admin can type that is still right in a month.
+ *  2. Accepting SOL meant the one surface where somebody spends real money to
+ *     be on our channel had nothing to do with our token. A project could buy
+ *     the spotlight without ever touching $CSGN, so the busiest revenue line on
+ *     the network created zero demand for the thing the network runs on.
+ *
+ * So it is now a BID, and $CSGN is the only currency. The highest live bid holds
+ * the spotlight; to take it from them you pay more than they did. That prices
+ * itself, it cannot go stale, and every play routes buy pressure through the
+ * token — which is the entire economic argument for having a token at all.
+ *
+ * ── The rules ──────────────────────────────────────────────────────────────
+ *
+ *  • $CSGN ONLY. No SOL path, on purpose (see above).
+ *  • THE MONEY GOES TO THE TREASURY. Not burned. `/treasury` publishes the
+ *     wallet and what comes out of it — creator payouts, distribution,
+ *     liquidity. A burn would be theatre; a payout is a product.
+ *  • A NEW BID MUST CLEAR THE STANDING ONE by at least MIN_RAISE. Outbidding by
+ *     one token is how an auction becomes a gas war over nothing.
+ *  • A BID EXPIRES. Nobody buys the spotlight forever for one payment —
+ *     SPOTLIGHT_TTL_MS after it lands, the floor resets and the slot reopens.
+ *  • ONE SIGNATURE, ONE PLAY. The payment is re-read on-chain here and the
+ *     signature doc is a CREATE, so a replayed signature loses to the database
+ *     rather than to a code path someone remembered to write.
+ *
+ * ⚠️  The on-chain payment + verification have not been exercised against a live
+ *     mainnet transaction in this repo — dry-run with a small bid first.
+ */
 import { verifyProofToken } from './_shared/proofTokens'
 import { getDoc, writeDoc } from './_shared/firebaseAdmin'
 import { badRequest, conflict } from './_shared/errors'
 import { json, parseJson, requireMethod, withHttp } from './_shared/http'
 import { requireString } from './_shared/validators'
 import { checkRateLimit, clientIp } from './_shared/rateLimit'
-import { verifySolPayment, verifySplPayment, CSGN_MINT_ADDRESS, CSGN_TOKEN_DECIMALS } from './_shared/solana'
+import { verifySplPayment, CSGN_MINT_ADDRESS, CSGN_TOKEN_DECIMALS } from './_shared/solana'
 import { bumpOnAirAction } from './_shared/onAirActions'
+import { nextJukeboxFloor, JUKEBOX_BASE_FLOOR_CSGN, JUKEBOX_TTL_MS } from './_shared/jukebox'
 
 type WalletProof = { type: string; walletAddress: string; exp: number; iat: number; jti: string }
-type Currency = 'SOL' | 'CSGN'
-type Body = { proofToken?: string; signature?: string; symbol?: string; currency?: string; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }
+type Body = { proofToken?: string; signature?: string; symbol?: string; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }
 
-const DEFAULT_SOL = 0.1
-const LAMPORTS_PER_SOL = 1_000_000_000
-// Fallback $CSGN price of a spotlight when config/ticker.spotlightCsgn is unset.
-// A UI token count (not base units); tunable live from the admin panel, same as
-// spotlightSol — a fixed token count is a moving dollar cost.
-const DEFAULT_SPOTLIGHT_CSGN = 1_000_000
+interface SpotlightDoc {
+  symbol?: string
+  bidCsgn?: number
+  bidAt?: string
+  wallet?: string
+}
 
 export const handler = withHttp(async (event) => {
   requireMethod(event, 'POST')
@@ -39,35 +67,34 @@ export const handler = withHttp(async (event) => {
   const symbol = requireString(body.symbol, 'symbol').toUpperCase().slice(0, 12)
   if (!/^[A-Z0-9$]{2,12}$/.test(symbol)) throw badRequest('Enter a valid ticker symbol (2–12 chars).', 'bad_symbol')
 
-  const currency: Currency = String(body.currency || 'SOL').toUpperCase() === 'CSGN' ? 'CSGN' : 'SOL'
-
   if (await getDoc(`spotlightPays/${signature}`)) throw conflict('That payment has already been used for a spotlight.', 'signature_used')
 
-  const ticker = await getDoc<{ spotlightSol?: number; spotlightCsgn?: number }>('config/ticker')
+  // The floor is derived from the standing bid, never typed by an admin.
+  const [ticker, cfg] = await Promise.all([
+    getDoc<{ spotlight?: SpotlightDoc }>('config/ticker'),
+    getDoc<{ jukeboxFloorCsgn?: number }>('config/tokenGates'),
+  ])
+  const baseFloor = Number(cfg?.jukeboxFloorCsgn) > 0 ? Number(cfg!.jukeboxFloorCsgn) : JUKEBOX_BASE_FLOOR_CSGN
+  const standing = ticker?.spotlight ?? {}
+  const required = nextJukeboxFloor(
+    { bidCsgn: Number(standing.bidCsgn) || 0, bidAt: standing.bidAt ?? null },
+    baseFloor,
+    Date.now(),
+  )
 
-  // Trust boundary: re-read the confirmed on-chain payment to the treasury. SOL
-  // is a plain system transfer; $CSGN is an SPL transfer of the mint. Either way
-  // the proceeds land in the CSGN treasury — nothing is burned (see /treasury).
-  let paidAmount: number
-  let requiredAmount: number
-  let payRecord: Record<string, unknown>
+  // Trust boundary: re-read the confirmed on-chain SPL transfer to the treasury.
+  // `minRaw` is what makes a lowball bid fail here rather than on screen.
+  const minRaw = BigInt(Math.round(required)) * 10n ** BigInt(CSGN_TOKEN_DECIMALS)
+  const { raw } = await verifySplPayment(signature, wallet, CSGN_MINT_ADDRESS, minRaw)
+  const paidAmount = Number(raw) / 10 ** CSGN_TOKEN_DECIMALS
 
-  if (currency === 'CSGN') {
-    requiredAmount = Number(ticker?.spotlightCsgn) > 0 ? Number(ticker!.spotlightCsgn) : DEFAULT_SPOTLIGHT_CSGN
-    const minRaw = BigInt(Math.round(requiredAmount)) * 10n ** BigInt(CSGN_TOKEN_DECIMALS)
-    const { raw } = await verifySplPayment(signature, wallet, CSGN_MINT_ADDRESS, minRaw)
-    paidAmount = Number(raw) / 10 ** CSGN_TOKEN_DECIMALS
-    payRecord = { wallet, symbol, currency: 'CSGN', csgn: paidAmount, at: new Date().toISOString() }
-  } else {
-    requiredAmount = Number(ticker?.spotlightSol) > 0 ? Number(ticker!.spotlightSol) : DEFAULT_SOL
-    const minLamports = Math.round(requiredAmount * LAMPORTS_PER_SOL)
-    const paidLamports = await verifySolPayment(signature, wallet, minLamports)
-    paidAmount = paidLamports / LAMPORTS_PER_SOL
-    payRecord = { wallet, symbol, currency: 'SOL', lamports: paidLamports, at: new Date().toISOString() }
-  }
-
+  const nowISO = new Date().toISOString()
   try {
-    await writeDoc(`spotlightPays/${signature}`, payRecord, { exists: false })
+    await writeDoc(
+      `spotlightPays/${signature}`,
+      { wallet, symbol, currency: 'CSGN', csgn: paidAmount, at: nowISO },
+      { exists: false },
+    )
   } catch {
     throw conflict('That payment is already being redeemed.', 'signature_used')
   }
@@ -77,22 +104,38 @@ export const handler = withHttp(async (event) => {
     // A jukebox play is bought airtime, not an endorsement — the ticker renders
     // this as "PAID SPOTLIGHT" so a paid placement is never mistaken for a pick.
     paid: true,
+    bidCsgn: paidAmount,
+    bidAt: nowISO,
+    wallet,
     coingeckoId: String(body.coingeckoId || '').slice(0, 80),
     dexPair: String(body.dexPair || '').slice(0, 80),
     dexChain: String(body.dexChain || 'solana').toLowerCase().slice(0, 20),
-    note: String(body.note || 'Spotlight played on the Coin Jukebox · csgn.fun').slice(0, 90),
+    note: String(body.note || 'Spotlight won on the Coin Jukebox · csgn.fun').slice(0, 90),
   }
-  await writeDoc('config/ticker', { spotlight, updatedAt: new Date().toISOString() }, { merge: true })
+  await writeDoc('config/ticker', { spotlight, updatedAt: nowISO }, { merge: true })
+  // Published separately so the page can read the standing bid without being
+  // able to read config/ticker, which carries admin-only fields.
+  await writeDoc('public/jukebox', {
+    symbol,
+    bidCsgn: paidAmount,
+    bidAt: nowISO,
+    expiresAt: new Date(Date.now() + JUKEBOX_TTL_MS).toISOString(),
+    baseFloorCsgn: baseFloor,
+    // What the NEXT bid must pay, computed here so the page never re-implements
+    // the auction rule — it reads this until `expiresAt`, then reads the floor.
+    // The server re-derives it authoritatively on every bid regardless, so a
+    // stale number on screen loses the on-chain check, not the auction.
+    nextBidCsgn: nextJukeboxFloor({ bidCsgn: paidAmount, bidAt: nowISO }, baseFloor, Date.now()),
+    updatedAt: nowISO,
+  })
   await bumpOnAirAction('spotlight')
 
   return json(200, {
     ok: true,
     symbol,
-    currency,
+    currency: 'CSGN' as const,
     amount: paidAmount,
-    requiredAmount,
-    // Back-compat for existing clients that read `sol`/`requiredSol`.
-    sol: currency === 'SOL' ? paidAmount : undefined,
-    requiredSol: currency === 'SOL' ? requiredAmount : undefined,
+    requiredAmount: required,
+    expiresAt: new Date(Date.now() + JUKEBOX_TTL_MS).toISOString(),
   })
 })

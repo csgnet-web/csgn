@@ -59,8 +59,27 @@ export const api = {
   /** Record an email the client has already linked via Firebase on the profile.
    *  The address is read from the caller's ID token, never from the body. */
   linkEmail: () => functionFetch<{ ok: boolean; alreadyLinked?: boolean; email: string }>('linkEmail', { method: 'POST' }, true),
+  /** Turn stream forwarding on or off for an already-linked Twitch channel.
+   *  Takes effect on the next roster sample — within about a minute. */
+  setForwardConsent: (forwardConsent: boolean) =>
+    functionFetch<{ ok: boolean; forwardConsent: boolean }>(
+      'setForwardConsent', { method: 'POST', body: JSON.stringify({ forwardConsent }) }, true,
+    ),
+  /** Attach a Phantom wallet to an existing account, any time after sign-up.
+   *  Without this a social sign-up has no wallet on file, so its $CSGN balance
+   *  reads as zero and it is allocated no airtime — see linkPhantom.ts. */
+  linkPhantom: (phantomProofToken: string) =>
+    functionFetch<{ ok: boolean; alreadyLinked?: boolean; walletAddress: string; balance: number | null }>(
+      'linkPhantom', { method: 'POST', body: JSON.stringify({ phantomProofToken }) }, true,
+    ),
   /** Attach Twitch to an existing account, any time after sign-up. */
-  linkTwitch: (twitchProofToken: string) => functionFetch<{ ok: boolean; alreadyLinked?: boolean; twitch: { username: string; displayName: string; profileImageUrl?: string } }>('linkTwitch', { method: 'POST', body: JSON.stringify({ twitchProofToken }) }, true),
+  /** `forwardConsent` is the grant that lets CSGN re-broadcast any stream on
+   *  the channel — the thing that means a streamer never touches the schedule.
+   *  Sending it again on an already-linked channel is how it is withdrawn. */
+  linkTwitch: (twitchProofToken: string, forwardConsent = false) =>
+    functionFetch<{ ok: boolean; alreadyLinked?: boolean; forwardConsent?: boolean; twitch: { username: string; displayName: string; profileImageUrl?: string } }>(
+      'linkTwitch', { method: 'POST', body: JSON.stringify({ twitchProofToken, forwardConsent }) }, true,
+    ),
   /** Recommended members, or one member by username. Server-projected — the
    *  response never contains an email, wallet or role flag beyond the label. */
   publicProfiles: (params: { limit?: number; exclude?: string } = {}) => {
@@ -99,7 +118,15 @@ export const api = {
       seconds: number; sourceSeconds: number; trimStartSeconds: number; trimEndSeconds: number
       measured: boolean; order: number; status: string; rejectReason: string | null
     }>
-    airtime: { seconds: number; capped: boolean; inventorySeconds: number; networkBlockEnabled: boolean; builtAt: string | null }
+    airtime: {
+      seconds: number; capped: boolean; inventorySeconds: number
+      networkBlockEnabled: boolean; builtAt: string | null
+      /** Which of the four zeroes this is — see myClips.ts. 'ok' when > 0. */
+      reason: 'ok' | 'no_clips' | 'no_wallet' | 'no_balance' | 'no_inventory'
+      walletAddress: string
+      /** null means unread, not zero. */
+      balance: number | null
+    }
     airings: Array<{ startsAt: string; seconds: number; clipId: string }>
   }>('myClips', {}, true),
   /** Add a post to your reel. It lands pending — nothing airs unreviewed.
@@ -136,6 +163,35 @@ export const api = {
       'adminReviewClip', { method: 'POST', body: JSON.stringify({ clipId, decision, reason }) }, true,
     ),
 
+  /** The Meme 100, served by a function rather than read from Firestore.
+   *  Builds the board on demand when the stored copy is empty, so a cold start
+   *  or an undeployed rules file cannot leave the page blank. */
+  memeBoard: () => functionFetch<{
+    coins: unknown[]
+    updatedAt: string | null
+    built: boolean
+    reason?: string
+    discovery?: { candidates?: number; qualified?: number } | null
+  }>('memeBoard'),
+
+  /** Admin: everybody in the network who is live on Twitch right now. */
+  liveNow: () => functionFetch<{
+    entries: Array<{
+      uid: string; username: string; twitchUsername: string; displayName: string
+      profileImageUrl: string; live: boolean; viewerCount: number; title: string
+      gameName: string; startedAt: string; liveMinutes: number; onAirMinutes: number
+      sampledAt: string
+    }>
+    updatedAt: string | null
+    onAirUid: string | null
+    staleAfterMs: number
+  }>('adminLiveNow', {}, true),
+  /** Admin: put a live member on the channel, or take the channel back. */
+  setOnAir: (body: { uid?: string; action: 'put_on_air' | 'take_off_air' }) =>
+    functionFetch<{ ok: boolean; slotId: string; uid?: string; twitchUsername?: string }>(
+      'adminLiveNow', { method: 'POST', body: JSON.stringify(body) }, true,
+    ),
+
   /** Admin: the sign-in/sign-up audit feed. Served by a function rather than
    *  read from Firestore so it works before firestore.rules is ever deployed. */
   authEvents: (limit = 50) => functionFetch<{ events: Array<{
@@ -155,6 +211,9 @@ export const api = {
   /** Ballots are cast against the MINT, not a typed ticker — symbols collide
    *  and a string nobody can look up makes the ranking unauditable. */
   voteMeme: (proofToken: string, address: string) => functionFetch<{ ok: boolean; address: string; symbol: string; weight: number; tallies: Record<string, { tokens: number; wallets: number }> }>('voteMeme', { method: 'POST', body: JSON.stringify({ proofToken, address }) }),
-  jukeboxSpotlight: (proofToken: string, signature: string, coin: { symbol: string; currency?: 'SOL' | 'CSGN'; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }) =>
-    functionFetch<{ ok: boolean; symbol: string; currency: 'SOL' | 'CSGN'; amount: number; requiredAmount: number; sol?: number; requiredSol?: number }>('jukeboxSpotlight', { method: 'POST', body: JSON.stringify({ proofToken, signature, ...coin }) }),
+  /** Bid $CSGN for the broadcast spotlight. The amount is whatever the signed
+   *  transfer actually moved — the server re-reads it on-chain and rejects
+   *  anything under the standing bid's raise. */
+  jukeboxSpotlight: (proofToken: string, signature: string, coin: { symbol: string; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }) =>
+    functionFetch<{ ok: boolean; symbol: string; currency: 'CSGN'; amount: number; requiredAmount: number; expiresAt: string }>('jukeboxSpotlight', { method: 'POST', body: JSON.stringify({ proofToken, signature, ...coin }) }),
 }

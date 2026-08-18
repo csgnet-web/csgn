@@ -36,7 +36,15 @@
     Referrer-Policy = "strict-origin-when-cross-origin"
     # script-src/frame-src include www.google.com + www.gstatic.com for the
     # reCAPTCHA v3 loader used by Firebase App Check.
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://platform.twitter.com https://*.twimg.com https://embed.twitch.tv https://www.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://platform.twitter.com https://*.twimg.com; img-src 'self' data: https:; media-src 'self' blob: https:; connect-src 'self' https://api.dexscreener.com https://*.firebaseapp.com https://*.googleapis.com https://*.twitch.tv wss://*.firebaseio.com https://cdn.syndication.twimg.com https://syndication.twitter.com; frame-src https://player.twitch.tv https://www.twitch.tv https://embed.twitch.tv https://www.youtube-nocookie.com https://player.kick.com https://kick.com https://platform.twitter.com https://syndication.twitter.com https://x.com https://twitter.com https://www.google.com; font-src 'self' data: https://fonts.gstatic.com;"
+    #
+    # frame-src MUST list every clip platform. It listed youtube-nocookie only,
+    # so a member could submit a TikTok or Instagram link, have it approved, and
+    # watch it fail to render on air — the browser blocked the iframe and the
+    # segment played as a blank rectangle. Two of the three platforms the
+    # product advertises were unairable, and nothing anywhere reported it,
+    # because a CSP block is a console warning rather than an error the app
+    # sees. Any platform added to _shared/clipEmbed.ts has to be added here too.
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://platform.twitter.com https://*.twimg.com https://embed.twitch.tv https://www.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://platform.twitter.com https://*.twimg.com; img-src 'self' data: https:; media-src 'self' blob: https:; connect-src 'self' https://api.dexscreener.com https://*.firebaseapp.com https://*.googleapis.com https://*.twitch.tv wss://*.firebaseio.com https://cdn.syndication.twimg.com https://syndication.twitter.com; frame-src https://player.twitch.tv https://www.twitch.tv https://embed.twitch.tv https://www.youtube-nocookie.com https://www.youtube.com https://www.tiktok.com https://www.instagram.com https://instagram.com https://player.kick.com https://kick.com https://platform.twitter.com https://syndication.twitter.com https://x.com https://twitter.com https://www.google.com; font-src 'self' data: https://fonts.gstatic.com;"
 
 [functions.feePollerBackground]
   schedule = "* * * * *"

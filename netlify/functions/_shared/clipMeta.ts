@@ -103,3 +103,60 @@ export async function fetchClipMeta(parsed: ParsedClip): Promise<ClipMeta> {
     return EMPTY
   }
 }
+
+
+/**
+ * Resolve a TikTok/YouTube short link to the post it points at.
+ *
+ * `vm.tiktok.com/ZGxxxx` and `youtu.be/xyz` are what the share sheet on a phone
+ * actually produces, so they are what members actually paste. `parseClipUrl` is
+ * pure and cannot make a network call, so it rejects the TikTok ones outright —
+ * which meant the single most common way to share a TikTok was answered with
+ * "open it first so we get the real one". That is a correct sentence and a
+ * terrible experience on the core action of the product.
+ *
+ * So this does the round trip: follow the redirect, hand the destination back
+ * to the parser. Deliberately narrow — it only ever follows hosts we already
+ * know are short-link services for platforms we support, so it cannot be used
+ * to make the server fetch an arbitrary URL somebody pasted.
+ *
+ * Best effort. Returns the input unchanged on any failure, and the caller then
+ * fails exactly as it did before.
+ */
+const SHORT_LINK_HOSTS = new Set(['vm.tiktok.com', 'vt.tiktok.com', 'm.tiktok.com'])
+
+export async function resolveShortLink(input: string): Promise<string> {
+  const raw = String(input ?? '').trim()
+  if (!raw) return raw
+
+  let url: URL
+  try {
+    url = new URL(raw.startsWith('http') ? raw : `https://${raw}`)
+  } catch {
+    return raw
+  }
+  if (url.protocol !== 'https:') return raw
+  if (!SHORT_LINK_HOSTS.has(url.hostname.replace(/^www\./i, '').toLowerCase())) return raw
+
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 5000)
+    // `redirect: 'follow'` and read `res.url` — HEAD is refused by TikTok's
+    // edge, so this is a GET whose body we never read.
+    const res = await fetch(url.toString(), {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CSGNBot/1.0; +https://csgn.fun)' },
+    })
+    clearTimeout(timer)
+    const finalUrl = String(res.url || '')
+    // Only accept a destination on the platform we expected. A short link that
+    // redirects somewhere else is not a clip, it is a redirect chain, and
+    // following it into the parser would be trusting an open redirect.
+    if (/^https:\/\/(www\.)?tiktok\.com\//i.test(finalUrl)) return finalUrl
+    return raw
+  } catch {
+    return raw
+  }
+}

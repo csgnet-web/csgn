@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useCallback, useMemo, useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   Mail, Wallet, Trophy, Lock,
@@ -50,6 +50,56 @@ function Connection({
   )
 }
 
+/** Survives the redirect to Twitch and back. See handleConnectTwitch. */
+const FORWARD_CONSENT_KEY = 'csgn:twitchForwardConsent'
+
+/**
+ * THE FORWARDING GRANT, on screen.
+ *
+ * Worth stating plainly rather than burying in the terms, because it is the
+ * single thing that makes CSGN worth a streamer's time: tick it once and you
+ * never touch the schedule again. It is also a real permission over their work,
+ * so the copy says exactly what it allows and the control to withdraw it sits
+ * in the same place as the control to grant it.
+ *
+ * Defaults to ON at link time but is never silently applied — the box is
+ * visible above the button that triggers the link, and the server stores
+ * `false` unless the client actually sent `true`.
+ */
+function ForwardConsentBox({
+  checked, onChange, busy, linked,
+}: {
+  checked: boolean
+  onChange: (next: boolean) => void
+  busy?: boolean
+  linked?: boolean
+}) {
+  return (
+    <label className={`flex items-start gap-3 rounded-xl border p-3.5 cursor-pointer transition-colors ${
+      checked ? 'border-primary-500/30 bg-primary-500/[0.06]' : 'border-white/[0.09] bg-white/[0.02] hover:bg-white/[0.04]'
+    }`}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={busy}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 h-4 w-4 shrink-0 accent-primary-500 cursor-pointer"
+      />
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-white">
+          Let CSGN put my stream on the channel
+        </span>
+        <span className="mt-1 block text-[11px] text-gray-400 leading-relaxed">
+          You stream on Twitch exactly as you normally would. When you go live we can carry your
+          stream on CSGN and you earn your share of the trading fees for the minutes you are on.
+          No schedule to manage, no block to claim, nothing to install.
+          {linked && ' Turn this off any time — we stop checking your channel within a minute.'}
+        </span>
+      </span>
+    </label>
+  )
+}
+
 export default function Dashboard() {
   const { user, profile, signIn, resendVerification, refreshProfile, addEmailPassword } = useAuth()
   const [resending, setResending] = useState(false)
@@ -71,6 +121,10 @@ export default function Dashboard() {
   const [feePage, setFeePage] = useState(0)
   const [linkMsg, setLinkMsg] = useState('')
   const [linkErr, setLinkErr] = useState('')
+  // Ticked BEFORE the Twitch hop, so the grant is captured in the same gesture
+  // that links the channel rather than as a second thing to come back for.
+  const [forwardConsent, setForwardConsent] = useState(true)
+  const [consentBusy, setConsentBusy] = useState(false)
   const upcomingSlots = useMemo(
     () => slotHistory.filter((s) => new Date(s.endTime).getTime() > Date.now()).slice(0, 6),
     [slotHistory],
@@ -144,12 +198,16 @@ export default function Dashboard() {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await api.linkTwitch(proof.proofToken)
+        // The tick made before the redirect, recovered on the way back.
+        const consented = localStorage.getItem(FORWARD_CONSENT_KEY) === '1'
+        localStorage.removeItem(FORWARD_CONSENT_KEY)
+        const res = await api.linkTwitch(proof.proofToken, consented)
         clearTwitchProof()
         if (cancelled) return
         setLinkMsg(res.alreadyLinked
           ? `Twitch already connected as ${res.twitch.displayName}.`
-          : `Twitch connected as ${res.twitch.displayName}. You can claim slots now.`)
+          : `Twitch connected as ${res.twitch.displayName}.${consented ? ' Just stream as usual — we will pick you up.' : ''}`)
+        setForwardConsent(Boolean(res.forwardConsent))
         await refreshProfile()
       } catch (err) {
         clearTwitchProof()
@@ -239,10 +297,13 @@ export default function Dashboard() {
     onLinked: async (result) => {
       setLinkErr('')
       try {
-        const res = await api.linkTwitch(result.twitchProofToken)
+        const consented = localStorage.getItem(FORWARD_CONSENT_KEY) === '1'
+        localStorage.removeItem(FORWARD_CONSENT_KEY)
+        const res = await api.linkTwitch(result.twitchProofToken, consented)
         setLinkMsg(res.alreadyLinked
           ? `Twitch already connected as ${res.twitch.displayName}.`
-          : `Twitch connected as ${res.twitch.displayName}. You can claim slots now.`)
+          : `Twitch connected as ${res.twitch.displayName}.${consented ? ' Just stream as usual — we will pick you up.' : ''}`)
+        setForwardConsent(Boolean(res.forwardConsent))
         await refreshProfile()
       } catch (err) {
         setLinkErr(err instanceof Error ? err.message : 'Could not connect Twitch.')
@@ -252,8 +313,35 @@ export default function Dashboard() {
 
   const handleConnectTwitch = () => {
     setLinkErr(''); setLinkMsg('')
+    // The consent tick has to survive a full-page redirect to Twitch and back,
+    // so it rides in localStorage rather than component state. Read and cleared
+    // wherever the returning proof is exchanged.
+    localStorage.setItem(FORWARD_CONSENT_KEY, forwardConsent ? '1' : '0')
     void twitchLink.start()
   }
+
+  /**
+   * Turn forwarding on or off after the channel is already linked.
+   *
+   * Straight to the server, no OAuth: they have already proved they own the
+   * channel, and a permission that costs a five-step round trip to withdraw is
+   * not a permission anybody would actually withdraw.
+   */
+  const toggleForwardConsent = useCallback(async (next: boolean) => {
+    setConsentBusy(true)
+    setLinkErr('')
+    try {
+      await api.setForwardConsent(next)
+      setForwardConsent(next)
+      setLinkMsg(next
+        ? 'Forwarding is on. Stream whenever you like — you will show up on the operator board and can be put on the channel.'
+        : 'Forwarding is off. We will stop checking your channel within a minute.')
+      await refreshProfile()
+    } catch (err) {
+      setLinkErr(err instanceof Error ? err.message : 'Could not save that.')
+    }
+    setConsentBusy(false)
+  }, [refreshProfile])
 
   const handleDismissNotification = async (notifId: string) => {
     if (!user) return
@@ -358,6 +446,10 @@ export default function Dashboard() {
   }
 
   const twitchLinked = Boolean(profile?.twitch?.verified)
+  // The stored grant wins over the local tick once a channel is actually
+  // linked — the tick only ever described an intent for a link that had not
+  // happened yet.
+  const consentOn = twitchLinked ? Boolean(profile?.twitch?.forwardConsent) : forwardConsent
   // Wallet-only accounts (signupWithPhantom) have no email, so there is nothing
   // to verify and nothing to nag about — the old unconditional check told them
   // to go check an inbox they never gave us. Adding an address later turns the
@@ -401,18 +493,23 @@ export default function Dashboard() {
               />
             )}
             {!twitchLinked && !twitchLink.handoff && (
-              <TwitchNotice
-                action={
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    isLoading={twitchLink.phase === 'starting' || twitchLink.phase === 'redirecting'}
-                    onClick={handleConnectTwitch}
-                  >
-                    Connect Twitch
-                  </Button>
-                }
-              />
+              <div className="space-y-3">
+                <TwitchNotice
+                  action={
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      isLoading={twitchLink.phase === 'starting' || twitchLink.phase === 'redirecting'}
+                      onClick={handleConnectTwitch}
+                    >
+                      Connect Twitch
+                    </Button>
+                  }
+                />
+                {/* Above the button, not below it — a permission presented after
+                    the action it governs has already been taken is not consent. */}
+                <ForwardConsentBox checked={forwardConsent} onChange={setForwardConsent} />
+              </div>
             )}
             {/* In-app browser: the Twitch hop cannot happen here, so the panel
                 takes the notice's place and waits for Safari to finish it. */}
@@ -492,6 +589,18 @@ export default function Dashboard() {
               API response another member can reach. */}
           <div className="border-t border-white/[0.06] px-5 sm:px-6 pt-4 pb-3 grid gap-2.5 sm:grid-cols-3">
             <Connection Icon={Twitch} label="Twitch" value={twitchDisplay} connected={twitchLinked} />
+            {/* The grant lives next to the connection it governs, and is
+                withdrawable from the same place it was given. */}
+            {twitchLinked && (
+              <div className="pt-1">
+                <ForwardConsentBox
+                  checked={consentOn}
+                  busy={consentBusy}
+                  linked
+                  onChange={(next) => void toggleForwardConsent(next)}
+                />
+              </div>
+            )}
             <Connection Icon={Wallet} label="Wallet" value={savedWallet ? `${savedWallet.slice(0, 4)}…${savedWallet.slice(-4)}` : ''} connected={Boolean(savedWallet)} mono />
             <Connection Icon={Mail} label="Email" value={accountEmail} connected={Boolean(accountEmail) && Boolean(user.emailVerified)} />
           </div>

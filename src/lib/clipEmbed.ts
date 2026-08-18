@@ -84,8 +84,13 @@ export const PLATFORM_STYLE: Record<string, { gradient: string; mark: string }> 
 }
 
 const CLIP_HOSTS = [
-  'youtube.com', 'youtu.be', 'm.youtube.com',
+  'youtube.com', 'youtu.be', 'm.youtube.com', 'music.youtube.com',
   'tiktok.com', 'm.tiktok.com',
+  // The share sheet on a phone produces these, so they are what people paste.
+  // The server follows the redirect (clipMeta.resolveShortLink) and parses the
+  // destination; leaving them out here disabled the Add button on the single
+  // most common way to share a TikTok.
+  'vm.tiktok.com', 'vt.tiktok.com',
   'instagram.com', 'instagr.am',
 ]
 

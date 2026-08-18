@@ -25,6 +25,7 @@ import TickerControlsCard from '@/components/admin/TickerControlsCard'
 import BroadcastBannerCard from '@/components/admin/BroadcastBannerCard'
 import MemeBoardCard from '@/components/admin/MemeBoardCard'
 import { CreatorFeesTab } from '@/components/admin/CreatorFeesTab'
+import LiveNowTab from '@/components/admin/LiveNowTab'
 import ClipQueueTab from '@/components/admin/ClipQueueTab'
 import { VoteHistoryTab } from '@/components/admin/VoteHistoryTab'
 import { isVoteOpen, type VoteRecord } from '@/lib/votes'
@@ -62,7 +63,7 @@ import {
   type CreatorFees,
 } from '@/lib/slots'
 
-type Tab = 'overview' | 'streamers' | 'schedule' | 'fees' | 'clips' | 'votes' | 'auth'
+type Tab = 'overview' | 'live' | 'streamers' | 'schedule' | 'fees' | 'clips' | 'votes' | 'auth'
 
 interface AuthEventData {
   id: string
@@ -958,6 +959,7 @@ export default function Admin() {
 
   const tabs = [
     { id: 'overview' as Tab, label: 'Overview', icon: BarChart3 },
+    { id: 'live' as Tab, label: 'Live Now', icon: Radio },
     { id: 'streamers' as Tab, label: 'Streamers', icon: Users },
     { id: 'schedule' as Tab, label: 'Schedule', icon: Clock },
     { id: 'fees' as Tab, label: 'Creator Fees', icon: DollarSign, count: pendingFeeCount, tone: 'amber' },
@@ -1951,6 +1953,19 @@ export default function Admin() {
         )}
 
         {/* ── Creator Fees Tab ── */}
+        {activeTab === 'live' && (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Live Now</h3>
+              <p className="text-sm text-gray-400 mt-1">
+                Every member who connected Twitch and gave permission to be forwarded. Nobody has to
+                claim a block — they stream as they normally would, and you put them on from here.
+              </p>
+            </div>
+            <LiveNowTab />
+          </div>
+        )}
+
         {activeTab === 'clips' && (
           <div className="space-y-6">
             <div>

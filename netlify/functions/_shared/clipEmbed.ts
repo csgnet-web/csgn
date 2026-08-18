@@ -214,3 +214,54 @@ export function clampClipSeconds(input: unknown): number {
   if (!Number.isFinite(n) || n <= 0) return CLIP_FALLBACK_SECONDS
   return Math.min(CLIP_MAX_SECONDS, Math.max(CLIP_MIN_SECONDS, n))
 }
+
+
+/**
+ * Bound a member's requested crop to a window that actually exists inside their
+ * video.
+ *
+ * Pure, and separate from the endpoint, because this decides how much airtime a
+ * segment asks the scheduler for — get it wrong and the broadcast runs a clip
+ * into dead air, or plays it from a negative offset.
+ *
+ * The bug this was extracted to fix: the endpoint computed the start as
+ * `Math.min(source - CLIP_MIN_SECONDS, Math.max(0, requested))`. For any video
+ * shorter than CLIP_MIN_SECONDS — which a 3-second TikTok is — the left operand
+ * is NEGATIVE, and `Math.min` happily returns it. That negative start went into
+ * the embed URL as `?start=-2`.
+ *
+ * Rules, in order:
+ *   • A source we could not measure cannot be cropped at all (caller's check).
+ *   • The start can never be negative, and never so late that less than the
+ *     minimum remains — but on a video too short to hold a minimum window, the
+ *     answer is "no crop", not "a nonsense one".
+ *   • An end at or past the source means "play to the end", stored as 0 so the
+ *     embed carries no `end` parameter.
+ */
+export interface BoundedTrim { startSeconds: number; endSeconds: number; seconds: number }
+
+export function boundClipTrim(sourceSeconds: number, requestedStart: unknown, requestedEnd: unknown): BoundedTrim {
+  const source = Math.max(0, Math.floor(Number(sourceSeconds) || 0))
+  if (source <= 0) return { startSeconds: 0, endSeconds: 0, seconds: CLIP_FALLBACK_SECONDS }
+
+  // Too short to hold a minimum window — there is no crop to make. Airing it
+  // whole is the honest answer; a "crop" of a 3-second clip is not a feature.
+  if (source <= CLIP_MIN_SECONDS) {
+    return { startSeconds: 0, endSeconds: 0, seconds: clampClipSeconds(source) }
+  }
+
+  const latestStart = source - CLIP_MIN_SECONDS
+  const start = Math.max(0, Math.min(latestStart, Math.floor(Number(requestedStart) || 0)))
+
+  const rawEnd = Math.floor(Number(requestedEnd) || 0)
+  const end = rawEnd > 0
+    ? Math.min(source, Math.max(start + CLIP_MIN_SECONDS, rawEnd))
+    : source
+
+  return {
+    startSeconds: start,
+    // 0 means "to the end", which is what keeps `end=` off the embed URL.
+    endSeconds: end >= source ? 0 : end,
+    seconds: clampClipSeconds(end - start),
+  }
+}

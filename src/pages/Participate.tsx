@@ -1,19 +1,35 @@
 import { useCallback, useEffect, useState } from 'react'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { motion } from 'framer-motion'
-import { Wallet, Megaphone, Check, Trophy, AlertCircle, Vote as VoteIcon, Flame } from 'lucide-react'
+import { Wallet, Megaphone, Check, Trophy, AlertCircle, Vote as VoteIcon, Flame, Coins } from 'lucide-react'
 import { db } from '@/config/firebase'
 import { api } from '@/lib/api'
 import { proveWallet } from '@/lib/walletProof'
-import { paySpotlight, paySpotlightCsgn } from '@/lib/spotlightPay'
+import { paySpotlightCsgn } from '@/lib/spotlightPay'
 import { fetchCsgnBalance } from '@/lib/csgnBalance'
 import { DEFAULT_TOKEN_GATES, normalizeTokenGates } from '@/lib/tokenGates'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import Meme100Board from '@/components/participate/Meme100Board'
+import { SignInWall } from '@/components/auth/SignInWall'
+import { useAuth } from '@/contexts/useAuth'
 
 interface VoteCfg { id: string; question: string; options: string[]; startISO?: string; status?: string }
+
+/** `public/jukebox`, exactly as jukeboxSpotlight publishes it. Nothing here
+ *  decides the price — the auction rule lives in
+ *  netlify/functions/_shared/jukebox.ts and the server re-derives it on every
+ *  bid. This is the stored verdict, read for display. */
+interface JukeboxDoc {
+  symbol: string
+  bidCsgn: number
+  bidAt: string | null
+  expiresAt: string | null
+  nextBidCsgn: number
+  baseFloorCsgn: number
+}
+const JUKEBOX_BASE_FLOOR_CSGN = 250_000
 interface Cell { tokens: number; wallets: number }
 type Tally = Record<string, Cell>
 
@@ -24,7 +40,8 @@ const fmtToken = (n: number): string =>
 const fmtFull = (n: number): string => Math.round(n).toLocaleString('en-US')
 
 export default function Participate() {
-  const { walletAddress, connect, signMessage, isConnecting, balance: solBalance } = usePhantomWallet()
+  const { user, loading: authLoading } = useAuth()
+  const { walletAddress, connect, signMessage, isConnecting } = usePhantomWallet()
   const [balanceState, setBalanceState] = useState<number | null>(null)
   const [balanceLoading, setBalanceLoading] = useState(false)
 
@@ -35,6 +52,15 @@ export default function Participate() {
     return onSnapshot(doc(db, 'config', 'tokenGates'), (snap) => {
       setRightNowMin(normalizeTokenGates(snap.exists() ? snap.data() : null).rightNowMinCsgn)
     }, () => {})
+  }, [])
+
+  // A bid expires while somebody is looking at the page, so "is it still live"
+  // has to be state that ticks, not a Date.now() read during render — that is
+  // both impure and, worse, a screen that never notices the auction reopened.
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 30_000)
+    return () => clearInterval(t)
   }, [])
 
   const [vote, setVote] = useState<VoteCfg | null>(null)
@@ -48,16 +74,32 @@ export default function Participate() {
   const [rnMsg, setRnMsg] = useState<string | null>(null)
   const [rnErr, setRnErr] = useState<string | null>(null)
 
-  // Coin Jukebox — pay SOL or $CSGN to spotlight a coin (TouchTunes-style)
-  const [spotSol, setSpotSol] = useState(0.1)
-  const [spotCsgn, setSpotCsgn] = useState(1_000_000)
-  const [spotCurrency, setSpotCurrency] = useState<'SOL' | 'CSGN'>('SOL')
+  // Coin Jukebox — an open $CSGN auction for the broadcast spotlight.
+  const [jukebox, setJukebox] = useState<JukeboxDoc | null>(null)
+  const [spotBid, setSpotBid] = useState<number | null>(null)
   const [spotSymbol, setSpotSymbol] = useState('')
   const [spotPair, setSpotPair] = useState('')
   const [spotNote, setSpotNote] = useState('')
   const [spotBusy, setSpotBusy] = useState(false)
   const [spotMsg, setSpotMsg] = useState<string | null>(null)
   const [spotErr, setSpotErr] = useState<string | null>(null)
+
+  // The standing bid, published to its own world-readable doc by
+  // jukeboxSpotlight so this page never has to read admin-only config/ticker.
+  useEffect(() => {
+    return onSnapshot(doc(db, 'public', 'jukebox'), (snap) => {
+      const d = snap.exists() ? snap.data() : null
+      setJukebox(d ? {
+        symbol: String(d.symbol || ''),
+        bidCsgn: Number(d.bidCsgn) || 0,
+        bidAt: d.bidAt ? String(d.bidAt) : null,
+        expiresAt: d.expiresAt ? String(d.expiresAt) : null,
+        nextBidCsgn: Number(d.nextBidCsgn) || 0,
+        baseFloorCsgn: Number(d.baseFloorCsgn) || JUKEBOX_BASE_FLOOR_CSGN,
+      } : null)
+    }, () => {})
+  }, [])
+
 
   // Meme-100 community vote (token-weighted, no burn)
   const [memeSymbol, setMemeSymbol] = useState('')
@@ -69,10 +111,6 @@ export default function Participate() {
   useEffect(() => {
     return onSnapshot(doc(db, 'config', 'ticker'), (snap) => {
       const data = snap.exists() ? snap.data() : {}
-      const sol = Number(data.spotlightSol)
-      if (sol > 0) setSpotSol(sol)
-      const csgn = Number(data.spotlightCsgn)
-      if (csgn > 0) setSpotCsgn(csgn)
       const v = data.vote as Record<string, unknown> | undefined
       setVote(
         v && v.id && Array.isArray(v.options)
@@ -161,35 +199,29 @@ export default function Participate() {
     setSpotErr(null); setSpotMsg(null)
     const symbol = spotSymbol.trim().toUpperCase()
     if (!/^[A-Z0-9$]{2,12}$/.test(symbol)) { setSpotErr('Enter a valid ticker symbol (2–12 characters).'); return }
+    const bid = Math.floor(spotBid ?? minBid)
+    if (!(bid >= minBid)) { setSpotErr(`The next bid has to be at least ${fmtFull(minBid)} $CSGN.`); return }
     setSpotBusy(true)
     try {
       const addr = await ensureWallet()
-      // Prove the wallet first so a later-rejected payment wastes no on-chain action.
+      // Prove the wallet first so a later-rejected bid wastes no on-chain action.
       const proof = await proveWallet(addr, signMessage)
-      // Pay the treasury in the chosen currency (Phantom prompts + signs), then
-      // redeem the signature server-side — nothing is burned.
-      const signature = spotCurrency === 'CSGN'
-        ? await paySpotlightCsgn(addr, spotCsgn)
-        : await paySpotlight(addr, spotSol)
+      // Pay the treasury in $CSGN (Phantom prompts + signs), then redeem the
+      // signature server-side, which re-reads the transfer on-chain.
+      const signature = await paySpotlightCsgn(addr, bid)
       const res = await api.jukeboxSpotlight(proof, signature, {
         symbol,
-        currency: spotCurrency,
         dexPair: extractPair(spotPair) || undefined,
         note: spotNote.trim() || undefined,
       })
-      const paid = res.currency === 'CSGN' ? `${fmtToken(res.amount)} $CSGN` : `${res.amount} SOL`
-      setSpotMsg(`🎶 Paid ${paid} — ${symbol} rises in the broadcast spotlight within a minute.`)
-      setSpotSymbol(''); setSpotPair(''); setSpotNote('')
-      if (spotCurrency === 'CSGN') loadBalance(addr)
+      setSpotMsg(`🎶 ${symbol} takes the spotlight for ${fmtToken(res.amount)} $CSGN — it rises on air within a minute.`)
+      setSpotSymbol(''); setSpotPair(''); setSpotNote(''); setSpotBid(null)
+      loadBalance(addr)
     } catch (e) {
-      setSpotErr(e instanceof Error ? e.message : 'Spotlight failed.')
+      setSpotErr(e instanceof Error ? e.message : 'Bid failed.')
     }
     setSpotBusy(false)
   }
-  const spotPrice = spotCurrency === 'CSGN' ? spotCsgn : spotSol
-  const spotBalance = spotCurrency === 'CSGN' ? balance : solBalance
-  const spotPriceLabel = spotCurrency === 'CSGN' ? `${fmtFull(spotCsgn)} $CSGN` : `${spotSol} SOL`
-  const canAffordSpotlight = spotBalance != null && spotBalance >= spotPrice
 
   const doVoteMeme = async () => {
     setMemeErr(null); setMemeMsg(null)
@@ -222,23 +254,48 @@ export default function Participate() {
   const closed = vote?.status === 'closed'
   const canPostRightNow = balance != null && balance >= rightNowMin
 
+  // The standing bid only sets the floor while it is LIVE. Once `expiresAt`
+  // passes, the spotlight reopens at the base floor — the same rule the server
+  // enforces in _shared/jukebox.ts, read here from the published verdict rather
+  // than recomputed.
+  const jukeboxExpiresMs = jukebox?.expiresAt ? Date.parse(jukebox.expiresAt) : NaN
+  const holdsSpotlight = Boolean(jukebox && jukebox.bidCsgn > 0 && Number.isFinite(jukeboxExpiresMs) && jukeboxExpiresMs > nowMs)
+  const baseFloor = jukebox?.baseFloorCsgn || JUKEBOX_BASE_FLOOR_CSGN
+  const minBid = holdsSpotlight ? Math.max(baseFloor, jukebox!.nextBidCsgn || 0) : baseFloor
+  const canAffordSpotlight = balance != null && balance >= minBid
+
+  // Every surface on this page spends or weighs a balance, and each one writes
+  // something against an account. Gating the whole page — the same wall Post
+  // and You use — beats four separate half-states inside it.
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
+  if (!user) {
+    return (
+      <SignInWall
+        Icon={Coins}
+        title="Your balance is your vote."
+        body="Back a coin on the Meme 100, decide tonight’s programming, bid a coin onto the broadcast spotlight, and put your own line on the live ticker."
+        cta="Sign in to take part"
+      />
+    )
+  }
+
   return (
     <motion.main
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       className="max-w-3xl mx-auto px-4 sm:px-6 py-10 space-y-8"
     >
-      <header className="space-y-2">
-        <h1 className="text-3xl sm:text-4xl font-display font-black uppercase tracking-tight">$CSGN</h1>
-        <p className="text-gray-400 text-sm sm:text-base">
-          Your balance is your voice. Back a coin on the Meme 100, vote tonight’s programming, and at{' '}
-          {fmtFull(rightNowMin)} $CSGN put your own message on the live broadcast ticker.
-        </p>
-      </header>
+      {/* NO PAGE HEADER. The tab bar already says $CSGN, the wordmark is in the
+          top bar, and a third "$CSGN" title with a paragraph under it collided
+          with both. The sections below name themselves. */}
 
-      {/* THE MEME 100 — first, and public. It is the most interesting thing on
-          this page and the only part that works with no wallet connected, so it
-          leads rather than sitting under two sections a visitor cannot use. */}
+      {/* THE MEME 100 leads — it is the most interesting thing on the page. */}
       <Meme100Board />
 
       {/* Wallet status */}
@@ -378,39 +435,48 @@ export default function Participate() {
         </Card>
       </section>
 
-      {/* Coin Jukebox — pay SOL or $CSGN to spotlight your coin (TouchTunes-style) */}
+      {/* Coin Jukebox — an open $CSGN auction for the broadcast spotlight */}
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <Flame className="w-5 h-5 text-amber-400" />
           <h2 className="text-lg font-display font-bold uppercase tracking-wide">Coin Jukebox</h2>
         </div>
-        <Card hover={false} className="p-5 space-y-3">
+        <Card hover={false} className="p-5 space-y-4">
           <p className="text-sm text-gray-400">
-            Pay <span className="text-amber-300 font-semibold">{spotPriceLabel}</span> to play your coin into the broadcast’s{' '}
-            <span className="text-amber-300 font-semibold">crypto spotlight</span> — like a jukebox for crypto TV. It rises on air within a minute, and it all goes to the <span className="text-amber-300 font-semibold">CSGN treasury</span> — recycled into creator payouts + distribution, never burned.
+            The highest live bid holds the <span className="text-amber-300 font-semibold">crypto spotlight</span> on the
+            broadcast. Bids are in <span className="text-amber-300 font-semibold">$CSGN</span> and go straight to the{' '}
+            <span className="text-amber-300 font-semibold">CSGN treasury</span> — recycled into creator payouts and
+            distribution, never burned. A winning bid holds for six hours, then the floor resets.
           </p>
 
-          {/* Currency toggle — pay in SOL or in $CSGN */}
-          <div className="inline-flex rounded-xl border border-white/[0.1] bg-white/[0.03] p-0.5 text-sm">
-            {(['SOL', 'CSGN'] as const).map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setSpotCurrency(c)}
-                className={`px-4 py-1.5 rounded-lg font-semibold transition-colors cursor-pointer ${spotCurrency === c ? 'bg-amber-500/20 text-amber-200' : 'text-gray-400 hover:text-white'}`}
-              >
-                {c === 'CSGN' ? '$CSGN' : 'SOL'}
-              </button>
-            ))}
+          {/* WHO HOLDS IT NOW. An auction with an invisible standing bid is a
+              price list with extra steps — the number to beat is the product. */}
+          <div className="flex flex-wrap items-end justify-between gap-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] p-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.16em] text-amber-400/80">On the spotlight</p>
+              <p className="mt-1 text-2xl font-black font-display text-white">
+                {holdsSpotlight ? `$${jukebox!.symbol}` : 'Open'}
+              </p>
+              <p className="mt-0.5 text-xs text-gray-500">
+                {holdsSpotlight
+                  ? `${fmtToken(jukebox!.bidCsgn)} $CSGN · holds until ${new Date(jukebox!.expiresAt!).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+                  : 'No live bid — it opens at the floor.'}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Next bid from</p>
+              <p className="mt-1 font-mono text-lg font-bold text-amber-300 tabular-nums">{fmtFull(minBid)}</p>
+              <p className="text-[10px] text-gray-600">$CSGN</p>
+            </div>
           </div>
 
           {!walletAddress ? (
-            <Button onClick={() => void connect()} isLoading={isConnecting} leftIcon={<Wallet className="w-4 h-4" />}>Connect Phantom to play a coin</Button>
+            <Button onClick={() => void connect()} isLoading={isConnecting} leftIcon={<Wallet className="w-4 h-4" />}>Connect Phantom to bid</Button>
           ) : !canAffordSpotlight ? (
             <div className="flex items-start gap-2 text-sm text-amber-300/90 bg-amber-500/[0.06] border border-amber-500/20 rounded-xl p-3">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
               <span>
-                You have {spotBalance != null ? (spotCurrency === 'CSGN' ? fmtFull(spotBalance) : spotBalance.toFixed(3)) : '—'} {spotCurrency === 'CSGN' ? '$CSGN' : 'SOL'}. You need {spotPriceLabel} to play a spotlight.
+                You hold {balance != null ? fmtFull(balance) : '—'} $CSGN. The next bid needs {fmtFull(minBid)}.
               </span>
             </div>
           ) : (
@@ -420,9 +486,28 @@ export default function Participate() {
                 <input value={spotPair} onChange={(e) => setSpotPair(e.target.value)} placeholder="DexScreener URL or pair (optional)" className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-amber-500/60 outline-none px-3 py-2 text-sm" />
               </div>
               <input value={spotNote} onChange={(e) => setSpotNote(e.target.value.slice(0, 90))} placeholder="Spotlight note (optional) — shown under the price" className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-amber-500/60 outline-none px-3 py-2 text-sm" />
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs text-gray-500">Pays {spotPriceLabel} · you sign in Phantom · goes to the CSGN treasury</span>
-                <Button size="sm" variant="gold" isLoading={spotBusy} onClick={() => void doSpotlight()} leftIcon={<Flame className="w-4 h-4" />}>Play to Spotlight</Button>
+
+              {/* Prefilled with the minimum, because the common case is "just
+                  take it" and making somebody compute the raise is friction on
+                  the one screen where they are trying to give us money. */}
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Your bid, in $CSGN</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={minBid}
+                  step={1000}
+                  value={spotBid ?? minBid}
+                  onChange={(e) => setSpotBid(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+                  className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-amber-500/60 outline-none px-3 py-2 text-sm font-mono tabular-nums"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="text-xs text-gray-500">You sign in Phantom · paid to the CSGN treasury</span>
+                <Button size="sm" variant="gold" isLoading={spotBusy} onClick={() => void doSpotlight()} leftIcon={<Flame className="w-4 h-4" />}>
+                  Bid {fmtToken(Math.max(minBid, spotBid ?? minBid))} $CSGN
+                </Button>
               </div>
             </>
           )}

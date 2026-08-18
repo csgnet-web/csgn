@@ -122,9 +122,14 @@ export default function Schedule() {
     const dayed = allSlots
       .filter((slot) => etDayKey(toDate(slot.startTime)) === key)
       .sort((a, b) => toMillis(a.startTime) - toMillis(b.startTime))
-    // Today shows only what's left (live slot on top); past hours just add noise.
-    return i === 0 ? dayed.filter((slot) => toMillis(slot.endTime) > nowMs) : dayed
-  }), [allSlots, days, nowMs])
+    // TODAY KEEPS ITS PAST. It used to filter finished hours out, which made
+    // the schedule a booking sheet — a list of things you could still buy.
+    // Since claiming is no longer how most people get on air, the more useful
+    // thing this page can be is a RECORD: who was on at 2pm, who is on now,
+    // what is open later. A finished hour with a name on it is evidence the
+    // channel runs; hiding it makes a busy day look empty.
+    return dayed
+  }), [allSlots, days])
 
   const openCount = useMemo(
     () => allSlots.filter((s) => isSlotClaimable(s, networkBlockEnabled)).length,
@@ -139,6 +144,7 @@ export default function Schedule() {
    */
   const SlotRow = ({ slot, compact }: { slot: Slot; compact?: boolean }) => {
     const isLive = nowMs >= toMillis(slot.startTime) && nowMs < toMillis(slot.endTime)
+    const isPast = toMillis(slot.endTime) <= nowMs
     const network = isNetworkSlot(slot) && networkBlockEnabled
     const claimable = isSlotClaimable(slot, networkBlockEnabled)
     const mine = !!user && slot.assignedUid === user.uid
@@ -152,6 +158,7 @@ export default function Schedule() {
       <div
         className={`relative h-[112px] px-3 py-2.5 flex flex-col overflow-hidden transition-colors ${
           isLive ? 'bg-primary-500/10'
+            : isPast ? 'bg-transparent opacity-55'
             : network ? 'bg-gradient-to-b from-gold/[0.07] to-transparent'
             : claimable ? 'bg-white/[0.015] hover:bg-white/[0.03]'
             : ''
@@ -191,6 +198,11 @@ export default function Schedule() {
               )}
               {slot.streamTitle && <p className="truncate text-[11px] text-gray-400 mt-0.5">{slot.streamTitle}</p>}
             </>
+          ) : isPast ? (
+            /* A finished hour nobody was on. Said plainly rather than shown as
+               an em-dash, because "nothing aired" is real information about a
+               channel and pretending the cell is empty hides it. */
+            <p className="text-[11px] text-gray-600">Reel + clips</p>
           ) : claimable ? (
             /* One calm line. The old card shouted a two-line all-caps slogan
                above a second all-caps button that said nearly the same thing —
@@ -207,10 +219,17 @@ export default function Schedule() {
 
         {/* action — pinned to the bottom of every card */}
         <div className="shrink-0 mt-1">
-          {mine ? (
+          {isPast ? (
+            <p className="text-[10px] text-gray-600">{claimed ? 'Aired' : ''}</p>
+          ) : mine ? (
             <p className="text-[11px] text-emerald-400 flex items-center gap-1 font-semibold"><Check className="w-3 h-3" /> Yours</p>
           ) : justClaimed ? (
             <p className="text-[11px] text-emerald-400 flex items-center gap-1 font-semibold"><Check className="w-3 h-3" /> Claimed</p>
+          ) : isPast ? (
+            /* A finished hour nobody was on. Said plainly rather than shown as
+               an em-dash, because "nothing aired" is real information about a
+               channel and pretending the cell is empty hides it. */
+            <p className="text-[11px] text-gray-600">Reel + clips</p>
           ) : claimable ? (
             /* GRAYED OUT WHEN YOU CAN'T ACTUALLY CLAIM IT.
                An enabled button that always fails is the worst possible state:
@@ -232,7 +251,7 @@ export default function Schedule() {
               {busy
                 ? <><Loader2 className="w-3 h-3 animate-spin" /> Claiming…</>
                 : eligible
-                  ? <><CalendarPlus className="w-3 h-3" /> {isLive ? 'Go live' : 'Claim'}</>
+                  ? <><CalendarPlus className="w-3 h-3" /> {isLive ? 'Go live' : 'Reserve'}</>
                   : <><Lock className="w-3 h-3" /> {blockedLabel}</>}
             </button>
           ) : null}
@@ -249,10 +268,17 @@ export default function Schedule() {
         <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-display font-bold text-white">Schedule</h1>
-            <p className="text-sm text-gray-400 mt-0.5">
-              {openCount > 0
-                ? <>· <span className="text-primary-300 font-semibold">{openCount} open slot{openCount !== 1 ? 's' : ''}</span> — claim one and earn 30% of CSGN's trading fees while you stream.</>
-                : 'Every slot this week is spoken for — check back soon.'}
+            {/* WHAT THIS PAGE IS NOW. It used to open by selling the claim,
+                because claiming was the only way onto the channel. It is not
+                any more: connect Twitch once, stream when you were going to
+                stream anyway, and the operator puts you on. Reserving a block
+                is still here for anyone who wants a guaranteed time — it is
+                the deliberate option, not the entry fee. */}
+            <p className="text-sm text-gray-400 mt-0.5 max-w-2xl">
+              Who is on, who was on, and what is still open. You don't have to book a block to get
+              on air — <Link to="/account" className="text-primary-300 font-semibold hover:text-primary-200 underline underline-offset-2">connect Twitch</Link>{' '}
+              and we'll pick you up whenever you go live.
+              {openCount > 0 && <> {openCount} block{openCount !== 1 ? 's' : ''} can still be reserved outright.</>}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -262,7 +288,7 @@ export default function Schedule() {
 
         {/* Legend */}
         <div className="flex flex-wrap items-center gap-3 mb-3 text-[11px] text-gray-500">
-          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-primary-500/40 border border-primary-500/50" /> Open — anyone can claim</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-primary-500/40 border border-primary-500/50" /> Open — reserve it, or just go live</span>
           {networkBlockEnabled && <span className="flex items-center gap-1.5"><Crown className="w-3 h-3 text-gold" /> CSGN Originals — 7 PM–3 AM ET</span>}
         </div>
 
