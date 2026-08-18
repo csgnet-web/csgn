@@ -642,6 +642,9 @@ interface ClipDoc {
   platform?: string
   title?: string
   seconds?: number
+  sourceSeconds?: number
+  trimStartSeconds?: number
+  trimEndSeconds?: number
   order?: number
   status?: string
 }
@@ -716,11 +719,19 @@ async function refreshAirtimeSchedule(): Promise<void> {
       const c = row.data as ClipDoc
       const seconds = Math.floor(Number(c.seconds) || 0)
       if (!c.uid || !c.embedUrl || seconds <= 0) return []
+      // The published embed carries the member's crop, so /player loads a URL
+      // that already starts and ends where they said. Applying it here rather
+      // than at playback keeps the broadcast dumb: it plays what it is given.
+      const start = Math.max(0, Math.floor(Number(c.trimStartSeconds) || 0))
+      const end = Math.max(0, Math.floor(Number(c.trimEndSeconds) || 0))
+      const cropped = c.platform === 'youtube' && (start > 0 || end > start)
+        ? `${c.embedUrl}${start > 0 ? `&start=${start}` : ''}${end > start ? `&end=${end}` : ''}`
+        : String(c.embedUrl)
       return [{
         clipId: row.path.split('/').pop()!,
         uid: String(c.uid),
         username: String(c.username || ''),
-        url: String(c.embedUrl),
+        url: cropped,
         platform: String(c.platform || ''),
         sourceUrl: String(c.sourceUrl || ''),
         title: String(c.title || ''),

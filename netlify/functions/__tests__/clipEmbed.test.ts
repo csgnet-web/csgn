@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { parseClipUrl, clipKey, clampClipSeconds, CLIP_DEFAULT_SECONDS } from '../_shared/clipEmbed'
+import {
+  parseClipUrl, clipKey, clampClipSeconds, applyTrim, supportsTrim,
+  CLIP_FALLBACK_SECONDS, CLIP_MAX_SECONDS,
+} from '../_shared/clipEmbed'
 
 describe('parseClipUrl — YouTube', () => {
   it('reads every shape of a YouTube link', () => {
@@ -105,15 +108,55 @@ describe('clampClipSeconds', () => {
     expect(clampClipSeconds(90)).toBe(90)
   })
 
-  it('clamps the extremes rather than trusting them', () => {
+  // A real runtime passes through UNTOUCHED. Cropping is only ever needed when
+  // a member's earned airtime is shorter than their video — never because we
+  // decided a video was too long.
+  it('passes a real duration through exactly', () => {
+    expect(clampClipSeconds(17)).toBe(17)
+    expect(clampClipSeconds(184)).toBe(184)
+    expect(clampClipSeconds(600)).toBe(600)
+  })
+
+  it('only catches junk and runaways', () => {
     expect(clampClipSeconds(1)).toBe(5)
-    expect(clampClipSeconds(9999)).toBe(120)
-    expect(clampClipSeconds(-5)).toBe(CLIP_DEFAULT_SECONDS)
+    expect(clampClipSeconds(99_999)).toBe(CLIP_MAX_SECONDS)
+    expect(clampClipSeconds(-5)).toBe(CLIP_FALLBACK_SECONDS)
   })
 
   it('falls back for junk', () => {
-    expect(clampClipSeconds(undefined)).toBe(CLIP_DEFAULT_SECONDS)
-    expect(clampClipSeconds('abc')).toBe(CLIP_DEFAULT_SECONDS)
-    expect(clampClipSeconds(NaN)).toBe(CLIP_DEFAULT_SECONDS)
+    expect(clampClipSeconds(undefined)).toBe(CLIP_FALLBACK_SECONDS)
+    expect(clampClipSeconds('abc')).toBe(CLIP_FALLBACK_SECONDS)
+    expect(clampClipSeconds(NaN)).toBe(CLIP_FALLBACK_SECONDS)
+  })
+})
+
+describe('applyTrim', () => {
+  const yt = parseClipUrl('https://youtu.be/dQw4w9WgXcQ')!
+  const tt = parseClipUrl('https://www.tiktok.com/@a/video/7301234567890123456')!
+
+  it('crops a YouTube embed for real', () => {
+    const url = applyTrim(yt, { startSeconds: 12, endSeconds: 42 })
+    expect(url).toContain('start=12')
+    expect(url).toContain('end=42')
+  })
+
+  it('leaves the embed alone when there is nothing to crop', () => {
+    expect(applyTrim(yt, {})).toBe(yt.embedUrl)
+    expect(applyTrim(yt, { startSeconds: 0, endSeconds: 0 })).toBe(yt.embedUrl)
+  })
+
+  it('ignores an end that is not after the start', () => {
+    const url = applyTrim(yt, { startSeconds: 30, endSeconds: 10 })
+    expect(url).toContain('start=30')
+    expect(url).not.toContain('end=')
+  })
+
+  // TikTok and Instagram players always begin at zero. A trim control that
+  // pretended otherwise would be a button that silently does nothing.
+  it('cannot crop platforms whose players ignore it', () => {
+    expect(applyTrim(tt, { startSeconds: 12, endSeconds: 42 })).toBe(tt.embedUrl)
+    expect(supportsTrim('youtube')).toBe(true)
+    expect(supportsTrim('tiktok')).toBe(false)
+    expect(supportsTrim('instagram')).toBe(false)
   })
 })

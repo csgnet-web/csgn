@@ -94,7 +94,11 @@ export const api = {
   myClips: () => functionFetch<{
     onAirLook: string
     username: string
-    clips: Array<{ id: string; platform: string; sourceUrl: string; title: string; thumbnailUrl: string; seconds: number; measured: boolean; order: number; status: string; rejectReason: string | null }>
+    clips: Array<{
+      id: string; platform: string; sourceUrl: string; title: string; thumbnailUrl: string
+      seconds: number; sourceSeconds: number; trimStartSeconds: number; trimEndSeconds: number
+      measured: boolean; order: number; status: string; rejectReason: string | null
+    }>
     airtime: { seconds: number; capped: boolean; inventorySeconds: number; networkBlockEnabled: boolean; builtAt: string | null }
     airings: Array<{ startsAt: string; seconds: number; clipId: string }>
   }>('myClips', {}, true),
@@ -110,7 +114,14 @@ export const api = {
       'updateMyProfile', { method: 'POST', body: JSON.stringify({ onAirLook }) }, true,
     ),
   /** Reorder, retitle, retime or remove one of your own clips. */
-  updateMyClip: (clipId: string, patch: { action: 'update' | 'remove'; order?: number; title?: string }) =>
+  updateMyClip: (clipId: string, patch: {
+    action: 'update' | 'remove'
+    order?: number
+    title?: string
+    /** Crop the member's own video. Bounded server-side by its real length. */
+    trimStartSeconds?: number
+    trimEndSeconds?: number
+  }) =>
     functionFetch<{ ok: boolean; clipId?: string; removed?: string; reReview?: boolean }>(
       'updateMyClip', { method: 'POST', body: JSON.stringify({ clipId, ...patch }) }, true,
     ),

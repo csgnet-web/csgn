@@ -3,14 +3,14 @@ import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Check, Clapperboard, Clock, ExternalLink, GripVertical, Link2,
-  Radio, Sparkles, Trash2, TrendingUp,
+  Radio, Scissors, Sparkles, Trash2, TrendingUp,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/useAuth'
 import { useAuthModal } from '@/contexts/useAuthModal'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import {
-  looksLikeClipUrl, airtimeLabel, clipLength,
+  looksLikeClipUrl, airtimeLabel, clipLength, supportsTrim, timecode,
   lookById, ON_AIR_LOOKS, CLIP_PLATFORM_LABELS, PLATFORM_STYLE,
   type ClipPlatform,
 } from '@/lib/clipEmbed'
@@ -41,7 +41,12 @@ interface Clip {
   sourceUrl: string
   title: string
   thumbnailUrl: string
+  /** What actually airs — the full video, or the member's crop of it. */
   seconds: number
+  /** The video's real full length, 0 when the platform would not say. */
+  sourceSeconds: number
+  trimStartSeconds: number
+  trimEndSeconds: number
   /** True when the platform gave us the real runtime; false when we assumed it. */
   measured: boolean
   order: number
@@ -118,6 +123,93 @@ function LockedStudio() {
   )
 }
 
+/**
+ * The crop control.
+ *
+ * SHOWN ONLY WHEN IT IS NEEDED — that is the whole rule. A clip shorter than the
+ * member's airtime airs in full and this never appears; asking somebody to trim
+ * a video that already fits is busywork. It surfaces when the video is longer
+ * than the time they have earned, which is the one case where a decision is
+ * genuinely theirs to make: which part of it goes out.
+ *
+ * A slider, not two number fields. Nobody knows what second 47 of their own clip
+ * looks like, but everybody can drag a window along a bar.
+ */
+function CropRow({
+  clip, allowance, busy, onCrop,
+}: {
+  clip: Clip
+  allowance: number
+  busy: boolean
+  onCrop: (clip: Clip, start: number, end: number) => void
+}) {
+  const source = clip.sourceSeconds
+  const cropped = clip.trimStartSeconds > 0 || clip.trimEndSeconds > 0
+  const [start, setStart] = useState(clip.trimStartSeconds)
+  const [open, setOpen] = useState(false)
+
+  // No measured length means there is nothing honest to crop against.
+  if (source <= 0) return null
+
+  const overruns = allowance > 0 && source > allowance
+  if (!overruns && !cropped && !open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-gray-600 hover:text-gray-300 cursor-pointer touch-manipulation"
+      >
+        <Scissors className="w-3 h-3" /> Crop
+      </button>
+    )
+  }
+
+  // The window length is whatever fits: their airtime, or the whole video.
+  const windowLength = Math.min(source, allowance > 0 ? allowance : source)
+  const maxStart = Math.max(0, source - windowLength)
+  const end = Math.min(source, start + windowLength)
+
+  return (
+    <div className="mt-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5">
+      <div className="flex items-center justify-between gap-2 text-[11px]">
+        <span className="inline-flex items-center gap-1.5 text-gray-300">
+          <Scissors className="w-3 h-3" />
+          {overruns ? 'Longer than your airtime — pick the part that airs' : 'Pick the part that airs'}
+        </span>
+        <span className="font-mono text-gray-500 tabular-nums">
+          {timecode(start)}–{timecode(end)}
+        </span>
+      </div>
+
+      <input
+        type="range"
+        min={0}
+        max={maxStart}
+        value={Math.min(start, maxStart)}
+        onChange={(e) => setStart(Number(e.target.value))}
+        disabled={busy || maxStart === 0}
+        aria-label="Crop start"
+        className="mt-2 w-full accent-primary-500 touch-manipulation"
+      />
+
+      <div className="mt-1.5 flex items-center justify-between gap-2">
+        <span className="text-[10px] text-gray-600">
+          {clipLength(windowLength)} of {clipLength(source)}
+          {!supportsTrim(clip.platform) && ' · this platform always starts at the beginning'}
+        </span>
+        <button
+          type="button"
+          disabled={busy || start === clip.trimStartSeconds}
+          onClick={() => { onCrop(clip, start, end); setOpen(false) }}
+          className="px-2.5 py-1 rounded-md bg-white/10 text-[11px] font-bold text-white disabled:opacity-30 cursor-pointer touch-manipulation"
+        >
+          Save crop
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function Studio() {
   const { user, loading } = useAuth()
   const [clips, setClips] = useState<Clip[]>([])
@@ -184,6 +276,31 @@ export default function Studio() {
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not reorder.')
+      await load()
+    }
+    setBusy(false)
+  }
+
+  /**
+   * Crop a clip.
+   *
+   * Only ever NEEDED when a member's earned airtime is shorter than their
+   * video — the full length airs otherwise, untouched. The window is bounded
+   * server-side by the real runtime, so this can only ever select a piece of
+   * their own clip.
+   */
+  const crop = async (clip: Clip, startSeconds: number, endSeconds: number) => {
+    setBusy(true)
+    setClips((prev) => prev.map((c) => (
+      c.id === clip.id
+        ? { ...c, trimStartSeconds: startSeconds, trimEndSeconds: endSeconds, seconds: endSeconds - startSeconds, status: 'pending' }
+        : c
+    )))
+    try {
+      await api.updateMyClip(clip.id, { action: 'update', trimStartSeconds: startSeconds, trimEndSeconds: endSeconds })
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not crop that clip.')
       await load()
     }
     setBusy(false)
@@ -458,6 +575,8 @@ export default function Studio() {
                         {clip.rejectReason && (
                           <p className="mt-1.5 text-[11px] text-primary-400 leading-snug">{clip.rejectReason}</p>
                         )}
+
+                        <CropRow clip={clip} allowance={allowance} busy={busy} onCrop={crop} />
                       </div>
                     </motion.div>
                   )

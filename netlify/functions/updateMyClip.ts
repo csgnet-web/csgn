@@ -10,11 +10,20 @@ import { auditLog } from './_shared/audit'
 import { badRequest, forbidden, notFound } from './_shared/errors'
 import { commitWrites, deleteWrite, getDoc, updateWrite } from './_shared/firebaseAdmin'
 import { json, parseJson, requireMethod, withHttp } from './_shared/http'
+import { clampClipSeconds, CLIP_MIN_SECONDS } from './_shared/clipEmbed'
 
-// Deliberately no `seconds`. Length comes from the platform on submit; letting
-// a member retime a clip afterwards would put the wrong number back in their
-// hands and let an approved short clip quietly become a long one.
-type Body = { clipId?: unknown; action?: unknown; order?: unknown; title?: unknown }
+// No raw `seconds`. Length comes from the platform on submit — a member never
+// types a duration. What they CAN do is crop: pick which part of their own video
+// airs, which is only ever needed when their earned airtime is shorter than the
+// video. The aired length is derived from that crop, never set directly.
+type Body = {
+  clipId?: unknown
+  action?: unknown
+  order?: unknown
+  title?: unknown
+  trimStartSeconds?: unknown
+  trimEndSeconds?: unknown
+}
 
 const CLIP_ID_RE = /^[a-zA-Z0-9_-]{3,120}$/
 
@@ -26,7 +35,7 @@ export const handler = withHttp(async (event) => {
   const clipId = String(body.clipId ?? '')
   if (!CLIP_ID_RE.test(clipId)) throw badRequest('Valid clipId is required.', 'invalid_clip_id')
 
-  const clip = await getDoc<{ uid?: string; status?: string }>(`clips/${clipId}`)
+  const clip = await getDoc<{ uid?: string; status?: string; sourceSeconds?: number; seconds?: number }>(`clips/${clipId}`)
   if (!clip) throw notFound('Clip not found.')
   if (clip.uid !== authUser.uid) throw forbidden('That is not your clip.')
 
@@ -42,6 +51,32 @@ export const handler = withHttp(async (event) => {
     const patch: Record<string, unknown> = { updatedAt: new Date() }
     if (body.order !== undefined) patch.order = Math.max(0, Math.floor(Number(body.order) || 0))
     if (body.title !== undefined) patch.title = String(body.title).trim().slice(0, 80)
+
+    // ── The crop ──
+    // Bounded by the source length, so a member can only ever select a window
+    // INSIDE their own video. Without that bound a crop could ask the scheduler
+    // for more airtime than the clip contains, and the segment would run out
+    // into dead air on the broadcast.
+    if (body.trimStartSeconds !== undefined || body.trimEndSeconds !== undefined) {
+      const source = Math.max(0, Math.floor(Number(clip.sourceSeconds) || 0))
+      if (source <= 0) throw badRequest('This clip has no measured length to crop.', 'not_croppable')
+
+      const start = Math.min(source - CLIP_MIN_SECONDS, Math.max(0, Math.floor(Number(body.trimStartSeconds) || 0)))
+      const rawEnd = Math.floor(Number(body.trimEndSeconds) || 0)
+      const end = rawEnd > 0 ? Math.min(source, Math.max(start + CLIP_MIN_SECONDS, rawEnd)) : source
+
+      patch.trimStartSeconds = start
+      patch.trimEndSeconds = end === source ? 0 : end
+      patch.seconds = clampClipSeconds(end - start)
+      // A crop changes what airs, so it goes back through review. Otherwise
+      // "approve the clean thirty seconds, then move the window" is an
+      // unreviewed edit to the broadcast.
+      if (clip.status === 'approved') {
+        patch.status = 'pending'
+        patch.rejectReason = null
+      }
+    }
+
     // Retitling an already-approved clip sends it back for review: the title is
     // what a reviewer read, and what appears beside it on air.
     if (body.title !== undefined && clip.status === 'approved') {

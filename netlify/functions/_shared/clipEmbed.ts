@@ -50,6 +50,10 @@ export const CLIP_PLATFORM_LABELS: Record<ClipPlatform, string> = {
  */
 const YOUTUBE_PARAMS = 'autoplay=1&controls=0&rel=0&playsinline=1&modestbranding=1'
 
+/** A crop, in whole seconds from the start of the source. `endSeconds` is
+ *  exclusive of nothing — it is simply where we stop. */
+export interface ClipTrim { startSeconds?: number; endSeconds?: number }
+
 const YOUTUBE_ID = /^[A-Za-z0-9_-]{6,20}$/
 const TIKTOK_ID = /^\d{6,32}$/
 const INSTAGRAM_ID = /^[A-Za-z0-9_-]{5,30}$/
@@ -128,6 +132,31 @@ function youtube(videoId: string): ParsedClip {
   }
 }
 
+/**
+ * Apply a member's crop to an embed URL.
+ *
+ * YOUTUBE IS THE ONLY PLATFORM WHERE A CROP IS REAL. Its player takes `start`
+ * and `end` parameters, so a trimmed clip genuinely begins and ends where the
+ * member said. TikTok and Instagram embeds accept no such thing — their players
+ * always begin at zero — so for those a "trim" can only shorten the segment from
+ * the front, which the schedule already does by giving it fewer seconds. Saying
+ * that plainly in the UI is better than shipping a control that silently does
+ * nothing on two platforms out of three.
+ */
+export function applyTrim(clip: ParsedClip, trim: ClipTrim): string {
+  const start = Math.max(0, Math.floor(Number(trim.startSeconds) || 0))
+  const end = Math.max(0, Math.floor(Number(trim.endSeconds) || 0))
+  if (clip.platform !== 'youtube' || (start === 0 && end === 0)) return clip.embedUrl
+
+  const params: string[] = []
+  if (start > 0) params.push(`start=${start}`)
+  if (end > start) params.push(`end=${end}`)
+  return params.length ? `${clip.embedUrl}&${params.join('&')}` : clip.embedUrl
+}
+
+/** Can a member's crop actually be honoured on this platform? */
+export const supportsTrim = (platform: string): boolean => platform === 'youtube'
+
 function tiktok(videoId: string, handle: string): ParsedClip {
   return {
     platform: 'tiktok',
@@ -156,16 +185,32 @@ function instagram(videoId: string, kind: string): ParsedClip {
  */
 export const clipKey = (parsed: ParsedClip): string => `${parsed.platform}:${parsed.videoId}`
 
-/** How long we assume a clip runs when the member has not said.
- *  Deliberately short: over-running the segment is what makes the schedule
- *  drift, and a clip that ends early just hands its remaining seconds back. */
-export const CLIP_DEFAULT_SECONDS = 30
+/**
+ * What we air when the platform will not tell us the runtime.
+ *
+ * TikTok and Instagram publish no duration at all, and YouTube only does with an
+ * API key configured, so this is not a rare edge. It is deliberately near the
+ * middle of a short-form clip rather than short: under-running just ends the
+ * segment early and hands the seconds back, while over-running gets cut off
+ * mid-sentence on television, which is the one that looks broken.
+ */
+export const CLIP_FALLBACK_SECONDS = 45
 export const CLIP_MIN_SECONDS = 5
-export const CLIP_MAX_SECONDS = 120
+/**
+ * Longest single segment the scheduler will lay down.
+ *
+ * A RUNAWAY GUARD, not an editorial limit. A member's real clip length is aired
+ * in full — cropping is only ever needed when their earned airtime is shorter
+ * than the video, never because we decided a video was too long. Fifteen minutes
+ * is far past anything short-form and still bounded, so a mis-read duration
+ * cannot hand one clip a whole afternoon.
+ */
+export const CLIP_MAX_SECONDS = 900
 
-/** Clamp a member-declared duration into what the scheduler will actually air. */
+/** Bound a duration to something the scheduler can actually air. Exact input in,
+ *  exact output out — this only catches junk and runaways. */
 export function clampClipSeconds(input: unknown): number {
   const n = Math.floor(Number(input) || 0)
-  if (!Number.isFinite(n) || n <= 0) return CLIP_DEFAULT_SECONDS
+  if (!Number.isFinite(n) || n <= 0) return CLIP_FALLBACK_SECONDS
   return Math.min(CLIP_MAX_SECONDS, Math.max(CLIP_MIN_SECONDS, n))
 }

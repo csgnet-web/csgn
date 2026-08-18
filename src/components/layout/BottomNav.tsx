@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { CalendarDays, Clapperboard, Coins, Radio, User } from 'lucide-react'
 import { useAuth } from '@/contexts/useAuth'
 import { useAuthModal } from '@/contexts/useAuthModal'
@@ -49,6 +49,7 @@ const TABS: Tab[] = [
 
 export function BottomNav() {
   const location = useLocation()
+  const navigate = useNavigate()
   const { user } = useAuth()
   const { openAuth } = useAuthModal()
   const { currentSlot } = useLiveSlot()
@@ -67,19 +68,36 @@ export function BottomNav() {
       // Watch's shell and its overlays sit below that) while staying under the
       // auth sheet at 100. A tab that is visible but covered by a transparent
       // element is the exact bug that made taps feel unreliable.
+      // NO PADDING ON THE NAV ITSELF. This is the whole dead-click fix.
+      //
+      // The safe-area inset used to be padding here, which meant the strip above
+      // the home indicator — a good 34px on a modern iPhone, right where a thumb
+      // naturally lands — was nav background with no tab under it. It looked
+      // like part of the button and did nothing. The inset now lives INSIDE each
+      // tab, so every pixel of this bar belongs to a destination.
       className="lg:hidden fixed bottom-0 left-0 right-0 z-[70] border-t border-white/[0.07] bg-[#06060c]/95 backdrop-blur-xl"
       style={{
-        paddingBottom: 'env(safe-area-inset-bottom)',
         // Kills the ~300ms synthetic-click delay some mobile browsers still add
         // when they cannot rule out a double-tap zoom. This is what makes a tap
         // feel instant rather than "sometimes".
         touchAction: 'manipulation',
       }}
+      // Belt and braces. If a click ever does land on the nav itself — a
+      // rounding gap between grid cells, a future decoration someone forgets to
+      // mark inert — work out which fifth of the width it was in and go there
+      // anyway. A tap in this bar must never do nothing.
+      onClick={(e) => {
+        if (e.target !== e.currentTarget) return
+        const { left, width } = e.currentTarget.getBoundingClientRect()
+        const tab = TABS[Math.min(TABS.length - 1, Math.max(0, Math.floor(((e.clientX - left) / width) * TABS.length)))]
+        if (tab.requiresAuth && !user) openAuth()
+        else navigate(tab.href)
+      }}
     >
       {/* Hairline of brand colour along the top edge — the same device the PIP
-          overlay uses. It reads as "this is one product" without spending a
-          whole bar of colour on it. */}
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary-500/40 to-transparent" />
+          overlay uses. `pointer-events-none` because decoration that sits above
+          a button and eats its clicks is the other half of this bug. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary-500/40 to-transparent" />
 
       <div className="grid grid-cols-5">
         {TABS.map(({ href, label, Icon, requiresAuth, liveDot }) => {
@@ -114,21 +132,21 @@ export function BottomNav() {
             </>
           )
 
-          // min-h-14 gives every tab a full-height target rather than one sized
-          // to its icon and label — the dead band between them was most of the
-          // "it didn't register" taps. `touch-manipulation` and the transparent
-          // tap highlight keep the press instant and silent.
-          const shell = 'relative flex flex-col items-center justify-center gap-1 min-h-14 px-1 cursor-pointer select-none touch-manipulation active:bg-white/[0.06] transition-colors'
+          // Each tab is a full grid cell, floor to ceiling, INCLUDING the home
+          // indicator strip — see the note on the nav. No dead band between the
+          // icon and the label, none at the edges, none underneath.
+          const shell = 'relative flex flex-col items-center justify-center gap-1 pt-2.5 pb-2.5 min-h-[56px] w-full cursor-pointer select-none touch-manipulation active:bg-white/[0.07] transition-colors'
+          const shellStyle = { paddingBottom: 'calc(0.625rem + env(safe-area-inset-bottom))' }
 
           // A locked tab is a BUTTON, not a Link. Navigating to a page that only
           // says "sign in first" is a wasted screen; the sheet opens over
           // whatever they were already looking at instead.
           return locked ? (
-            <button key={href} type="button" onClick={openAuth} className={shell} aria-label={`${label} — sign in`}>
+            <button key={href} type="button" onClick={openAuth} className={shell} style={shellStyle} aria-label={`${label} — sign in`}>
               {body}
             </button>
           ) : (
-            <Link key={href} to={href} className={shell} aria-current={active ? 'page' : undefined}>
+            <Link key={href} to={href} className={shell} style={shellStyle} aria-current={active ? 'page' : undefined}>
               {body}
             </Link>
           )

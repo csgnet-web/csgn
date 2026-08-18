@@ -36,6 +36,10 @@ export const handler = withHttp(async (event) => {
       title: String(d.title || ''),
       thumbnailUrl: String(d.thumbnailUrl || ''),
       seconds: Number(d.seconds) || 0,
+      /** The video's real full length, when the platform gave us one. */
+      sourceSeconds: Number(d.sourceSeconds) || 0,
+      trimStartSeconds: Number(d.trimStartSeconds) || 0,
+      trimEndSeconds: Number(d.trimEndSeconds) || 0,
       /** True when the platform told us the real runtime, false when we guessed. */
       measured: d.measured === true,
       order: Number(d.order) || 0,

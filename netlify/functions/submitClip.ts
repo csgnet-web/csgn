@@ -63,7 +63,11 @@ export const handler = withHttp(async (event) => {
   // will air; the default when we could not. `measured` is stored so /studio can
   // be honest about which of the two a member is looking at.
   const measured = meta.seconds != null
-  const seconds = clampClipSeconds(meta.seconds ?? undefined)
+  // The EXACT length when the platform gave us one — no rounding to a preset,
+  // no clamping down to some house maximum. Cropping only ever becomes
+  // necessary when a member's earned airtime is shorter than their video.
+  const sourceSeconds = measured ? clampClipSeconds(meta.seconds) : null
+  const seconds = sourceSeconds ?? clampClipSeconds(undefined)
   const order = mine.reduce((max, row) => Math.max(max, Number((row.data as { order?: number }).order) || 0), 0) + 1
 
   await writeDoc(`clips/${clipId}`, {
@@ -79,6 +83,9 @@ export const handler = withHttp(async (event) => {
     title: (String(body.title ?? '').trim() || meta.title).slice(0, MAX_TITLE),
     thumbnailUrl: meta.thumbnailUrl,
     authorName: meta.authorName,
+    sourceSeconds,
+    trimStartSeconds: 0,
+    trimEndSeconds: 0,
     seconds,
     measured,
     order,
@@ -95,7 +102,7 @@ export const handler = withHttp(async (event) => {
       id: clipId, platform: parsed.platform, sourceUrl: parsed.canonicalUrl,
       title: (String(body.title ?? '').trim() || meta.title).slice(0, MAX_TITLE),
       thumbnailUrl: meta.thumbnailUrl,
-      seconds, measured, order, status: 'pending',
+      sourceSeconds, seconds, measured, order, status: 'pending',
     },
   })
 })

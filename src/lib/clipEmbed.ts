@@ -17,7 +17,18 @@ export const CLIP_PLATFORM_LABELS: Record<ClipPlatform, string> = {
 }
 
 export const CLIP_MIN_SECONDS = 5
-export const CLIP_MAX_SECONDS = 120
+export const CLIP_MAX_SECONDS = 900
+
+/** Only YouTube's player accepts start/end parameters, so only YouTube clips can
+ *  genuinely be cropped. Mirrors `supportsTrim` in the server module — the two
+ *  answer the same question and must not disagree. */
+export const supportsTrim = (platform: string): boolean => platform === 'youtube'
+
+/** `m:ss` for a position inside a clip. */
+export function timecode(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
 /** What a clip is assumed to run when the platform will not tell us — TikTok and
  *  Instagram publish no duration, and YouTube only does with an API key. The
  *  member is never asked; a wrong guess costs a slightly clipped segment, and
