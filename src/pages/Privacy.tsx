@@ -39,6 +39,14 @@ export default function Privacy() {
             whether our checks found your channel live, and what fees those blocks generated.
           </li>
           <li>
+            <strong className="text-white">Live checks</strong> — if you turn on stream forwarding,
+            we ask Twitch about once a minute whether your channel is live, and store the public
+            answer: live or not, the viewer count, the stream title and the category. We keep a
+            running count of the minutes you were live and, separately, the minutes we actually
+            carried you on CSGN. We check no channel that has not switched forwarding on, and we
+            stop within a minute of you switching it off.
+          </li>
+          <li>
             <strong className="text-white">Sign-in events</strong> — the time, the method, whether
             it succeeded, any error, and the browser user-agent string. We keep these for 90 days to
             investigate abuse and fix broken sign-in.

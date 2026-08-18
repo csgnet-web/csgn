@@ -51,7 +51,28 @@ export default function Terms() {
         </p>
       </Clause>
 
-      <Clause n="4" title="Copyright complaints">
+      <Clause n="4" title="Forwarding your live streams">
+        <p>
+          If you connect a Twitch channel and turn on stream forwarding, you give CSGN permission
+          to carry any live stream on that channel on the CSGN network while it is live, and to
+          record and keep that broadcast. This is a separate permission from clause 3 and we only
+          act on it if you have switched it on — connecting a channel alone does not grant it.
+        </p>
+        <p>
+          <strong className="text-white">You can withdraw it at any time</strong> from your account
+          page. We stop checking your channel within a minute of you doing so. Withdrawing does not
+          affect recordings already made, and does not remove your channel from your account.
+        </p>
+        <p>
+          While forwarding is on we check whether your channel is live about once a minute and keep
+          a count of the minutes you were live and, separately, the minutes we actually carried you.
+          Only the second of those earns a share of fees. You promise you have the right to let us
+          rebroadcast whatever appears on your stream, including anything belonging to third
+          parties, and clause 3's restrictions apply to it in full.
+        </p>
+      </Clause>
+
+      <Clause n="5" title="Copyright complaints">
         <p>
           If you believe something on CSGN infringes your copyright, write to{' '}
           <span className="font-mono text-gray-300">legal@csgn.fun</span> with the work concerned,
@@ -61,7 +82,7 @@ export default function Terms() {
         </p>
       </Clause>
 
-      <Clause n="5" title="Airtime, blocks and payouts">
+      <Clause n="6" title="Airtime, blocks and payouts">
         <p>
           Airtime for submitted clips is allocated in proportion to the $CSGN you hold, subject to a
           published per-member ceiling. Claiming a block and going live are free and are not
@@ -77,7 +98,7 @@ export default function Terms() {
         </p>
       </Clause>
 
-      <Clause n="6" title="$CSGN">
+      <Clause n="7" title="$CSGN">
         <p>
           $CSGN is a token on Solana. It is not a share, a security offering, a deposit, or a claim
           on our assets or revenue, and we do not promise that it will hold or increase in value.
@@ -91,7 +112,7 @@ export default function Terms() {
         </p>
       </Clause>
 
-      <Clause n="7" title="Acceptable use">
+      <Clause n="8" title="Acceptable use">
         <p>
           Do not attempt to manipulate airtime, votes or fees; do not operate multiple accounts to
           increase your share; do not scrape, overload or interfere with the service; do not
@@ -100,7 +121,7 @@ export default function Terms() {
         </p>
       </Clause>
 
-      <Clause n="8" title="The service is provided as-is">
+      <Clause n="9" title="The service is provided as-is">
         <p>
           CSGN is provided without warranties of any kind. We do not promise the network will be
           uninterrupted, that a scheduled clip will air at an exact moment, or that any measurement
@@ -111,7 +132,7 @@ export default function Terms() {
         </p>
       </Clause>
 
-      <Clause n="9" title="Changes and ending">
+      <Clause n="10" title="Changes and ending">
         <p>
           We may change these terms; material changes will be posted here with a new date, and
           continuing to use CSGN means you accept them. You may stop at any time and delete your
@@ -120,7 +141,7 @@ export default function Terms() {
         </p>
       </Clause>
 
-      <Clause n="10" title="Contact">
+      <Clause n="11" title="Contact">
         <p>
           <span className="font-mono text-gray-300">legal@csgn.fun</span>. See also our{' '}
           <Link to="/privacy" className="text-primary-400 hover:text-primary-300 underline">
