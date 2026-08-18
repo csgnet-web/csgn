@@ -10,8 +10,8 @@ import { useAuthModal } from '@/contexts/useAuthModal'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import {
-  looksLikeClipUrl, airtimeLabel, clipLength, clipPoster, cutForSeconds,
-  lookById, CLIP_CUTS, ON_AIR_LOOKS, CLIP_PLATFORM_LABELS, PLATFORM_STYLE,
+  looksLikeClipUrl, airtimeLabel, clipLength,
+  lookById, ON_AIR_LOOKS, CLIP_PLATFORM_LABELS, PLATFORM_STYLE,
   type ClipPlatform,
 } from '@/lib/clipEmbed'
 
@@ -40,7 +40,10 @@ interface Clip {
   platform: string
   sourceUrl: string
   title: string
+  thumbnailUrl: string
   seconds: number
+  /** True when the platform gave us the real runtime; false when we assumed it. */
+  measured: boolean
   order: number
   status: string
   rejectReason: string | null
@@ -62,9 +65,11 @@ const STATUS: Record<string, { label: string; dot: string; text: string }> = {
 
 /* ─── Poster frame ─── */
 
-function Poster({ platform, sourceUrl, className = '' }: { platform: string; sourceUrl: string; className?: string }) {
-  const videoId = sourceUrl.match(/[?&]v=([^&]+)/)?.[1] ?? ''
-  const poster = clipPoster(platform, videoId)
+function Poster({ platform, thumbnailUrl, className = '' }: { platform: string; thumbnailUrl: string; className?: string }) {
+  // The real poster frame, fetched server-side from the platform's own oEmbed
+  // when the clip was submitted. A designed platform card stands in when the
+  // provider gave us nothing — that beats a broken image every time.
+  const poster = thumbnailUrl || null
   const style = PLATFORM_STYLE[platform] ?? { gradient: 'from-white/10 to-white/[0.02]', mark: '■' }
 
   return (
@@ -125,7 +130,6 @@ export default function Studio() {
   const [error, setError] = useState('')
 
   const [url, setUrl] = useState('')
-  const [cutId, setCutId] = useState('standard')
   const [title, setTitle] = useState('')
   const [justAdded, setJustAdded] = useState('')
 
@@ -152,8 +156,7 @@ export default function Studio() {
   const add = async () => {
     setBusy(true); setError('')
     try {
-      const cut = CLIP_CUTS.find((c) => c.id === cutId) ?? CLIP_CUTS[2]
-      const res = await api.submitClip(url.trim(), cut.seconds, title.trim())
+      const res = await api.submitClip(url.trim(), title.trim())
       setUrl(''); setTitle('')
       setJustAdded(res.clip.id)
       setTimeout(() => setJustAdded(''), 2200)
@@ -181,19 +184,6 @@ export default function Studio() {
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not reorder.')
-      await load()
-    }
-    setBusy(false)
-  }
-
-  const setClipCut = async (clip: Clip, seconds: number) => {
-    setBusy(true)
-    setClips((prev) => prev.map((c) => (c.id === clip.id ? { ...c, seconds } : c)))
-    try {
-      await api.updateMyClip(clip.id, { action: 'update', seconds })
-      await load()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not change the cut.')
       await load()
     }
     setBusy(false)
@@ -237,7 +227,9 @@ export default function Studio() {
   const filledPct = allowance > 0 ? Math.min(100, (approvedSeconds / allowance) * 100) : 0
   const activeLook = lookById(look)
   const canAdd = looksLikeClipUrl(url) && !busy
-  const selectedCut = CLIP_CUTS.find((c) => c.id === cutId) ?? CLIP_CUTS[2]
+  // Airtime is what the token buys. No holdings, no airtime — said plainly
+  // rather than shown as a zero the member has to interpret.
+  const hasAirtime = allowance > 0
 
   return (
     <div className="min-h-screen pt-20 lg:pt-28 pb-24">
@@ -294,12 +286,27 @@ export default function Studio() {
             </div>
           </div>
 
-          <p className="relative mt-3 text-[11px] text-gray-500 leading-relaxed">
-            Out of {airtimeLabel(airtime?.inventorySeconds ?? 0)} of open air today
-            {airtime?.networkBlockEnabled === false && ' — the 7 PM–3 AM block is open right now, so there is more of it'}.
-            Your share follows your $CSGN: hold twice as much, get twice as much.
-            {airtime?.capped && ' You are at the per-member ceiling, which exists so no one holder can take the whole channel.'}
-          </p>
+          {hasAirtime ? (
+            <p className="relative mt-3 text-[11px] text-gray-500 leading-relaxed">
+              Out of {airtimeLabel(airtime?.inventorySeconds ?? 0)} of open air today
+              {airtime?.networkBlockEnabled === false && ' — the 7 PM–3 AM block is open right now, so there is more of it'}.
+              Your share follows your $CSGN: hold twice as much, get twice as much.
+              {airtime?.capped && ' You are at the per-member ceiling, which exists so no one holder can take the whole channel.'}
+            </p>
+          ) : (
+            /* Airtime is the one thing the token buys, so a member holding none
+               is told exactly that — not shown a zero and left to work it out. */
+            <div className="relative mt-4 rounded-xl border border-primary-500/25 bg-primary-500/[0.07] p-4">
+              <p className="text-sm font-bold text-white">Hold $CSGN to get airtime.</p>
+              <p className="mt-1 text-[11px] text-gray-400 leading-relaxed">
+                Airtime is shared out by holdings — that is what the token is for. Watching, claiming
+                a two-hour block and going live are all free and always will be; this part is not.
+              </p>
+              <Link to="/participate" className="inline-block mt-3">
+                <Button variant="primary" size="sm">Get $CSGN</Button>
+              </Link>
+            </div>
+          )}
         </section>
 
         {/* ── 2. Post something ── */}
@@ -316,32 +323,6 @@ export default function Studio() {
             placeholder="Paste a link to your post"
             className="w-full px-4 py-3.5 bg-white/[0.04] border border-white/10 rounded-xl text-[15px] text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 focus:bg-white/[0.06] transition-colors"
           />
-
-          {/* CUTS instead of a seconds field. */}
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-gray-500 mb-2">How long a cut?</p>
-            <div className="flex flex-wrap gap-2">
-              {CLIP_CUTS.map((cut) => {
-                const active = cut.id === cutId
-                return (
-                  <button
-                    key={cut.id}
-                    type="button"
-                    onClick={() => setCutId(cut.id)}
-                    className={`px-3 py-2 rounded-xl border text-left transition-all cursor-pointer ${
-                      active
-                        ? 'border-primary-500/50 bg-primary-500/15 shadow-[0_0_0_3px_rgba(255,35,70,0.08)]'
-                        : 'border-white/[0.08] bg-white/[0.02] hover:border-white/20'
-                    }`}
-                  >
-                    <span className={`block text-xs font-bold ${active ? 'text-white' : 'text-gray-300'}`}>{cut.label}</span>
-                    <span className="block text-[10px] font-mono text-gray-500">{cut.seconds}s</span>
-                  </button>
-                )
-              })}
-            </div>
-            <p className="mt-2 text-[11px] text-gray-600">{selectedCut.hint}</p>
-          </div>
 
           <input
             value={title}
@@ -423,7 +404,6 @@ export default function Studio() {
               <AnimatePresence initial={false}>
                 {sorted.map((clip, index) => {
                   const status = STATUS[clip.status] ?? STATUS.pending
-                  const cut = cutForSeconds(clip.seconds)
                   return (
                     <motion.div
                       key={clip.id}
@@ -449,7 +429,7 @@ export default function Studio() {
                         >▼</button>
                       </div>
 
-                      <Poster platform={clip.platform} sourceUrl={clip.sourceUrl} className="w-24 h-[54px] shrink-0" />
+                      <Poster platform={clip.platform} thumbnailUrl={clip.thumbnailUrl} className="w-24 h-[54px] shrink-0" />
 
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
@@ -467,28 +447,13 @@ export default function Studio() {
                             <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />{status.label}
                           </span>
                           <span className="text-gray-600">{CLIP_PLATFORM_LABELS[clip.platform as ClipPlatform] ?? clip.platform}</span>
+                          <span className="font-mono text-gray-500" title={clip.measured ? 'Runtime read from the platform' : 'The platform would not give a runtime, so this is our default'}>
+                            {clipLength(clip.seconds)}{!clip.measured && '*'}
+                          </span>
                           <a href={clip.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-gray-600 hover:text-cyan-400">
                             <ExternalLink className="w-3 h-3" />
                           </a>
                         </p>
-
-                        {/* Change the cut inline. Still no number to type. */}
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {CLIP_CUTS.map((c) => (
-                            <button
-                              key={c.id}
-                              onClick={() => void setClipCut(clip, c.seconds)}
-                              disabled={busy}
-                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-colors cursor-pointer disabled:opacity-40 ${
-                                cut.seconds === c.seconds
-                                  ? 'bg-white/15 text-white'
-                                  : 'bg-white/[0.03] text-gray-500 hover:text-gray-300'
-                              }`}
-                            >
-                              {c.seconds}s
-                            </button>
-                          ))}
-                        </div>
 
                         {clip.rejectReason && (
                           <p className="mt-1.5 text-[11px] text-primary-400 leading-snug">{clip.rejectReason}</p>

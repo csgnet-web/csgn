@@ -12,12 +12,23 @@
 
 /* ─── Knobs ─── */
 
-/** Airtime per member per day for holding nothing at all.
+/** Airtime for a member holding no $CSGN. Zero, deliberately.
  *
- *  master-plan.md §5: the token "never gates claiming a slot, making an account,
- *  or going live". A holder-weighted broadcast is only compatible with that if
- *  somebody holding zero still has a place on it. This is that place. */
-export const AIRTIME_FLOOR_SECONDS = 30
+ *  AIRTIME IS THE TOKEN'S JOB. Holding is what buys a place on the broadcast,
+ *  and a free floor for everyone would make the number meaningless — a thousand
+ *  accounts holding nothing would carve up the day between them and the people
+ *  who actually hold would get less for it.
+ *
+ *  This does NOT contradict master-plan.md §5 ("never gates claiming a slot,
+ *  making an account, or going live"). Every one of those is still free and
+ *  unweighted: anyone can make an account, claim a two-hour block, and go live
+ *  holding zero. Airtime is a PROMOTION surface, the same class as the Right Now
+ *  rail — §5's own words are that the token "decides whose message gets
+ *  amplified, never who is allowed in".
+ *
+ *  Left as a knob rather than deleted so a promotion (a launch week, a giveaway)
+ *  can open a floor without a code change. */
+export const AIRTIME_FLOOR_SECONDS = 0
 
 /** No member may take more than this share of a day, however large their bag.
  *  token-voting.md §2.5's anti-capture cap. Set to 1 for a pure, uncapped 1:1
@@ -102,7 +113,12 @@ export function airtimeShares(
   const usableSupply = Number.isFinite(supply) && supply > 0 ? supply : 0
 
   const eligible = members
+    // Two conditions, and both matter. Content, because an allocation nobody can
+    // fill is a gap in the broadcast. And a BALANCE, because airtime is what the
+    // token buys — a member holding nothing gets nothing here, and is told so
+    // plainly in /studio rather than being quietly scheduled for zero seconds.
     .filter((m) => m && m.uid && Math.floor(Number(m.clipSeconds) || 0) > 0)
+    .filter((m) => floor > 0 || Math.max(0, Number(m.balance) || 0) > 0)
     .map((m) => ({
       uid: String(m.uid),
       balance: Math.max(0, Number(m.balance) || 0),

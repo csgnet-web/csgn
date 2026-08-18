@@ -32,7 +32,7 @@ export default function EmailComplete() {
       try {
         await completeEmailLink(window.location.href)
         setState('done')
-        setTimeout(() => navigate('/studio', { replace: true }), 1200)
+        setTimeout(() => navigate('/watch', { replace: true }), 1200)
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Could not finish signing in.'
         if (message.includes('Enter the email')) setState('needs-email')
@@ -46,7 +46,7 @@ export default function EmailComplete() {
     try {
       await completeEmailLink(window.location.href, email.trim())
       setState('done')
-      setTimeout(() => navigate('/studio', { replace: true }), 1200)
+      setTimeout(() => navigate('/watch', { replace: true }), 1200)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not finish signing in.')
     }
@@ -68,7 +68,7 @@ export default function EmailComplete() {
           <>
             <CheckCircle2 className="mt-8 w-10 h-10 text-emerald-400 mx-auto" />
             <p className="mt-4 text-lg font-semibold text-white">You're in.</p>
-            <p className="mt-1 text-sm text-gray-400">Taking you to your studio…</p>
+            <p className="mt-1 text-sm text-gray-400">Taking you to the network…</p>
           </>
         )}
 

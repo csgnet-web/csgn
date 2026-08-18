@@ -94,14 +94,15 @@ export const api = {
   myClips: () => functionFetch<{
     onAirLook: string
     username: string
-    clips: Array<{ id: string; platform: string; sourceUrl: string; title: string; seconds: number; order: number; status: string; rejectReason: string | null }>
+    clips: Array<{ id: string; platform: string; sourceUrl: string; title: string; thumbnailUrl: string; seconds: number; measured: boolean; order: number; status: string; rejectReason: string | null }>
     airtime: { seconds: number; capped: boolean; inventorySeconds: number; networkBlockEnabled: boolean; builtAt: string | null }
     airings: Array<{ startsAt: string; seconds: number; clipId: string }>
   }>('myClips', {}, true),
-  /** Add a post to your reel. It lands pending — nothing airs unreviewed. */
-  submitClip: (url: string, seconds: number, title: string) =>
-    functionFetch<{ ok: boolean; clip: { id: string; platform: string; sourceUrl: string; title: string; seconds: number; order: number; status: string } }>(
-      'submitClip', { method: 'POST', body: JSON.stringify({ url, seconds, title }) }, true,
+  /** Add a post to your reel. It lands pending — nothing airs unreviewed.
+   *  No length argument: the server reads the real runtime off the platform. */
+  submitClip: (url: string, title: string) =>
+    functionFetch<{ ok: boolean; clip: { id: string; platform: string; sourceUrl: string; title: string; thumbnailUrl: string; seconds: number; measured: boolean; order: number; status: string } }>(
+      'submitClip', { method: 'POST', body: JSON.stringify({ url, title }) }, true,
     ),
   /** Set the colour your lower third uses when a clip of yours is on air. */
   setOnAirLook: (onAirLook: string) =>
@@ -109,7 +110,7 @@ export const api = {
       'updateMyProfile', { method: 'POST', body: JSON.stringify({ onAirLook }) }, true,
     ),
   /** Reorder, retitle, retime or remove one of your own clips. */
-  updateMyClip: (clipId: string, patch: { action: 'update' | 'remove'; order?: number; seconds?: number; title?: string }) =>
+  updateMyClip: (clipId: string, patch: { action: 'update' | 'remove'; order?: number; title?: string }) =>
     functionFetch<{ ok: boolean; clipId?: string; removed?: string; reReview?: boolean }>(
       'updateMyClip', { method: 'POST', body: JSON.stringify({ clipId, ...patch }) }, true,
     ),

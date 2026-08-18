@@ -55,181 +55,79 @@ export default function About() {
             same way there's been a schedule since 1948. Eight of those blocks are open, and the way
             you get one is that you take it.
           </p>
-          <p className="mt-3 text-base text-gray-400 leading-relaxed">
-            There are two ways to be on it. <strong className="text-white">Go live</strong> — claim
-            an empty two-hour block and stream it from your own channel. Or{' '}
-            <strong className="text-white">send a clip</strong>, and it airs between the live hours
-            without you being there. That's the whole idea. Everything below is how it works.
-          </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link to="/schedule"><Button variant="primary" size="md">See what's open</Button></Link>
             <Link to="/watch"><Button variant="secondary" size="md">Watch now</Button></Link>
           </div>
         </header>
 
-        <Section title="Why a schedule and not a feed">
-          <p>
-            Every crypto app you've used gives you a feed. A feed is a slot machine — you put a
-            thought in, pull the handle, and something else decides whether anyone hears it. You
-            don't have a spot. You have a chance, and it resets every morning.
-          </p>
-          <p>
-            Television never worked that way, but television also never let you in. There's no open
-            call at ESPN. You can't claim eleven o'clock.
-          </p>
-          <p>
-            We're the third thing: a real channel with a real schedule and real holes in it. If
-            nobody's booked 3 PM, 3 PM is yours. Nobody votes on whether you're interesting. The
-            block was empty and you took it.
-          </p>
-        </Section>
-
         <Section title="Two ways to get on">
           <div className="grid gap-2.5 sm:grid-cols-2">
             <Term label="Take a block and go live">
-              You stream to your own channel as usual; we put it on the network for those two
-              hours. You earn a cut of the fees the token generates while you're on. This is the
-              headline act, and it beats everything else on the schedule.
+              Claim an empty two-hour block and stream it from your own channel. You earn 30% of
+              the $CSGN trading fees generated while you're on air.
             </Term>
-            <Term label="Send a clip and let it run">
-              Upload something short. It goes in the rotation that fills the gaps between live
-              hours, so the channel is never dark and you never had to be awake for it.
+            <Term label="Post a clip">
+              Link something you already put on YouTube, TikTok or Instagram. It airs between the
+              live blocks, without you being there.
             </Term>
           </div>
           <p>
             Live always wins. If somebody claims the block your clip was going to air in, their
-            stream takes it and your clip moves to the next opening — nothing is lost, it just
-            waits.
+            stream takes it and your clip moves to the next opening.
           </p>
         </Section>
 
         <Section title="Claiming a block">
           <p>
-            Open blocks run from 3 AM to 7 PM ET. From 7 PM to 3 AM we run our own programming —
-            CSGN Originals — so those hours aren't claimable.
-          </p>
-          <p>You need a Twitch channel, and that's the only hard requirement:</p>
-          <div className="grid gap-2.5 sm:grid-cols-2">
-            <Term label="A Twitch channel">
-              You stream to your own channel as normal. We put it on the network. It's also what
-              stops one person claiming the whole week.
-            </Term>
-            <Term label="A wallet — later, not now">
-              You need somewhere to receive the fees you earn, so we ask for a wallet when there's
-              money waiting for you, not when you sign up. Nothing is lost while you don't have
-              one; it's held until you connect it.
-            </Term>
-          </div>
-          <p>
-            You keep streaming where you already stream. Claiming a slot doesn't move you anywhere —
-            it puts your channel on a network with a lower third, a ticker and a schedule, in front
-            of people who came for the channel rather than for you. That's the difference.
-          </p>
-          <p>
-            While you're on air you earn <strong className="text-white">30% of $CSGN's trading
-            fees</strong> for the whole block. Not a tip jar, not a share of ad revenue that doesn't
-            exist yet — a cut of what the token actually generates while you're the one on screen.
+            Open blocks run 3 AM to 7 PM ET. From 7 PM to 3 AM we run our own programming. All you
+            need is a Twitch channel — no wallet, no tokens. We ask for a wallet later, when
+            there's money waiting for you.
           </p>
           <p>
             We check your channel about once a minute and pay for the share of those checks that
-            found you actually broadcasting. Cut out for ten minutes and it costs you nothing —
-            there's a wide grace band — but claiming a block and never going live pays nothing,
-            because nothing aired. If our own checks fail, that's our problem and you're paid in
-            full.
+            found you broadcasting. Cut out for ten minutes and it costs you nothing. Claim a block
+            and never go live and it pays nothing, because nothing aired. If our checks fail,
+            that's our problem and you're paid in full.
           </p>
         </Section>
 
-        <Section title="Clips, and how airtime is shared">
+        <Section title="Clips and airtime">
           <p>
-            Between the live hours, the channel plays clips that members sent in. How much of that
-            time is yours depends on how much $CSGN you hold —{' '}
-            <strong className="text-white">hold twice as much, get twice as much airtime.</strong>
+            Between the live blocks, the channel plays clips members sent in. How much of that time
+            is yours depends on how much $CSGN you hold —{' '}
+            <strong className="text-white">hold twice as much, get twice as much.</strong> No
+            holdings, no airtime: that's what the token is for.
           </p>
-          <p>Three things keep that from being the whole story:</p>
-          <div className="grid gap-2.5">
-            <Term label="Everyone gets a floor">
-              Hold nothing and you still get a slice of every day. The token decides how loud you
-              are, never whether you're allowed on. That rule doesn't bend.
-            </Term>
-            <Term label="Nobody gets the channel">
-              There's a ceiling on how much of a day one member can take, however large their bag.
-              A network one person can buy outright isn't a network.
-            </Term>
-            <Term label="Nothing airs unseen">
-              Every clip is reviewed before it goes out. It's a real broadcast — one bad upload is
-              everyone's problem, so there's no version of this where things air first and get
-              checked later.
-            </Term>
-          </div>
           <p>
-            Clips don't earn a share of the fees; the live hours do. What you get for holding is
-            the airtime itself — the audience, not a payout.
+            There's a ceiling on how much of a day one member can take, so nobody can buy the whole
+            channel. Every clip is watched by a person before it airs. Clips don't earn fees — the
+            live blocks do. What holding buys is the audience.
           </p>
           <p className="text-gray-500">
-            <strong className="text-gray-300">Not open yet.</strong> The scheduler that decides when
-            each clip airs is built and running; the upload screen isn't finished, so right now the
-            rotation plays what we put in it.
+            <strong className="text-gray-300">Not open yet.</strong> The scheduler runs; the posting
+            screen is still being finished.
           </p>
         </Section>
 
         <Section title="What the token does">
           <p>
-            $CSGN isn't a key. It doesn't gate making an account, claiming a slot, or going live —
-            all of that is free and always will be. What it does is decide what gets{' '}
-            <em>promoted</em>.
+            $CSGN never gates having an account, claiming a block, or going live — those are free
+            and always will be. It decides what gets <em>promoted</em>: your share of clip airtime,
+            whether you can put a line on the broadcast ticker, and your weight in network votes
+            and the Meme 100.
           </p>
           <p>
-            The important part: <strong className="text-white">holding is not spending.</strong>{' '}
-            Nothing here burns your tokens, locks them, escrows them, or asks you to deposit them.
-            Your voting power is simply what's in your wallet right now, read from the chain. Sell
-            tomorrow and your weight goes with it. That's the entire mechanic.
+            <strong className="text-white">Holding is not spending.</strong> Nothing is burned,
+            locked, escrowed or deposited. Your weight is simply what's in your wallet right now,
+            read from the chain. Sell tomorrow and it goes with you.
           </p>
-          <div className="grid gap-2.5">
-            <Term label="Meme 100">
-              A ranked board of coins. You back one with your $CSGN and the standings go on air. The
-              rank blends holder votes, 24h volume, market cap and how much is actually happening on
-              the chart — and every coin on it has its contract address right there on the card, so
-              you can check what you're backing. Change your pick whenever you like; your weight
-              moves with you.
-            </Term>
-            <Term label="Right Now">
-              Hold enough $CSGN and you can push a line onto the broadcast ticker. Your words, on
-              the network, on air.
-            </Term>
-            <Term label="Coin Jukebox">
-              Pay to put a coin in the spotlight, in SOL or $CSGN. Like TouchTunes, for the ticker.
-              The money goes to the treasury.
-            </Term>
-            <Term label="Network votes">
-              Holders decide things that affect the channel. Weight is your balance, tallies are
-              re-checked against live on-chain holdings when a vote closes, and the totals are
-              public.
-            </Term>
-          </div>
           <p>
-            <strong className="text-white">We never burn anything.</strong> Burning destroys capital
-            once for a press release. Instead everything the network takes in goes to one public
-            treasury under published rules, so you can watch the balance and hold us to it. It's on{' '}
+            Everything the network takes in goes to one public treasury under published rules, so
+            you can watch the balance:{' '}
             <Link to="/treasury" className="text-primary-400 hover:text-primary-300 underline">
               /treasury
             </Link>.
-          </p>
-        </Section>
-
-        <Section title="Your profile">
-          <p>
-            Your profile is at <span className="font-mono text-gray-300">/account</span>. It shows
-            your slots and what they earned, how many minutes of each you were actually live, your
-            $CSGN holdings and what they entitle you to, and your Meme 100 vote — which you can
-            change from there any time.
-          </p>
-          <p>
-            Other members can find you at{' '}
-            <span className="font-mono text-gray-300">csgn.fun/u/yourname</span>. That page shows
-            your name, your Twitch and your slots.{' '}
-            <strong className="text-white">It does not show your wallet address, and it does not
-            show an email if you gave one.</strong> Both are visible to you and nobody else — neither
-            is in any response another member can reach.
           </p>
         </Section>
 
@@ -240,15 +138,14 @@ export default function About() {
             <p className="mt-1 font-mono text-xs text-gray-300 break-all">{CSGN_MINT}</p>
           </div>
           <p className="text-gray-500">
-            Nothing on this site is financial advice. The token can go to zero like any other.
-            Don't put in money you need.
+            Nothing here is financial advice. The token can go to zero like any other. Don't put in
+            money you need.
           </p>
         </Section>
 
         <Section title="Open source">
           <p>
-            All of it. The player, the schedule, the airtime scheduler, the payout ledger, the
-            broadcast graphics — MIT licensed, on{' '}
+            All of it — MIT licensed, on{' '}
             <a
               href="https://github.com/csgnet-web/csgn"
               target="_blank"
@@ -256,16 +153,14 @@ export default function About() {
               className="text-primary-400 hover:text-primary-300 underline"
             >
               GitHub
-            </a>. Fork it, point the wallets at your own, and run your own network. We'd rather the
-            idea spread than be the only ones with it.
+            </a>. Fork it, point the wallets at your own, run your own network.
           </p>
         </Section>
 
         <section className="border-t border-white/[0.08] pt-8">
           <p className="text-base text-white font-medium">There's an empty block on the schedule.</p>
           <p className="mt-2 text-sm text-gray-400 leading-relaxed">
-            Go look at it. If it's still open, it's yours — and if you don't want to be live at 3 AM,
-            send a clip instead.
+            If it's still open, it's yours. Don't want to be live at 3 AM? Post a clip instead.
           </p>
           <Link to="/schedule" className="inline-block mt-5">
             <Button variant="primary" size="md">See the schedule</Button>

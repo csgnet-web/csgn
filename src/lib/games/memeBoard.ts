@@ -49,6 +49,12 @@ export interface RankedMemeCoin extends MemeCoin {
   rank: number
   /** 0–1 blend. Published so the ordering is checkable, not magic. */
   power: number
+  /** `power` as a 0–100 figure a person can read, and the four terms that made
+   *  it — each already multiplied by its weight, so they sum to `score`. This is
+   *  what lets the board answer "why is this coin here" on the card itself
+   *  instead of in a FAQ nobody opens. */
+  score: number
+  breakdown: { votes: number; volume: number; marketCap: number; buzz: number }
   /** $CSGN weight backing this coin. */
   votes: number
   /** Distinct wallets backing it. Decoration — tokens are the signal. */
@@ -161,18 +167,36 @@ export function rankMemeBoard(coins: MemeCoin[], votes: Record<string, VoteCell>
   const totalVotes = coins.reduce((sum, c) => sum + votesOf(c), 0)
 
   return coins
-    .map((c) => ({
+    .map((c) => {
+      // Each term is its normalized value times its published weight, so the
+      // four of them add up to `power` exactly — a breakdown that does not sum
+      // to the total is a breakdown nobody can check.
+      const breakdown = {
+        votes: POWER_WEIGHTS.votes * nVotes(c),
+        volume: POWER_WEIGHTS.volume * nVol(c),
+        marketCap: POWER_WEIGHTS.marketCap * nMc(c),
+        buzz: POWER_WEIGHTS.buzz * nBuzz(c),
+      }
+      const power = breakdown.votes + breakdown.volume + breakdown.marketCap + breakdown.buzz
+      return {
       ...c,
-      power:
-        POWER_WEIGHTS.votes * nVotes(c) +
-        POWER_WEIGHTS.volume * nVol(c) +
-        POWER_WEIGHTS.marketCap * nMc(c) +
-        POWER_WEIGHTS.buzz * nBuzz(c),
+      power,
+      // 0–100, rounded. The weights sum to 1, so power is already a fraction of
+      // a perfect score — no rescaling, which keeps the number comparable
+      // between refreshes instead of floating with whatever is on the board.
+      score: Math.round(power * 100),
+      breakdown: {
+        votes: Math.round(breakdown.votes * 100),
+        volume: Math.round(breakdown.volume * 100),
+        marketCap: Math.round(breakdown.marketCap * 100),
+        buzz: Math.round(breakdown.buzz * 100),
+      },
       votes: votesOf(c),
       voters: Math.max(0, Number(votes[c.address]?.wallets) || 0),
       voteShare: totalVotes > 0 ? votesOf(c) / totalVotes : 0,
       rank: 0,
-    }))
+      }
+    })
     // Power first; ties break on raw vote weight, then alphabetically, so the
     // order is stable across refreshes instead of shuffling on every render.
     .sort((a, b) => (b.power - a.power) || (b.votes - a.votes) || a.symbol.localeCompare(b.symbol))

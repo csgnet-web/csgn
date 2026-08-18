@@ -18,34 +18,11 @@ export const CLIP_PLATFORM_LABELS: Record<ClipPlatform, string> = {
 
 export const CLIP_MIN_SECONDS = 5
 export const CLIP_MAX_SECONDS = 120
+/** What a clip is assumed to run when the platform will not tell us — TikTok and
+ *  Instagram publish no duration, and YouTube only does with an API key. The
+ *  member is never asked; a wrong guess costs a slightly clipped segment, and
+ *  asking would cost the post. */
 export const CLIP_DEFAULT_SECONDS = 30
-
-/**
- * CUTS — the only way a member sets a length.
- *
- * Nobody should be typing a number of seconds into a box. It is a chore, it
- * invites the wrong answer, and "how long is my clip" is not actually the
- * question they are answering — "how big a moment is this" is. So they pick a
- * cut, the way an editor picks a bumper or a pre-roll, and the seconds follow.
- */
-export interface ClipCut {
-  id: string
-  label: string
-  seconds: number
-  hint: string
-}
-
-export const CLIP_CUTS: ClipCut[] = [
-  { id: 'sting', label: 'Sting', seconds: 10, hint: 'A hit. In and out.' },
-  { id: 'short', label: 'Short', seconds: 20, hint: 'One idea, one look.' },
-  { id: 'standard', label: 'Standard', seconds: 30, hint: 'The default cut.' },
-  { id: 'feature', label: 'Feature', seconds: 60, hint: 'Room to land a story.' },
-  { id: 'block', label: 'Block', seconds: 120, hint: 'The longest single run.' },
-]
-
-export const cutForSeconds = (seconds: number): ClipCut =>
-  CLIP_CUTS.find((c) => c.seconds === seconds)
-  ?? CLIP_CUTS.reduce((best, c) => (Math.abs(c.seconds - seconds) < Math.abs(best.seconds - seconds) ? c : best), CLIP_CUTS[0])
 
 /**
  * ON-AIR LOOK — a member's own visual language.

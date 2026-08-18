@@ -11,6 +11,7 @@ import { DEFAULT_TOKEN_GATES, normalizeTokenGates } from '@/lib/tokenGates'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
+import Meme100Board from '@/components/participate/Meme100Board'
 
 interface VoteCfg { id: string; question: string; options: string[]; startISO?: string; status?: string }
 interface Cell { tokens: number; wallets: number }
@@ -63,7 +64,6 @@ export default function Participate() {
   const [memeBusy, setMemeBusy] = useState(false)
   const [memeMsg, setMemeMsg] = useState<string | null>(null)
   const [memeErr, setMemeErr] = useState<string | null>(null)
-  const [memeTallies, setMemeTallies] = useState<Record<string, Cell>>({})
 
   // Current vote (config/ticker.vote)
   useEffect(() => {
@@ -82,13 +82,8 @@ export default function Participate() {
     })
   }, [])
 
-  // Live meme-100 community tally (world-readable public/memeVote).
-  useEffect(() => {
-    return onSnapshot(doc(db, 'public', 'memeVote'), (snap) => {
-      const t = snap.exists() ? (snap.data().tallies as Record<string, Cell> | undefined) : undefined
-      setMemeTallies(t && typeof t === 'object' ? t : {})
-    }, () => {})
-  }, [])
+  // public/memeVote is subscribed to inside Meme100Board, which is the only
+  // thing that reads the tallies now. One listener, one ranking.
 
   // Live tally for the current vote — derived so switching votes needs no
   // synchronous reset (keeps setState out of the effect body).
@@ -213,13 +208,10 @@ export default function Participate() {
     }
     setMemeBusy(false)
   }
-  // Community power ranking (by token weight); the ticker blends this with each
-  // coin's live volume + market cap for the on-air pick.
-  const memeRanked = Object.entries(memeTallies)
-    .map(([sym, c]) => ({ sym, tokens: c?.tokens || 0, wallets: c?.wallets || 0 }))
-    .filter((r) => r.tokens > 0)
-    .sort((a, b) => b.tokens - a.tokens)
-    .slice(0, 5)
+  // The community ranking used to be recomputed here from raw tallies. It now
+  // lives in Meme100Board, which reads the same tallies AND the on-chain board
+  // and runs the one published formula — so the standings on this page and the
+  // standings on air cannot disagree.
 
   const options = vote?.options ?? []
   const cells = options.map((_, i) => tally[String(i)] || { tokens: 0, wallets: 0 })
@@ -237,12 +229,17 @@ export default function Participate() {
       className="max-w-3xl mx-auto px-4 sm:px-6 py-10 space-y-8"
     >
       <header className="space-y-2">
-        <h1 className="text-3xl sm:text-4xl font-display font-black uppercase tracking-tight">Holder Zone</h1>
+        <h1 className="text-3xl sm:text-4xl font-display font-black uppercase tracking-tight">$CSGN</h1>
         <p className="text-gray-400 text-sm sm:text-base">
-          Your $CSGN is your voice. Vote tonight’s programming — weighted by the tokens you hold — and, at{' '}
-          {fmtFull(rightNowMin)} $CSGN, put your own message on the live broadcast ticker.
+          Your balance is your voice. Back a coin on the Meme 100, vote tonight’s programming, and at{' '}
+          {fmtFull(rightNowMin)} $CSGN put your own message on the live broadcast ticker.
         </p>
       </header>
+
+      {/* THE MEME 100 — first, and public. It is the most interesting thing on
+          this page and the only part that works with no wallet connected, so it
+          leads rather than sitting under two sections a visitor cannot use. */}
+      <Meme100Board />
 
       {/* Wallet status */}
       <Card hover={false} className="p-4 flex items-center justify-between gap-4">
@@ -445,17 +442,6 @@ export default function Participate() {
           <p className="text-sm text-gray-400">
             Back a memecoin with your <span className="text-cyan-300 font-semibold">$CSGN voting power</span> — no burn, no stake, nothing leaves your wallet. Your weight = your balance. The board blends the community vote with each coin’s live <span className="text-cyan-300 font-semibold">volume + market cap</span> and airs the pick.
           </p>
-
-          {memeRanked.length > 0 && (
-            <div className="rounded-xl bg-white/[0.03] border border-white/[0.08] p-3 space-y-1.5">
-              {memeRanked.map((r, i) => (
-                <div key={r.sym} className="flex items-center justify-between text-sm">
-                  <span className="text-gray-300"><span className="text-gray-500 font-mono mr-2">{i + 1}</span>${r.sym}</span>
-                  <span className="font-mono text-gray-400" title={`${Math.round(r.tokens).toLocaleString('en-US')} $CSGN · ${r.wallets} wallets`}>{fmtToken(r.tokens)} · {r.wallets}w</span>
-                </div>
-              ))}
-            </div>
-          )}
 
           {!walletAddress ? (
             <Button onClick={() => void connect()} isLoading={isConnecting} leftIcon={<Wallet className="w-4 h-4" />}>Connect Phantom to vote</Button>

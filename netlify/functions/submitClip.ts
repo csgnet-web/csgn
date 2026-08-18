@@ -15,12 +15,15 @@ import { getDoc, queryCollection, writeDoc, fieldFilter } from './_shared/fireba
 import { json, parseJson, requireMethod, withHttp } from './_shared/http'
 import { checkRateLimit, clientIp } from './_shared/rateLimit'
 import { parseClipUrl, clipKey, clampClipSeconds } from './_shared/clipEmbed'
+import { fetchClipMeta } from './_shared/clipMeta'
 
 /** Per member. A reel, not a channel — and a bound on the review queue. */
 const MAX_CLIPS_PER_MEMBER = 25
 const MAX_TITLE = 80
 
-type Body = { url?: unknown; seconds?: unknown; title?: unknown }
+// No `seconds`. The member never types a length — we read the real one off the
+// platform, and fall back to a default when the platform will not say.
+type Body = { url?: unknown; title?: unknown }
 
 export const handler = withHttp(async (event) => {
   requireMethod(event, 'POST')
@@ -51,8 +54,16 @@ export const handler = withHttp(async (event) => {
     throw conflict('That post is already in your reel.', 'duplicate_clip')
   }
 
+  // Ask the platform what this actually is. Best-effort: a slow or unkeyed
+  // provider costs us a title and a measured runtime, never the post itself.
+  const meta = await fetchClipMeta(parsed)
+
   const clipId = `${authUser.uid.slice(0, 8)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-  const seconds = clampClipSeconds(body.seconds)
+  // The real runtime when we could measure it, clamped to what the scheduler
+  // will air; the default when we could not. `measured` is stored so /studio can
+  // be honest about which of the two a member is looking at.
+  const measured = meta.seconds != null
+  const seconds = clampClipSeconds(meta.seconds ?? undefined)
   const order = mine.reduce((max, row) => Math.max(max, Number((row.data as { order?: number }).order) || 0), 0) + 1
 
   await writeDoc(`clips/${clipId}`, {
@@ -63,21 +74,28 @@ export const handler = withHttp(async (event) => {
     clipKey: key,
     sourceUrl: parsed.canonicalUrl,
     embedUrl: parsed.embedUrl,
-    title: String(body.title ?? '').trim().slice(0, MAX_TITLE),
+    // The member's own title wins; the platform's is the fallback, so a clip
+    // posted with an empty title still reads as something on the review queue.
+    title: (String(body.title ?? '').trim() || meta.title).slice(0, MAX_TITLE),
+    thumbnailUrl: meta.thumbnailUrl,
+    authorName: meta.authorName,
     seconds,
+    measured,
     order,
     status: 'pending',
     createdAt: new Date(),
     updatedAt: new Date(),
   })
 
-  await auditLog('submitClip', authUser.uid, { clipId, platform: parsed.platform, videoId: parsed.videoId })
+  await auditLog('submitClip', authUser.uid, { clipId, platform: parsed.platform, videoId: parsed.videoId, measured })
 
   return json(200, {
     ok: true,
     clip: {
       id: clipId, platform: parsed.platform, sourceUrl: parsed.canonicalUrl,
-      title: String(body.title ?? '').trim().slice(0, MAX_TITLE), seconds, order, status: 'pending',
+      title: (String(body.title ?? '').trim() || meta.title).slice(0, MAX_TITLE),
+      thumbnailUrl: meta.thumbnailUrl,
+      seconds, measured, order, status: 'pending',
     },
   })
 })

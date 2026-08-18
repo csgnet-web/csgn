@@ -25,13 +25,13 @@ describe('airtimeShares', () => {
     expect(a / b).toBeCloseTo(3, 1)
   })
 
-  it('keeps the floor equal and applies the ratio only to what is left', () => {
+  it('keeps an opened floor equal and applies the ratio only to what is left', () => {
     const out = airtimeShares(
       [member('a', 30_000_000, 100_000), member('b', 10_000_000, 100_000)],
-      10_000, SUPPLY, { maxShare: 1 },
+      10_000, SUPPLY, { maxShare: 1, floorSeconds: 30 },
     )
-    const a = out.find((x) => x.uid === 'a')!.seconds - AIRTIME_FLOOR_SECONDS
-    const b = out.find((x) => x.uid === 'b')!.seconds - AIRTIME_FLOOR_SECONDS
+    const a = out.find((x) => x.uid === 'a')!.seconds - 30
+    const b = out.find((x) => x.uid === 'b')!.seconds - 30
     expect(a / b).toBeCloseTo(3, 1)
   })
 
@@ -47,13 +47,22 @@ describe('airtimeShares', () => {
     expect(out.every((x) => x.capped)).toBe(true)
   })
 
-  it('gives a zero-holder the floor rather than silence', () => {
-    // master-plan.md §5 — the token amplifies, it never admits. If this ever
-    // returns nothing for a member holding zero, that rule is broken.
+  // AIRTIME IS WHAT THE TOKEN BUYS. A member holding nothing gets no airtime —
+  // not a token slice, none — because a free floor for everybody would make the
+  // number meaningless and dilute the people who actually hold.
+  //
+  // This is not an access gate: the same member can still make an account, claim
+  // a two-hour block and go live holding zero. Airtime is promotion.
+  it('gives a member holding nothing no airtime at all', () => {
     const out = airtimeShares([member('whale', 500_000_000), member('nobody', 0)], 10_000, SUPPLY)
-    const nobody = out.find((x) => x.uid === 'nobody')!
-    expect(nobody).toBeDefined()
-    expect(nobody.seconds).toBeGreaterThanOrEqual(AIRTIME_FLOOR_SECONDS)
+    expect(out.find((x) => x.uid === 'nobody')).toBeUndefined()
+    expect(out.find((x) => x.uid === 'whale')).toBeDefined()
+  })
+
+  it('ships with no floor, but can still open one for a promotion', () => {
+    expect(AIRTIME_FLOOR_SECONDS).toBe(0)
+    const promo = airtimeShares([member('nobody', 0)], 10_000, SUPPLY, { floorSeconds: 60 })
+    expect(promo.find((x) => x.uid === 'nobody')?.seconds).toBeGreaterThanOrEqual(60)
   })
 
   it('caps a whale and redistributes what it claws back', () => {
@@ -99,9 +108,9 @@ describe('airtimeShares', () => {
     expect(out).toEqual([])
   })
 
-  it('shares the floor itself when there are more members than seconds', () => {
-    const members = Array.from({ length: 100 }, (_, i) => member(`m${i}`, 0, 600))
-    const out = airtimeShares(members, 1_000, SUPPLY)
+  it('shares an opened floor when there are more members than seconds', () => {
+    const members = Array.from({ length: 100 }, (_, i) => member(`m${i}`, 1_000, 600))
+    const out = airtimeShares(members, 1_000, SUPPLY, { floorSeconds: 30 })
     expect(out.reduce((sum, a) => sum + a.seconds, 0)).toBeLessThanOrEqual(1_000)
   })
 
@@ -110,7 +119,9 @@ describe('airtimeShares', () => {
     expect(airtimeShares([], 10_000, SUPPLY)).toEqual([])
     const noSupply = airtimeShares([member('a', 1_000), member('b', 2_000)], 10_000, 0)
     expect(noSupply.every((a) => Number.isFinite(a.seconds))).toBe(true)
-    expect(airtimeShares([{ uid: 'x', balance: NaN, clipSeconds: 600 }], 10_000, SUPPLY)[0].seconds).toBeGreaterThan(0)
+    // NaN balance reads as zero held, which now means no airtime rather than a
+    // free slice — junk input must never be more generous than a real zero.
+    expect(airtimeShares([{ uid: 'x', balance: NaN, clipSeconds: 600 }], 10_000, SUPPLY)).toEqual([])
   })
 
   it('is deterministic — two runs over the same input are identical', () => {

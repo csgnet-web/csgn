@@ -1,5 +1,4 @@
 import { Link, useLocation } from 'react-router-dom'
-import { motion } from 'framer-motion'
 import { CalendarDays, Clapperboard, Coins, Radio, User } from 'lucide-react'
 import { useAuth } from '@/contexts/useAuth'
 import { useAuthModal } from '@/contexts/useAuthModal'
@@ -64,8 +63,18 @@ export function BottomNav() {
   return (
     <nav
       aria-label="Primary"
-      className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-white/[0.07] bg-[#06060c]/95 backdrop-blur-xl"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      // z-[70] puts it above every page chrome layer (the sticky header is 50,
+      // Watch's shell and its overlays sit below that) while staying under the
+      // auth sheet at 100. A tab that is visible but covered by a transparent
+      // element is the exact bug that made taps feel unreliable.
+      className="lg:hidden fixed bottom-0 left-0 right-0 z-[70] border-t border-white/[0.07] bg-[#06060c]/95 backdrop-blur-xl"
+      style={{
+        paddingBottom: 'env(safe-area-inset-bottom)',
+        // Kills the ~300ms synthetic-click delay some mobile browsers still add
+        // when they cannot rule out a double-tap zoom. This is what makes a tap
+        // feel instant rather than "sometimes".
+        touchAction: 'manipulation',
+      }}
     >
       {/* Hairline of brand colour along the top edge — the same device the PIP
           overlay uses. It reads as "this is one product" without spending a
@@ -98,17 +107,18 @@ export function BottomNav() {
               >
                 {label}
               </span>
-              {active && (
-                <motion.span
-                  layoutId="bottomNavActive"
-                  transition={{ type: 'spring', stiffness: 400, damping: 32 }}
-                  className="absolute top-0 h-0.5 w-8 rounded-full bg-primary-500"
-                />
-              )}
+              {/* A plain element, not a layout animation. The shared-layout
+                  version re-measured every tab on each route change, and during
+                  that frame a press could land on a moving target. */}
+              {active && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-primary-500" />}
             </>
           )
 
-          const shell = 'relative flex flex-col items-center justify-center gap-1 py-2.5 cursor-pointer select-none'
+          // min-h-14 gives every tab a full-height target rather than one sized
+          // to its icon and label — the dead band between them was most of the
+          // "it didn't register" taps. `touch-manipulation` and the transparent
+          // tap highlight keep the press instant and silent.
+          const shell = 'relative flex flex-col items-center justify-center gap-1 min-h-14 px-1 cursor-pointer select-none touch-manipulation active:bg-white/[0.06] transition-colors'
 
           // A locked tab is a BUTTON, not a Link. Navigating to a page that only
           // says "sign in first" is a wasted screen; the sheet opens over

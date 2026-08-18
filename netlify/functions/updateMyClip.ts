@@ -10,9 +10,11 @@ import { auditLog } from './_shared/audit'
 import { badRequest, forbidden, notFound } from './_shared/errors'
 import { commitWrites, deleteWrite, getDoc, updateWrite } from './_shared/firebaseAdmin'
 import { json, parseJson, requireMethod, withHttp } from './_shared/http'
-import { clampClipSeconds } from './_shared/clipEmbed'
 
-type Body = { clipId?: unknown; action?: unknown; order?: unknown; seconds?: unknown; title?: unknown }
+// Deliberately no `seconds`. Length comes from the platform on submit; letting
+// a member retime a clip afterwards would put the wrong number back in their
+// hands and let an approved short clip quietly become a long one.
+type Body = { clipId?: unknown; action?: unknown; order?: unknown; title?: unknown }
 
 const CLIP_ID_RE = /^[a-zA-Z0-9_-]{3,120}$/
 
@@ -39,12 +41,10 @@ export const handler = withHttp(async (event) => {
   if (action === 'update') {
     const patch: Record<string, unknown> = { updatedAt: new Date() }
     if (body.order !== undefined) patch.order = Math.max(0, Math.floor(Number(body.order) || 0))
-    if (body.seconds !== undefined) patch.seconds = clampClipSeconds(body.seconds)
     if (body.title !== undefined) patch.title = String(body.title).trim().slice(0, 80)
-    // Editing the content of an already-approved clip sends it back for review.
-    // Otherwise "approve it short and clean, then make it 2 minutes" is an
-    // unreviewed change to what airs.
-    if ((body.seconds !== undefined || body.title !== undefined) && clip.status === 'approved') {
+    // Retitling an already-approved clip sends it back for review: the title is
+    // what a reviewer read, and what appears beside it on air.
+    if (body.title !== undefined && clip.status === 'approved') {
       patch.status = 'pending'
       patch.rejectReason = null
     }

@@ -17,10 +17,10 @@ import { WipeOverlay } from '@/components/ui/WipeOverlay'
 /** The default strip copy. Whatever an admin sets in config/broadcastBanner wins;
  *  this is what shows before anything has been configured. */
 const bannerItems = [
-  'STARTING 5 — 100,000 $CSGN FOR A PERFECT CARD',
-  'SQUARES — WEEKLY BOARD, FREE TO ENTER',
   "CSGN: Crypto's Entertainment Flagship",
   'Connect Your Twitch and Go Live on CSGN',
+  'EVERY BLOCK PAYS 30% OF THE FEES IT GENERATES',
+  'HOLD $CSGN — POST A CLIP — GET ON TELEVISION',
 ] as const
 
 /** When nobody holds the current slot, the banner sells the empty stage instead.
@@ -29,7 +29,7 @@ const openStageBanner = [
   'STAGE IS OPEN! GO LIVE NOW!',
   'Connect your Twitch/Phantom and earn fees!',
   "CSGN: Crypto's Entertainment Flagship",
-  'Claim a slot at csgn.fun/schedule',
+  'Claim a two-hour block at csgn.fun/schedule',
 ] as const
 
 export default function Watch() {
@@ -140,7 +140,10 @@ export default function Watch() {
   const isLive = Boolean(broadcastPostId) || slotLive
 
   return (
-    <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
+    // h-dvh, not h-screen: on mobile Safari `100vh` is the height WITHOUT the
+    // browser chrome, so the last ~80px of this shell sat under the URL bar and
+    // the tab bar. `dvh` tracks the real visible box as the chrome collapses.
+    <div className="flex h-dvh pt-16 bg-[#050507] overflow-hidden pb-[var(--csgn-tabbar)] lg:pb-0">
 
       {/* ── Main content ── */}
       <div className="flex-1 flex flex-col overflow-y-auto min-w-0">

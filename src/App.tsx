@@ -17,6 +17,7 @@ const PublicProfile = lazy(() => import('@/pages/PublicProfile'))
 const Admin = lazy(() => import('@/pages/Admin'))
 const Player = lazy(() => import('@/pages/Player'))
 const Terms = lazy(() => import('@/pages/Terms'))
+const Privacy = lazy(() => import('@/pages/Privacy'))
 const TwitchComplete = lazy(() => import('@/pages/TwitchComplete'))
 const Participate = lazy(() => import('@/pages/Participate'))
 const Treasury = lazy(() => import('@/pages/Treasury'))
@@ -69,6 +70,7 @@ function AppContent() {
             <Route path="/admin" element={<Admin />} />
             <Route path="/player" element={<Player />} />
             <Route path="/terms" element={<Terms />} />
+            <Route path="/privacy" element={<Privacy />} />
             <Route path="/auth/twitch/complete" element={<TwitchComplete />} />
             <Route path="/auth/email/complete" element={<EmailComplete />} />
           </Routes>
@@ -82,7 +84,7 @@ function AppContent() {
           without it, every page's final element hides under the bar on a phone. */}
       {!isPlayerPage && (
         <>
-          <div className="lg:hidden h-[68px]" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }} aria-hidden="true" />
+          <div className="lg:hidden" style={{ height: 'var(--csgn-tabbar)' }} aria-hidden="true" />
           <BottomNav />
         </>
       )}

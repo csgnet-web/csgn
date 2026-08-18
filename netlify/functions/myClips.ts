@@ -34,7 +34,10 @@ export const handler = withHttp(async (event) => {
       platform: String(d.platform || ''),
       sourceUrl: String(d.sourceUrl || ''),
       title: String(d.title || ''),
+      thumbnailUrl: String(d.thumbnailUrl || ''),
       seconds: Number(d.seconds) || 0,
+      /** True when the platform told us the real runtime, false when we guessed. */
+      measured: d.measured === true,
       order: Number(d.order) || 0,
       status: String(d.status || 'pending'),
       rejectReason: d.rejectReason ? String(d.rejectReason) : null,

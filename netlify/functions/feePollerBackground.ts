@@ -638,6 +638,7 @@ interface ClipDoc {
   embedUrl?: string
   /** Where the post actually lives, for credit and for the review queue. */
   sourceUrl?: string
+  thumbnailUrl?: string
   platform?: string
   title?: string
   seconds?: number

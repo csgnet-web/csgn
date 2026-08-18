@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   looksLikeClipUrl, clipLength, airtimeLabel,
-  CLIP_CUTS, cutForSeconds, lookById, ON_AIR_LOOKS, clipPoster,
-  CLIP_MIN_SECONDS, CLIP_MAX_SECONDS,
+  lookById, ON_AIR_LOOKS, clipPoster,
 } from './clipEmbed'
 
 describe('looksLikeClipUrl', () => {
@@ -41,25 +40,6 @@ describe('display helpers', () => {
   })
 })
 
-describe('cuts', () => {
-  it('offers a ladder of lengths so nobody types a number', () => {
-    expect(CLIP_CUTS.length).toBeGreaterThanOrEqual(4)
-    // Ascending, and every one inside what the scheduler will actually air.
-    const seconds = CLIP_CUTS.map((c) => c.seconds)
-    expect([...seconds].sort((a, b) => a - b)).toEqual(seconds)
-    expect(Math.min(...seconds)).toBeGreaterThanOrEqual(CLIP_MIN_SECONDS)
-    expect(Math.max(...seconds)).toBeLessThanOrEqual(CLIP_MAX_SECONDS)
-  })
-
-  it('maps a stored length back to the nearest cut', () => {
-    expect(cutForSeconds(30).id).toBe('standard')
-    expect(cutForSeconds(60).id).toBe('feature')
-    // A legacy clip saved with a hand-typed length still lands on a real chip
-    // rather than showing nothing selected.
-    expect(cutForSeconds(33).id).toBe('standard')
-    expect(cutForSeconds(9999).id).toBe('block')
-  })
-})
 
 describe('on-air looks', () => {
   it('always resolves to a real look, including for junk', () => {

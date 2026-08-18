@@ -293,7 +293,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
           <p className="mt-8 text-center text-[11px] text-gray-600">
             <Link to="/terms" onClick={close} className="hover:text-gray-400 underline underline-offset-2">Terms of Service</Link>
             <span className="mx-1.5">·</span>
-            <Link to="/terms" onClick={close} className="hover:text-gray-400 underline underline-offset-2">Privacy Policy</Link>
+            <Link to="/privacy" onClick={close} className="hover:text-gray-400 underline underline-offset-2">Privacy Policy</Link>
           </p>
         </div>
       </div>

@@ -43,6 +43,34 @@
 html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
 body { margin: 0; overflow-x: hidden; background: #050507; color: rgba(255, 255, 255, .92); }
 
+/* ─── Mobile scroll safety ───────────────────────────────────────────────
+   Three rules that between them stop content ever sliding under, over or
+   past something else, however hard the page is flung around.
+
+   1. NOTHING may push the page sideways. A single wide element (a long mint
+      address, a wide table, an oversized embed) turns every vertical scroll
+      into a diagonal one and drags fixed chrome out of alignment with it.
+   2. Overscroll stops at the element that is scrolling. Without this a fling
+      inside a card chains to the document and drags the whole page — which on
+      iOS is what detaches a fixed bar from the viewport mid-gesture.
+   3. The tab bar owns the bottom 68px plus the home indicator. `--csgn-tabbar`
+      is the single number every page uses to keep clear of it, so there is one
+      place to change it. */
+:root { --csgn-tabbar: calc(68px + env(safe-area-inset-bottom)); }
+
+@media (max-width: 1023px) {
+  html, body { max-width: 100%; overscroll-behavior-y: none; }
+  /* Long unbroken strings — wallet addresses, mints, signatures, URLs — are the
+     usual cause of a page that scrolls sideways. */
+  p, span, a, li, h1, h2, h3, h4, td { overflow-wrap: anywhere; }
+}
+
+/* Any scroller inside the app keeps its fling to itself. */
+.overflow-y-auto, .overflow-auto, .overflow-x-auto {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* App-feel on touch: kill the grey tap-flash that reads as "web page, not app". */
 button, a, [role="button"], input, select, textarea, label {
   -webkit-tap-highlight-color: transparent;

@@ -45,13 +45,16 @@ gate — it decides whose message is amplified, never who may take part.
 
 Holder-weighted airtime is compatible with that **only if**:
 
-- Every verified member gets a **non-zero floor** of airtime holding nothing.
-- Claiming a live hour, making an account, and going live stay free and
-  unweighted, exactly as they are now.
+- Claiming a block, making an account, and going live stay free and unweighted —
+  and they do.
+- Airtime is understood as **promotion**, not access. §5's own words: the token
+  "decides whose message gets amplified, never who is allowed in."
 
-Build it so that holding more makes your voice *louder*, never so that holding
-nothing makes you *silent*. If a zero-holder can be scheduled for zero seconds,
-this rule is broken.
+**Owner decision, taken after this was first written: there is no free floor.**
+A member holding nothing gets no clip airtime. The reasoning is that a floor for
+everybody makes the number meaningless and dilutes the people who actually hold,
+and airtime is the one thing the token is *for*. `AIRTIME_FLOOR_SECONDS` remains
+as a knob (default 0) so a launch promotion can open one without a code change.
 
 ### 0.2 Linear weight hands the channel to one wallet
 

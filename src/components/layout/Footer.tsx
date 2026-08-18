@@ -102,8 +102,12 @@ export function Footer() {
           <p className="text-xs text-gray-600">
             &copy; {new Date().getFullYear()} CSGN &mdash; Crypto Sports &amp; Gaming Network. All rights reserved.
           </p>
-          <p className="text-xs text-gray-600">
-            Built on <span className="text-primary-400">Solana</span> &middot; Powered by pump.fun &middot; Live on X
+          <p className="text-xs text-gray-600 flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+            <Link to="/terms" className="hover:text-gray-400 underline underline-offset-2">Terms</Link>
+            <span>&middot;</span>
+            <Link to="/privacy" className="hover:text-gray-400 underline underline-offset-2">Privacy</Link>
+            <span>&middot;</span>
+            <span>Built on <span className="text-primary-400">Solana</span></span>
           </p>
         </div>
       </div>

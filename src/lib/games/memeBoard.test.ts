@@ -206,3 +206,49 @@ describe('searching the board', () => {
     expect(searchBoard(ranked, 'zzzz')).toEqual([])
   })
 })
+
+// ── The published 0–100 score ──
+//
+// The board goes on air and is the ballot for a token-weighted vote, so "why is
+// this coin here" has to be answerable from the card. These pin the two
+// properties that make that possible: the number is stable and comparable, and
+// the four terms shown beneath it actually add up to it.
+
+describe('the 0-100 score', () => {
+  const coins = [
+    { address: 'A'.repeat(40), symbol: 'AAA', name: 'A', imageUrl: '', priceUsd: 1, marketCapUsd: 1_000_000, volumeH24Usd: 500_000, priceChangeH24Pct: 10, liquidityUsd: 100_000, pairUrl: '', priced: true },
+    { address: 'B'.repeat(40), symbol: 'BBB', name: 'B', imageUrl: '', priceUsd: 1, marketCapUsd: 100_000, volumeH24Usd: 10_000, priceChangeH24Pct: 1, liquidityUsd: 10_000, pairUrl: '', priced: true },
+  ]
+
+  it('is 0-100 and ordered the same way as the ranking', () => {
+    const ranked = rankMemeBoard(coins)
+    for (const c of ranked) {
+      expect(c.score).toBeGreaterThanOrEqual(0)
+      expect(c.score).toBeLessThanOrEqual(100)
+    }
+    expect(ranked[0].score).toBeGreaterThanOrEqual(ranked[1].score)
+  })
+
+  it('breaks down into the four published weights, and they add up', () => {
+    const [top] = rankMemeBoard(coins)
+    const parts = top.breakdown.votes + top.breakdown.volume + top.breakdown.marketCap + top.breakdown.buzz
+    // Rounding each term independently can drift a point from the total; more
+    // than that means the breakdown is not the score.
+    expect(Math.abs(parts - top.score)).toBeLessThanOrEqual(2)
+  })
+
+  it('credits the vote term only when holders actually backed a coin', () => {
+    const withVotes = rankMemeBoard(coins, { [coins[1].address]: { tokens: 5_000_000, wallets: 3 } })
+    const bbb = withVotes.find((c) => c.symbol === 'BBB')!
+    expect(bbb.breakdown.votes).toBeGreaterThan(0)
+    const aaa = withVotes.find((c) => c.symbol === 'AAA')!
+    expect(aaa.breakdown.votes).toBe(0)
+  })
+
+  it('survives an empty and a single-coin board', () => {
+    expect(rankMemeBoard([])).toEqual([])
+    const [only] = rankMemeBoard([coins[0]])
+    expect(only.score).toBeGreaterThan(0)
+    expect(only.score).toBeLessThanOrEqual(100)
+  })
+})
