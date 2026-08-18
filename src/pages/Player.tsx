@@ -153,7 +153,26 @@ function buildOverrideSrc(url: string): string | null {
  * gate confirms; in a normal browser tab, where the autoplay policy blocks a
  * gesture-less unmute, a one-tap affordance unlocks sound.
  */
-export default function Player() {
+/**
+ * `clipsEnabled: false` is the REVERT PATH, served at /oldplayer.
+ *
+ * The clip reel is the newest and least battle-tested source on the channel: it
+ * pulls third-party embeds from three platforms, any of which can change an
+ * embed policy overnight and leave a black rectangle on television. When that
+ * happens the fix is not to debug live — it is to point OBS at a URL that
+ * cannot possibly be affected, and then debug.
+ *
+ * So this is a FLAG on the real player rather than a forked copy of it. A copy
+ * would drift: the fallback would quietly stop receiving the fixes that make
+ * the primary work, and the day you needed it would be the day you found out.
+ * Everything else — the live pipeline, the state machine, the wipes, the
+ * overlays, the preview modes — is byte-for-byte identical, because it is the
+ * same component.
+ *
+ * With clips off, INTERMISSION falls back to the admin VOD playlist and then to
+ * the branded board, which is exactly how the channel ran before clips existed.
+ */
+export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean } = {}) {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
   const obs = useMemo(() => isOBS(), [])
   // No-ads / Turbo fast-reveal flag: set on the OBS Browser Source URL
@@ -507,6 +526,10 @@ export default function Player() {
               platform: String(i.platform ?? ''),
               username: String(i.username ?? ''),
               look: String(i.look ?? 'signal'),
+              // The member's chosen shape and picture travel on the schedule,
+              // so the broadcast paints their card without looking anything up.
+              style: String(i.style ?? 'bar'),
+              avatarUrl: String(i.avatarUrl ?? ''),
               seconds: Number(i.seconds) || 30,
             })),
         )
@@ -939,7 +962,7 @@ export default function Player() {
           A claimed hour going live pre-empts both — it takes /player out of
           INTERMISSION entirely, which is why there is no priority check here. */}
       {state.mode === 'INTERMISSION' && (
-        <VodRotator items={airtimeItems.length > 0 ? airtimeItems : vodItems} />
+        <VodRotator items={clipsEnabled && airtimeItems.length > 0 ? airtimeItems : vodItems} />
       )}
 
       <WipeOverlay

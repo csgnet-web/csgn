@@ -4,11 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <title>CSGN — Crypto Sports &amp; Gaming Network | Live 24/7 on Solana</title>
+    <title>CSGN — The 24/7 Crypto TV Channel Anyone Can Get On</title>
     <meta
       name="description"
-      content="The 24/7 crypto-native streaming network. Streamers claim an hour, go live on their own channel, and earn a share of $CSGN's real trading fees for the block they're on air."
+      content="CSGN is a crypto television channel that never goes dark. Post a clip you already made and it airs between live streams, or connect your Twitch once and get carried automatically whenever you go live. Airtime is one-to-one with the $CSGN you hold."
     />
+    <meta name="keywords" content="crypto tv channel, solana streaming, crypto streamers, memecoin tv, $CSGN, watch crypto live, crypto clips, token airtime" />
+    <meta name="author" content="CSGN" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
     <link rel="canonical" href="https://csgn.fun/" />
     <meta name="theme-color" content="#06060e" />
     <link rel="icon" type="image/jpeg" href="/csgn-logo.jpg" />
@@ -25,26 +28,26 @@
     <meta property="og:site_name" content="CSGN" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://csgn.fun/" />
-    <meta property="og:title" content="CSGN — Crypto Sports &amp; Gaming Network" />
+    <meta property="og:title" content="CSGN — The 24/7 Crypto TV Channel Anyone Can Get On" />
     <meta
       property="og:description"
-      content="The 24/7 streaming network where streamers earn a share of $CSGN's real trading fees for the hour they're on air. Claim an hour, stream your own channel, get paid on-chain."
+      content="A crypto channel that never goes dark. Paste a link to a clip you already made and it airs. Connect Twitch once and get carried whenever you go live. Airtime is one-to-one with what you hold."
     />
     <meta property="og:image" content="https://csgn.fun/csgn-og.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="CSGN — Crypto Sports &amp; Gaming Network. Live 24/7 on Solana. 30% of fees to the streamer."
+      content="CSGN — the 24/7 crypto television channel. Post a clip, connect your Twitch, get on air."
     />
 
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@CSGNet" />
     <meta name="twitter:creator" content="@CSGNet" />
-    <meta name="twitter:title" content="CSGN — Crypto Sports &amp; Gaming Network" />
+    <meta name="twitter:title" content="CSGN — The 24/7 Crypto TV Channel Anyone Can Get On" />
     <meta
       name="twitter:description"
-      content="The 24/7 streaming network where streamers earn a share of $CSGN's real trading fees for the hour they're on air."
+      content="Paste a clip you already made and it airs. Connect Twitch once and get carried whenever you go live. Airtime is one-to-one with the $CSGN you hold."
     />
     <meta name="twitter:image" content="https://csgn.fun/csgn-og.png" />
 
@@ -58,6 +61,100 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+    <!--
+      STRUCTURED DATA — for search engines and, increasingly more importantly,
+      for the language models that now answer "what is CSGN" without anybody
+      visiting the site.
+
+      This is in the static HTML rather than injected by React on purpose: the
+      crawlers that matter most for a new product are the ones that DON'T
+      execute JavaScript. An SPA that describes itself only after hydration is
+      invisible to them, and "invisible to the thing that summarises the web"
+      is a bad place for a product whose whole problem is that nobody has heard
+      of it.
+
+      Three graphs, because they answer three different questions:
+        • Organization  — who is this
+        • WebSite       — what is the site, and how do you search it
+        • BroadcastService / VideoObject — what does it actually DO, in the
+          vocabulary schema.org has for a television channel, which is exactly
+          what this is.
+    -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://csgn.fun/#organization",
+          "name": "CSGN",
+          "alternateName": "Crypto Sports & Gaming Network",
+          "url": "https://csgn.fun/",
+          "logo": "https://csgn.fun/csgn-logo.jpg",
+          "description": "CSGN is a 24-hour crypto television channel assembled from member-submitted clips and live streams carried from the network's own streamers.",
+          "sameAs": ["https://x.com/CSGNet", "https://github.com/csgnet-web/csgn"]
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://csgn.fun/#website",
+          "url": "https://csgn.fun/",
+          "name": "CSGN",
+          "publisher": { "@id": "https://csgn.fun/#organization" },
+          "inLanguage": "en"
+        },
+        {
+          "@type": "BroadcastService",
+          "@id": "https://csgn.fun/#channel",
+          "name": "CSGN",
+          "broadcastDisplayName": "CSGN",
+          "url": "https://csgn.fun/watch",
+          "provider": { "@id": "https://csgn.fun/#organization" },
+          "areaServed": "Worldwide",
+          "inLanguage": "en",
+          "description": "A continuously broadcasting crypto channel. Live streams from network members are carried automatically when they go live; between them the channel plays clips submitted by members, allocated in proportion to the $CSGN each member holds."
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://csgn.fun/#faq",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "How do I get my video on CSGN?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Paste a link to a post you already made on YouTube, TikTok or Instagram. A human reviews it, then it airs between live streams. You do not upload a file and you do not need to be there when it airs."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "How much airtime do I get?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "One to one with the $CSGN you hold. Hold one percent of the supply and you are entitled to one percent of the open air. Your airtime is calculated from your wallet balance, not from how much you post, and there is a per-member ceiling so no single holder can take the whole channel."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Do I have to book a time slot to stream on CSGN?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "No. Connect your Twitch channel once and grant permission to be forwarded, then stream whenever you normally would. CSGN checks your channel about once a minute and can put you on the network whenever you are live. You earn a share of trading fees for the minutes you were actually carried."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Does it cost anything to join CSGN?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "No. Making an account, connecting a Twitch channel and going live are free. Holding $CSGN is what determines your share of clip airtime and your weight in network votes."
+              }
+            }
+          ]
+        }
+      ]
+    }
+    </script>
   </head>
   <body class="bg-[#06060e] text-white antialiased">
     <div id="root"></div>

@@ -13,6 +13,10 @@ export interface VodItem {
   username?: string
   /** The member's chosen on-air look id — decides the accent on their card. */
   look?: string
+  /** Their chosen lower-third SHAPE — 'bar', 'badge' or 'ticker'. */
+  style?: string
+  /** Their profile picture, when they have one and left it switched on. */
+  avatarUrl?: string
 }
 
 /** Mirrors ON_AIR_LOOKS in src/lib/clipEmbed.ts. Kept as plain classes rather
@@ -25,6 +29,102 @@ const LOOK_ACCENT: Record<string, string> = {
   ice: 'bg-cyan-400',
   violet: 'bg-violet-500',
   mono: 'bg-white',
+  sunset: 'bg-orange-400',
+  toxic: 'bg-lime-400',
+  midnight: 'bg-indigo-400',
+  blood: 'bg-red-500',
+}
+
+const LOOK_RING: Record<string, string> = {
+  signal: 'ring-primary-500/50',
+  money: 'ring-emerald-400/50',
+  gold: 'ring-amber-400/50',
+  ice: 'ring-cyan-400/50',
+  violet: 'ring-violet-500/50',
+  mono: 'ring-white/40',
+  sunset: 'ring-orange-400/50',
+  toxic: 'ring-lime-400/50',
+  midnight: 'ring-indigo-400/50',
+  blood: 'ring-red-500/50',
+}
+
+/**
+ * THE MEMBER'S CREDIT CARD, on air.
+ *
+ * Three shapes, because a channel where every segment carries an identical grey
+ * box is a channel where nobody's segment is recognisable as theirs — and that
+ * recognition is most of what a member is actually buying with their bag.
+ *
+ * The avatar is a CIRCLE in all three. Everything else in the broadcast
+ * furniture is rectangular, so the one round element on screen is always
+ * somebody's face, which is what makes it read as a person at a glance and from
+ * across a room.
+ *
+ * Deliberately NOT the app's `LowerThird` component: /player is composited into
+ * OBS at 1920×1080 and must not pull the app's component tree in to paint a
+ * frame. The sizes here are broadcast sizes, not UI sizes.
+ */
+function ClipCredit({ username, look, style, avatarUrl, title }: {
+  username: string
+  look?: string
+  style?: string
+  avatarUrl?: string
+  title?: string
+}) {
+  const accent = LOOK_ACCENT[look ?? 'signal'] ?? LOOK_ACCENT.signal
+  const ring = LOOK_RING[look ?? 'signal'] ?? LOOK_RING.signal
+  const avatar = avatarUrl
+    ? (
+      <img
+        src={avatarUrl}
+        alt=""
+        className={`rounded-full object-cover bg-white/10 shrink-0 ring-2 ${ring}`}
+        style={{ width: 56, height: 56 }}
+        // A broken avatar must never leave a torn box on television.
+        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+      />
+    )
+    : null
+
+  if (style === 'badge') {
+    return (
+      <div className="absolute right-8 top-8 flex items-center gap-3.5 rounded-full bg-black/75 backdrop-blur-sm border border-white/10 py-2 pl-2 pr-6">
+        {avatar ?? <span className={`w-3.5 h-3.5 ml-2 rounded-full ${accent}`} />}
+        <span className="min-w-0">
+          <span className="block text-xl font-black text-white leading-tight">@{username}</span>
+          {title && <span className="block text-xs text-gray-400 truncate max-w-[320px]">{title}</span>}
+        </span>
+      </div>
+    )
+  }
+
+  if (style === 'ticker') {
+    return (
+      <div className="absolute inset-x-0 bottom-0 flex items-center gap-4 bg-black/80 backdrop-blur-sm border-t border-white/10 px-8 py-4">
+        <span className={`w-2 h-12 rounded-full ${accent} shrink-0`} />
+        {avatar}
+        <span className="min-w-0 flex-1">
+          <span className="block text-xl font-black text-white leading-tight">@{username}</span>
+          {title && <span className="block text-xs text-gray-400 truncate">{title}</span>}
+        </span>
+        <span className="text-[11px] uppercase tracking-[0.18em] text-gray-500 shrink-0">On CSGN</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="absolute left-8 bottom-8 flex items-stretch overflow-hidden rounded-lg bg-black/70 border border-white/10 backdrop-blur-sm">
+      <span className={`w-1.5 ${accent} shrink-0`} />
+      <span className="flex items-center gap-3.5 px-4 py-2.5">
+        {avatar}
+        <span className="min-w-0">
+          <span className="block text-[11px] uppercase tracking-[0.18em] text-gray-400">On CSGN</span>
+          <span className="block text-xl font-black text-white leading-tight">@{username}</span>
+          {title && <span className="block text-xs text-gray-400 truncate max-w-[380px]">{title}</span>}
+        </span>
+      </span>
+    </div>
+  )
 }
 
 const BOARD_BREAK_MS = 60_000
@@ -90,15 +190,13 @@ export default function VodRotator({ items }: { items: VodItem[] }) {
         {/* Credit stays on screen for the whole segment. Somebody's post is on
             television; their name goes with it. */}
         {current.username && (
-          <div className="absolute left-8 bottom-8 flex overflow-hidden rounded-lg bg-black/70 border border-white/10 backdrop-blur-sm">
-            {/* The member's own accent. One tap in /studio picks it, and it
-                travels with their segments on the published schedule. */}
-            <span className={`w-1.5 ${LOOK_ACCENT[current.look ?? 'signal'] ?? LOOK_ACCENT.signal}`} />
-            <span className="px-4 py-2.5">
-              <span className="block text-[11px] uppercase tracking-[0.18em] text-gray-400">On CSGN</span>
-              <span className="block text-xl font-black text-white leading-tight">@{current.username}</span>
-            </span>
-          </div>
+          <ClipCredit
+            username={current.username}
+            look={current.look}
+            style={current.style}
+            avatarUrl={current.avatarUrl}
+            title={current.title}
+          />
         )}
       </div>
     )

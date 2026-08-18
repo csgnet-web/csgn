@@ -15,6 +15,7 @@ import Meme100Board from '@/components/participate/Meme100Board'
 import { SignInWall } from '@/components/auth/SignInWall'
 import MemeVotePicker from '@/components/participate/MemeVotePicker'
 import { useAuth } from '@/contexts/useAuth'
+import { usePageMeta } from '@/hooks/usePageMeta'
 
 interface VoteCfg { id: string; question: string; options: string[]; startISO?: string; status?: string }
 
@@ -59,6 +60,12 @@ const fmtToken = (n: number): string =>
 const fmtFull = (n: number): string => Math.round(n).toLocaleString('en-US')
 
 export default function Participate() {
+  usePageMeta({
+    title: '$CSGN — The Meme 100, Votes and the Coin Jukebox',
+    description: "Back a memecoin on the Meme 100 with your $CSGN, vote on tonight's programming, and bid for the broadcast coin spotlight. Your weight is simply your on-chain balance.",
+    path: '/participate',
+  })
+
   const { user, loading: authLoading } = useAuth()
   const { walletAddress, connect, signMessage, isConnecting } = usePhantomWallet()
   const [balanceState, setBalanceState] = useState<number | null>(null)

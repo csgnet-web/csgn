@@ -8,11 +8,13 @@ import { Badge } from '@/components/ui/Badge'
 import { isNetworkSlot, isSlotClaimable, toMillis, type Slot } from '@/lib/slots'
 import { api } from '@/lib/api'
 import { Link } from 'react-router-dom'
+import RosterStrip from '@/components/schedule/RosterStrip'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/contexts/useAuth'
 import { Notice } from '@/components/ui/Notice'
 import { claimEligibility } from '@/lib/slotModel'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
+import { usePageMeta } from '@/hooks/usePageMeta'
 
 // The schedule IS the claim surface — /queue folded into this page. Slots in the
 // CSGN Originals (network) block are programmed by the network; every other slot
@@ -51,6 +53,12 @@ function etMiddayFromOffset(offset: number): Date {
 }
 
 export default function Schedule() {
+  usePageMeta({
+    title: "Schedule — Who's On CSGN Right Now",
+    description: "Who from the CSGN network is live right now, who was on earlier, and which blocks are still open to reserve. Connected streamers are carried automatically whenever they go live.",
+    path: '/schedule',
+  })
+
   const { user, profile } = useAuth()
   // Shared app-wide listener (-3h → +8d): already normalized, sorted, live, and
   // ticking nowMs. A second listener here would double every visitor's reads.
@@ -282,16 +290,19 @@ export default function Schedule() {
                 is still here for anyone who wants a guaranteed time — it is
                 the deliberate option, not the entry fee. */}
             <p className="text-sm text-gray-400 mt-0.5 max-w-2xl">
-              Who is on, who was on, and what is still open. You don't have to book a block to get
-              on air — <Link to="/account" className="text-primary-300 font-semibold hover:text-primary-200 underline underline-offset-2">connect Twitch</Link>{' '}
-              and we'll pick you up whenever you go live.
-              {openCount > 0 && <> {openCount} block{openCount !== 1 ? 's' : ''} can still be reserved outright.</>}
+              The channel runs 24 hours. Connected streamers get picked up automatically whenever
+              they go live — <Link to="/account" className="text-primary-300 font-semibold hover:text-primary-200 underline underline-offset-2">connect Twitch once</Link>{' '}
+              and never think about the schedule again. Between live streams, member clips carry the air.
+              {openCount > 0 && <> {openCount} block{openCount !== 1 ? 's' : ''} can also be reserved outright if you want a guaranteed time.</>}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="blue">All times ET</Badge>
           </div>
         </div>
+
+        {/* WHO IS ON, before what is bookable. See RosterStrip. */}
+        <RosterStrip />
 
         {/* Legend */}
         <div className="flex flex-wrap items-center gap-3 mb-3 text-[11px] text-gray-500">

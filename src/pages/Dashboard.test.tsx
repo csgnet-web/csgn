@@ -163,8 +163,10 @@ describe('connections', () => {
     const saved = mockProfile.twitch
     ;(mockProfile as { twitch?: unknown }).twitch = { verified: false }
     await render()
-    expect(text()).toContain('Connect Twitch to claim a slot')
-    expect(text()).toContain('only needed to go on air')
+    expect(text()).toContain('Connect Twitch to get on air')
+    // The notice sells FORWARDING now, not claiming — a streamer connects once
+    // and never touches the schedule again.
+    expect(text()).toContain('whenever you go live')
     ;(mockProfile as { twitch?: unknown }).twitch = saved
   })
 

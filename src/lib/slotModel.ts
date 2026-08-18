@@ -273,7 +273,7 @@ export function claimEligibility(
   if (user.email && user.emailVerified !== true) {
     return {
       ok: false, reason: 'email_unverified',
-      message: 'Verify your email to claim a slot. We sent you a link.',
+      message: 'Verify your email to reserve a block. We sent you a link.',
       actionLabel: 'Resend email', actionHref: '/account',
     }
   }

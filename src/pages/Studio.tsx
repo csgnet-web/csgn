@@ -17,6 +17,7 @@ import {
   lookById, ON_AIR_LOOKS, CLIP_PLATFORM_LABELS, PLATFORM_STYLE,
   type ClipPlatform,
 } from '@/lib/clipEmbed'
+import { usePageMeta } from '@/hooks/usePageMeta'
 
 /**
  * STUDIO — the producer's desk.
@@ -323,6 +324,12 @@ function ZeroAirtime({
 }
 
 export default function Studio() {
+  usePageMeta({
+    title: 'Studio — Put Your Clip on CSGN',
+    description: "Paste a link to a YouTube, TikTok or Instagram post and it airs on the CSGN channel. See exactly how much airtime your $CSGN earns you and when your clip is next on.",
+    path: '/studio',
+  })
+
   const { user, loading } = useAuth()
   const [clips, setClips] = useState<Clip[]>([])
   const [airtime, setAirtime] = useState<Airtime | null>(null)

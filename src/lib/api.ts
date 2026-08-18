@@ -195,6 +195,19 @@ export const api = {
     discovery?: { candidates?: number; qualified?: number } | null
   }>('memeBoard'),
 
+  /** Who from the network is live right now. Public, one document read, no
+   *  uids and no offline members — see publicRoster.ts. */
+  roster: () => functionFetch<{
+    live: Array<{
+      username: string; displayName: string; twitchUsername: string
+      profileImageUrl: string; viewerCount: number; title: string
+      gameName: string; startedAt: string
+    }>
+    memberCount: number
+    updatedAt: string | null
+    stale: boolean
+  }>('publicRoster'),
+
   /** Admin: everybody in the network who is live on Twitch right now, plus
    *  what the operator should do about it. */
   liveNow: () => functionFetch<{

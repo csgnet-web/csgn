@@ -596,13 +596,19 @@ export default function Dashboard() {
                     </button>
                   </div>
                 ) : (
+                  /* The pencil is ALWAYS VISIBLE. It was hover-only, which
+                     means it did not exist at all on a phone and was invisible
+                     on desktop until you happened to mouse over a line of grey
+                     text — so nobody knew the username could be changed. An
+                     affordance you have to discover is not an affordance. */
                   <button
                     type="button"
                     onClick={() => { setNameDraft(handle); setNameErr(''); setNameMsg(''); setEditingName(true) }}
-                    className="group mt-0.5 flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-300 cursor-pointer"
+                    aria-label="Change your username"
+                    className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-white/[0.09] bg-white/[0.03] px-2.5 py-1 text-sm text-gray-400 hover:text-white hover:bg-white/[0.07] hover:border-white/[0.16] transition-colors cursor-pointer"
                   >
                     <span className="break-all">@{handle}</span>
-                    <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                    <Pencil className="w-3 h-3 shrink-0 text-gray-500" />
                   </button>
                 )}
                 {nameErr && <p className="mt-1 text-[11px] text-red-300">{nameErr}</p>}
@@ -620,7 +626,7 @@ export default function Dashboard() {
               </div>
 
               <div className="shrink-0 sm:pt-1">
-                <Link to="/schedule" className="block"><Button size="sm" variant="secondary">Claim a slot</Button></Link>
+                <Link to="/schedule" className="block"><Button size="sm" variant="secondary">See who's on</Button></Link>
               </div>
             </div>
 
@@ -870,8 +876,9 @@ export default function Dashboard() {
           <div className="mt-3 space-y-2">
             {upcomingSlots.length === 0 ? (
               <p className="text-sm text-gray-500 leading-relaxed">
-                You don't have a block booked. Every two-hour block from 3 AM to 7 PM ET is open — claim one and you
-                earn 30% of $CSGN's trading fees the whole time you're on air.
+                You don't have a block booked, and you probably don't need one. With forwarding on,
+                we carry you whenever you go live and you earn a share of $CSGN's trading fees for
+                the minutes you're on air. Reserve a block only if you want a guaranteed time.
               </p>
             ) : (
               upcomingSlots.map((slot) => (
@@ -888,7 +895,7 @@ export default function Dashboard() {
             )}
           </div>
           <Link to="/schedule" className="inline-block mt-3">
-            <Button variant="secondary" size="sm">{upcomingSlots.length === 0 ? 'Claim a slot' : 'Claim another'}</Button>
+            <Button variant="secondary" size="sm">{upcomingSlots.length === 0 ? 'Reserve a block' : 'Reserve another'}</Button>
           </Link>
         </Card>
 
