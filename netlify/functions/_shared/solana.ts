@@ -79,7 +79,7 @@ export interface ParsedTransaction {
 
 interface TxResponse { result?: ParsedTransaction | null; error?: { message?: string } }
 
-const CSGN_TREASURY = 'CSGNUgUpBqTNM7EBZSMeA5jzPLFNR2hELhLjbHLpbEY4'
+const CSGN_TREASURY = 'EftavCt6Tk2bzWJ9Dnz7cAvfa5RAnh8S9vZcrorV7Hmv'
 export const CSGN_TREASURY_ADDRESS = CSGN_TREASURY
 
 /** Fetch a CONFIRMED transaction (jsonParsed). Shared by every payment verifier

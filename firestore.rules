@@ -107,10 +107,23 @@ service cloud.firestore {
     // exists (signin-start / signin-failure / signup-email-start), so a
     // `create: if isSignedIn()` rule silently dropped exactly those and left the
     // admin's Auth Events tab looking empty during failed sign-ups.
+    // The admin panel reads these through netlify/functions/adminAuthEvents
+    // (firebase-admin, rules bypassed) so the tab works even on a project where
+    // these rules have never been deployed. The read allowance stays for the
+    // Firebase console and any future direct reader.
     match /auth_events/{eventId} {
       allow create: if false;
       allow read: if isAdmin();
       allow update, delete: if false;
+    }
+
+    // Member-submitted clips: links to posts on Instagram / TikTok / YouTube
+    // that air between live hours. Server-only, like every other collection
+    // that decides what goes on television — the review status is the whole
+    // safety story and a member must not be able to set their own to approved.
+    match /clips/{clipId} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     match /rateLimits/{docId} {

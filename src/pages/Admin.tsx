@@ -6,7 +6,7 @@ import {
   BarChart3, Plus, Crown,
   Trash2, UserCheck, AlertTriangle, Tv, DollarSign,
   Wallet, CheckCircle2, XCircle, RefreshCw, Link as LinkIcon, ExternalLink, Monitor, Activity,
-  Megaphone, Flame, Vote,
+  Megaphone, Flame, Vote, Film,
 } from 'lucide-react'
 import {
   collection, query, getDocs, doc, setDoc, onSnapshot, orderBy,
@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/Button'
 import TickerControlsCard from '@/components/admin/TickerControlsCard'
 import BroadcastBannerCard from '@/components/admin/BroadcastBannerCard'
 import { CreatorFeesTab } from '@/components/admin/CreatorFeesTab'
+import ClipQueueTab from '@/components/admin/ClipQueueTab'
 import { VoteHistoryTab } from '@/components/admin/VoteHistoryTab'
 import { isVoteOpen, type VoteRecord } from '@/lib/votes'
 import { PUMP_FUN_FEE_TIERS, estimateCreatorFeeSOL, formatTierRange, resolvePumpFeeTier } from '@/lib/dexscreener'
@@ -60,12 +61,13 @@ import {
   type CreatorFees,
 } from '@/lib/slots'
 
-type Tab = 'overview' | 'streamers' | 'schedule' | 'fees' | 'votes' | 'auth'
+type Tab = 'overview' | 'streamers' | 'schedule' | 'fees' | 'clips' | 'votes' | 'auth'
 
 interface AuthEventData {
   id: string
   kind: string
-  ts: unknown
+  /** ISO string from adminAuthEvents (the server decodes the timestamp). */
+  ts: string | null
   uid: string | null
   twitchUsername: string | null
   errorMessage: string | null
@@ -620,16 +622,16 @@ export default function Admin() {
     setTestingAuthLog(false)
   }
 
+  /** Read through the server, not straight from Firestore. The browser query
+   *  this replaced failed with "Missing or insufficient permissions" whenever
+   *  firestore.rules had not been deployed — which is exactly when you most
+   *  want to look at the auth log. See netlify/functions/adminAuthEvents.ts. */
   const loadAuthEvents = useCallback(async () => {
     setAuthEventsLoading(true)
     setAuthEventsError(null)
     try {
-      const snap = await getDocs(query(
-        collection(db, 'auth_events'),
-        orderBy('ts', 'desc'),
-        limit(50),
-      ))
-      setAuthEvents(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<AuthEventData, 'id'>) })))
+      const { events } = await api.authEvents(50)
+      setAuthEvents(events)
     } catch (err: any) {
       setAuthEventsError(err?.message || 'Failed to load auth events.')
       setAuthEvents([])
@@ -959,6 +961,7 @@ export default function Admin() {
     { id: 'schedule' as Tab, label: 'Schedule', icon: Clock },
     { id: 'fees' as Tab, label: 'Creator Fees', icon: DollarSign, count: pendingFeeCount, tone: 'amber' },
     { id: 'votes' as Tab, label: 'Vote History', icon: Vote, count: openVoteCount, tone: 'cyan' },
+    { id: 'clips' as Tab, label: 'Clips', icon: Film },
     { id: 'auth' as Tab, label: 'Auth Events', icon: Activity },
   ]
 
@@ -1944,6 +1947,19 @@ export default function Admin() {
         )}
 
         {/* ── Creator Fees Tab ── */}
+        {activeTab === 'clips' && (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Clip review</h3>
+              <p className="text-sm text-gray-400 mt-1">
+                Member-submitted posts waiting to go on air. Open each one and watch it — nothing
+                here airs until you approve it.
+              </p>
+            </div>
+            <ClipQueueTab />
+          </div>
+        )}
+
         {activeTab === 'fees' && (
           <div className="space-y-6">
             <div>
@@ -2122,10 +2138,8 @@ export default function Admin() {
                     </td></tr>
                   )}
                   {authEvents.map((ev) => {
-                    const tsDate = ev.ts && typeof ev.ts === 'object' && 'toDate' in ev.ts && typeof (ev.ts as { toDate: unknown }).toDate === 'function'
-                      ? (ev.ts as { toDate: () => Date }).toDate()
-                      : null
-                    const tsLabel = tsDate ? tsDate.toLocaleString() : '—'
+                    const tsMs = ev.ts ? Date.parse(ev.ts) : NaN
+                    const tsLabel = Number.isFinite(tsMs) ? new Date(tsMs).toLocaleString() : '—'
                     const isFailure = ev.kind.endsWith('-failure')
                     return (
                       <tr key={ev.id} className="border-t border-white/[0.06]">

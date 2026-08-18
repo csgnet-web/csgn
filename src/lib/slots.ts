@@ -25,7 +25,7 @@ export const PHASE_2_END_UTC = '2026-04-12T16:00:00.000Z'   // April 12, 2026 no
 export const CSGN_MINT = 'GFV7fphvprMr1PYpYGPJort2QP7JJLEp3J1Buu7Zpump'
 
 /** CSGN treasury wallet that receives bids */
-export const CSGN_TREASURY = 'CSGNUgUpBqTNM7EBZSMeA5jzPLFNR2hELhLjbHLpbEY4'
+export const CSGN_TREASURY = 'EftavCt6Tk2bzWJ9Dnz7cAvfa5RAnh8S9vZcrorV7Hmv'
 
 /** CSGN token decimals (pump.fun standard) */
 export const CSGN_DECIMALS = 6

@@ -220,7 +220,12 @@ export interface AirtimeClip {
   clipId: string
   uid: string
   username: string
+  /** The embed URL /player loads. */
   url: string
+  /** 'youtube' | 'tiktok' | 'instagram' — the player picks its renderer by this. */
+  platform?: string
+  /** The original post, for on-screen credit. */
+  sourceUrl?: string
   title: string
   seconds: number
   /** The member's own ordering, low first. This is the "order your seconds"
@@ -236,6 +241,8 @@ export interface ScheduleItem {
   uid: string
   username: string
   url: string
+  platform?: string
+  sourceUrl?: string
   title: string
 }
 
@@ -310,6 +317,8 @@ export function buildAirtimeSchedule(
         uid,
         username: clip.username,
         url: clip.url,
+        platform: clip.platform ?? '',
+        sourceUrl: clip.sourceUrl ?? '',
         title: clip.title,
       })
       at += clip.seconds * 1000

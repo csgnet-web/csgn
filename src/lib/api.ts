@@ -80,6 +80,42 @@ export const api = {
       { method: 'POST', body: JSON.stringify({ slotIds, txSignature }) },
       true,
     ),
+  /* ── Clips: a member's reel of links that air between live hours ── */
+
+  /** Your clips, your slice of the day, and when you are next on. One call so
+   *  /studio can't show a stale allowance beside a fresh reel. */
+  myClips: () => functionFetch<{
+    clips: Array<{ id: string; platform: string; sourceUrl: string; title: string; seconds: number; order: number; status: string; rejectReason: string | null }>
+    airtime: { seconds: number; capped: boolean; inventorySeconds: number; networkBlockEnabled: boolean; builtAt: string | null }
+    airings: Array<{ startsAt: string; seconds: number; clipId: string }>
+  }>('myClips', {}, true),
+  /** Add a post to your reel. It lands pending — nothing airs unreviewed. */
+  submitClip: (url: string, seconds: number, title: string) =>
+    functionFetch<{ ok: boolean; clip: { id: string; platform: string; sourceUrl: string; title: string; seconds: number; order: number; status: string } }>(
+      'submitClip', { method: 'POST', body: JSON.stringify({ url, seconds, title }) }, true,
+    ),
+  /** Reorder, retitle, retime or remove one of your own clips. */
+  updateMyClip: (clipId: string, patch: { action: 'update' | 'remove'; order?: number; seconds?: number; title?: string }) =>
+    functionFetch<{ ok: boolean; clipId?: string; removed?: string; reReview?: boolean }>(
+      'updateMyClip', { method: 'POST', body: JSON.stringify({ clipId, ...patch }) }, true,
+    ),
+  /** Admin: the clip review queue. */
+  clipQueue: (status = 'pending') => functionFetch<{ clips: Array<{
+    id: string; uid: string; username: string; platform: string; sourceUrl: string
+    title: string; seconds: number; status: string; createdAt: unknown
+  }> }>(`adminClipQueue?status=${encodeURIComponent(status)}`, {}, true),
+  /** Admin: approve or reject one clip. A rejection must carry a reason. */
+  reviewClip: (clipId: string, decision: 'approved' | 'rejected', reason = '') =>
+    functionFetch<{ ok: boolean; clipId: string; status: string }>(
+      'adminReviewClip', { method: 'POST', body: JSON.stringify({ clipId, decision, reason }) }, true,
+    ),
+
+  /** Admin: the sign-in/sign-up audit feed. Served by a function rather than
+   *  read from Firestore so it works before firestore.rules is ever deployed. */
+  authEvents: (limit = 50) => functionFetch<{ events: Array<{
+    id: string; kind: string; uid: string | null; twitchUsername: string | null
+    errorMessage: string | null; ua: string | null; ts: string | null
+  }> }>(`adminAuthEvents?limit=${limit}`, {}, true),
   /** Admin: re-type every slot by its ET airtime (7 PM–3 AM network, rest open). */
   normalizeSlots: () => functionFetch<{ normalized: number; retyped: number }>('adminNormalizeExistingSlots', { method: 'POST' }, true),
   /** Close a vote and recompute its tally from live on-chain balances.

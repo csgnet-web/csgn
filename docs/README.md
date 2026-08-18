@@ -93,7 +93,7 @@ a decision was made; **not** authoritative on what we're doing now.
 | | |
 |---|---|
 | Payout wallet | `EftavCt6Tk2bzWJ9Dnz7cAvfa5RAnh8S9vZcrorV7Hmv` |
-| Treasury | `CSGNUgUpBqTNM7EBZSMeA5jzPLFNR2hELhLjbHLpbEY4` |
+| Treasury | `EftavCt6Tk2bzWJ9Dnz7cAvfa5RAnh8S9vZcrorV7Hmv` |
 | $CSGN mint | `GFV7fphvprMr1PYpYGPJort2QP7JJLEp3J1Buu7Zpump` |
 | Network block | 7 PM – 3 AM ET, programmed. Every other hour is claimable |
 | Licence | MIT — [`../LICENSE`](../LICENSE). Brand and wallets excluded |

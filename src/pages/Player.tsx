@@ -501,7 +501,13 @@ export default function Player() {
         setAirtimeItems(
           (Array.isArray(raw) ? raw : [])
             .filter((i) => typeof i?.url === 'string' && i.url && Date.parse(String(i.endsAt ?? '')) > nowMs)
-            .map((i) => ({ url: String(i.url), title: String(i.title ?? '') })),
+            .map((i) => ({
+              url: String(i.url),
+              title: String(i.title ?? ''),
+              platform: String(i.platform ?? ''),
+              username: String(i.username ?? ''),
+              seconds: Number(i.seconds) || 30,
+            })),
         )
       },
       () => setAirtimeItems([]),

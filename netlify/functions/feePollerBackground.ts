@@ -634,7 +634,11 @@ const AIRTIME_MAX_CLIPS = 400
 interface ClipDoc {
   uid?: string
   username?: string
-  url?: string
+  /** What /player loads in an iframe — built server-side from the member's link. */
+  embedUrl?: string
+  /** Where the post actually lives, for credit and for the review queue. */
+  sourceUrl?: string
+  platform?: string
   title?: string
   seconds?: number
   order?: number
@@ -710,12 +714,14 @@ async function refreshAirtimeSchedule(): Promise<void> {
     const clips: AirtimeClip[] = clipRows.flatMap((row) => {
       const c = row.data as ClipDoc
       const seconds = Math.floor(Number(c.seconds) || 0)
-      if (!c.uid || !c.url || seconds <= 0) return []
+      if (!c.uid || !c.embedUrl || seconds <= 0) return []
       return [{
         clipId: row.path.split('/').pop()!,
         uid: String(c.uid),
         username: String(c.username || ''),
-        url: String(c.url),
+        url: String(c.embedUrl),
+        platform: String(c.platform || ''),
+        sourceUrl: String(c.sourceUrl || ''),
         title: String(c.title || ''),
         seconds,
         order: Number(c.order) || 0,
