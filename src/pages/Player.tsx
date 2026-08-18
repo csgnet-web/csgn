@@ -506,6 +506,7 @@ export default function Player() {
               title: String(i.title ?? ''),
               platform: String(i.platform ?? ''),
               username: String(i.username ?? ''),
+              look: String(i.look ?? 'signal'),
               seconds: Number(i.seconds) || 30,
             })),
         )

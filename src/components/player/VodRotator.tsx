@@ -11,6 +11,20 @@ export interface VodItem {
   platform?: string
   /** Who the clip belongs to, for on-screen credit. */
   username?: string
+  /** The member's chosen on-air look id — decides the accent on their card. */
+  look?: string
+}
+
+/** Mirrors ON_AIR_LOOKS in src/lib/clipEmbed.ts. Kept as plain classes rather
+ *  than imported, because /player is composited into OBS and must not pull in
+ *  anything it does not strictly need to paint a frame. */
+const LOOK_ACCENT: Record<string, string> = {
+  signal: 'bg-primary-500',
+  money: 'bg-emerald-400',
+  gold: 'bg-amber-400',
+  ice: 'bg-cyan-400',
+  violet: 'bg-violet-500',
+  mono: 'bg-white',
 }
 
 const BOARD_BREAK_MS = 60_000
@@ -76,9 +90,14 @@ export default function VodRotator({ items }: { items: VodItem[] }) {
         {/* Credit stays on screen for the whole segment. Somebody's post is on
             television; their name goes with it. */}
         {current.username && (
-          <div className="absolute left-8 bottom-8 rounded-lg bg-black/70 border border-white/10 px-3 py-2 backdrop-blur-sm">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-gray-400">On CSGN</p>
-            <p className="text-lg font-bold text-white leading-tight">@{current.username}</p>
+          <div className="absolute left-8 bottom-8 flex overflow-hidden rounded-lg bg-black/70 border border-white/10 backdrop-blur-sm">
+            {/* The member's own accent. One tap in /studio picks it, and it
+                travels with their segments on the published schedule. */}
+            <span className={`w-1.5 ${LOOK_ACCENT[current.look ?? 'signal'] ?? LOOK_ACCENT.signal}`} />
+            <span className="px-4 py-2.5">
+              <span className="block text-[11px] uppercase tracking-[0.18em] text-gray-400">On CSGN</span>
+              <span className="block text-xl font-black text-white leading-tight">@{current.username}</span>
+            </span>
           </div>
         )}
       </div>

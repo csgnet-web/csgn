@@ -254,7 +254,7 @@ export function claimEligibility(
   if (!user || !profile) {
     return {
       ok: false, reason: 'signed_out',
-      message: 'Create an account to claim this hour — it takes about a minute.',
+      message: 'Create an account to claim this block — it takes about a minute.',
       actionLabel: 'Get started',
     }
   }
@@ -292,7 +292,7 @@ export function claimEligibility(
   if (!profile.twitch?.verified || !profile.twitch?.username) {
     return {
       ok: false, reason: 'no_twitch',
-      message: 'Connect Twitch to claim a slot. It is the channel the network puts on air.',
+      message: 'Connect Twitch to claim a block. It is the channel the network puts on air.',
       actionLabel: 'Connect Twitch', actionHref: '/account',
     }
   }

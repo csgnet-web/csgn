@@ -32,7 +32,7 @@ export function JoinStrip({
   const facts = [
     ['30%', 'of the creator fees generated while you are on air'],
     ['Your channel', 'you stream to your own Twitch — nothing changes'],
-    ['On-chain', 'paid in SOL to your wallet, verifiable per hour'],
+    ['On-chain', 'paid in SOL to your wallet, verifiable per block'],
   ] as const
 
   return (
@@ -44,12 +44,12 @@ export function JoinStrip({
         <h2 className="mt-2 text-xl sm:text-2xl font-black font-display text-white leading-tight">
           {signedIn
             ? 'Connect Twitch and the schedule opens up.'
-            : 'Go live for an hour. Get paid from the trading it creates.'}
+            : 'Go live for a two-hour block. Get paid from the trading it creates.'}
         </h2>
         <p className="mt-2 text-sm text-gray-400 leading-relaxed max-w-2xl">
           {signedIn
-            ? 'Your account is ready. Linking the channel you already stream from is what turns every open hour on the schedule into one you can claim.'
-            : 'CSGN pays the streamer on screen a share of the $CSGN trading fees generated during their hour. You keep streaming to your own Twitch channel; the payout is calculated per slot and settled on Solana.'}
+            ? 'Your account is ready. Linking the channel you already stream from is what turns every open block on the schedule into one you can claim.'
+            : 'CSGN pays the streamer on screen a share of the $CSGN trading fees generated during their two-hour block. You keep streaming to your own Twitch channel; the payout is calculated per slot and settled on Solana.'}
         </p>
 
         {!signedIn && (

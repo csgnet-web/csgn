@@ -14,6 +14,7 @@
 | Ship code / run my own node | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) |
 | Put it on air | [`obs/README.md`](obs/README.md) |
 | Prove it works before it pays anyone | [`dry-run.md`](dry-run.md) |
+| Switch on Google / X / email sign-in | [`auth-provider-setup.md`](auth-provider-setup.md) |
 
 ---
 
@@ -38,6 +39,7 @@ The two documents that describe what is actually happening.
 | [`plan-decentralized-tv.md`](plan-decentralized-tv.md) | **Implementation plan, not yet built.** Holder-uploaded airtime: the channel runs 24/7 because holders fill it, share of supply decides share of the day (sqrt-curved, floored and capped), and the owner's block toggles in and out of the pool. Ship Phase 1 alone |
 | [`analysis-onboarding-and-supply.md`](analysis-onboarding-and-supply.md) | **Analysis.** A Twitch streamer with no wallet cannot currently make an account at all; an honest read on the odds they join; why fixing supply comes before outreach |
 | [`signup-flow.md`](signup-flow.md) | **Sign-up, sign-in, and the Twitch problem.** Why federated login cannot work inside Phantom's in-app browser, the three-tap wallet sign-up, and the cross-browser Twitch handoff that replaced it |
+| [`auth-provider-setup.md`](auth-provider-setup.md) | **Step-by-step console walkthrough.** Enabling Google, X and passwordless email sign-in in Firebase (and the X developer portal), authorized domains, a test checklist, and the error-to-cause table |
 | [`env-setup.md`](env-setup.md) | Every environment variable, which are secret, the payout-wallet key policy, and the **deploy checklist** |
 | [`dry-run.md`](dry-run.md) | **The gated verification runbook.** Local → payout dry run → **the mainnet money test**. Includes the idempotency test that must never be skipped |
 | [`payout-wallet.md`](payout-wallet.md) | The $CSGN payout ledger's four guarantees and crash recovery. **Retained but unwired** — the games that used it were removed; the contract the next caller inherits |

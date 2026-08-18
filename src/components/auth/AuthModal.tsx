@@ -284,7 +284,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
               )}
 
               <p className="mt-6 text-center text-[11px] text-gray-500 leading-relaxed">
-                No wallet needed to watch, post a clip or claim an hour.
+                No wallet needed to watch, post a clip or claim a block.
                 You'll be asked for one when you've actually earned fees.
               </p>
             </>

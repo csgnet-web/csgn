@@ -57,7 +57,7 @@ export default function About() {
           </p>
           <p className="mt-3 text-base text-gray-400 leading-relaxed">
             There are two ways to be on it. <strong className="text-white">Go live</strong> — claim
-            an empty hour and stream it from your own channel. Or{' '}
+            an empty two-hour block and stream it from your own channel. Or{' '}
             <strong className="text-white">send a clip</strong>, and it airs between the live hours
             without you being there. That's the whole idea. Everything below is how it works.
           </p>
@@ -80,13 +80,13 @@ export default function About() {
           <p>
             We're the third thing: a real channel with a real schedule and real holes in it. If
             nobody's booked 3 PM, 3 PM is yours. Nobody votes on whether you're interesting. The
-            hour was empty and you took it.
+            block was empty and you took it.
           </p>
         </Section>
 
         <Section title="Two ways to get on">
           <div className="grid gap-2.5 sm:grid-cols-2">
-            <Term label="Take an hour and go live">
+            <Term label="Take a block and go live">
               You stream to your own channel as usual; we put it on the network for those two
               hours. You earn a cut of the fees the token generates while you're on. This is the
               headline act, and it beats everything else on the schedule.
@@ -97,13 +97,13 @@ export default function About() {
             </Term>
           </div>
           <p>
-            Live always wins. If somebody claims the hour your clip was going to air in, their
+            Live always wins. If somebody claims the block your clip was going to air in, their
             stream takes it and your clip moves to the next opening — nothing is lost, it just
             waits.
           </p>
         </Section>
 
-        <Section title="Claiming an hour">
+        <Section title="Claiming a block">
           <p>
             Open blocks run from 3 AM to 7 PM ET. From 7 PM to 3 AM we run our own programming —
             CSGN Originals — so those hours aren't claimable.
@@ -133,7 +133,7 @@ export default function About() {
           <p>
             We check your channel about once a minute and pay for the share of those checks that
             found you actually broadcasting. Cut out for ten minutes and it costs you nothing —
-            there's a wide grace band — but claiming an hour and never going live pays nothing,
+            there's a wide grace band — but claiming a block and never going live pays nothing,
             because nothing aired. If our own checks fail, that's our problem and you're paid in
             full.
           </p>
@@ -262,7 +262,7 @@ export default function About() {
         </Section>
 
         <section className="border-t border-white/[0.08] pt-8">
-          <p className="text-base text-white font-medium">There's an empty hour on the schedule.</p>
+          <p className="text-base text-white font-medium">There's an empty block on the schedule.</p>
           <p className="mt-2 text-sm text-gray-400 leading-relaxed">
             Go look at it. If it's still open, it's yours — and if you don't want to be live at 3 AM,
             send a clip instead.

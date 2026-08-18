@@ -21,9 +21,10 @@ export const handler = withHttp(async (event) => {
   requireMethod(event, 'GET')
   const authUser = await requireUser(event)
 
-  const [rows, schedule] = await Promise.all([
+  const [rows, schedule, profile] = await Promise.all([
     queryCollection('clips', [fieldFilter('uid', 'EQUAL', authUser.uid)], [order('order', 'ASCENDING')], 50),
     getDoc<ScheduleDoc>('public/airtimeSchedule'),
+    getDoc<{ onAirLook?: string; username?: string }>(`users/${authUser.uid}`),
   ])
 
   const clips = rows.map((row) => {
@@ -50,6 +51,8 @@ export const handler = withHttp(async (event) => {
     .map((i) => ({ startsAt: i.startsAt ?? '', seconds: Number(i.seconds) || 0, clipId: String(i.clipId || '') }))
 
   return json(200, {
+    onAirLook: String(profile?.onAirLook || 'signal'),
+    username: String(profile?.username || ''),
     clips,
     airtime: {
       seconds: Number(mine?.seconds) || 0,

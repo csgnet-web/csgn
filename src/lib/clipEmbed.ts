@@ -20,6 +20,81 @@ export const CLIP_MIN_SECONDS = 5
 export const CLIP_MAX_SECONDS = 120
 export const CLIP_DEFAULT_SECONDS = 30
 
+/**
+ * CUTS — the only way a member sets a length.
+ *
+ * Nobody should be typing a number of seconds into a box. It is a chore, it
+ * invites the wrong answer, and "how long is my clip" is not actually the
+ * question they are answering — "how big a moment is this" is. So they pick a
+ * cut, the way an editor picks a bumper or a pre-roll, and the seconds follow.
+ */
+export interface ClipCut {
+  id: string
+  label: string
+  seconds: number
+  hint: string
+}
+
+export const CLIP_CUTS: ClipCut[] = [
+  { id: 'sting', label: 'Sting', seconds: 10, hint: 'A hit. In and out.' },
+  { id: 'short', label: 'Short', seconds: 20, hint: 'One idea, one look.' },
+  { id: 'standard', label: 'Standard', seconds: 30, hint: 'The default cut.' },
+  { id: 'feature', label: 'Feature', seconds: 60, hint: 'Room to land a story.' },
+  { id: 'block', label: 'Block', seconds: 120, hint: 'The longest single run.' },
+]
+
+export const cutForSeconds = (seconds: number): ClipCut =>
+  CLIP_CUTS.find((c) => c.seconds === seconds)
+  ?? CLIP_CUTS.reduce((best, c) => (Math.abs(c.seconds - seconds) < Math.abs(best.seconds - seconds) ? c : best), CLIP_CUTS[0])
+
+/**
+ * ON-AIR LOOK — a member's own visual language.
+ *
+ * The lower third that appears under their clip on the broadcast. Choosing it
+ * is the thing that turns "I pasted a link" into "that's my segment", and it
+ * costs one tap. Stored on the member, applied to every clip they run.
+ */
+export interface OnAirLook {
+  id: string
+  label: string
+  /** Tailwind gradient stops for the card, and the accent bar under the name. */
+  gradient: string
+  accent: string
+  ring: string
+}
+
+export const ON_AIR_LOOKS: OnAirLook[] = [
+  { id: 'signal', label: 'Signal', gradient: 'from-primary-600 to-primary-500', accent: 'bg-primary-500', ring: 'ring-primary-500/40' },
+  { id: 'money', label: 'Money', gradient: 'from-emerald-600 to-emerald-400', accent: 'bg-emerald-400', ring: 'ring-emerald-400/40' },
+  { id: 'gold', label: 'Gold', gradient: 'from-amber-500 to-yellow-400', accent: 'bg-amber-400', ring: 'ring-amber-400/40' },
+  { id: 'ice', label: 'Ice', gradient: 'from-cyan-500 to-sky-400', accent: 'bg-cyan-400', ring: 'ring-cyan-400/40' },
+  { id: 'violet', label: 'Violet', gradient: 'from-violet-600 to-fuchsia-500', accent: 'bg-violet-500', ring: 'ring-violet-500/40' },
+  { id: 'mono', label: 'Mono', gradient: 'from-gray-600 to-gray-400', accent: 'bg-white', ring: 'ring-white/30' },
+]
+
+export const lookById = (id: string | undefined): OnAirLook =>
+  ON_AIR_LOOKS.find((l) => l.id === id) ?? ON_AIR_LOOKS[0]
+
+/**
+ * A poster frame for a clip card, without an API call.
+ *
+ * YouTube publishes thumbnails at a stable, guessable path, so those get a real
+ * frame for free. TikTok and Instagram do not — their thumbnails are behind
+ * oEmbed and signed URLs that expire — so those get a designed platform card
+ * instead. A designed card beats a broken image, and it beats a spinner that
+ * resolves into a broken image.
+ */
+export function clipPoster(platform: string, videoId: string): string | null {
+  return platform === 'youtube' && videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null
+}
+
+/** The look a platform gets when it has no poster frame. */
+export const PLATFORM_STYLE: Record<string, { gradient: string; mark: string }> = {
+  youtube: { gradient: 'from-red-600/30 to-red-900/10', mark: '▶' },
+  tiktok: { gradient: 'from-cyan-500/25 to-fuchsia-600/15', mark: '♪' },
+  instagram: { gradient: 'from-fuchsia-600/25 to-amber-500/15', mark: '◎' },
+}
+
 const CLIP_HOSTS = [
   'youtube.com', 'youtu.be', 'm.youtube.com',
   'tiktok.com', 'm.tiktok.com',

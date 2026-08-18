@@ -76,9 +76,9 @@ export const handler = withHttp(async (event) => {
   // empty string there reads as "held until they connect a wallet".
   const walletAddress = user.phantom?.walletAddress || (isAdmin ? (user.walletAddress || 'admin') : '')
   if (!isAdmin && (!user.twitch?.verified || !twitchUsername || !twitchUserId)) {
-    throw forbidden('Connect Twitch to claim a slot — it is the channel the network puts on air.')
+    throw forbidden('Connect Twitch to claim a block — it is the channel the network puts on air.')
   }
-  if (!twitchUsername || !twitchUserId) throw forbidden('A Twitch channel is required to claim slots')
+  if (!twitchUsername || !twitchUserId) throw forbidden('A Twitch channel is required to claim a block')
 
   const slot = await getDoc<SlotDoc>(`slots/${slotId}`, transaction)
   if (!slot) throw notFound('Slot not found')

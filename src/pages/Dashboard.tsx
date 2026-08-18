@@ -529,7 +529,7 @@ export default function Dashboard() {
           <div className="min-w-0">
             <p className="text-sm font-semibold text-white">Your studio</p>
             <p className="mt-0.5 text-xs text-gray-400 leading-relaxed">
-              Post a clip and it airs between the live hours. How much time you get follows what you hold.
+              Post a clip and it airs between the live blocks. How much time you get follows what you hold.
             </p>
           </div>
           <span className="text-primary-300 text-sm shrink-0">Open →</span>
@@ -702,7 +702,7 @@ export default function Dashboard() {
           <div className="mt-3 space-y-2">
             {upcomingSlots.length === 0 ? (
               <p className="text-sm text-gray-500 leading-relaxed">
-                You don't have a slot booked. Every hour from 3 AM to 7 PM ET is open — claim one and you
+                You don't have a block booked. Every two-hour block from 3 AM to 7 PM ET is open — claim one and you
                 earn 30% of $CSGN's trading fees the whole time you're on air.
               </p>
             ) : (

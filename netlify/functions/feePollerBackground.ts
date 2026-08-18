@@ -732,12 +732,17 @@ async function refreshAirtimeSchedule(): Promise<void> {
     // Live balances, one RPC per uploading member — bounded by who has content.
     const secondsByUid = new Map<string, number>()
     const walletByUid = new Map<string, string>()
+    const lookByUid = new Map<string, string>()
     for (const clip of clips) secondsByUid.set(clip.uid, (secondsByUid.get(clip.uid) ?? 0) + clip.seconds)
     await Promise.all([...secondsByUid.keys()].map(async (uid) => {
-      const user = await getDoc<{ phantom?: { walletAddress?: string; verified?: boolean } }>(`users/${uid}`)
+      const user = await getDoc<{ phantom?: { walletAddress?: string; verified?: boolean }; onAirLook?: string }>(`users/${uid}`)
       const wallet = user?.phantom?.verified ? String(user.phantom.walletAddress || '') : ''
       if (wallet) walletByUid.set(uid, wallet)
+      // The member's chosen lower-third colour travels with their segments, so
+      // the broadcast does not have to look anything up at playback.
+      lookByUid.set(uid, String(user?.onAirLook || 'signal'))
     }))
+    for (const clip of clips) clip.look = lookByUid.get(clip.uid) ?? 'signal'
     const balances = new Map<string, number>()
     await Promise.all([...walletByUid].map(async ([uid, wallet]) => {
       try {

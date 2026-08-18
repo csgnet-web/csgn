@@ -1,9 +1,11 @@
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { AuthProvider } from '@/contexts/AuthContext'
+import { AuthModalProvider } from '@/contexts/AuthModalProvider'
 import { LiveSlotProvider } from '@/contexts/LiveSlotContext'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
+import { BottomNav } from '@/components/layout/BottomNav'
 import { CSGNMark } from '@/components/ui/Logo'
 import { lazy, Suspense } from 'react'
 
@@ -74,6 +76,16 @@ function AppContent() {
       </Suspense>
 
       {showFooter && <Footer />}
+
+      {/* The tab bar sits above everything except modals, on every route but the
+          OBS capture. The spacer keeps the last line of a page clear of it —
+          without it, every page's final element hides under the bar on a phone. */}
+      {!isPlayerPage && (
+        <>
+          <div className="lg:hidden h-[68px]" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }} aria-hidden="true" />
+          <BottomNav />
+        </>
+      )}
     </div>
   )
 }
@@ -83,7 +95,12 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <LiveSlotProvider>
-          <AppContent />
+          {/* Inside both, because the sheet reads auth state and the tab bar
+              reads the live slot — and outside AppContent so any route can open
+              it without rendering its own copy. */}
+          <AuthModalProvider>
+            <AppContent />
+          </AuthModalProvider>
         </LiveSlotProvider>
       </AuthProvider>
     </BrowserRouter>

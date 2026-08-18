@@ -226,6 +226,8 @@ export interface AirtimeClip {
   platform?: string
   /** The original post, for on-screen credit. */
   sourceUrl?: string
+  /** The member's on-air look id — their lower third's colour. */
+  look?: string
   title: string
   seconds: number
   /** The member's own ordering, low first. This is the "order your seconds"
@@ -243,6 +245,7 @@ export interface ScheduleItem {
   url: string
   platform?: string
   sourceUrl?: string
+  look?: string
   title: string
 }
 
@@ -319,6 +322,7 @@ export function buildAirtimeSchedule(
         url: clip.url,
         platform: clip.platform ?? '',
         sourceUrl: clip.sourceUrl ?? '',
+        look: clip.look ?? 'signal',
         title: clip.title,
       })
       at += clip.seconds * 1000

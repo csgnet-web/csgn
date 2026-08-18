@@ -92,6 +92,8 @@ export const api = {
   /** Your clips, your slice of the day, and when you are next on. One call so
    *  /studio can't show a stale allowance beside a fresh reel. */
   myClips: () => functionFetch<{
+    onAirLook: string
+    username: string
     clips: Array<{ id: string; platform: string; sourceUrl: string; title: string; seconds: number; order: number; status: string; rejectReason: string | null }>
     airtime: { seconds: number; capped: boolean; inventorySeconds: number; networkBlockEnabled: boolean; builtAt: string | null }
     airings: Array<{ startsAt: string; seconds: number; clipId: string }>
@@ -100,6 +102,11 @@ export const api = {
   submitClip: (url: string, seconds: number, title: string) =>
     functionFetch<{ ok: boolean; clip: { id: string; platform: string; sourceUrl: string; title: string; seconds: number; order: number; status: string } }>(
       'submitClip', { method: 'POST', body: JSON.stringify({ url, seconds, title }) }, true,
+    ),
+  /** Set the colour your lower third uses when a clip of yours is on air. */
+  setOnAirLook: (onAirLook: string) =>
+    functionFetch<{ ok: boolean; onAirLook: string }>(
+      'updateMyProfile', { method: 'POST', body: JSON.stringify({ onAirLook }) }, true,
     ),
   /** Reorder, retitle, retime or remove one of your own clips. */
   updateMyClip: (clipId: string, patch: { action: 'update' | 'remove'; order?: number; seconds?: number; title?: string }) =>
