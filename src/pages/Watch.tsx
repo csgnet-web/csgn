@@ -11,7 +11,7 @@ import TokenPanel from '@/components/watch/TokenPanel'
 import ScheduleStrip from '@/components/watch/ScheduleStrip'
 import StreamInfoBar from '@/components/watch/StreamInfoBar'
 import BroadcastBanner from '@/components/watch/BroadcastBanner'
-import { JoinStrip } from '@/components/watch/JoinStrip'
+import { ConversionHero } from '@/components/watch/ConversionHero'
 import { WipeOverlay } from '@/components/ui/WipeOverlay'
 
 /** The default strip copy. Whatever an admin sets in config/broadcastBanner wins;
@@ -211,11 +211,7 @@ export default function Watch() {
             space now carries the pitch and the sign-up, which is what a cold
             visitor from an ad or an X link actually needs. The games come back
             here when they are playable, not before. */}
-        <JoinStrip
-          signedIn={Boolean(user)}
-          twitchLinked={Boolean(profile?.twitch?.verified)}
-          onGetStarted={() => window.dispatchEvent(new Event('csgn:openRegister'))}
-        />
+        <ConversionHero signedIn={Boolean(user)} />
       </div>
 
       {/* ── Right: Token panel sidebar (desktop only) ── */}
