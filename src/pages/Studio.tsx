@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Check, Clapperboard, Clock, ExternalLink, GripVertical, Link2,
   Radio, Scissors, Sparkles, Trash2, TrendingUp,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/useAuth'
+import { LowerThird } from '@/components/broadcast/LowerThird'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { proveWallet } from '@/lib/walletProof'
 import { SignInWall } from '@/components/auth/SignInWall'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import {
-  looksLikeClipUrl, airtimeLabel, clipLength, supportsTrim, timecode,
+  looksLikeClipUrl, airtimeLabel, clipLength, supportsTrim, timecode, ON_AIR_STYLES,
   lookById, ON_AIR_LOOKS, CLIP_PLATFORM_LABELS, PLATFORM_STYLE,
   type ClipPlatform,
 } from '@/lib/clipEmbed'
@@ -57,7 +57,11 @@ interface Clip {
 }
 
 interface Airtime {
+  /** What the member's $CSGN earns today, whether or not anything is approved. */
   seconds: number
+  /** What the playlist has actually laid down for them. */
+  scheduledSeconds: number
+  supplyShare: number
   capped: boolean
   inventorySeconds: number
   networkBlockEnabled: boolean
@@ -205,6 +209,22 @@ function CropRow({
   )
 }
 
+/** Jupiter, pre-loaded with our mint. The fastest path from "I want more
+ *  airtime" to actually holding more, which is the only reason the button
+ *  exists. */
+export const JUPITER_SWAP_URL =
+  'https://jup.ag/swap/SOL-GFV7fphvprMr1PYpYGPJort2QP7JJLEp3J1Buu7Zpump'
+
+/** A supply share as something a person reads. Tiny fractions are the norm
+ *  here, so this never rounds a real holding down to "0%". */
+function formatShare(fraction: number): string {
+  const pct = Math.max(0, fraction) * 100
+  if (pct <= 0) return '0%'
+  if (pct >= 1) return `${pct.toFixed(1)}%`
+  if (pct >= 0.01) return `${pct.toFixed(2)}%`
+  return '<0.01%'
+}
+
 /** $CSGN, readably. A raw 1800000 on a card is a number people misread. */
 const fmtCsgn = (n: number): string =>
   n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(Math.round(n))
@@ -234,11 +254,11 @@ function ZeroAirtime({
 }) {
   if (reason === 'no_clips') {
     return (
-      <div className="relative mt-4 rounded-xl border border-white/[0.1] bg-white/[0.03] p-4">
-        <p className="text-sm font-bold text-white">Post a clip to get on air.</p>
+      <div className="relative mt-4 rounded-xl border border-live/25 bg-live/[0.06] p-4">
+        <p className="text-sm font-bold text-white">You have airtime. Nothing is filling it yet.</p>
         <p className="mt-1 text-[11px] text-gray-400 leading-relaxed">
-          Airtime is only worked out for members with something approved to play. Add a link below —
-          we review it, and your share of the day appears here once it clears.
+          Your $CSGN has already earned you the time above — it is yours whether or not you post.
+          Add a link below and it goes on air as soon as it clears review.
         </p>
       </div>
     )
@@ -272,9 +292,9 @@ function ZeroAirtime({
             ? ' We could not read your balance just now, so this may simply be a bad connection to the chain — reload in a minute before buying anything.'
             : ' Your linked wallet is holding none right now.'}
         </p>
-        <Link to="/participate" className="inline-block mt-3">
-          <Button variant="primary" size="sm">Get $CSGN</Button>
-        </Link>
+        <a href={JUPITER_SWAP_URL} target="_blank" rel="noopener noreferrer" className="inline-block mt-3">
+          <Button variant="primary" size="sm">Get $CSGN on Jupiter</Button>
+        </a>
       </div>
     )
   }
@@ -297,6 +317,9 @@ export default function Studio() {
   const [airtime, setAirtime] = useState<Airtime | null>(null)
   const [airings, setAirings] = useState<Array<{ startsAt: string; seconds: number; clipId: string }>>([])
   const [look, setLook] = useState('signal')
+  const [style, setStyle] = useState('bar')
+  const [showAvatar, setShowAvatar] = useState(true)
+  const [socialAvatar, setSocialAvatar] = useState<{ provider: string; url: string } | null>(null)
   const [username, setUsername] = useState('')
   const [busy, setBusy] = useState(false)
   const [loadingClips, setLoadingClips] = useState(true)
@@ -317,6 +340,9 @@ export default function Studio() {
       setAirtime(res.airtime)
       setAirings(res.airings)
       setLook(res.onAirLook || 'signal')
+      setStyle(res.onAirStyle || 'bar')
+      setShowAvatar(res.showAvatarOnAir !== false)
+      setSocialAvatar(res.socialAvatar)
       setUsername(res.username || '')
       setError('')
     } catch (err) {
@@ -430,12 +456,20 @@ export default function Studio() {
     setBusy(false)
   }
 
-  const chooseLook = async (id: string) => {
-    setLook(id)
+  /** One save path for the whole on-air identity. Optimistic — the preview
+   *  updates on tap and a failed write is not worth an error banner over the
+   *  reel, because nothing about the member's content is at risk. */
+  const saveIdentity = async (patch: { onAirLook?: string; onAirStyle?: string; showAvatarOnAir?: boolean }) => {
+    if (patch.onAirLook) setLook(patch.onAirLook)
+    if (patch.onAirStyle) setStyle(patch.onAirStyle)
+    if (patch.showAvatarOnAir !== undefined) setShowAvatar(patch.showAvatarOnAir)
     try {
-      await api.setOnAirLook(id)
+      const res = await api.setOnAirIdentity(patch)
+      // The server re-reads the avatar off the ID token on every save, so this
+      // is also how a changed picture on X finds its way here.
+      if (res.socialAvatar) setSocialAvatar(res.socialAvatar)
     } catch {
-      // Cosmetic; a failed save is not worth an error banner over the reel.
+      // Cosmetic.
     }
   }
 
@@ -482,11 +516,14 @@ export default function Studio() {
                 {airtimeLabel(allowance)}
               </p>
             </div>
-            <Link to="/account" className="shrink-0">
+            {/* Straight to a Jupiter swap for our mint. "Hold more" used to go
+                to /account, which is a settings page — it told somebody who had
+                just decided to buy to go and look at their own profile. */}
+            <a href={JUPITER_SWAP_URL} target="_blank" rel="noopener noreferrer" className="shrink-0">
               <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[11px] font-semibold text-gray-300 hover:bg-white/[0.08]">
                 <TrendingUp className="w-3.5 h-3.5" /> Hold more
               </span>
-            </Link>
+            </a>
           </div>
 
           {/* THE REEL BAR — every approved segment, proportional, in order.
@@ -519,13 +556,17 @@ export default function Studio() {
               <p className="relative mt-3 text-[11px] text-gray-500 leading-relaxed">
                 Out of {airtimeLabel(airtime?.inventorySeconds ?? 0)} of open air today
                 {airtime?.networkBlockEnabled === false && ' — the 7 PM–3 AM block is open right now, so there is more of it'}.
-                Your share follows your $CSGN: hold twice as much, get twice as much.
+                One to one with your $CSGN: hold twice as much, get twice as much.
                 {airtime?.capped && ' You are at the per-member ceiling, which exists so no one holder can take the whole channel.'}
               </p>
+              {/* THE WORKING, SHOWN. This number is checkable against the chain
+                  and against the market cap, and showing the two inputs is what
+                  makes it checkable rather than something to take on faith. */}
               {airtime?.balance != null && (
                 <p className="relative mt-1.5 text-[11px] text-gray-600">
-                  Counted against <span className="font-mono text-gray-400">{fmtCsgn(airtime.balance)} $CSGN</span> in{' '}
-                  <span className="font-mono">{shortWallet(airtime.walletAddress)}</span>.
+                  <span className="font-mono text-gray-400">{fmtCsgn(airtime.balance)} $CSGN</span>
+                  {airtime.supplyShare > 0 && <> · {formatShare(airtime.supplyShare)} of supply</>}
+                  {' '}in <span className="font-mono">{shortWallet(airtime.walletAddress)}</span>.
                 </p>
               )}
             </>
@@ -587,34 +628,84 @@ export default function Studio() {
             The card that carries your name while your clip is on television.
           </p>
 
-          {/* Live preview of the actual lower third. */}
-          <div className="mt-4 relative h-24 rounded-xl overflow-hidden bg-black border border-white/[0.06]">
+          {/* Live preview of the actual lower third, in the chosen shape. */}
+          <div className="mt-4 relative h-28 rounded-xl overflow-hidden bg-black border border-white/[0.06]">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_40%,rgba(255,255,255,0.06),transparent_60%)]" />
-            <div className="absolute left-4 bottom-4 rounded-lg bg-black/70 backdrop-blur-sm border border-white/10 pl-0 overflow-hidden flex">
-              <span className={`w-1 ${activeLook.accent}`} />
-              <span className="px-3 py-2">
-                <span className="block text-[9px] uppercase tracking-[0.18em] text-gray-400">On CSGN</span>
-                <span className="block text-base font-black text-white leading-tight">@{username || 'you'}</span>
-              </span>
+            <LowerThird
+              style={style}
+              look={activeLook}
+              username={username || 'you'}
+              avatarUrl={showAvatar ? socialAvatar?.url ?? '' : ''}
+            />
+          </div>
+
+          {/* COLOUR */}
+          <div className="mt-4">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Colour</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {ON_AIR_LOOKS.map((l) => (
+                <button
+                  key={l.id}
+                  type="button"
+                  onClick={() => void saveIdentity({ onAirLook: l.id })}
+                  className={`relative w-11 h-11 rounded-xl bg-gradient-to-br ${l.gradient} ring-2 transition-all cursor-pointer ${
+                    look === l.id ? `${l.ring} scale-105` : 'ring-transparent opacity-60 hover:opacity-100'
+                  }`}
+                  title={l.label}
+                  aria-label={l.label}
+                >
+                  {look === l.id && <Check className="absolute inset-0 m-auto w-4 h-4 text-white drop-shadow" />}
+                </button>
+              ))}
             </div>
           </div>
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            {ON_AIR_LOOKS.map((l) => (
-              <button
-                key={l.id}
-                type="button"
-                onClick={() => void chooseLook(l.id)}
-                className={`relative w-11 h-11 rounded-xl bg-gradient-to-br ${l.gradient} ring-2 transition-all cursor-pointer ${
-                  look === l.id ? `${l.ring} scale-105` : 'ring-transparent opacity-60 hover:opacity-100'
-                }`}
-                title={l.label}
-                aria-label={l.label}
-              >
-                {look === l.id && <Check className="absolute inset-0 m-auto w-4 h-4 text-white drop-shadow" />}
-              </button>
-            ))}
+          {/* SHAPE — colour alone gives ten near-identical cards; the
+              silhouette is what a viewer registers before they read a name. */}
+          <div className="mt-4">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Shape</p>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {ON_AIR_STYLES.map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  onClick={() => void saveIdentity({ onAirStyle: st.id })}
+                  className={`rounded-xl border px-3 py-2.5 text-left transition-colors cursor-pointer ${
+                    style === st.id
+                      ? 'border-primary-500/50 bg-primary-500/[0.08]'
+                      : 'border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05]'
+                  }`}
+                >
+                  <span className={`block text-xs font-bold ${style === st.id ? 'text-white' : 'text-gray-300'}`}>{st.label}</span>
+                  <span className="block mt-0.5 text-[10px] text-gray-500 leading-snug">{st.hint}</span>
+                </button>
+              ))}
+            </div>
           </div>
+
+          {/* THE PICTURE. Only offered when there actually is one — a toggle for
+              an avatar that does not exist is a control that does nothing. */}
+          {socialAvatar ? (
+            <label className="mt-4 flex items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 cursor-pointer hover:bg-white/[0.04] transition-colors">
+              <img src={socialAvatar.url} alt="" className="w-9 h-9 rounded-full object-cover bg-white/5 shrink-0" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-xs font-semibold text-white">Show my picture on air</span>
+                <span className="block text-[10px] text-gray-500">
+                  From your {socialAvatar.provider === 'twitter.com' ? 'X' : 'Google'} account.
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={showAvatar}
+                onChange={(e) => void saveIdentity({ showAvatarOnAir: e.target.checked })}
+                className="h-4 w-4 shrink-0 accent-primary-500 cursor-pointer"
+              />
+            </label>
+          ) : (
+            <p className="mt-3 text-[11px] text-gray-600 leading-relaxed">
+              Sign in with X and your profile picture rides along on your lower third.
+            </p>
+          )}
         </section>
 
         {/* ── 4. The reel ── */}

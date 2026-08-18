@@ -54,7 +54,11 @@ export interface RankedMemeCoin extends MemeCoin {
    *  what lets the board answer "why is this coin here" on the card itself
    *  instead of in a FAQ nobody opens. */
   score: number
-  breakdown: { votes: number; volume: number; marketCap: number; buzz: number }
+  /** The four weighted terms, each 0-100 and summing to `score`. */
+  breakdown: { votes: number; volume: number; momentum: number; size: number }
+  /** The weights actually applied. Differs from POWER_WEIGHTS when no votes
+   *  have been cast and that term is redistributed — see rankMemeBoard. */
+  weights: { votes: number; volume: number; momentum: number; size: number }
   /** $CSGN weight backing this coin. */
   votes: number
   /** Distinct wallets backing it. Decoration — tokens are the signal. */
@@ -128,20 +132,59 @@ export function normalizeMemeBoard(raw: unknown): MemeCoin[] {
  * air and the board in the app can never disagree.
  */
 export const POWER_WEIGHTS = {
-  /** Holder $CSGN vote weight. The largest single term, on purpose — this is a
-   *  community ranking, and the community's stake should out-vote the market. */
-  votes: 0.35,
+  /** Holder $CSGN vote weight. The community's stake in the ranking. */
+  votes: 0.30,
+  /** What actually traded in 24h, on a log scale. */
   volume: 0.25,
-  marketCap: 0.15,
-  /** Turnover (vol/mcap) + absolute 24h move. A proxy for "is anything actually
-   *  happening here", which is what separates a live coin from a big dead one. */
-  buzz: 0.25,
+  /** Turnover + how far it moved. THE TRENDING TERM — see below. */
+  momentum: 0.30,
+  /** Market cap, log scale. An anchor, not a driver. */
+  size: 0.15,
 } as const
 
-/** Normalize a field across the set, so one huge coin can't swamp every term. */
+/**
+ * ── Why the weights changed ────────────────────────────────────────────────
+ *
+ * The board was ranking nothing like what was actually trending. Three reasons,
+ * all structural rather than a matter of taste:
+ *
+ * 1. THE VOTES TERM WAS DEAD WEIGHT AT LAUNCH. It carried 35% of the score and
+ *    nobody had voted, so every coin scored zero on it and the maximum
+ *    achievable score was 65. Worse, the ranking was decided entirely by the
+ *    remaining terms while a third of the formula sat idle. That weight is now
+ *    REDISTRIBUTED across the market terms whenever no votes exist, so the
+ *    score means the same thing on day one as it will on day one hundred.
+ *
+ * 2. MARKET CAP WAS RANKING BY SIZE. A 15% term normalized against the biggest
+ *    coin on the board hands the largest, least interesting coin a free 15
+ *    points for being large. Size is a sanity anchor — it stops a $2k coin with
+ *    four trades topping a memecoin chart — but it is the opposite of trending,
+ *    so it is now the smallest term and it is logarithmic.
+ *
+ * 3. LINEAR NORMALIZATION FLATTENED EVERYTHING. Market data is power-law
+ *    distributed: divide by the max and the tenth-biggest coin scores about
+ *    0.02, so ninety of a hundred rows were indistinguishable near zero. Volume
+ *    and size are normalized on a LOG scale, which is the scale these
+ *    quantities actually live on.
+ *
+ * What replaces size as the driver is MOMENTUM: turnover (24h volume against
+ * market cap) plus the absolute size of the 24h move. That is the measurable
+ * form of "something is happening here", and it is what makes a coin worth
+ * putting on a channel about right now rather than one worth holding.
+ */
+
+/** Normalize on a log scale, so a power-law field does not collapse to zero
+ *  for everything except its largest member. */
+function logNormalizer<T>(items: T[], pick: (item: T) => number): (item: T) => number {
+  const logs = items.map((i) => Math.log10(1 + Math.max(0, pick(i))))
+  const max = Math.max(1e-9, ...logs)
+  return (item) => Math.log10(1 + Math.max(0, pick(item))) / max
+}
+
+/** Normalize linearly. Correct for votes, where the raw ratio IS the meaning. */
 function normalizer<T>(items: T[], pick: (item: T) => number): (item: T) => number {
   const max = Math.max(1e-9, ...items.map(pick))
-  return (item) => pick(item) / max
+  return (item) => Math.max(0, pick(item)) / max
 }
 
 /**
@@ -156,45 +199,68 @@ export function rankMemeBoard(coins: MemeCoin[], votes: Record<string, VoteCell>
   if (coins.length === 0) return []
 
   const votesOf = (c: MemeCoin) => Math.max(0, Number(votes[c.address]?.tokens) || 0)
-  const buzzOf = (c: MemeCoin) =>
-    (c.marketCapUsd > 0 ? c.volumeH24Usd / c.marketCapUsd : 0) + Math.abs(c.priceChangeH24Pct) / 100
 
-  const nVotes = normalizer(coins, votesOf)
-  const nVol = normalizer(coins, (c) => c.volumeH24Usd)
-  const nMc = normalizer(coins, (c) => c.marketCapUsd)
-  const nBuzz = normalizer(coins, buzzOf)
+  /**
+   * Turnover, capped. A coin trading five times its own market cap in a day is
+   * a screaming signal; one trading five hundred times is a wash trade, and
+   * without a cap it would take the top of the board every time.
+   */
+  const momentumOf = (c: MemeCoin) => {
+    const turnover = c.marketCapUsd > 0 ? Math.min(5, c.volumeH24Usd / c.marketCapUsd) / 5 : 0
+    const move = Math.min(1, Math.abs(c.priceChangeH24Pct) / 100)
+    return turnover * 0.6 + move * 0.4
+  }
 
   const totalVotes = coins.reduce((sum, c) => sum + votesOf(c), 0)
 
+  // With no votes cast, the votes weight is spread across the market terms in
+  // their existing proportions rather than left on the floor.
+  const marketWeight = POWER_WEIGHTS.volume + POWER_WEIGHTS.momentum + POWER_WEIGHTS.size
+  const spread = totalVotes > 0 ? 0 : POWER_WEIGHTS.votes
+  const W = {
+    votes: totalVotes > 0 ? POWER_WEIGHTS.votes : 0,
+    volume: POWER_WEIGHTS.volume + spread * (POWER_WEIGHTS.volume / marketWeight),
+    momentum: POWER_WEIGHTS.momentum + spread * (POWER_WEIGHTS.momentum / marketWeight),
+    size: POWER_WEIGHTS.size + spread * (POWER_WEIGHTS.size / marketWeight),
+  }
+
+  const nVotes = normalizer(coins, votesOf)
+  const nVol = logNormalizer(coins, (c) => c.volumeH24Usd)
+  const nSize = logNormalizer(coins, (c) => c.marketCapUsd)
+  const nMomentum = normalizer(coins, momentumOf)
+
   return coins
     .map((c) => {
-      // Each term is its normalized value times its published weight, so the
-      // four of them add up to `power` exactly — a breakdown that does not sum
-      // to the total is a breakdown nobody can check.
+      // Each term is its normalized value times its weight, so the four add up
+      // to `power` exactly — a breakdown that does not sum to the total is a
+      // breakdown nobody can check.
       const breakdown = {
-        votes: POWER_WEIGHTS.votes * nVotes(c),
-        volume: POWER_WEIGHTS.volume * nVol(c),
-        marketCap: POWER_WEIGHTS.marketCap * nMc(c),
-        buzz: POWER_WEIGHTS.buzz * nBuzz(c),
+        votes: W.votes * nVotes(c),
+        volume: W.volume * nVol(c),
+        momentum: W.momentum * nMomentum(c),
+        size: W.size * nSize(c),
       }
-      const power = breakdown.votes + breakdown.volume + breakdown.marketCap + breakdown.buzz
+      const power = breakdown.votes + breakdown.volume + breakdown.momentum + breakdown.size
       return {
-      ...c,
-      power,
-      // 0–100, rounded. The weights sum to 1, so power is already a fraction of
-      // a perfect score — no rescaling, which keeps the number comparable
-      // between refreshes instead of floating with whatever is on the board.
-      score: Math.round(power * 100),
-      breakdown: {
-        votes: Math.round(breakdown.votes * 100),
-        volume: Math.round(breakdown.volume * 100),
-        marketCap: Math.round(breakdown.marketCap * 100),
-        buzz: Math.round(breakdown.buzz * 100),
-      },
-      votes: votesOf(c),
-      voters: Math.max(0, Number(votes[c.address]?.wallets) || 0),
-      voteShare: totalVotes > 0 ? votesOf(c) / totalVotes : 0,
-      rank: 0,
+        ...c,
+        power,
+        // 0–100, rounded. The weights sum to 1, so power is already a fraction
+        // of a perfect score — no rescaling, which keeps the number comparable
+        // between refreshes instead of floating with whatever is on the board.
+        score: Math.round(power * 100),
+        breakdown: {
+          votes: Math.round(breakdown.votes * 100),
+          volume: Math.round(breakdown.volume * 100),
+          momentum: Math.round(breakdown.momentum * 100),
+          size: Math.round(breakdown.size * 100),
+        },
+        /** The weights actually used, so the UI can label the bars honestly
+         *  when the votes term has been redistributed. */
+        weights: W,
+        votes: votesOf(c),
+        voters: Math.max(0, Number(votes[c.address]?.wallets) || 0),
+        voteShare: totalVotes > 0 ? votesOf(c) / totalVotes : 0,
+        rank: 0,
       }
     })
     // Power first; ties break on raw vote weight, then alphabetically, so the

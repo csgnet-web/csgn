@@ -164,10 +164,12 @@ export async function refreshAirtimeSchedule(
     }
 
     // Approved clips only. Nothing airs unreviewed — see docs/plan-decentralized-tv.md §5.1.
+    // NO orderBy — see the warning on queryCollection. This one failed inside
+    // the catch below, so it was invisible: the schedule simply never built.
     const clipRows = await queryCollection(
       'clips',
       [fieldFilter('status', 'EQUAL', 'approved')],
-      [order('order', 'ASCENDING')],
+      [],
       AIRTIME_MAX_CLIPS,
     )
     const clips: AirtimeClip[] = clipRows.flatMap((row) => {
@@ -197,6 +199,7 @@ export async function refreshAirtimeSchedule(
         order: Number(c.order) || 0,
       }]
     })
+    clips.sort((a, b) => a.order - b.order)
     if (clips.length === 0) {
       // Publish the EMPTY schedule rather than returning silently. Bailing left
       // whatever was there last time in place, so a member whose clip had been
@@ -212,16 +215,30 @@ export async function refreshAirtimeSchedule(
     const secondsByUid = new Map<string, number>()
     const walletByUid = new Map<string, string>()
     const lookByUid = new Map<string, string>()
+    const styleByUid = new Map<string, string>()
+    const avatarByUid = new Map<string, string>()
     for (const clip of clips) secondsByUid.set(clip.uid, (secondsByUid.get(clip.uid) ?? 0) + clip.seconds)
     await Promise.all([...secondsByUid.keys()].map(async (uid) => {
-      const user = await getDoc<{ phantom?: { walletAddress?: string; verified?: boolean }; onAirLook?: string }>(`users/${uid}`)
+      const user = await getDoc<{
+        phantom?: { walletAddress?: string; verified?: boolean }
+        onAirLook?: string; onAirStyle?: string; showAvatarOnAir?: boolean
+        socialAvatar?: { url?: string }
+      }>(`users/${uid}`)
       const wallet = user?.phantom?.verified ? String(user.phantom.walletAddress || '') : ''
       if (wallet) walletByUid.set(uid, wallet)
       // The member's chosen lower-third colour travels with their segments, so
       // the broadcast does not have to look anything up at playback.
       lookByUid.set(uid, String(user?.onAirLook || 'signal'))
+      styleByUid.set(uid, String(user?.onAirStyle || 'bar'))
+      // Only travels if they left it on. The broadcast never has to look
+      // anything up at playback — it plays what the schedule handed it.
+      avatarByUid.set(uid, user?.showAvatarOnAir !== false ? String(user?.socialAvatar?.url || '') : '')
     }))
-    for (const clip of clips) clip.look = lookByUid.get(clip.uid) ?? 'signal'
+    for (const clip of clips) {
+      clip.look = lookByUid.get(clip.uid) ?? 'signal'
+      clip.style = styleByUid.get(clip.uid) ?? 'bar'
+      clip.avatarUrl = avatarByUid.get(clip.uid) ?? ''
+    }
     const balances = new Map<string, number>()
     await Promise.all([...walletByUid].map(async ([uid, wallet]) => {
       try {

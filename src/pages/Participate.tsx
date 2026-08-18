@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import Meme100Board from '@/components/participate/Meme100Board'
 import { SignInWall } from '@/components/auth/SignInWall'
+import MemeVotePicker from '@/components/participate/MemeVotePicker'
 import { useAuth } from '@/contexts/useAuth'
 
 interface VoteCfg { id: string; question: string; options: string[]; startISO?: string; status?: string }
@@ -101,8 +102,9 @@ export default function Participate() {
   }, [])
 
 
-  // Meme-100 community vote (token-weighted, no burn)
-  const [memeSymbol, setMemeSymbol] = useState('')
+  // Meme-100 community vote (token-weighted, no burn). The ballot is a CHOSEN
+  // coin, carrying its mint — never a typed ticker. See MemeVotePicker.
+  const [memePick, setMemePick] = useState<{ address: string; symbol: string } | null>(null)
   const [memeBusy, setMemeBusy] = useState(false)
   const [memeMsg, setMemeMsg] = useState<string | null>(null)
   const [memeErr, setMemeErr] = useState<string | null>(null)
@@ -225,21 +227,23 @@ export default function Participate() {
 
   const doVoteMeme = async () => {
     setMemeErr(null); setMemeMsg(null)
-    const symbol = memeSymbol.trim().toUpperCase()
-    if (!/^[A-Z0-9$]{2,12}$/.test(symbol)) { setMemeErr('Enter a valid ticker symbol (2–12 characters).'); return }
+    if (!memePick) { setMemeErr('Pick a coin from the board first.'); return }
     setMemeBusy(true)
     try {
       const addr = await ensureWallet()
       const proof = await proveWallet(addr, signMessage)
-      const res = await api.voteMeme(proof, symbol)
-      setMemeMsg(`Vote counted — ${fmtToken(res.weight)} $CSGN of power behind $${symbol}.`)
-      setMemeSymbol('')
+      // The MINT, not the symbol. The old code passed a typed ticker into a
+      // parameter the server validates as base58 — so every vote was rejected
+      // with `bad_mint` before it ever reached the tally.
+      const res = await api.voteMeme(proof, memePick.address)
+      setMemeMsg(`Vote counted — ${fmtToken(res.weight)} $CSGN of power behind $${res.symbol}.`)
       loadBalance(addr)
     } catch (e) {
       setMemeErr(e instanceof Error ? e.message : 'Meme vote failed.')
     }
     setMemeBusy(false)
   }
+
   // The community ranking used to be recomputed here from raw tallies. It now
   // lives in Meme100Board, which reads the same tallies AND the on-chain board
   // and runs the one published formula — so the standings on this page and the
@@ -289,7 +293,12 @@ export default function Participate() {
     <motion.main
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="max-w-3xl mx-auto px-4 sm:px-6 py-10 space-y-8"
+      // pt-24 clears the FIXED header (h-16, lg:h-20). This page had a bare
+      // `py-10`, so the first thing on it — the Meme 100 heading — rendered
+      // underneath the CSGN wordmark in the top-left. Every other page already
+      // carries this offset; this one was missed when its own <header> was
+      // removed and the board became the first element.
+      className="max-w-3xl mx-auto px-4 sm:px-6 pt-24 lg:pt-28 pb-24 space-y-8"
     >
       {/* NO PAGE HEADER. The tab bar already says $CSGN, the wordmark is in the
           top bar, and a third "$CSGN" title with a paragraph under it collided
@@ -525,15 +534,24 @@ export default function Participate() {
         </div>
         <Card hover={false} className="p-5 space-y-3">
           <p className="text-sm text-gray-400">
-            Back a memecoin with your <span className="text-cyan-300 font-semibold">$CSGN voting power</span> — no burn, no stake, nothing leaves your wallet. Your weight = your balance. The board blends the community vote with each coin’s live <span className="text-cyan-300 font-semibold">volume + market cap</span> and airs the pick.
+            Back a memecoin with your <span className="text-cyan-300 font-semibold">$CSGN voting power</span> — no burn, no stake, nothing leaves your wallet. Your weight = your balance. Holder votes are the largest single term in the board’s score, so this is what moves the ranking that goes on air.
           </p>
 
           {!walletAddress ? (
             <Button onClick={() => void connect()} isLoading={isConnecting} leftIcon={<Wallet className="w-4 h-4" />}>Connect Phantom to vote</Button>
           ) : (
-            <div className="flex gap-2">
-              <input value={memeSymbol} onChange={(e) => setMemeSymbol(e.target.value.slice(0, 12))} placeholder="Memecoin ticker — e.g. WIF" className="flex-1 rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-cyan-500/60 outline-none px-3 py-2 text-sm uppercase" />
-              <Button size="sm" isLoading={memeBusy} onClick={() => void doVoteMeme()} leftIcon={<VoteIcon className="w-4 h-4" />}>Cast vote</Button>
+            <div className="space-y-3">
+              <MemeVotePicker value={memePick?.address ?? ''} onChange={setMemePick} disabled={memeBusy} />
+              <Button
+                size="sm"
+                className="w-full"
+                disabled={!memePick}
+                isLoading={memeBusy}
+                onClick={() => void doVoteMeme()}
+                leftIcon={<VoteIcon className="w-4 h-4" />}
+              >
+                {memePick ? `Back $${memePick.symbol} with my $CSGN` : 'Pick a coin to back'}
+              </Button>
             </div>
           )}
           <p className="text-xs text-gray-500">One vote per wallet — re-voting moves your full weight. {balance != null && `Your power: ${fmtFull(balance)} $CSGN.`}</p>

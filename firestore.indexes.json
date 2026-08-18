@@ -1,4 +1,17 @@
 {
+  "//": [
+    "Composite indexes for queries that combine a filter with an orderBy on a",
+    "different field. Firestore REFUSES such a query without one — it returns",
+    "FAILED_PRECONDITION, which surfaces to a member as 'Internal Server Error'.",
+    "",
+    "Prefer NOT needing an entry here. Where a result set is small and bounded,",
+    "the queries now fetch unordered and sort in JS, which cannot break on a",
+    "deploy step somebody forgot. See the header on queryCollection in",
+    "netlify/functions/_shared/firebaseAdmin.ts.",
+    "",
+    "The clips entries below are belt-and-braces: nothing currently requires",
+    "them, but they make the ordered form safe if it is ever reintroduced."
+  ],
   "indexes": [
     {
       "collectionGroup": "slots",
@@ -6,6 +19,38 @@
       "fields": [
         { "fieldPath": "assignedUid", "order": "ASCENDING" },
         { "fieldPath": "startTime", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "slots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "startTime", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "clips",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uid", "order": "ASCENDING" },
+        { "fieldPath": "order", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "clips",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "order", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "clips",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
       ]
     }
   ],

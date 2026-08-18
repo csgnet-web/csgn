@@ -3,6 +3,7 @@ import {
   airtimeShares, deriveAirtimeWindows, windowSeconds, buildAirtimeSchedule,
   AIRTIME_FLOOR_SECONDS, AIRTIME_MAX_SHARE,
   type AirtimeMember, type AirtimeClip,
+  airtimeQuote,
 } from '../_shared/airtime'
 
 const SUPPLY = 1_000_000_000
@@ -279,5 +280,72 @@ describe('buildAirtimeSchedule', () => {
     expect(buildAirtimeSchedule([], [], window)).toEqual([])
     expect(buildAirtimeSchedule([{ uid: 'a', seconds: 60, supplyShare: 0, capped: false }], [], window)).toEqual([])
     expect(buildAirtimeSchedule([{ uid: 'a', seconds: 60, supplyShare: 0, capped: false }], [clip('c', 'a', 30)], [])).toEqual([])
+  })
+})
+
+describe('airtimeQuote — what a bag is worth on its own', () => {
+  const SUPPLY = 1_000_000_000
+  const DAY = 6 * 60 * 60 // six hours of open air, in seconds
+
+  it('pays 1:1 with share of supply', () => {
+    // 1% of supply → 1% of the open air.
+    const q = airtimeQuote(SUPPLY * 0.01, DAY, SUPPLY)
+    expect(q.seconds).toBe(Math.floor(DAY * 0.01))
+    expect(q.supplyShare).toBeCloseTo(0.01, 6)
+    expect(q.capped).toBe(false)
+  })
+
+  it('doubles when the bag doubles', () => {
+    const one = airtimeQuote(SUPPLY * 0.01, DAY, SUPPLY).seconds
+    const two = airtimeQuote(SUPPLY * 0.02, DAY, SUPPLY).seconds
+    expect(two).toBe(one * 2)
+  })
+
+  it('does NOT depend on having a clip approved', () => {
+    // The whole point: this is a property of the bag, not of the queue. A
+    // member holding 1.8M with nothing submitted still has a real number.
+    const q = airtimeQuote(1_800_000, DAY, SUPPLY)
+    expect(q.seconds).toBeGreaterThan(0)
+  })
+
+  it('caps a whale at AIRTIME_MAX_SHARE of the day', () => {
+    const q = airtimeQuote(SUPPLY * 0.9, DAY, SUPPLY)
+    expect(q.capped).toBe(true)
+    expect(q.seconds).toBe(Math.floor(DAY * AIRTIME_MAX_SHARE))
+  })
+
+  it('gives a zero balance the floor and nothing more', () => {
+    expect(airtimeQuote(0, DAY, SUPPLY).seconds).toBe(AIRTIME_FLOOR_SECONDS)
+  })
+
+  it('survives junk without producing NaN seconds', () => {
+    for (const bad of [Number.NaN, -5, undefined, null]) {
+      const q = airtimeQuote(bad as number, DAY, SUPPLY)
+      expect(Number.isFinite(q.seconds)).toBe(true)
+      expect(q.seconds).toBeGreaterThanOrEqual(0)
+    }
+    expect(Number.isFinite(airtimeQuote(100, DAY, 0).seconds)).toBe(true)
+  })
+
+  it('returns the floor when there is no open air to give', () => {
+    expect(airtimeQuote(SUPPLY * 0.5, 0, SUPPLY).seconds).toBe(AIRTIME_FLOOR_SECONDS)
+  })
+
+  it('agrees with airtimeShares for a lone member who can fill it', () => {
+    // Same bag, same inventory: the number the Studio shows must not be
+    // larger than what the scheduler would actually lay down.
+    const balance = SUPPLY * 0.05
+    const quote = airtimeQuote(balance, DAY, SUPPLY)
+    const [alloc] = airtimeShares(
+      [{ uid: 'a', balance, clipSeconds: 100_000 }],
+      DAY, SUPPLY, { maxShare: AIRTIME_MAX_SHARE, floorSeconds: 0 },
+    )
+    expect(alloc.seconds).toBeGreaterThanOrEqual(quote.seconds)
+  })
+
+  it('honours sqrt weighting when asked', () => {
+    const linear = airtimeQuote(SUPPLY * 0.04, DAY, SUPPLY, { weightMode: 'linear', maxShare: 1 })
+    const root = airtimeQuote(SUPPLY * 0.04, DAY, SUPPLY, { weightMode: 'sqrt', maxShare: 1 })
+    expect(root.seconds).toBeGreaterThan(linear.seconds)
   })
 })

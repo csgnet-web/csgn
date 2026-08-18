@@ -28,11 +28,11 @@ import {
 
 const PAGE_SIZE = 10
 
-const TERMS: Array<{ key: keyof RankedMemeCoin['breakdown']; label: string; hint: string; weight: number }> = [
-  { key: 'votes', label: 'Holder votes', hint: '$CSGN weight behind it', weight: POWER_WEIGHTS.votes },
-  { key: 'volume', label: '24h volume', hint: 'what actually traded', weight: POWER_WEIGHTS.volume },
-  { key: 'marketCap', label: 'Market cap', hint: 'how big it is', weight: POWER_WEIGHTS.marketCap },
-  { key: 'buzz', label: 'Buzz', hint: 'turnover + how far it moved', weight: POWER_WEIGHTS.buzz },
+const TERMS: Array<{ key: keyof RankedMemeCoin['breakdown']; label: string; hint: string }> = [
+  { key: 'momentum', label: 'Momentum', hint: 'turnover + how far it moved today' },
+  { key: 'volume', label: '24h volume', hint: 'what actually traded' },
+  { key: 'votes', label: 'Holder votes', hint: '$CSGN weight behind it' },
+  { key: 'size', label: 'Size', hint: 'market cap — an anchor, not the driver' },
 ]
 
 /** Score colour, so the number registers before it is read. */
@@ -223,7 +223,11 @@ export default function Meme100Board() {
                       <div className="space-y-1.5">
                         {TERMS.map((term) => {
                           const value = coin.breakdown[term.key]
-                          const max = Math.round(term.weight * 100)
+                          // The weights the coin was ACTUALLY scored with. When
+                          // nobody has voted, the votes weight is spread across
+                          // the market terms, and showing the nominal weight
+                          // here would print bars that overflow their maximum.
+                          const max = Math.round(coin.weights[term.key] * 100)
                           return (
                             <div key={term.key}>
                               <div className="flex items-baseline justify-between gap-2 text-[11px]">
@@ -267,10 +271,13 @@ export default function Meme100Board() {
       <p className="flex items-start gap-1.5 text-[11px] text-gray-600 leading-relaxed">
         <Info className="w-3.5 h-3.5 shrink-0 mt-px" />
         <span>
-          Score is out of 100: holder votes {Math.round(POWER_WEIGHTS.votes * 100)},
-          volume {Math.round(POWER_WEIGHTS.volume * 100)},
-          market cap {Math.round(POWER_WEIGHTS.marketCap * 100)},
-          buzz {Math.round(POWER_WEIGHTS.buzz * 100)}. Tap a coin for its breakdown. Coins are
+          Score is out of 100: momentum {Math.round(POWER_WEIGHTS.momentum * 100)},
+          24h volume {Math.round(POWER_WEIGHTS.volume * 100)},
+          holder votes {Math.round(POWER_WEIGHTS.votes * 100)},
+          size {Math.round(POWER_WEIGHTS.size * 100)}. Momentum is turnover plus how far it moved,
+          which is what separates a coin having a day from a coin that is merely large. Until
+          holders start voting, that {Math.round(POWER_WEIGHTS.votes * 100)} is shared out across
+          the other three rather than left unscored. Tap a coin for its breakdown — coins are
           discovered from live Solana trading, not from a list anyone types.
         </span>
       </p>

@@ -244,6 +244,11 @@ export interface AirtimeClip {
   sourceUrl?: string
   /** The member's on-air look id — their lower third's colour. */
   look?: string
+  /** Which lower-third shape they picked — see ON_AIR_STYLES. */
+  style?: string
+  /** Their provider avatar, or '' when they have none or turned it off.
+   *  Carried here so the broadcast never has to look anything up at playback. */
+  avatarUrl?: string
   title: string
   seconds: number
   /** The member's own ordering, low first. This is the "order your seconds"
@@ -262,6 +267,8 @@ export interface ScheduleItem {
   platform?: string
   sourceUrl?: string
   look?: string
+  style?: string
+  avatarUrl?: string
   title: string
 }
 
@@ -339,6 +346,8 @@ export function buildAirtimeSchedule(
         platform: clip.platform ?? '',
         sourceUrl: clip.sourceUrl ?? '',
         look: clip.look ?? 'signal',
+        style: clip.style ?? 'bar',
+        avatarUrl: clip.avatarUrl ?? '',
         title: clip.title,
       })
       at += clip.seconds * 1000
@@ -350,4 +359,64 @@ export function buildAirtimeSchedule(
   }
 
   return items
+}
+
+/**
+ * WHAT A BAG IS WORTH, on its own.
+ *
+ * `airtimeShares` answers "how do we divide today's open air between the
+ * members who have content ready", which is the right question at scheduling
+ * time and the wrong one to show a member.
+ *
+ * The difference matters because of what a member saw: their entitlement was
+ * only ever computed as a side effect of building the playlist, so it was zero
+ * until they had a clip APPROVED. Somebody holding 1.8 million $CSGN who had
+ * just signed up was told "0 seconds" — not because their tokens were worth
+ * nothing, but because a moderator had not got to them yet. That reads as the
+ * token doing nothing, on the one screen built to show what the token does.
+ *
+ * So this is the entitlement as a pure function of the bag: what your holdings
+ * earn you today, whether or not you have anything queued to fill it. The
+ * Studio shows THIS. The scheduler still uses `airtimeShares`, because a
+ * playlist can only be built from clips that exist — but the two now agree,
+ * since a member with content gets the same number out of both.
+ *
+ * Deliberately NOT normalised against other members' holdings. It answers "what
+ * is my share of supply worth in seconds", which is stable, checkable against
+ * the chain, and does not move because a stranger bought or sold. The scheduler
+ * redistributes any unclaimed remainder among members who can actually fill it;
+ * that is a scheduling gain, not an entitlement, and promising it here would be
+ * promising something a quiet day takes away.
+ */
+export interface AirtimeQuote {
+  /** Seconds this bag earns out of the given inventory. */
+  seconds: number
+  /** Share of circulating supply, as a fraction. */
+  supplyShare: number
+  /** True when AIRTIME_MAX_SHARE clipped it. */
+  capped: boolean
+}
+
+export function airtimeQuote(
+  balance: number,
+  inventorySeconds: number,
+  supply: number,
+  options: AirtimeOptions = {},
+): AirtimeQuote {
+  const maxShare = options.maxShare ?? AIRTIME_MAX_SHARE
+  const floor = Math.max(0, Math.floor(options.floorSeconds ?? AIRTIME_FLOOR_SECONDS))
+  const inventory = Math.max(0, Math.floor(Number(inventorySeconds) || 0))
+  const held = Math.max(0, Number(balance) || 0)
+  const circulating = Math.max(1, Number(supply) || 0)
+
+  const supplyShare = Math.min(1, held / circulating)
+  if (inventory <= 0) return { seconds: floor, supplyShare, capped: false }
+
+  const weight = (options.weightMode ?? 'linear') === 'sqrt' ? Math.sqrt(supplyShare) : supplyShare
+  const uncapped = weight * inventory
+  const ceiling = maxShare * inventory
+  const capped = uncapped > ceiling
+  const seconds = Math.floor(Math.min(uncapped, ceiling))
+
+  return { seconds: Math.max(floor, seconds), supplyShare, capped }
 }

@@ -59,6 +59,12 @@ export const api = {
   /** Record an email the client has already linked via Firebase on the profile.
    *  The address is read from the caller's ID token, never from the body. */
   linkEmail: () => functionFetch<{ ok: boolean; alreadyLinked?: boolean; email: string }>('linkEmail', { method: 'POST' }, true),
+  /** Change your username. The old handle is released back into the pool and
+   *  there is a cooldown — see changeUsername.ts. */
+  changeUsername: (username: string) =>
+    functionFetch<{ ok: boolean; username: string; unchanged?: boolean; caseOnly?: boolean; cooldownDays?: number }>(
+      'changeUsername', { method: 'POST', body: JSON.stringify({ username }) }, true,
+    ),
   /** Turn stream forwarding on or off for an already-linked Twitch channel.
    *  Takes effect on the next roster sample — within about a minute. */
   setForwardConsent: (forwardConsent: boolean) =>
@@ -112,6 +118,10 @@ export const api = {
    *  /studio can't show a stale allowance beside a fresh reel. */
   myClips: () => functionFetch<{
     onAirLook: string
+    onAirStyle: string
+    showAvatarOnAir: boolean
+    /** The provider avatar we may put on air, captured from your ID token. */
+    socialAvatar: { provider: string; url: string } | null
     username: string
     clips: Array<{
       id: string; platform: string; sourceUrl: string; title: string; thumbnailUrl: string
@@ -119,9 +129,16 @@ export const api = {
       measured: boolean; order: number; status: string; rejectReason: string | null
     }>
     airtime: {
-      seconds: number; capped: boolean; inventorySeconds: number
+      /** What the bag earns today — independent of the review queue. */
+      seconds: number
+      /** What the playlist actually laid down. 0 until a clip is approved. */
+      scheduledSeconds: number
+      capped: boolean
+      /** Share of circulating supply, as a fraction. */
+      supplyShare: number
+      inventorySeconds: number
       networkBlockEnabled: boolean; builtAt: string | null
-      /** Which of the four zeroes this is — see myClips.ts. 'ok' when > 0. */
+      /** Which state this is — see myClips.ts. */
       reason: 'ok' | 'no_clips' | 'no_wallet' | 'no_balance' | 'no_inventory'
       walletAddress: string
       /** null means unread, not zero. */
@@ -135,10 +152,12 @@ export const api = {
     functionFetch<{ ok: boolean; clip: { id: string; platform: string; sourceUrl: string; title: string; thumbnailUrl: string; seconds: number; measured: boolean; order: number; status: string } }>(
       'submitClip', { method: 'POST', body: JSON.stringify({ url, title }) }, true,
     ),
-  /** Set the colour your lower third uses when a clip of yours is on air. */
-  setOnAirLook: (onAirLook: string) =>
-    functionFetch<{ ok: boolean; onAirLook: string }>(
-      'updateMyProfile', { method: 'POST', body: JSON.stringify({ onAirLook }) }, true,
+  /** Your on-air identity: the colour, the shape, and whether your X picture
+   *  rides along. The avatar URL itself is never sent — the server reads it
+   *  from your signed ID token. See updateMyProfile.ts. */
+  setOnAirIdentity: (patch: { onAirLook?: string; onAirStyle?: string; showAvatarOnAir?: boolean }) =>
+    functionFetch<{ ok: boolean; socialAvatar: { provider: string; url: string } | null }>(
+      'updateMyProfile', { method: 'POST', body: JSON.stringify(patch) }, true,
     ),
   /** Reorder, retitle, retime or remove one of your own clips. */
   updateMyClip: (clipId: string, patch: {

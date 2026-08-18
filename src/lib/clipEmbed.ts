@@ -58,7 +58,30 @@ export const ON_AIR_LOOKS: OnAirLook[] = [
   { id: 'ice', label: 'Ice', gradient: 'from-cyan-500 to-sky-400', accent: 'bg-cyan-400', ring: 'ring-cyan-400/40' },
   { id: 'violet', label: 'Violet', gradient: 'from-violet-600 to-fuchsia-500', accent: 'bg-violet-500', ring: 'ring-violet-500/40' },
   { id: 'mono', label: 'Mono', gradient: 'from-gray-600 to-gray-400', accent: 'bg-white', ring: 'ring-white/30' },
+  { id: 'sunset', label: 'Sunset', gradient: 'from-orange-500 to-rose-500', accent: 'bg-orange-400', ring: 'ring-orange-400/40' },
+  { id: 'toxic', label: 'Toxic', gradient: 'from-lime-400 to-emerald-500', accent: 'bg-lime-400', ring: 'ring-lime-400/40' },
+  { id: 'midnight', label: 'Midnight', gradient: 'from-indigo-700 to-slate-900', accent: 'bg-indigo-400', ring: 'ring-indigo-400/40' },
+  { id: 'blood', label: 'Blood', gradient: 'from-red-700 to-rose-900', accent: 'bg-red-500', ring: 'ring-red-500/40' },
 ]
+
+/**
+ * How a member's lower third is SHAPED, separately from its colour.
+ *
+ * Colour alone gives six near-identical cards. Shape is what makes somebody's
+ * segment recognisable in a scroll — the thing a viewer registers before they
+ * read a name. Kept to three because a lower third that changes silhouette
+ * every segment stops reading as one channel.
+ */
+export interface OnAirStyle { id: string; label: string; hint: string }
+
+export const ON_AIR_STYLES: OnAirStyle[] = [
+  { id: 'bar', label: 'Bar', hint: 'Classic broadcast lower third' },
+  { id: 'badge', label: 'Badge', hint: 'Compact corner tag' },
+  { id: 'ticker', label: 'Ticker', hint: 'Full-width strip along the bottom' },
+]
+
+export const styleById = (id: string | undefined): OnAirStyle =>
+  ON_AIR_STYLES.find((s) => s.id === id) ?? ON_AIR_STYLES[0]
 
 export const lookById = (id: string | undefined): OnAirLook =>
   ON_AIR_LOOKS.find((l) => l.id === id) ?? ON_AIR_LOOKS[0]

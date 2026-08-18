@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import {
   Mail, Wallet, Trophy, Lock,
   CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Twitch, X as XIcon, Info,
-  ChevronLeft, ChevronRight, Radio,
+  ChevronLeft, ChevronRight, Radio, Pencil,
 } from 'lucide-react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
@@ -125,6 +125,12 @@ export default function Dashboard() {
   // that links the channel rather than as a second thing to come back for.
   const [forwardConsent, setForwardConsent] = useState(true)
   const [consentBusy, setConsentBusy] = useState(false)
+
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  const [savingName, setSavingName] = useState(false)
+  const [nameErr, setNameErr] = useState('')
+  const [nameMsg, setNameMsg] = useState('')
   const upcomingSlots = useMemo(
     () => slotHistory.filter((s) => new Date(s.endTime).getTime() > Date.now()).slice(0, 6),
     [slotHistory],
@@ -313,9 +319,9 @@ export default function Dashboard() {
 
   const handleConnectTwitch = () => {
     setLinkErr(''); setLinkMsg('')
-    // The consent tick has to survive a full-page redirect to Twitch and back,
-    // so it rides in localStorage rather than component state. Read and cleared
-    // wherever the returning proof is exchanged.
+    // Forwarding is granted AFTER the channel exists, from the Connections
+    // list — see ForwardConsentBox's placement. The flag still rides through
+    // the redirect so the default survives it, but nothing is decided here.
     localStorage.setItem(FORWARD_CONSENT_KEY, forwardConsent ? '1' : '0')
     void twitchLink.start()
   }
@@ -327,6 +333,22 @@ export default function Dashboard() {
    * channel, and a permission that costs a five-step round trip to withdraw is
    * not a permission anybody would actually withdraw.
    */
+  const saveUsername = useCallback(async () => {
+    const next = nameDraft.trim()
+    if (next.length < 3) { setNameErr('At least 3 characters, letters, numbers and underscores.'); return }
+    setSavingName(true)
+    setNameErr(''); setNameMsg('')
+    try {
+      const res = await api.changeUsername(next)
+      setNameMsg(res.unchanged ? 'That is already your username.' : `You are now @${res.username}.`)
+      setEditingName(false)
+      await refreshProfile()
+    } catch (err) {
+      setNameErr(err instanceof Error ? err.message : 'Could not change your username.')
+    }
+    setSavingName(false)
+  }, [nameDraft, refreshProfile])
+
   const toggleForwardConsent = useCallback(async (next: boolean) => {
     setConsentBusy(true)
     setLinkErr('')
@@ -506,9 +528,13 @@ export default function Dashboard() {
                     </Button>
                   }
                 />
-                {/* Above the button, not below it — a permission presented after
-                    the action it governs has already been taken is not consent. */}
-                <ForwardConsentBox checked={forwardConsent} onChange={setForwardConsent} />
+                {/* NOT SHOWN HERE ANY MORE.
+                    A "let CSGN put my stream on the channel" box above a
+                    "Connect Twitch" button is a permission over a channel that
+                    does not exist yet — it reads as a second thing to decide
+                    before you can do the first. The grant now appears in the
+                    Connections list, next to the linked channel it governs, and
+                    only once there is one. Connecting is the whole ask here. */}
               </div>
             )}
             {/* In-app browser: the Twitch hop cannot happen here, so the panel
@@ -547,7 +573,40 @@ export default function Dashboard() {
                 {/* break-words, not truncate: a long display name should wrap
                     onto a second line rather than vanish into an ellipsis. */}
                 <h1 className="text-xl sm:text-2xl font-semibold text-white leading-tight break-words">{displayName}</h1>
-                <p className="text-sm text-gray-500 mt-0.5 break-all">@{handle}</p>
+                {/* Editable in place. A username you cannot change is a typo
+                    you live with forever, and this one is public — it is what
+                    appears on the schedule and under your clips on air. */}
+                {editingName ? (
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-gray-500">@</span>
+                    <input
+                      value={nameDraft}
+                      onChange={(e) => setNameDraft(e.target.value.replace(/[^A-Za-z0-9_]/g, '').slice(0, 20))}
+                      onKeyDown={(e) => { if (e.key === 'Enter') void saveUsername(); if (e.key === 'Escape') setEditingName(false) }}
+                      autoFocus
+                      className="min-w-0 flex-1 rounded-lg bg-white/[0.05] border border-white/[0.14] focus:border-primary-500/60 outline-none px-2.5 py-1 text-sm font-mono text-white"
+                    />
+                    <Button size="sm" isLoading={savingName} onClick={() => void saveUsername()}>Save</Button>
+                    <button
+                      type="button"
+                      onClick={() => { setEditingName(false); setNameErr('') }}
+                      className="text-xs text-gray-500 hover:text-gray-300 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { setNameDraft(handle); setNameErr(''); setNameMsg(''); setEditingName(true) }}
+                    className="group mt-0.5 flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-300 cursor-pointer"
+                  >
+                    <span className="break-all">@{handle}</span>
+                    <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                  </button>
+                )}
+                {nameErr && <p className="mt-1 text-[11px] text-red-300">{nameErr}</p>}
+                {nameMsg && <p className="mt-1 text-[11px] text-emerald-400">{nameMsg}</p>}
                 <div className="mt-2.5 flex flex-wrap items-center gap-2">
                   <span className="inline-flex items-center rounded-md border border-white/[0.1] bg-white/[0.04] px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider text-gray-400">
                     {role}

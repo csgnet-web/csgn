@@ -6,10 +6,12 @@
 // showing a member a number derived any other way would be showing them a
 // number that is not true.
 import { requireUser } from './_shared/auth'
-import { getDoc, queryCollection, fieldFilter, order } from './_shared/firebaseAdmin'
+import { getDoc, queryCollection, fieldFilter } from './_shared/firebaseAdmin'
 import { json, requireMethod, withHttp } from './_shared/http'
 import { refreshAirtimeSchedule, type AirtimeBlockReason } from './_shared/airtimeSchedule'
 import { getCsgnBalance } from './_shared/solana'
+import { airtimeQuote } from './_shared/airtime'
+import { fetchJson } from './_shared/cache'
 
 interface ScheduleDoc {
   items?: Array<{ startsAt?: string; endsAt?: string; seconds?: number; clipId?: string; uid?: string }>
@@ -32,9 +34,18 @@ export const handler = withHttp(async (event) => {
   await refreshAirtimeSchedule()
 
   const [rows, schedule, profile] = await Promise.all([
-    queryCollection('clips', [fieldFilter('uid', 'EQUAL', authUser.uid)], [order('order', 'ASCENDING')], 50),
+    // NO orderBy — see the warning on queryCollection. `uid == x` plus
+    // `orderBy(order)` needs a composite index this project does not define, so
+    // this query 500'd and took the whole Studio page down with it. Twenty-five
+    // clips sort for free below.
+    queryCollection('clips', [fieldFilter('uid', 'EQUAL', authUser.uid)], [], 50),
     getDoc<ScheduleDoc>('public/airtimeSchedule'),
-    getDoc<{ onAirLook?: string; username?: string; phantom?: { verified?: boolean; walletAddress?: string } }>(`users/${authUser.uid}`),
+    getDoc<{
+      onAirLook?: string; onAirStyle?: string; showAvatarOnAir?: boolean
+      socialAvatar?: { provider?: string; url?: string }
+      username?: string
+      phantom?: { verified?: boolean; walletAddress?: string }
+    }>(`users/${authUser.uid}`),
   ])
 
   const clips = rows.map((row) => {
@@ -56,7 +67,7 @@ export const handler = withHttp(async (event) => {
       status: String(d.status || 'pending'),
       rejectReason: d.rejectReason ? String(d.rejectReason) : null,
     }
-  })
+  }).sort((a, b) => a.order - b.order)
 
   const mine = (schedule?.allocations ?? []).find((a) => a?.uid === authUser.uid)
   // Only future airings — a member wants to know when they are next on, not
@@ -67,21 +78,24 @@ export const handler = withHttp(async (event) => {
     .slice(0, 20)
     .map((i) => ({ startsAt: i.startsAt ?? '', seconds: Number(i.seconds) || 0, clipId: String(i.clipId || '') }))
 
-  // ── WHY the allowance is what it is ────────────────────────────────────
+  // ── WHAT THE BAG IS WORTH ───────────────────────────────────────────────
   //
-  // A bare "0 seconds" is the single most confusing thing this endpoint can
-  // say, because four unrelated situations produce it and the member can fix
-  // three of them. Naming the cause is the difference between "this is broken"
-  // and "oh, I need to connect my wallet" — which was the actual experience of
-  // a member holding 1.8M $CSGN and seeing nothing.
+  // Read from the WALLET, not from the playlist.
+  //
+  // The allowance used to come out of `schedule.allocations`, which only exists
+  // for members with an approved clip — so a member holding 1.8 million $CSGN
+  // and waiting on review was shown "0 seconds". That is the token appearing to
+  // do nothing on the one screen built to show what it does.
+  //
+  // The entitlement is a property of the holdings and is quoted as such. The
+  // scheduler's number is still reported alongside it as `scheduledSeconds`,
+  // because that is what is actually laid down on the playlist today and the
+  // two answer different questions.
   const wallet = profile?.phantom?.verified ? String(profile.phantom.walletAddress || '') : ''
   const approvedCount = clips.filter((c) => c.status === 'approved').length
-  const seconds = Number(mine?.seconds) || 0
 
-  // Only read the chain when the answer actually depends on it — i.e. the
-  // member has content and a linked wallet but still got nothing.
   let balance: number | null = null
-  if (wallet && (seconds === 0 || approvedCount > 0)) {
+  if (wallet) {
     try {
       balance = await getCsgnBalance(wallet)
     } catch {
@@ -91,25 +105,45 @@ export const handler = withHttp(async (event) => {
     }
   }
 
+  const inventory = Number(schedule?.inventorySeconds) || 0
+  const quote = airtimeQuote(balance ?? 0, inventory, await circulatingSupply())
+  const scheduledSeconds = Number(mine?.seconds) || 0
+
+  // Four zeroes, three of them fixable by the member — named so the page can
+  // say which one it is instead of showing one number for four problems.
   let reason: AirtimeBlockReason = 'ok'
-  if (seconds <= 0) {
-    if (approvedCount === 0) reason = 'no_clips'
-    else if (!wallet) reason = 'no_wallet'
+  if (quote.seconds <= 0) {
+    if (!wallet) reason = 'no_wallet'
     else if ((balance ?? 0) <= 0) reason = 'no_balance'
     else reason = 'no_inventory'
+  } else if (approvedCount === 0) {
+    // They have airtime and nothing to put in it. Not a failure — a next step.
+    reason = 'no_clips'
   }
 
   return json(200, {
     onAirLook: String(profile?.onAirLook || 'signal'),
+    onAirStyle: String(profile?.onAirStyle || 'bar'),
+    // Defaults to ON: if we have somebody's picture, showing it is what makes
+    // their segment look like theirs. They can turn it off.
+    showAvatarOnAir: profile?.showAvatarOnAir !== false,
+    socialAvatar: profile?.socialAvatar?.url
+      ? { provider: String(profile.socialAvatar.provider || ''), url: String(profile.socialAvatar.url) }
+      : null,
     username: String(profile?.username || ''),
     clips,
     airtime: {
-      seconds,
-      capped: Boolean(mine?.capped),
-      inventorySeconds: Number(schedule?.inventorySeconds) || 0,
+      /** What the bag earns today. Independent of the review queue. */
+      seconds: quote.seconds,
+      /** What the playlist has actually laid down — 0 until a clip is approved. */
+      scheduledSeconds,
+      capped: quote.capped,
+      /** Share of circulating supply, as a fraction, for the 1:1 explainer. */
+      supplyShare: quote.supplyShare,
+      inventorySeconds: inventory,
       networkBlockEnabled: schedule?.networkBlockEnabled !== false,
       builtAt: schedule?.builtAt ?? null,
-      /** Which of the four zeroes this is. 'ok' when seconds > 0. */
+      /** Which of the four states this is. 'ok' when there is airtime and content. */
       reason,
       /** The linked wallet, or '' when none is attached to this account. */
       walletAddress: wallet,
@@ -119,3 +153,31 @@ export const handler = withHttp(async (event) => {
     airings,
   })
 })
+
+
+/**
+ * Circulating supply, from the same market read the rest of the app uses.
+ *
+ * Cached for ten minutes because it moves slowly and this is a member-facing
+ * request path. A failed read falls back to the nominal one-billion supply
+ * rather than throwing — an unreachable price API must not be able to make
+ * somebody's airtime read as zero, which is the exact class of failure this
+ * whole change is about.
+ */
+const NOMINAL_SUPPLY = 1_000_000_000
+const DEX_PAIR_URL = 'https://api.dexscreener.com/latest/dex/tokens/GFV7fphvprMr1PYpYGPJort2QP7JJLEp3J1Buu7Zpump'
+
+async function circulatingSupply(): Promise<number> {
+  try {
+    const data = await fetchJson<{ pairs?: Array<{ priceUsd?: string; marketCap?: number; fdv?: number }> }>(
+      DEX_PAIR_URL, { timeoutMs: 2_500 },
+    )
+    const pair = data?.pairs?.[0]
+    const price = Number(pair?.priceUsd) || 0
+    const cap = Number(pair?.marketCap ?? pair?.fdv) || 0
+    const supply = price > 0 ? cap / price : 0
+    return supply > 0 ? supply : NOMINAL_SUPPLY
+  } catch {
+    return NOMINAL_SUPPLY
+  }
+}

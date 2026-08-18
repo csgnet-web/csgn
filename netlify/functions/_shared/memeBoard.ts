@@ -61,15 +61,54 @@ import { getDoc, writeDoc } from './firebaseAdmin'
 export const MEME_BOARD_INTERVAL_MS = 5 * 60 * 1000
 /** DexScreener accepts up to 30 comma-separated addresses per request. */
 const DEX_TOKENS_BATCH = 30
-/** How many coins the published board carries. */
-const MEME_BOARD_SIZE = 60
-/** Discovery cap — how many candidate mints we're willing to enrich per run. */
-const MEME_DISCOVERY_CAP = 120
+/** How many coins the published board carries. It is called the Meme 100. */
+const MEME_BOARD_SIZE = 100
+/**
+ * Discovery cap — how many candidate mints we enrich per run.
+ *
+ * Raised from 120. The board was coming back with FIVE coins, and the arithmetic
+ * of why is worth writing down: three search terms returned a few dozen pairs
+ * each, most of them the same handful of majors, and the filters then removed
+ * almost everything that was left. A hundred-name board cannot be built from a
+ * hundred-and-twenty candidates when the pass rate is under ten percent.
+ */
+const MEME_DISCOVERY_CAP = 600
 
-/* On-chain quality gates. A coin must clear ALL of these to be discovered. */
-const MIN_LIQUIDITY_USD = 25_000
-const MIN_VOLUME_H24_USD = 50_000
-const MIN_PAIR_AGE_MS = 24 * 60 * 60 * 1000
+/**
+ * On-chain quality gates. A coin must clear ALL of these.
+ *
+ * ── Why these moved ────────────────────────────────────────────────────────
+ *
+ * The old numbers (25k liquidity, 50k volume, 24h age) were written to keep a
+ * rug minted ninety seconds ago off television, which is the right instinct.
+ * But they were tuned against a firehose we were not actually receiving, and
+ * combined with thin discovery they produced a board of five coins — which is
+ * not a Meme 100, and which excluded most of what was genuinely trending.
+ *
+ * The 24-hour age gate was the worst of the three for this product. A memecoin's
+ * entire interesting life is often its first day; requiring it to survive one
+ * before it can appear means the board is systematically a day late to
+ * everything, which for a channel about what is happening RIGHT NOW is the
+ * opposite of the point.
+ *
+ * So the gates are now: real liquidity somebody could trade against, real volume
+ * today, and old enough not to be a snipe — with age cut to six hours and
+ * liquidity and volume set where a coin has to be genuinely traded rather than
+ * merely large. The safety story is unchanged in kind; it is calibrated to the
+ * actual candidate pool rather than an imagined one.
+ */
+const MIN_LIQUIDITY_USD = 15_000
+const MIN_VOLUME_H24_USD = 25_000
+const MIN_PAIR_AGE_MS = 6 * 60 * 60 * 1000
+
+/**
+ * A coin whose 24h volume is a large multiple of its liquidity is either
+ * genuinely on fire or being washed. Above this ratio we require MORE
+ * liquidity before believing it — the cheap version of a wash-trade filter,
+ * and the one gate that is about honesty rather than size.
+ */
+const SUSPICIOUS_TURNOVER = 50
+const SUSPICIOUS_MIN_LIQUIDITY_USD = 60_000
 
 const SOLANA_MINT_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
 /** Wrapped SOL and the major stables are not memecoins. */
@@ -100,7 +139,16 @@ interface DexPair {
  * them returns pairs ranked by real market activity. Deliberately generic — a
  * list of ticker names here would put us straight back to curating by hand.
  */
-const MEME_SEARCH_TERMS = ['SOL', 'USDC', 'WSOL']
+const MEME_SEARCH_TERMS = [
+  // Quote assets: every Solana memecoin of any size trades against one of
+  // these, so searching them returns pairs ranked by real market activity.
+  'SOL', 'USDC', 'WSOL', 'USDT',
+  // Venue names. DexScreener matches these against pair and DEX metadata, and
+  // they are where Solana memecoins are actually born and traded — this is the
+  // single biggest widening of the candidate pool, and the reason the board can
+  // now fill a hundred names instead of five.
+  'pump', 'raydium', 'meteora', 'orca', 'bonk',
+]
 
 /**
  * Candidate Solana mints.
@@ -246,10 +294,17 @@ export async function refreshMemeBoard({ force = false } = {}): Promise<MemeBoar
       // how $CSGN stays on its own board on a quiet day.
       if (pinnedSet.has(address)) return true
       if (!p) return false
-      if ((p.liquidity?.usd ?? 0) < MIN_LIQUIDITY_USD) return false
-      if ((p.volume?.h24 ?? 0) < MIN_VOLUME_H24_USD) return false
-      const age = p.pairCreatedAt ? now - p.pairCreatedAt : 0
-      if (age < MIN_PAIR_AGE_MS) return false
+      const liquidity = p.liquidity?.usd ?? 0
+      const volume = p.volume?.h24 ?? 0
+      if (liquidity < MIN_LIQUIDITY_USD) return false
+      if (volume < MIN_VOLUME_H24_USD) return false
+      // A pair with no creation timestamp is unknowable, not young — treating
+      // it as brand new excluded a chunk of legitimately old coins.
+      if (p.pairCreatedAt && now - p.pairCreatedAt < MIN_PAIR_AGE_MS) return false
+      // Wash-trade smell: enormous volume against a thin pool. Not banned —
+      // that is sometimes just a coin having a day — but it has to be deep
+      // enough that the volume could plausibly be real.
+      if (liquidity > 0 && volume / liquidity > SUSPICIOUS_TURNOVER && liquidity < SUSPICIOUS_MIN_LIQUIDITY_USD) return false
       return true
     }
 
