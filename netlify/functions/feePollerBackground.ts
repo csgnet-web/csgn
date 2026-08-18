@@ -54,6 +54,7 @@ import {
 import { sampleTwitchStream, twitchAppToken, twitchLoginFromUrl } from './_shared/twitch'
 import { refreshAirtimeSchedule } from './_shared/airtimeSchedule'
 import { refreshLiveRoster } from './_shared/liveRoster'
+import { operatorAlerts, recommendedMode, DEFAULT_LIVE_VIEWER_FLOOR } from './_shared/operatorAlerts'
 
 const POLL_INTERVAL_MS = 15_000
 
@@ -693,7 +694,37 @@ export const handler = async () => {
   // of them — so the operator's board knows who is live and the minute counters
   // that decide the fee split keep ticking. This is what lets a streamer sign up
   // once and never think about the schedule again.
-  await refreshLiveRoster(active?.data.assignedUid ?? null)
+  const roster = await refreshLiveRoster(active?.data.assignedUid ?? null)
+
+  // Publish what the operator should be doing about it, every minute, whether
+  // or not anybody has the board open. Written to a doc rather than computed on
+  // read so a future notifier (email, push, a Discord webhook) has one place to
+  // watch and cannot disagree with what the board shows.
+  try {
+    const meta = await getDoc<{ liveViewerFloor?: number }>(SCHEDULE_META_PATH)
+    const viewerFloor = meta?.liveViewerFloor != null && Number(meta.liveViewerFloor) >= 0
+      ? Number(meta.liveViewerFloor)
+      : DEFAULT_LIVE_VIEWER_FLOOR
+    const alertInput = {
+      roster: roster.map((e) => ({
+        uid: e.uid, username: e.username, displayName: e.displayName,
+        live: e.live, viewerCount: e.viewerCount,
+      })),
+      onAirUid: active?.data.assignedUid ?? null,
+      onAirMinutes: active?.data.startTime
+        ? Math.max(0, Math.floor((Date.now() - Date.parse(active.data.startTime)) / 60_000))
+        : 0,
+      viewerFloor,
+    }
+    await writeDoc('public/operatorAlerts', {
+      alerts: operatorAlerts(alertInput),
+      recommendation: recommendedMode(alertInput),
+      viewerFloor,
+      updatedAt: new Date().toISOString(),
+    })
+  } catch (err) {
+    console.warn('[feePoller] operatorAlerts write failed', err)
+  }
 
   // Rebuild the holder-airtime playlist the channel runs on between live hours.
   // Supply is injected so this module's cached DexScreener read is reused

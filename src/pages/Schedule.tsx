@@ -151,7 +151,9 @@ export default function Schedule() {
     const busy = claimingId === slot.id
     const justClaimed = claimedId === slot.id
     const twitch = twitchHandleFromUrl(slot.streamUrl)
-    const claimed = !!slot.assignedUid || justClaimed
+    // A guest occupies the block with no assignedUid — they are not a member —
+    // so the cell has to check the name too or an aired guest reads as "Open".
+    const claimed = !!slot.assignedUid || !!slot.isGuest || justClaimed
     const eligible = eligibility.ok
 
     return (
@@ -191,6 +193,11 @@ export default function Schedule() {
               <p className={`truncate text-white font-bold ${compact ? 'text-sm' : 'text-[13px]'}`}>
                 {slot.assignedName || 'Claimed'}
               </p>
+              {/* A guest is the network vouching for somebody, not a member who
+                  went live. Saying so is what keeps the roster meaningful. */}
+              {slot.isGuest && (
+                <p className="truncate text-[10px] uppercase tracking-wider text-gold mt-0.5">Guest</p>
+              )}
               {twitch && (
                 <p className="truncate text-[11px] text-purple-300 font-mono flex items-center gap-1 mt-0.5">
                   <Twitch className="w-3 h-3 shrink-0" />{twitch}

@@ -155,6 +155,14 @@ export interface Slot {
   streamActivity?: StreamActivity // server-logged Twitch live samples
   /** Legacy cosmetic flag from the "CEO Creator" era. No logic reads it. */
   ceoCreator?: boolean
+  /** An operator-added guest: somebody with no CSGN account, put on air by an
+   *  admin vouching for them personally. Marked everywhere it is shown so a
+   *  guest is never mistaken for a member who went live — and credited with no
+   *  on-air minutes, since those are what the fee split is computed from. */
+  isGuest?: boolean
+  /** How this slot came to be occupied — 'user_twitch' (claimed),
+   *  'operator_live' (an admin put a member on) or 'operator_guest'. */
+  sourceType?: string
   createdAt: unknown
 }
 

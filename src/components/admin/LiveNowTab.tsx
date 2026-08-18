@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Radio, RefreshCw, Eye, Users, Play, Square, ExternalLink } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Radio, RefreshCw, Eye, Users, Play, Square, ExternalLink, AlertTriangle, Bell, BellOff, UserPlus, Film } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { api } from '@/lib/api'
@@ -23,6 +23,14 @@ import { api } from '@/lib/api'
  *    first one pays. Showing both stops "but I streamed all week" arguments
  *    that are really about which channel they streamed to.
  */
+
+interface Alert {
+  kind: string
+  severity: 'critical' | 'action' | 'info'
+  message: string
+  uid?: string
+  username?: string
+}
 
 interface Entry {
   uid: string
@@ -53,21 +61,61 @@ function uptime(startedAt: string): string {
 export default function LiveNowTab() {
   const [entries, setEntries] = useState<Entry[]>([])
   const [onAirUid, setOnAirUid] = useState<string | null>(null)
+  const [onAirName, setOnAirName] = useState<string | null>(null)
+  const [onAirIsGuest, setOnAirIsGuest] = useState(false)
+  const [alerts, setAlerts] = useState<Alert[]>([])
+  const [recommendation, setRecommendation] = useState<{ mode: 'streamer' | 'clips'; uid: string | null; why: string } | null>(null)
+  const [viewerFloor, setViewerFloor] = useState(0)
   const [loading, setLoading] = useState(true)
   const [busyUid, setBusyUid] = useState<string | null>(null)
   const [error, setError] = useState('')
+
+  const [guestOpen, setGuestOpen] = useState(false)
+  const [guestUrl, setGuestUrl] = useState('')
+  const [guestName, setGuestName] = useState('')
+
+  // Desktop notifications, so the operator is TOLD rather than having to watch.
+  // The whole point of the roster is that the channel runs without somebody
+  // staring at this page; an alert nobody sees is the same as no alert.
+  const [notifyOn, setNotifyOn] = useState(false)
+  const notifiedRef = useRef<Set<string>>(new Set())
 
   const load = useCallback(async () => {
     try {
       const res = await api.liveNow()
       setEntries(res.entries)
       setOnAirUid(res.onAirUid)
+      setOnAirName(res.onAirName)
+      setOnAirIsGuest(res.onAirIsGuest)
+      setAlerts(res.alerts)
+      setRecommendation(res.recommendation)
+      setViewerFloor(res.viewerFloor)
       setError('')
+
+      // Raise each distinct alert ONCE. Re-firing the same notification every
+      // sixty seconds is how somebody turns notifications off and then misses
+      // the one that mattered.
+      if (notifyOn && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        for (const a of res.alerts) {
+          if (a.severity === 'info') continue
+          const key = `${a.kind}:${a.uid ?? ''}:${a.message}`
+          if (notifiedRef.current.has(key)) continue
+          notifiedRef.current.add(key)
+          new Notification(a.severity === 'critical' ? 'CSGN — dead air' : 'CSGN — action needed', {
+            body: a.message,
+            tag: a.kind,
+          })
+        }
+        // Forget alerts that have cleared, so the same condition recurring
+        // later notifies again.
+        const live = new Set(res.alerts.map((a) => `${a.kind}:${a.uid ?? ''}:${a.message}`))
+        for (const key of notifiedRef.current) if (!live.has(key)) notifiedRef.current.delete(key)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load the roster.')
     }
     setLoading(false)
-  }, [])
+  }, [notifyOn])
 
   useEffect(() => {
     let cancelled = false
@@ -88,6 +136,26 @@ export default function LiveNowTab() {
       setError(err instanceof Error ? err.message : 'Could not put them on air.')
     }
     setBusyUid(null)
+  }
+
+  const putGuestOnAir = async () => {
+    setBusyUid('__guest__')
+    setError('')
+    try {
+      await api.setOnAir({ action: 'put_guest_on_air', guestUrl: guestUrl.trim(), guestName: guestName.trim() })
+      setGuestOpen(false); setGuestUrl(''); setGuestName('')
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not put that guest on air.')
+    }
+    setBusyUid(null)
+  }
+
+  const enableNotifications = async () => {
+    if (typeof Notification === 'undefined') { setError('This browser has no notification support.'); return }
+    const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission()
+    if (permission !== 'granted') { setError('Notifications were blocked in the browser.'); return }
+    setNotifyOn(true)
   }
 
   const takeOffAir = async () => {
@@ -111,19 +179,113 @@ export default function LiveNowTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-gray-400">
-          <span className="text-live font-bold">{live.length}</span> of {entries.length} connected
-          {entries.length === 1 ? ' channel' : ' channels'} live right now.
-        </p>
-        <div className="flex items-center gap-2">
-          {onAirUid && (
+      {/* ── WHAT NEEDS DOING. Above everything, because it is the only part of
+             this page that is time-sensitive. Empty most of the time, on
+             purpose — an alert bar that always has something on it is one
+             nobody reads. */}
+      {alerts.length > 0 && (
+        <div className="space-y-2">
+          {alerts.map((a, i) => (
+            <div
+              key={`${a.kind}-${i}`}
+              className={`flex items-start gap-2.5 rounded-xl border px-3.5 py-3 ${
+                a.severity === 'critical' ? 'border-red-500/40 bg-red-500/[0.09]'
+                  : a.severity === 'action' ? 'border-gold/35 bg-gold/[0.07]'
+                  : 'border-white/[0.09] bg-white/[0.02]'
+              }`}
+            >
+              <AlertTriangle className={`w-4 h-4 mt-0.5 shrink-0 ${
+                a.severity === 'critical' ? 'text-red-400' : a.severity === 'action' ? 'text-gold' : 'text-gray-500'
+              }`} />
+              <p className={`text-sm flex-1 ${a.severity === 'info' ? 'text-gray-400' : 'text-white'}`}>{a.message}</p>
+              {a.uid && a.kind !== 'switch_to_clips' && (
+                <Button size="sm" isLoading={busyUid === a.uid} onClick={() => void putOnAir(a.uid!)} leftIcon={<Play className="w-3.5 h-3.5" />}>
+                  Put on
+                </Button>
+              )}
+              {a.kind === 'switch_to_clips' && (
+                <Button size="sm" variant="secondary" isLoading={busyUid === '__off__'} onClick={() => void takeOffAir()} leftIcon={<Film className="w-3.5 h-3.5" />}>
+                  Clips
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── WHAT THE CHANNEL IS RUNNING, and what it should be. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">On the channel</p>
+          <p className="mt-0.5 text-sm font-bold text-white truncate">
+            {onAirUid || onAirName
+              ? <>{onAirName ?? 'Someone'} {onAirIsGuest && <span className="ml-1 text-[10px] uppercase tracking-wider text-gold border border-gold/40 rounded px-1.5 py-0.5">Guest · added by you</span>}</>
+              : <span className="text-gray-400">Clip reel</span>}
+          </p>
+          {recommendation && <p className="mt-0.5 text-[11px] text-gray-500">{recommendation.why}</p>}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <Button size="sm" variant="secondary" onClick={() => setGuestOpen((v) => !v)} leftIcon={<UserPlus className="w-3.5 h-3.5" />}>
+            Guest
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => (notifyOn ? setNotifyOn(false) : void enableNotifications())}
+            leftIcon={notifyOn ? <Bell className="w-3.5 h-3.5" /> : <BellOff className="w-3.5 h-3.5" />}
+          >
+            {notifyOn ? 'Alerts on' : 'Alerts off'}
+          </Button>
+          {(onAirUid || onAirName) && (
             <Button size="sm" variant="secondary" isLoading={busyUid === '__off__'} onClick={() => void takeOffAir()} leftIcon={<Square className="w-3.5 h-3.5" />}>
-              Take the block back
+              Back to clips
             </Button>
           )}
           <Button size="sm" variant="secondary" onClick={() => void load()} leftIcon={<RefreshCw className="w-3.5 h-3.5" />}>Refresh</Button>
         </div>
+      </div>
+
+      {/* A guest is somebody with no CSGN account — the operator vouching for
+          them personally. Marked as such everywhere it appears, and credited
+          with no on-air minutes, because those are what fees are split by. */}
+      {guestOpen && (
+        <Card hover={false} className="p-4 space-y-3">
+          <p className="text-xs text-gray-400">
+            Put a channel on air that isn't a CSGN member. It shows as an admin-added guest on the
+            schedule and earns no fee share — guests are yours to vouch for.
+          </p>
+          <div className="grid sm:grid-cols-2 gap-2">
+            <input
+              value={guestUrl}
+              onChange={(e) => setGuestUrl(e.target.value)}
+              placeholder="https://www.twitch.tv/theirchannel"
+              className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-primary-500/60 outline-none px-3 py-2 text-sm"
+            />
+            <input
+              value={guestName}
+              onChange={(e) => setGuestName(e.target.value.slice(0, 40))}
+              placeholder="Name on screen (optional)"
+              className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-primary-500/60 outline-none px-3 py-2 text-sm"
+            />
+          </div>
+          <Button
+            size="sm"
+            disabled={!/^https:\/\//.test(guestUrl.trim())}
+            isLoading={busyUid === '__guest__'}
+            onClick={() => void putGuestOnAir()}
+            leftIcon={<Play className="w-3.5 h-3.5" />}
+          >
+            Put guest on air
+          </Button>
+        </Card>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-gray-400">
+          <span className="text-live font-bold">{live.length}</span> of {entries.length} connected
+          {entries.length === 1 ? ' channel' : ' channels'} live right now.
+          {viewerFloor > 0 && <span className="text-gray-600"> · {viewerFloor}+ viewers to beat the reel</span>}
+        </p>
       </div>
 
       {error && <p className="text-sm text-red-300">{error}</p>}

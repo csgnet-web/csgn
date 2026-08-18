@@ -193,7 +193,8 @@ export const api = {
     discovery?: { candidates?: number; qualified?: number } | null
   }>('memeBoard'),
 
-  /** Admin: everybody in the network who is live on Twitch right now. */
+  /** Admin: everybody in the network who is live on Twitch right now, plus
+   *  what the operator should do about it. */
   liveNow: () => functionFetch<{
     entries: Array<{
       uid: string; username: string; twitchUsername: string; displayName: string
@@ -203,11 +204,27 @@ export const api = {
     }>
     updatedAt: string | null
     onAirUid: string | null
+    onAirIsGuest: boolean
+    onAirName: string | null
     staleAfterMs: number
+    viewerFloor: number
+    alerts: Array<{
+      kind: 'on_air_dropped' | 'pick_a_streamer' | 'switch_to_clips' | 'long_shift' | 'stronger_option'
+      severity: 'critical' | 'action' | 'info'
+      message: string
+      uid?: string
+      username?: string
+    }>
+    recommendation: { mode: 'streamer' | 'clips'; uid: string | null; why: string }
   }>('adminLiveNow', {}, true),
-  /** Admin: put a live member on the channel, or take the channel back. */
-  setOnAir: (body: { uid?: string; action: 'put_on_air' | 'take_off_air' }) =>
-    functionFetch<{ ok: boolean; slotId: string; uid?: string; twitchUsername?: string }>(
+  /** Admin: put a member or a guest on the channel, or take the channel back. */
+  setOnAir: (body: {
+    uid?: string
+    action: 'put_on_air' | 'take_off_air' | 'put_guest_on_air'
+    guestUrl?: string
+    guestName?: string
+  }) =>
+    functionFetch<{ ok: boolean; slotId: string; uid?: string; twitchUsername?: string; guest?: boolean; guestName?: string }>(
       'adminLiveNow', { method: 'POST', body: JSON.stringify(body) }, true,
     ),
 

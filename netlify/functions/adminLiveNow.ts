@@ -30,10 +30,18 @@ import {
 } from './_shared/firebaseAdmin'
 import { json, parseJson, requireMethod, withHttp } from './_shared/http'
 import { refreshLiveRoster, ROSTER_STALE_MS, type RosterEntry } from './_shared/liveRoster'
+import { operatorAlerts, recommendedMode, DEFAULT_LIVE_VIEWER_FLOOR } from './_shared/operatorAlerts'
 import { resolveBroadcast } from './resolveCurrentBroadcast'
+import { twitchLoginFromUrl } from './_shared/twitch'
 
 interface RosterDoc { entries?: RosterEntry[]; updatedAt?: string; liveCount?: number }
-type Body = { uid?: string; action?: 'put_on_air' | 'take_off_air' }
+type Body = {
+  uid?: string
+  action?: 'put_on_air' | 'take_off_air' | 'put_guest_on_air'
+  /** Guest only: the channel to carry, and who to credit on screen. */
+  guestUrl?: string
+  guestName?: string
+}
 
 export const handler = withHttp(async (event) => {
   const admin = await requireAdminUser(event)
@@ -41,24 +49,53 @@ export const handler = withHttp(async (event) => {
   if (event.httpMethod === 'GET') {
     const stored = await getDoc<RosterDoc>('public/liveRoster')
     const ageMs = Date.now() - Date.parse(stored?.updatedAt || '')
+    const slot = await currentSlot()
     // A roster older than the stale window is not shown as fact. Rebuilding on
     // demand keeps the board usable when the scheduled poller is not running —
     // the same failure that left the Meme 100 empty, pre-empted here.
     const entries = Number.isFinite(ageMs) && ageMs < ROSTER_STALE_MS
       ? (stored?.entries ?? [])
-      : await refreshLiveRoster(await currentOnAirUid())
+      : await refreshLiveRoster(slot?.assignedUid ?? null)
+
+    const meta = await getDoc<{ liveViewerFloor?: number }>('config/scheduleMeta')
+    const viewerFloor = Number(meta?.liveViewerFloor) >= 0 && meta?.liveViewerFloor != null
+      ? Number(meta.liveViewerFloor)
+      : DEFAULT_LIVE_VIEWER_FLOOR
+
+    const alertInput = {
+      roster: entries.map((e) => ({
+        uid: e.uid, username: e.username, displayName: e.displayName,
+        live: e.live, viewerCount: e.viewerCount,
+      })),
+      onAirUid: slot?.assignedUid ?? null,
+      onAirMinutes: minutesSince(slot?.startTime),
+      viewerFloor,
+    }
 
     return json(200, {
       entries,
       updatedAt: stored?.updatedAt ?? null,
-      onAirUid: await currentOnAirUid(),
+      onAirUid: slot?.assignedUid ?? null,
+      onAirIsGuest: slot?.sourceType === 'operator_guest',
+      onAirName: slot?.assignedName ?? null,
       staleAfterMs: ROSTER_STALE_MS,
+      viewerFloor,
+      // What to do, and why. Computed server-side so the board and any future
+      // notifier cannot disagree about whether something needs attention.
+      alerts: operatorAlerts(alertInput),
+      recommendation: recommendedMode(alertInput),
     })
   }
 
   requireMethod(event, 'POST')
   const body = parseJson<Body>(event)
-  const action = body.action === 'take_off_air' ? 'take_off_air' : 'put_on_air'
+  // Explicit allowlist rather than a ternary — an unrecognised action must not
+  // silently fall through to putting somebody on television.
+  const ACTIONS = ['put_on_air', 'take_off_air', 'put_guest_on_air'] as const
+  type Action = (typeof ACTIONS)[number]
+  const requested = String(body.action || 'put_on_air') as Action
+  if (!ACTIONS.includes(requested)) throw badRequest('Unknown action.', 'bad_action')
+  const action: Action = requested
 
   const slot = await currentSlot()
   if (!slot) throw notFound('There is no block covering right now to put anyone on.')
@@ -68,11 +105,47 @@ export const handler = withHttp(async (event) => {
       status: 'open', isClaimable: true,
       assignedUid: null, assignedUsername: null, assignedName: null,
       twitchUserId: null, twitchUsername: null, twitchChannelUrl: null, streamUrl: null,
-      sourceType: null, updatedAt: new Date(),
+      sourceType: null, isGuest: null, guestAddedBy: null, updatedAt: new Date(),
     }, true)])
     const currentBroadcast = await resolveBroadcast()
     await auditLog('adminTakeOffAir', admin.uid, { slotId: slot.id })
     return json(200, { ok: true, slotId: slot.id, currentBroadcast })
+  }
+
+  // ── A GUEST ──
+  //
+  // Somebody with no CSGN account: a friend of the network, a project founder,
+  // a one-off. They cannot be looked up, they have granted us nothing, and the
+  // operator is vouching for them personally — so the slot is marked
+  // `operator_guest` and the schedule and the board both SAY it was an admin
+  // choice rather than a member going live. A guest that looks identical to a
+  // member on the public schedule would make the roster meaningless.
+  if (action === 'put_guest_on_air') {
+    const guestUrl = String(body.guestUrl || '').trim()
+    if (!/^https:\/\//.test(guestUrl)) throw badRequest('A guest needs a full https stream URL.', 'invalid_guest_url')
+    const login = twitchLoginFromUrl(guestUrl)
+    const guestName = String(body.guestName || login || 'Guest').slice(0, 40)
+
+    await commitWrites([updateWrite(`slots/${slot.id}`, {
+      status: 'live',
+      isClaimable: false,
+      sourceType: 'operator_guest',
+      // No uid: a guest is not a member and must never be credited with
+      // on-air minutes, which is what the fee split is computed from.
+      assignedUid: null,
+      assignedUsername: guestName,
+      assignedName: guestName,
+      isGuest: true,
+      guestAddedBy: admin.uid,
+      twitchUsername: login || '',
+      twitchChannelUrl: guestUrl,
+      streamUrl: guestUrl,
+      updatedAt: new Date(),
+    }, true)])
+
+    const currentBroadcast = await resolveBroadcast()
+    await auditLog('adminPutGuestOnAir', admin.uid, { slotId: slot.id, guestUrl, guestName })
+    return json(200, { ok: true, slotId: slot.id, guest: true, guestName, currentBroadcast })
   }
 
   const uid = String(body.uid || '').trim()
@@ -105,6 +178,10 @@ export const handler = withHttp(async (event) => {
     twitchUsername: login,
     twitchChannelUrl: channelUrl,
     streamUrl: channelUrl,
+    // Cleared explicitly: putting a member on a slot a guest just held must not
+    // leave the guest marking behind on the schedule.
+    isGuest: null,
+    guestAddedBy: null,
     updatedAt: new Date(),
   }, true)])
 
@@ -114,7 +191,7 @@ export const handler = withHttp(async (event) => {
 })
 
 /** The block covering right now, if there is one. */
-async function currentSlot(): Promise<{ id: string; assignedUid?: string } | null> {
+async function currentSlot(): Promise<{ id: string; assignedUid?: string; assignedName?: string; sourceType?: string; startTime?: string } | null> {
   const now = new Date().toISOString()
   const rows = await queryCollection(
     'slots',
@@ -123,16 +200,23 @@ async function currentSlot(): Promise<{ id: string; assignedUid?: string } | nul
     5,
   )
   for (const row of rows) {
-    const d = row.data as { startTime?: string; endTime?: string; assignedUid?: string }
+    const d = row.data as { startTime?: string; endTime?: string; assignedUid?: string; assignedName?: string; sourceType?: string }
     if (typeof d.endTime === 'string' && d.endTime > now) {
-      return { id: row.path.split('/').pop()!, assignedUid: d.assignedUid }
+      return {
+        id: row.path.split('/').pop()!,
+        assignedUid: d.assignedUid,
+        assignedName: d.assignedName,
+        sourceType: d.sourceType,
+        startTime: d.startTime,
+      }
     }
   }
   return null
 }
 
-/** Who the channel is currently carrying, so the board can mark them. */
-async function currentOnAirUid(): Promise<string | null> {
-  const slot = await currentSlot()
-  return slot?.assignedUid ?? null
+/** Minutes since a slot started, for the long-shift nudge. */
+function minutesSince(startTime?: string): number {
+  const start = Date.parse(startTime ?? '')
+  if (!Number.isFinite(start)) return 0
+  return Math.max(0, Math.floor((Date.now() - start) / 60_000))
 }
