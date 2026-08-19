@@ -298,24 +298,27 @@ export async function refreshAirtimeSchedule(
     const secondsByUid = new Map<string, number>()
     const lookByUid = new Map<string, string>()
     const styleByUid = new Map<string, string>()
+    const motionByUid = new Map<string, string>()
     const avatarByUid = new Map<string, string>()
     for (const clip of clips) secondsByUid.set(clip.uid, (secondsByUid.get(clip.uid) ?? 0) + clip.seconds)
 
     await Promise.all([...secondsByUid.keys()].map(async (uid) => {
       const user = await getDoc<{
-        onAirLook?: string; onAirStyle?: string; showAvatarOnAir?: boolean
+        onAirLook?: string; onAirStyle?: string; onAirMotion?: string; showAvatarOnAir?: boolean
         socialAvatar?: { url?: string }
       }>(`users/${uid}`)
       // The member's chosen lower-third travels with their segments, so the
       // broadcast does not have to look anything up at playback.
       lookByUid.set(uid, String(user?.onAirLook || 'signal'))
       styleByUid.set(uid, String(user?.onAirStyle || 'bar'))
+      motionByUid.set(uid, String(user?.onAirMotion || 'cut'))
       avatarByUid.set(uid, user?.showAvatarOnAir !== false ? String(user?.socialAvatar?.url || '') : '')
     }))
 
     for (const clip of clips) {
       clip.look = lookByUid.get(clip.uid) ?? 'signal'
       clip.style = styleByUid.get(clip.uid) ?? 'bar'
+      clip.motion = motionByUid.get(clip.uid) ?? 'cut'
       clip.avatarUrl = avatarByUid.get(clip.uid) ?? ''
     }
 

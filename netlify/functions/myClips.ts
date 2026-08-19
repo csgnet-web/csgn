@@ -42,7 +42,7 @@ export const handler = withHttp(async (event) => {
     queryCollection('clips', [fieldFilter('uid', 'EQUAL', authUser.uid)], [], 50),
     getDoc<ScheduleDoc>('public/airtimeSchedule'),
     getDoc<{
-      onAirLook?: string; onAirStyle?: string; showAvatarOnAir?: boolean
+      onAirLook?: string; onAirStyle?: string; onAirMotion?: string; showAvatarOnAir?: boolean
       socialAvatar?: { provider?: string; url?: string }
       username?: string
       phantom?: { verified?: boolean; walletAddress?: string }
@@ -155,6 +155,7 @@ export const handler = withHttp(async (event) => {
   return json(200, {
     onAirLook: String(profile?.onAirLook || 'signal'),
     onAirStyle: String(profile?.onAirStyle || 'bar'),
+    onAirMotion: String(profile?.onAirMotion || 'cut'),
     // Defaults to ON: if we have somebody's picture, showing it is what makes
     // their segment look like theirs. They can turn it off.
     showAvatarOnAir: profile?.showAvatarOnAir !== false,

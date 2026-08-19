@@ -78,7 +78,32 @@ export const ON_AIR_STYLES: OnAirStyle[] = [
   { id: 'bar', label: 'Bar', hint: 'Classic broadcast lower third' },
   { id: 'badge', label: 'Badge', hint: 'Compact corner tag' },
   { id: 'ticker', label: 'Ticker', hint: 'Full-width strip along the bottom' },
+  { id: 'stack', label: 'Stack', hint: 'Big name over a colour block' },
+  { id: 'minimal', label: 'Minimal', hint: 'Just your handle, no box' },
 ]
+
+/**
+ * A CARD'S ENTRANCE.
+ *
+ * Colour and shape decide what a member's card looks like; this decides how it
+ * ARRIVES, which is the part a viewer actually notices. Two segments with the
+ * same colour and a different entrance read as two different people; two with
+ * the same entrance and different colours read as one template.
+ *
+ * Kept to four, all under 500ms. An entrance that takes a second is one that is
+ * still animating when a short clip is a third over.
+ */
+export interface OnAirMotion { id: string; label: string; hint: string }
+
+export const ON_AIR_MOTIONS: OnAirMotion[] = [
+  { id: 'cut', label: 'Cut', hint: 'Straight in, no animation' },
+  { id: 'slide', label: 'Slide', hint: 'In from the edge' },
+  { id: 'wipe', label: 'Wipe', hint: 'Reveals left to right' },
+  { id: 'pop', label: 'Pop', hint: 'Scales up fast' },
+]
+
+export const motionById = (id: string | undefined): OnAirMotion =>
+  ON_AIR_MOTIONS.find((m) => m.id === id) ?? ON_AIR_MOTIONS[0]
 
 export const styleById = (id: string | undefined): OnAirStyle =>
   ON_AIR_STYLES.find((s) => s.id === id) ?? ON_AIR_STYLES[0]

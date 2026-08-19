@@ -307,3 +307,38 @@ button, a, [role="button"], input, select, textarea, label {
   background-size: 200% 100%;
   animation: stage-border-sweep 6s linear infinite;
 }
+
+/* ─── On-air card entrances ──────────────────────────────────────────────
+   How a member's lower third ARRIVES. Colour and shape decide what their
+   card looks like; this decides what a viewer actually notices — two
+   segments with the same colour and a different entrance read as two
+   different people, where the same entrance with different colours reads as
+   one template.
+
+   All under 500ms and all `forwards`, so a card that has arrived stays
+   arrived. An entrance still animating a third of the way through a
+   fifteen-second clip is an entrance nobody asked for. */
+
+@keyframes csgn-lt-slide {
+  from { transform: translateX(-120%); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
+}
+@keyframes csgn-lt-wipe {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+@keyframes csgn-lt-pop {
+  0%   { transform: scale(0.82); opacity: 0; }
+  70%  { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+
+.csgn-lt-slide { animation: csgn-lt-slide 420ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.csgn-lt-wipe  { animation: csgn-lt-wipe  380ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.csgn-lt-pop   { animation: csgn-lt-pop   300ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+
+/* A viewer who asked for less motion gets the cut. The card still appears —
+   it carries somebody's name and removing it would remove the credit. */
+@media (prefers-reduced-motion: reduce) {
+  .csgn-lt-slide, .csgn-lt-wipe, .csgn-lt-pop { animation: none; }
+}

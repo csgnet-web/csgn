@@ -32,7 +32,10 @@ import { json, parseJson, requireMethod, withHttp } from './_shared/http'
 const LOOK_IDS = ['signal', 'money', 'gold', 'ice', 'violet', 'mono', 'sunset', 'toxic', 'midnight', 'blood']
 
 /** Mirrors ON_AIR_STYLES. Same rule. */
-const STYLE_IDS = ['bar', 'badge', 'ticker']
+const STYLE_IDS = ['bar', 'badge', 'ticker', 'stack', 'minimal']
+
+/** Mirrors ON_AIR_MOTIONS — how the card arrives on screen. */
+const MOTION_IDS = ['cut', 'slide', 'wipe', 'pop']
 
 /** Providers whose avatar we will put on air, and the host each one serves it
  *  from. An allowlist, not a URL check: it is the difference between "an image
@@ -42,7 +45,7 @@ const AVATAR_HOSTS: Record<string, RegExp> = {
   'google.com': /^https:\/\/lh3\.googleusercontent\.com\//,
 }
 
-type Body = { onAirLook?: unknown; onAirStyle?: unknown; showAvatarOnAir?: unknown }
+type Body = { onAirLook?: unknown; onAirStyle?: unknown; onAirMotion?: unknown; showAvatarOnAir?: unknown }
 
 export const handler = withHttp(async (event) => {
   requireMethod(event, 'POST')
@@ -63,6 +66,12 @@ export const handler = withHttp(async (event) => {
     patch.onAirStyle = style
   }
 
+  if (body.onAirMotion !== undefined) {
+    const motion = String(body.onAirMotion)
+    if (!MOTION_IDS.includes(motion)) throw badRequest('Unknown on-air motion.', 'invalid_motion')
+    patch.onAirMotion = motion
+  }
+
   if (body.showAvatarOnAir !== undefined) {
     if (typeof body.showAvatarOnAir !== 'boolean') throw badRequest('showAvatarOnAir must be true or false.', 'invalid_flag')
     patch.showAvatarOnAir = body.showAvatarOnAir
@@ -81,6 +90,7 @@ export const handler = withHttp(async (event) => {
     ok: true,
     onAirLook: patch.onAirLook ?? null,
     onAirStyle: patch.onAirStyle ?? null,
+    onAirMotion: patch.onAirMotion ?? null,
     showAvatarOnAir: patch.showAvatarOnAir ?? null,
     socialAvatar: social,
   })

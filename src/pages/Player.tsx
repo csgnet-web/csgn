@@ -22,6 +22,7 @@ import IntermissionBoard from '@/components/player/IntermissionBoard'
 import ChannelIdent from '@/components/player/kit/ChannelIdent'
 import NowOnAir from '@/components/player/kit/NowOnAir'
 import ComingUpPanel from '@/components/player/kit/ComingUpPanel'
+import BroadcastHUD from '@/components/player/kit/BroadcastHUD'
 import StatusCard from '@/components/player/StatusCard'
 import VodRotator, { type VodItem } from '@/components/player/VodRotator'
 import FeedCover from '@/components/player/FeedCover'
@@ -532,6 +533,7 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
               // The member's chosen shape and picture travel on the schedule,
               // so the broadcast paints their card without looking anything up.
               style: String(i.style ?? 'bar'),
+              motion: String(i.motion ?? 'cut'),
               avatarUrl: String(i.avatarUrl ?? ''),
               seconds: Number(i.seconds) || 30,
             })),
@@ -879,6 +881,9 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
         {/* ── The broadcast package. Every one of these is a full-frame
                1920×1080 graphic — frame them in OBS before they go to air. */}
         {preview === 'ident' && <ChannelIdent />}
+        {preview === 'hud' && (
+          <BroadcastHUD mode="live" slug={streamerName || 'Streamer'} subtitle={slotLabel} viewers={1284} progress={0.42} />
+        )}
         {preview === 'nowonair' && (
           <NowOnAir
             name={streamerName || 'Streamer'}
@@ -988,6 +993,18 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
       {state.mode === 'INTERMISSION' && (
         <VodRotator items={clipsEnabled && airtimeItems.length > 0 ? airtimeItems : vodItems} />
       )}
+
+      {/* ══ THE HUD ══
+          Over the programme, under the transitions. It is deliberately NOT
+          shown during the ident or the full-frame slates: those graphics are
+          the channel talking about itself, and stacking the permanent
+          furniture on top of them is how a broadcast package starts looking
+          like a dashboard. */}
+      <BroadcastHUD
+        mode={state.mode === 'LIVE' ? 'live' : state.mode === 'INTERMISSION' ? 'reel' : 'standby'}
+        slug={state.mode === 'INTERMISSION' ? 'Member clips' : streamerName || 'CSGN'}
+        subtitle={state.mode === 'INTERMISSION' ? 'Holder airtime · posted by members' : (currentSlot?.streamTitle || slotLabel)}
+      />
 
       <WipeOverlay
         visible={showWipe}

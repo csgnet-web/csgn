@@ -119,6 +119,7 @@ export const api = {
   myClips: () => functionFetch<{
     onAirLook: string
     onAirStyle: string
+    onAirMotion: string
     showAvatarOnAir: boolean
     /** The provider avatar we may put on air, captured from your ID token. */
     socialAvatar: { provider: string; url: string } | null
@@ -166,7 +167,7 @@ export const api = {
   /** Your on-air identity: the colour, the shape, and whether your X picture
    *  rides along. The avatar URL itself is never sent — the server reads it
    *  from your signed ID token. See updateMyProfile.ts. */
-  setOnAirIdentity: (patch: { onAirLook?: string; onAirStyle?: string; showAvatarOnAir?: boolean }) =>
+  setOnAirIdentity: (patch: { onAirLook?: string; onAirStyle?: string; onAirMotion?: string; showAvatarOnAir?: boolean }) =>
     functionFetch<{ ok: boolean; socialAvatar: { provider: string; url: string } | null }>(
       'updateMyProfile', { method: 'POST', body: JSON.stringify(patch) }, true,
     ),

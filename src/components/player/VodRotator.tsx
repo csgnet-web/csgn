@@ -14,8 +14,10 @@ export interface VodItem {
   username?: string
   /** The member's chosen on-air look id — decides the accent on their card. */
   look?: string
-  /** Their chosen lower-third SHAPE — 'bar', 'badge' or 'ticker'. */
+  /** Their chosen lower-third SHAPE. */
   style?: string
+  /** How their card arrives — see ON_AIR_MOTIONS. */
+  motion?: string
   /** Their profile picture, when they have one and left it switched on. */
   avatarUrl?: string
 }
@@ -65,13 +67,22 @@ const LOOK_RING: Record<string, string> = {
  * OBS at 1920×1080 and must not pull the app's component tree in to paint a
  * frame. The sizes here are broadcast sizes, not UI sizes.
  */
-function ClipCredit({ username, look, style, avatarUrl, title }: {
+const MOTION_CLASS: Record<string, string> = {
+  cut: '',
+  slide: 'csgn-lt-slide',
+  wipe: 'csgn-lt-wipe',
+  pop: 'csgn-lt-pop',
+}
+
+function ClipCredit({ username, look, style, motion, avatarUrl, title }: {
   username: string
   look?: string
   style?: string
+  motion?: string
   avatarUrl?: string
   title?: string
 }) {
+  const anim = MOTION_CLASS[motion ?? 'cut'] ?? ''
   const accent = LOOK_ACCENT[look ?? 'signal'] ?? LOOK_ACCENT.signal
   const ring = LOOK_RING[look ?? 'signal'] ?? LOOK_RING.signal
   const avatar = avatarUrl
@@ -89,7 +100,7 @@ function ClipCredit({ username, look, style, avatarUrl, title }: {
 
   if (style === 'badge') {
     return (
-      <div className="absolute right-8 top-8 flex items-center gap-3.5 rounded-full bg-black/75 backdrop-blur-sm border border-white/10 py-2 pl-2 pr-6">
+      <div className={`absolute right-8 top-8 flex items-center gap-3.5 rounded-full bg-black/75 backdrop-blur-sm border border-white/10 py-2 pl-2 pr-6 ${anim}`}>
         {avatar ?? <span className={`w-3.5 h-3.5 ml-2 rounded-full ${accent}`} />}
         <span className="min-w-0">
           <span className="block text-xl font-black text-white leading-tight">@{username}</span>
@@ -101,7 +112,7 @@ function ClipCredit({ username, look, style, avatarUrl, title }: {
 
   if (style === 'ticker') {
     return (
-      <div className="absolute inset-x-0 bottom-0 flex items-center gap-4 bg-black/80 backdrop-blur-sm border-t border-white/10 px-8 py-4">
+      <div className={`absolute inset-x-0 bottom-0 flex items-center gap-4 bg-black/80 backdrop-blur-sm border-t border-white/10 px-8 py-4 ${anim}`}>
         <span className={`w-2 h-12 rounded-full ${accent} shrink-0`} />
         {avatar}
         <span className="min-w-0 flex-1">
@@ -114,7 +125,7 @@ function ClipCredit({ username, look, style, avatarUrl, title }: {
   }
 
   return (
-    <div className="absolute left-8 bottom-8 flex items-stretch overflow-hidden rounded-lg bg-black/70 border border-white/10 backdrop-blur-sm">
+    <div className={`absolute left-8 bottom-8 flex items-stretch overflow-hidden rounded-lg bg-black/70 border border-white/10 backdrop-blur-sm ${anim}`}>
       <span className={`w-1.5 ${accent} shrink-0`} />
       <span className="flex items-center gap-3.5 px-4 py-2.5">
         {avatar}
@@ -213,6 +224,7 @@ export default function VodRotator({ items }: { items: VodItem[] }) {
             username={current.username}
             look={current.look}
             style={current.style}
+            motion={current.motion}
             avatarUrl={current.avatarUrl}
             title={current.title}
           />

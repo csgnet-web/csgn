@@ -76,8 +76,17 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
   // Viewer → on-air action counter (public/onAirActions) + its on-air toggle
   const [actions, setActions] = useState({ total: 0, votes: 0, submissions: 0, spotlights: 0, buys: 0 })
   const [showActions, setShowActions] = useState(false)
-  const [jukeboxSol, setJukeboxSol] = useState('') // SOL a holder pays (Coin Jukebox) to spotlight a coin — proceeds to treasury
-  const [jukeboxCsgn, setJukeboxCsgn] = useState('') // $CSGN alternative price for the same spotlight (a token count)
+  // The jukebox OPENING price. It is not a fixed price any more — the spotlight
+  // is an auction, and this is only the floor a bid starts from when nothing is
+  // holding it. The SOL price and the fixed $CSGN price this replaced are both
+  // gone: SOL let a project buy the busiest revenue surface on the network
+  // without touching the token, and a fixed price is wrong in a different
+  // direction every week as the price moves.
+  const [jukeboxFloor, setJukeboxFloor] = useState('')
+  // Viewers a live stream must clear to be worth pre-empting the clip reel.
+  // See netlify/functions/_shared/operatorAlerts.ts — this is the single knob
+  // that decides how much of the day is live.
+  const [viewerFloor, setViewerFloor] = useState('')
   // $CSGN needed to push a message onto the Right Now rail. Config-driven so it
   // can track the price — a fixed token count is a moving dollar cost.
   const [rightNowMin, setRightNowMin] = useState('')
@@ -128,8 +137,7 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
         setBreaking2(brkObj ? String(brkObj.text2 || '') : '')
         setBreakingRow(brkObj ? String(brkObj.mode || '') === 'row' : false)
         if (chy) { setChyKicker(String(chy.kicker || '')); setChyTitle(String(chy.title || '')); setChySub(String(chy.subtitle || '')); setChyPill(String(chy.pill || '')) }
-        if (Number(d.spotlightSol) > 0) setJukeboxSol(String(d.spotlightSol))
-        if (Number(d.spotlightCsgn) > 0) setJukeboxCsgn(String(d.spotlightCsgn))
+
         if (Array.isArray(d.governance)) setGovText(d.governance.map((g: Beat) => (g.tag && g.tag !== 'CSGN GOVERNANCE' ? `${g.tag} | ${g.text}` : g.text)).join('\n'))
         if (Array.isArray(d.tweets)) setTweetsText(serializeTweets(d.tweets as Tweet[]))
       }
@@ -191,16 +199,19 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
   }, 'Right Now threshold updated — the server enforces this immediately.')
 
   const saveJukebox = () => run('jukebox', () => {
-    const n = Number(jukeboxSol)
-    if (!(n > 0)) throw new Error('Enter a positive SOL amount.')
-    const patch: { spotlightSol: number; spotlightCsgn?: number } = { spotlightSol: n }
-    if (jukeboxCsgn.trim()) {
-      const c = Number(jukeboxCsgn)
-      if (!(c > 0)) throw new Error('Enter a positive $CSGN amount (or clear it).')
-      patch.spotlightCsgn = Math.round(c)
-    }
-    return write(patch)
-  }, 'Coin Jukebox price updated.')
+    const n = Math.floor(Number(jukeboxFloor))
+    if (!(n > 0)) throw new Error('Enter a positive $CSGN amount.')
+    // config/tokenGates, not config/ticker — the floor is an economic gate the
+    // bid endpoint reads, alongside the Right Now threshold, not a piece of
+    // broadcast furniture.
+    return setDoc(doc(db, 'config', 'tokenGates'), { jukeboxFloorCsgn: n, updatedAt: new Date().toISOString() }, { merge: true })
+  }, 'Jukebox opening bid updated — it applies to the next bid immediately.')
+
+  const saveViewerFloor = () => run('viewerFloor', () => {
+    const n = Math.floor(Number(viewerFloor))
+    if (!(n >= 0)) throw new Error('Enter zero or more.')
+    return setDoc(doc(db, 'config', 'scheduleMeta'), { liveViewerFloor: n, updatedAt: new Date().toISOString() }, { merge: true })
+  }, 'Viewer floor updated — the operator board re-decides within a minute.')
   // Saving either card is how you take the wheel — auto-fill stops overwriting
   // until you hand it back.
   const saveLive = () => run('live', () => write({
@@ -331,15 +342,28 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
           <p className="text-xs text-gray-500">Counts every token-weighted vote, holder headline, and coin-spotlight play as it lands. Auto-increments server-side; flip it on air whenever you want to show the crowd steering the broadcast.</p>
           <div className="flex items-end gap-2 pt-1 border-t border-white/[0.06] mt-1">
             <div className="flex-1">
-              <label className={label}>Jukebox price — SOL</label>
-              <input value={jukeboxSol} onChange={(e) => setJukeboxSol(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.1" inputMode="decimal" className={input} />
-            </div>
-            <div className="flex-1">
-              <label className={label}>…or in $CSGN</label>
-              <input value={jukeboxCsgn} onChange={(e) => setJukeboxCsgn(e.target.value.replace(/[^0-9]/g, ''))} placeholder="1000000" inputMode="numeric" className={input} />
+              <label className={label}>Jukebox opening bid — $CSGN</label>
+              <input value={jukeboxFloor} onChange={(e) => setJukeboxFloor(e.target.value.replace(/[^0-9]/g, ''))} placeholder="250000" inputMode="numeric" className={input} />
             </div>
             <Button size="sm" variant="secondary" isLoading={busy === 'jukebox'} onClick={saveJukebox}>Save</Button>
           </div>
+          <p className="text-xs text-gray-500">
+            The spotlight is an auction — the highest live bid holds it for twelve hours and beating
+            it costs 15% more. This is only where bidding <em>starts</em> when nobody is holding it.
+          </p>
+
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <label className={label}>Live viewer floor — beat the clip reel</label>
+              <input value={viewerFloor} onChange={(e) => setViewerFloor(e.target.value.replace(/[^0-9]/g, ''))} placeholder="3" inputMode="numeric" className={input} />
+            </div>
+            <Button size="sm" variant="secondary" isLoading={busy === 'viewerFloor'} onClick={saveViewerFloor}>Save</Button>
+          </div>
+          <p className="text-xs text-gray-500">
+            Viewers a live stream needs before the operator board suggests pre-empting the clip reel
+            for it. Keep it low while the network is small — a strict floor means nobody ever sees a
+            member get carried, which is the thing that recruits the next streamer.
+          </p>
           <div className="flex items-end gap-2">
             <div className="flex-1">
               <label className={label}>Right Now rail — $CSGN needed to post</label>

@@ -13,7 +13,7 @@ import { SignInWall } from '@/components/auth/SignInWall'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import {
-  looksLikeClipUrl, airtimeLabel, clipLength, supportsTrim, timecode, ON_AIR_STYLES,
+  looksLikeClipUrl, airtimeLabel, clipLength, supportsTrim, timecode, ON_AIR_STYLES, ON_AIR_MOTIONS,
   lookById, ON_AIR_LOOKS, CLIP_PLATFORM_LABELS, PLATFORM_STYLE,
   type ClipPlatform,
 } from '@/lib/clipEmbed'
@@ -271,6 +271,113 @@ function LockNotice({ airtime }: { airtime: Airtime }) {
   )
 }
 
+/**
+ * THE ONE NEXT THING.
+ *
+ * The Studio shows a lot of true information and, before this, ended without
+ * ever telling anybody what to do with it. That is the difference between a
+ * dashboard and a product people come back to: a dashboard reports state, a
+ * loop closes with an ask.
+ *
+ * Exactly ONE ask, chosen by where the member actually is. Two asks is the same
+ * as none — the reader has to decide which matters, and deciding is the thing
+ * they came here to avoid.
+ *
+ * The order below is the funnel, and it is deliberate: fill the airtime you
+ * already have before being told to buy more. Selling upward to somebody who
+ * has not used what they own is how a product feels like it is extracting
+ * rather than serving.
+ */
+function NextStep({ clips, approvedSeconds, allowance, hasAirtime, onAddFocus }: {
+  clips: Clip[]
+  approvedSeconds: number
+  allowance: number
+  hasAirtime: boolean
+  onAddFocus: () => void
+}) {
+  const spare = Math.max(0, allowance - approvedSeconds)
+  const pending = clips.filter((c) => c.status === 'pending').length
+  const rejected = clips.filter((c) => c.status === 'rejected').length
+
+  // 1. Something needs fixing. Always first — it is the only state where the
+  //    member is blocked rather than merely idle.
+  if (rejected > 0) {
+    return (
+      <Nudge tone="warn" title={`${rejected} clip${rejected === 1 ? '' : 's'} didn't make it`}
+        body="Open the reel below for the reason. Most rejections are a quick fix — music, or a link to the wrong post." />
+    )
+  }
+
+  // 2. Empty reel and real airtime. The single highest-value action available.
+  if (hasAirtime && clips.length === 0) {
+    return (
+      <Nudge tone="go" title={`${airtimeLabel(allowance)} of television is sitting empty`}
+        body="Your $CSGN already earned it. Paste one link and it starts airing."
+        cta="Add your first clip" onCta={onAddFocus} />
+    )
+  }
+
+  // 3. Spare airtime. The repeatable loop — this is the one that should fire
+  //    most often, and it is why the reel is a reel rather than a single slot.
+  if (hasAirtime && spare > 30) {
+    return (
+      <Nudge tone="go" title={`${airtimeLabel(spare)} still unfilled today`}
+        body="Add another clip and it goes into the same day's rotation."
+        cta="Add another" onCta={onAddFocus} />
+    )
+  }
+
+  // 4. Waiting on review. Nothing to do, and saying so is better than an ask
+  //    they cannot act on.
+  if (pending > 0) {
+    return (
+      <Nudge tone="wait" title={`${pending} clip${pending === 1 ? '' : 's'} in review`}
+        body="We watch everything before it airs. You'll see it move to On air here when it clears." />
+    )
+  }
+
+  // 5. Full. The only moment where selling more is the honest next step,
+  //    because they have used everything they own.
+  if (hasAirtime && spare <= 30 && clips.length > 0) {
+    return (
+      <Nudge tone="win" title="Your whole day is booked"
+        body="Every second your $CSGN earned today has a clip in it. More $CSGN is the only way to get more time."
+        cta="Get more $CSGN" href={JUPITER_SWAP_URL} />
+    )
+  }
+
+  return null
+}
+
+function Nudge({ tone, title, body, cta, onCta, href }: {
+  tone: 'go' | 'warn' | 'wait' | 'win'
+  title: string
+  body: string
+  cta?: string
+  onCta?: () => void
+  href?: string
+}) {
+  const skin = tone === 'warn' ? 'border-primary-500/30 bg-primary-500/[0.07]'
+    : tone === 'wait' ? 'border-white/[0.08] bg-white/[0.02]'
+    : tone === 'win' ? 'border-gold/30 bg-gold/[0.06]'
+    : 'border-live/30 bg-live/[0.06]'
+
+  return (
+    <section className={`rounded-2xl border p-5 ${skin}`}>
+      <p className="text-sm font-bold text-white">{title}</p>
+      <p className="mt-1 text-[12px] text-gray-400 leading-relaxed">{body}</p>
+      {cta && href && (
+        <a href={href} target="_blank" rel="noopener noreferrer" className="inline-block mt-3.5">
+          <Button variant="primary" size="sm">{cta}</Button>
+        </a>
+      )}
+      {cta && onCta && (
+        <Button variant="primary" size="sm" className="mt-3.5" onClick={onCta}>{cta}</Button>
+      )}
+    </section>
+  )
+}
+
 /** $CSGN, readably. A raw 1800000 on a card is a number people misread. */
 const fmtCsgn = (n: number): string =>
   n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(Math.round(n))
@@ -385,6 +492,9 @@ export default function Studio() {
   const [airings, setAirings] = useState<Array<{ startsAt: string; seconds: number; clipId: string }>>([])
   const [look, setLook] = useState('signal')
   const [style, setStyle] = useState('bar')
+  // `entrance`, not `motion` — framer-motion's `motion` is imported into this
+  // file and shadowing it silently broke every animated element on the page.
+  const [entrance, setEntrance] = useState('cut')
   const [showAvatar, setShowAvatar] = useState(true)
   const [socialAvatar, setSocialAvatar] = useState<{ provider: string; url: string } | null>(null)
   const [username, setUsername] = useState('')
@@ -408,6 +518,7 @@ export default function Studio() {
       setAirings(res.airings)
       setLook(res.onAirLook || 'signal')
       setStyle(res.onAirStyle || 'bar')
+      setEntrance(res.onAirMotion || 'cut')
       setShowAvatar(res.showAvatarOnAir !== false)
       setSocialAvatar(res.socialAvatar)
       setUsername(res.username || '')
@@ -526,9 +637,10 @@ export default function Studio() {
   /** One save path for the whole on-air identity. Optimistic — the preview
    *  updates on tap and a failed write is not worth an error banner over the
    *  reel, because nothing about the member's content is at risk. */
-  const saveIdentity = async (patch: { onAirLook?: string; onAirStyle?: string; showAvatarOnAir?: boolean }) => {
+  const saveIdentity = async (patch: { onAirLook?: string; onAirStyle?: string; onAirMotion?: string; showAvatarOnAir?: boolean }) => {
     if (patch.onAirLook) setLook(patch.onAirLook)
     if (patch.onAirStyle) setStyle(patch.onAirStyle)
+    if (patch.onAirMotion) setEntrance(patch.onAirMotion)
     if (patch.showAvatarOnAir !== undefined) setShowAvatar(patch.showAvatarOnAir)
     try {
       const res = await api.setOnAirIdentity(patch)
@@ -551,6 +663,7 @@ export default function Studio() {
 
   const sorted = [...clips].sort((a, b) => a.order - b.order)
   const approved = sorted.filter((c) => c.status === 'approved')
+  const pendingCount = sorted.filter((c) => c.status === 'pending').length
   const approvedSeconds = approved.reduce((s, c) => s + c.seconds, 0)
   const allowance = airtime?.seconds ?? 0
   const filledPct = allowance > 0 ? Math.min(100, (approvedSeconds / allowance) * 100) : 0
@@ -682,7 +795,7 @@ export default function Studio() {
         </section>
 
         {/* ── 2. Post something ── */}
-        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 space-y-4">
+        <section id="csgn-add-clip" className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 space-y-4 scroll-mt-24">
           <div className="flex items-center gap-2">
             <Link2 className="w-4 h-4 text-primary-400" />
             <h2 className="text-sm font-bold text-white">Add a clip</h2>
@@ -718,18 +831,29 @@ export default function Studio() {
         <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
           <div className="px-5 py-3.5 border-b border-white/[0.06] flex items-center justify-between gap-3">
             <h2 className="text-sm font-bold text-white flex items-center gap-2">
-              <Clapperboard className="w-4 h-4 text-gray-400" /> Running order
+              <Clapperboard className="w-4 h-4 text-primary-400" /> My Reel
               <span className="text-gray-600 font-normal">({sorted.length})</span>
             </h2>
-            <span className="text-[10px] uppercase tracking-wider text-gray-600">Top airs first</span>
+            {/* WHAT IS ACTUALLY HAPPENING TO THEIR STUFF, at a glance. "Top airs
+                first" described the sort order — true, and not the thing anybody
+                opens this page to find out. */}
+            <span className="flex items-center gap-2.5 text-[10px] uppercase tracking-wider">
+              {approved.length > 0 && <span className="text-live">{approved.length} on air</span>}
+              {pendingCount > 0 && <span className="text-gold">{pendingCount} in review</span>}
+              {approved.length === 0 && pendingCount === 0 && <span className="text-gray-600">Top airs first</span>}
+            </span>
           </div>
 
           {loadingClips ? (
             <div className="p-10 text-center"><div className="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto" /></div>
           ) : sorted.length === 0 ? (
             <div className="p-10 text-center">
-              <p className="text-sm text-gray-300 font-medium">Nothing in your reel yet</p>
-              <p className="mt-1 text-xs text-gray-500">Paste a link above. It's on television once it's checked.</p>
+              <p className="text-sm text-gray-300 font-medium">Your reel is empty</p>
+              <p className="mt-1.5 text-xs text-gray-500 max-w-xs mx-auto leading-relaxed">
+                Paste a link to something you already posted. It's on a real television channel
+                within a few hours — you don't have to be there, and you don't have to make
+                anything new.
+              </p>
             </div>
           ) : (
             <div className="divide-y divide-white/[0.05]">
@@ -801,6 +925,19 @@ export default function Studio() {
           )}
         </section>
 
+        {/* ── THE NEXT THING TO DO ──
+            One ask, always, chosen from where the member actually is. A screen
+            that shows state without ever suggesting an action is a dashboard;
+            a screen that always has exactly one obvious next move is a loop.
+            More than one ask is the same as none. */}
+        <NextStep
+          clips={sorted}
+          approvedSeconds={approvedSeconds}
+          allowance={allowance}
+          hasAirtime={hasAirtime}
+          onAddFocus={() => document.getElementById('csgn-add-clip')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+        />
+
         {/* ── 4. When you're on ── */}
         <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
           <h2 className="text-sm font-bold text-white flex items-center gap-2">
@@ -846,7 +983,13 @@ export default function Studio() {
           <div className="mt-4 relative h-28 rounded-xl overflow-hidden bg-black border border-white/[0.06]">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_40%,rgba(255,255,255,0.06),transparent_60%)]" />
             <LowerThird
+              // `key` forces a remount when any of the three change, which is
+              // what replays the entrance — otherwise picking a new motion
+              // shows nothing until the next page load, and a control whose
+              // effect you cannot see is a control nobody trusts.
+              key={`${style}-${entrance}-${look}`}
               style={style}
+              motion={entrance}
               look={activeLook}
               username={username || 'you'}
               avatarUrl={showAvatar ? socialAvatar?.url ?? '' : ''}
@@ -878,7 +1021,7 @@ export default function Studio() {
               silhouette is what a viewer registers before they read a name. */}
           <div className="mt-4">
             <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Shape</p>
-            <div className="mt-2 grid grid-cols-3 gap-2">
+            <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
               {ON_AIR_STYLES.map((st) => (
                 <button
                   key={st.id}
@@ -892,6 +1035,30 @@ export default function Studio() {
                 >
                   <span className={`block text-xs font-bold ${style === st.id ? 'text-white' : 'text-gray-300'}`}>{st.label}</span>
                   <span className="block mt-0.5 text-[10px] text-gray-500 leading-snug">{st.hint}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ENTRANCE — how the card arrives, which is the part a viewer
+              actually notices. Two segments with the same colour and a
+              different entrance read as two different people. */}
+          <div className="mt-4">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Entrance</p>
+            <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {ON_AIR_MOTIONS.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => void saveIdentity({ onAirMotion: m.id })}
+                  className={`rounded-xl border px-3 py-2.5 text-left transition-colors cursor-pointer ${
+                    entrance === m.id
+                      ? 'border-primary-500/50 bg-primary-500/[0.08]'
+                      : 'border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05]'
+                  }`}
+                >
+                  <span className={`block text-xs font-bold ${entrance === m.id ? 'text-white' : 'text-gray-300'}`}>{m.label}</span>
+                  <span className="block mt-0.5 text-[10px] text-gray-500 leading-snug">{m.hint}</span>
                 </button>
               ))}
             </div>

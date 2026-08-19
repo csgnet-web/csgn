@@ -246,6 +246,8 @@ export interface AirtimeClip {
   look?: string
   /** Which lower-third shape they picked — see ON_AIR_STYLES. */
   style?: string
+  /** How their card arrives — see ON_AIR_MOTIONS. */
+  motion?: string
   /** Their provider avatar, or '' when they have none or turned it off.
    *  Carried here so the broadcast never has to look anything up at playback. */
   avatarUrl?: string
@@ -268,6 +270,7 @@ export interface ScheduleItem {
   sourceUrl?: string
   look?: string
   style?: string
+  motion?: string
   avatarUrl?: string
   title: string
 }
@@ -347,6 +350,7 @@ export function buildAirtimeSchedule(
         sourceUrl: clip.sourceUrl ?? '',
         look: clip.look ?? 'signal',
         style: clip.style ?? 'bar',
+        motion: clip.motion ?? 'cut',
         avatarUrl: clip.avatarUrl ?? '',
         title: clip.title,
       })
