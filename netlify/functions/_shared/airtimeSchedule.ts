@@ -26,7 +26,8 @@
  */
 
 import { queryCollection, getDoc, writeDoc, fieldFilter, order } from './firebaseAdmin'
-import { getCsgnBalance } from './solana'
+import { broadcastDayBounds, broadcastDayKey } from './broadcastDay'
+import { ensureDayLock } from './airtimeLock'
 import { applyTrim } from './clipEmbed'
 import {
   airtimeShares, deriveAirtimeWindows, windowSeconds, buildAirtimeSchedule,
@@ -46,9 +47,6 @@ interface SlotRow {
 /** Rebuild cadence. Long enough to cost nothing, short enough that a clip
  *  approved now is on the air within the hour. */
 const AIRTIME_REBUILD_INTERVAL_MS = 10 * 60 * 1000
-/** How far ahead the published schedule runs. The preview a member is shown
- *  ("your clip airs at 2:04 PM") is only honest out to this horizon. */
-const AIRTIME_HORIZON_MS = 6 * 60 * 60 * 1000
 /** Ceiling on approved clips considered per rebuild — a cost guard, not a rule. */
 const AIRTIME_MAX_CLIPS = 400
 
@@ -138,14 +136,35 @@ export type SupplyProvider = () => Promise<number>
  * be stale.
  */
 export interface OpenAir {
+  /** Which broadcast day this is — see _shared/broadcastDay.ts. */
+  dayKey: string
+  dayStartMs: number
+  /** Open air across the WHOLE day. The entitlement denominator, fixed for the
+   *  day regardless of how much of it has already aired. */
   inventorySeconds: number
+  /** Open air still to come. What a playlist can actually be laid into. */
+  remainingSeconds: number
   networkBlockEnabled: boolean
+  /** The remaining windows, for scheduling. */
   windows: TimeRange[]
   horizonEndMs: number
 }
 
 export async function openAirInventory(nowMs = Date.now()): Promise<OpenAir> {
-  const horizonEndMs = nowMs + AIRTIME_HORIZON_MS
+  // THE WHOLE BROADCAST DAY, not a rolling window from right now.
+  //
+  // This used to be `nowMs + AIRTIME_HORIZON_MS`, which meant the denominator
+  // was "however much of the next six hours is unclaimed" — so a member's
+  // airtime shrank every time they refreshed, and two members holding identical
+  // bags saw different numbers depending on what time it was. A channel has a
+  // programming day; proportions are answered once against the whole of it.
+  //
+  // Past hours are included in the day's inventory on purpose: the day's
+  // proportions are fixed at its 2 AM cutover, so what a member is entitled to
+  // must not depend on how much of the day has already been spent.
+  const { startMs, endMs } = broadcastDayBounds(broadcastDayKey(nowMs))
+  const dayStartMs = startMs
+  const horizonEndMs = endMs
 
   const meta = await getDoc<{ networkBlockEnabled?: boolean }>(SCHEDULE_META_PATH)
   const networkBlockEnabled = meta?.networkBlockEnabled !== false // absent = on
@@ -153,7 +172,7 @@ export async function openAirInventory(nowMs = Date.now()): Promise<OpenAir> {
   const upcoming = await queryCollection(
     'slots',
     [
-      fieldFilter('endTime', 'GREATER_THAN', new Date(nowMs).toISOString()),
+      fieldFilter('endTime', 'GREATER_THAN', new Date(dayStartMs).toISOString()),
       fieldFilter('endTime', 'LESS_THAN', new Date(horizonEndMs + 4 * 60 * 60 * 1000).toISOString()),
     ],
     [order('endTime', 'ASCENDING')],
@@ -172,8 +191,21 @@ export async function openAirInventory(nowMs = Date.now()): Promise<OpenAir> {
     if (claimed || ownerBlock) blocked.push({ startMs, endMs })
   }
 
-  const windows = deriveAirtimeWindows(nowMs, horizonEndMs, blocked)
-  return { inventorySeconds: windowSeconds(windows), networkBlockEnabled, windows, horizonEndMs }
+  // The DAY's open air, for the entitlement maths.
+  const dayWindows = deriveAirtimeWindows(dayStartMs, horizonEndMs, blocked)
+  // The air still to come, for actually laying a playlist down — you cannot
+  // schedule a clip into an hour that has already gone out.
+  const remainingWindows = deriveAirtimeWindows(nowMs, horizonEndMs, blocked)
+
+  return {
+    dayKey: broadcastDayKey(nowMs),
+    dayStartMs,
+    inventorySeconds: windowSeconds(dayWindows),
+    remainingSeconds: windowSeconds(remainingWindows),
+    networkBlockEnabled,
+    windows: remainingWindows,
+    horizonEndMs,
+  }
 }
 
 const DEFAULT_SUPPLY = 1_000_000_000
@@ -192,7 +224,8 @@ export async function refreshAirtimeSchedule(
     const nowMs = Date.now()
     // One source for "how much open air is there", shared with myClips so a
     // member's quoted entitlement and the playlist can never disagree.
-    const { inventorySeconds: inventory, networkBlockEnabled, windows, horizonEndMs } = await openAirInventory(nowMs)
+    const openAir = await openAirInventory(nowMs)
+    const { inventorySeconds: inventory, networkBlockEnabled, windows, horizonEndMs } = openAir
     if (inventory <= 0) {
       await writeDoc('public/airtimeSchedule', {
         items: [], allocations: [], inventorySeconds: 0, networkBlockEnabled,
@@ -249,54 +282,60 @@ export async function refreshAirtimeSchedule(
       return { built: true, skipped: false, members: 0, segments: 0, inventorySeconds: inventory }
     }
 
-    // Live balances, one RPC per uploading member — bounded by who has content.
+    // ── THE DAY'S LOCKED SHARES ──
+    //
+    // Read, not recomputed. The proportions were decided at the 2 AM cutover
+    // and this is where that decision is honoured: the scheduler lays clips
+    // into the remaining air in proportion to what each member was ALREADY
+    // told they had, so the playlist and the number on their screen cannot
+    // drift apart during the day.
+    //
+    // Balances are no longer read here at all. That is the point — one balance
+    // read per member per DAY at the cutover, instead of one per member per
+    // rebuild, which was both more expensive and less stable.
+    const lock = await ensureDayLock(getSupply ?? (async () => 0), nowMs)
+
     const secondsByUid = new Map<string, number>()
-    const walletByUid = new Map<string, string>()
     const lookByUid = new Map<string, string>()
     const styleByUid = new Map<string, string>()
     const avatarByUid = new Map<string, string>()
     for (const clip of clips) secondsByUid.set(clip.uid, (secondsByUid.get(clip.uid) ?? 0) + clip.seconds)
+
     await Promise.all([...secondsByUid.keys()].map(async (uid) => {
       const user = await getDoc<{
-        phantom?: { walletAddress?: string; verified?: boolean }
         onAirLook?: string; onAirStyle?: string; showAvatarOnAir?: boolean
         socialAvatar?: { url?: string }
       }>(`users/${uid}`)
-      const wallet = user?.phantom?.verified ? String(user.phantom.walletAddress || '') : ''
-      if (wallet) walletByUid.set(uid, wallet)
-      // The member's chosen lower-third colour travels with their segments, so
-      // the broadcast does not have to look anything up at playback.
+      // The member's chosen lower-third travels with their segments, so the
+      // broadcast does not have to look anything up at playback.
       lookByUid.set(uid, String(user?.onAirLook || 'signal'))
       styleByUid.set(uid, String(user?.onAirStyle || 'bar'))
-      // Only travels if they left it on. The broadcast never has to look
-      // anything up at playback — it plays what the schedule handed it.
       avatarByUid.set(uid, user?.showAvatarOnAir !== false ? String(user?.socialAvatar?.url || '') : '')
     }))
+
     for (const clip of clips) {
       clip.look = lookByUid.get(clip.uid) ?? 'signal'
       clip.style = styleByUid.get(clip.uid) ?? 'bar'
       clip.avatarUrl = avatarByUid.get(clip.uid) ?? ''
     }
-    const balances = new Map<string, number>()
-    await Promise.all([...walletByUid].map(async ([uid, wallet]) => {
-      try {
-        balances.set(uid, await getCsgnBalance(wallet))
-      } catch {
-        // A balance we cannot read is read as zero, which still earns the floor.
-        // Failing toward "no airtime" would let an RPC hiccup silence somebody.
-        balances.set(uid, 0)
-      }
-    }))
 
-    const supply = (getSupply ? await getSupply().catch(() => 0) : 0) || DEFAULT_SUPPLY
-
+    // A member with content but no locked share gets nothing today — they had
+    // no readable balance at the cutover. They are picked up at the next one.
     const members: AirtimeMember[] = [...secondsByUid].map(([uid, clipSeconds]) => ({
       uid,
-      balance: balances.get(uid) ?? 0,
+      balance: lock?.shares.find((share) => share.uid === uid)?.balance ?? 0,
       clipSeconds,
     }))
 
-    const allocations = airtimeShares(members, inventory, supply)
+    const supply = lock?.supply ?? ((getSupply ? await getSupply().catch(() => 0) : 0) || DEFAULT_SUPPLY)
+
+    // Cut against the REMAINING air. A member's entitlement is a share of the
+    // whole day, but a playlist can only be laid into hours that have not
+    // aired yet — so the scheduler scales the locked proportions down to what
+    // is actually left. Late in the day this means fewer seconds scheduled
+    // than the member's daily figure, which is correct and is why /studio
+    // shows both numbers.
+    const allocations = airtimeShares(members, openAir.remainingSeconds, supply)
     const items = buildAirtimeSchedule(allocations, clips, windows)
 
     await writeDoc('public/airtimeSchedule', {

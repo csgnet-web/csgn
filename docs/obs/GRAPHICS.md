@@ -120,12 +120,60 @@ the member, this one is manual and belongs to you.
 
 ---
 
+## The broadcast package
+
+Art direction is sports-network editorial — enormous condensed type, hard-edged
+colour blocking, structural rules, numbers as the hero. Four rules everything
+follows, and they are the difference between "a website on television" and "a
+channel":
+
+1. **Type is the graphic**, not a label on a graphic. Delete every decorative
+   element and what's left should still read across a room.
+2. **Hard edges.** No soft shadows, no glass blur. A broadcast graphic is cut,
+   not faded — a subtle gradient is the first thing a 4 Mbps encoder destroys.
+3. **One accent, used structurally.** Brand red is a rule, a bar, a fill — not
+   a highlight sprinkled on six elements.
+4. **Motion means something changed.** Nothing pulses for decoration.
+
+The kit lives in `src/components/player/kit/`. `BroadcastKit.tsx` holds the
+tokens and primitives — `Kicker`, `Mega`, `Rule`, `Stat`, `CornerMarks`,
+`Slate`, `StripeField` — so the package can't drift into six slightly different
+reds.
+
+| Graphic | What it does | Component |
+|---|---|---|
+| **Channel ident** | ~2.6s brand hit between every segment | `ChannelIdent.tsx` |
+| **Now on air** | Introduces whoever is up — huge avatar, name, viewers | `NowOnAir.tsx` |
+| **Coming up** | The next five slots as an editorial table | `ComingUp.tsx` |
+| **Clip credit** | The member's card over their segment | `VodRotator.tsx` → `ClipCredit` |
+| **Intermission board** | The animated network board | `IntermissionBoard.tsx` |
+
+### The ident is the highest-leverage graphic on the channel
+
+A viewer decides whether they're watching *a channel* or *someone's stream* in
+the first few seconds, almost entirely from production furniture rather than
+content. An ident is the clearest possible signal — a thing that only exists
+because somebody made it, recurring, so it reads as a network. It costs three
+seconds of airtime and buys the whole package credibility.
+
+It plays on every hand-over between clips. Four beats — black, stripes,
+wordmark, lockup — driven from one counter rather than CSS animation delays, so
+it can be **ended on cue** when the next segment is ready. A stack of
+independently-timed CSS animations can't be interrupted cleanly; you get a
+graphic that's halfway through something when the video cuts under it.
+
+---
+
 ## Previewing any of it without going on air
 
 `/player` takes a `?preview=` parameter, so you can frame and check every
 graphic against the real canvas:
 
 ```
+https://csgn.fun/player?preview=ident       the channel ident
+https://csgn.fun/player?preview=nowonair    the on-air introduction
+https://csgn.fun/player?preview=comingup    the next five slots
+https://csgn.fun/player?preview=clipcredit  a member's clip introduction
 https://csgn.fun/player?preview=board       the intermission board
 https://csgn.fun/player?preview=brb         the BRB card
 https://csgn.fun/player?preview=starting    "goes live shortly"
@@ -154,21 +202,19 @@ fix the primary gets.
 
 ## What you would still need a designer for
 
-Nothing to go on air. But three things would visibly raise the production
-value, in order of impact:
+The package is complete and launch-ready. Three additions would raise it
+further, in order of impact — none block launch, and all drop into the existing
+scene as browser or media sources:
 
-1. **A 3–5 second animated channel ident.** Plays over the wipe between
-   segments. This is the single strongest signal that a channel is a channel
-   rather than a stream — it is what a viewer's eye reads as "produced".
-2. **A designed intermission board.** The current one is generated in code and
-   is fine; a real motion background with the schedule laid over it would be
-   better, and it is on screen more than anything else on a quiet night.
-3. **A sting for the coin spotlight.** A paid placement that arrives with a
-   sound and a movement is worth more than one that fades in, and it is the
-   surface people actually pay for.
-
-All three drop into the existing scene as browser sources or media sources. None
-of them block launch.
+1. **Audio.** The ident is silent. A three-note sting under it is worth more
+   than any visual change on this list — sound is what makes a hand-over feel
+   like a network, and it is the one dimension the package currently has none of.
+2. **Motion plates behind the slates.** The `Slate` diagonal is a flat colour
+   field. Shot footage or a generative loop behind it at low opacity would give
+   the cards depth without touching the type.
+3. **A spotlight sting.** A paid jukebox placement that arrives with a movement
+   and a sound is worth more than one that fades in, and it is the surface
+   people actually pay for.
 
 ---
 

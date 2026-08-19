@@ -53,6 +53,7 @@ import {
 } from './_shared/feeCalc'
 import { sampleTwitchStream, twitchAppToken, twitchLoginFromUrl } from './_shared/twitch'
 import { refreshAirtimeSchedule } from './_shared/airtimeSchedule'
+import { ensureDayLock } from './_shared/airtimeLock'
 import { refreshLiveRoster } from './_shared/liveRoster'
 import { operatorAlerts, recommendedMode, DEFAULT_LIVE_VIEWER_FLOOR } from './_shared/operatorAlerts'
 
@@ -725,6 +726,15 @@ export const handler = async () => {
   } catch (err) {
     console.warn('[feePoller] operatorAlerts write failed', err)
   }
+
+  // Take the day's lock if 2 AM ET has passed and it has not been taken yet.
+  // Idempotent and cheap — one document read on every tick but the first after
+  // a cutover. Called BEFORE the schedule rebuild so the playlist is always
+  // laid against locked proportions rather than racing them.
+  await ensureDayLock(async () => {
+    const dex = await memo('airtime:supply', 10 * 60_000, () => fetchDexData())
+    return dex && dex.priceUsd > 0 ? dex.marketCapUsd / dex.priceUsd : 0
+  })
 
   // Rebuild the holder-airtime playlist the channel runs on between live hours.
   // Supply is injected so this module's cached DexScreener read is reused

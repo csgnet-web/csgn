@@ -10,7 +10,8 @@ import { getDoc, queryCollection, fieldFilter } from './_shared/firebaseAdmin'
 import { json, requireMethod, withHttp } from './_shared/http'
 import { refreshAirtimeSchedule, openAirInventory, type AirtimeBlockReason } from './_shared/airtimeSchedule'
 import { getCsgnBalance } from './_shared/solana'
-import { airtimeQuote } from './_shared/airtime'
+import { ensureDayLock, joinDayLock, shareFor } from './_shared/airtimeLock'
+import { broadcastDayWindow } from './_shared/broadcastDay'
 import { fetchJson } from './_shared/cache'
 
 interface ScheduleDoc {
@@ -109,22 +110,39 @@ export const handler = withHttp(async (event) => {
     }
   }
 
-  // COMPUTED, NOT READ FROM THE PUBLISHED SCHEDULE.
+  // ── THE DAY'S LOCKED SHARE ──
   //
-  // This used to be `Number(schedule?.inventorySeconds) || 0`, and airtimeQuote
-  // floors to zero when inventory is zero — so whenever `public/airtimeSchedule`
-  // had not been written yet, a member's balance was read correctly and then
-  // multiplied by an inventory of nothing. That is the "1.89 million $CSGN,
-  // 0 seconds" report: not a balance bug at all, an inventory-of-zero bug.
+  // Read from the lock taken at this broadcast day's 2 AM ET cutover, not
+  // recomputed on every load. That is the whole point of the hard stop: the
+  // number does not move for twenty-four hours, so it can be shown without a
+  // disclaimer and checked against the chain at leisure.
+  //
+  // Two things this replaced, both bugs:
+  //   • a rolling six-hour horizon, so airtime shrank as the day burned down;
+  //   • an inventory read from a cache that might not exist, so a real bag
+  //     could be multiplied by zero.
   const openAir = await openAirInventory(nowMs)
   const inventory = openAir.inventorySeconds
-  const quote = airtimeQuote(balance ?? 0, inventory, await circulatingSupply())
+  let lock = await ensureDayLock(circulatingSupply, nowMs)
+  let mine2 = shareFor(lock, authUser.uid)
+
+  // First appearance mid-day — they just linked a wallet, or their balance was
+  // unreadable at the cutover and is readable now. Added at their current
+  // balance. This can only ADD somebody, never raise an existing share, so
+  // buying more at noon still counts from tomorrow.
+  if (!mine2 && wallet && (balance ?? 0) > 0) {
+    lock = await joinDayLock(authUser.uid, String(profile?.username || ''), balance!, nowMs) ?? lock
+    mine2 = shareFor(lock, authUser.uid)
+  }
+
+  const dayWindow = broadcastDayWindow(nowMs)
+  const dailySeconds = mine2?.seconds ?? 0
+  const supplyShare = mine2?.supplyShare ?? 0
+  const capped = Boolean(mine2?.capped)
   const scheduledSeconds = Number(mine?.seconds) || 0
 
-  // Four zeroes, three of them fixable by the member — named so the page can
-  // say which one it is instead of showing one number for four problems.
   let reason: AirtimeBlockReason = 'ok'
-  if (quote.seconds <= 0) {
+  if (dailySeconds <= 0) {
     if (!wallet) reason = 'no_wallet'
     else if (balance === null) reason = 'unreadable'
     else if (balance <= 0) reason = 'no_balance'
@@ -146,14 +164,24 @@ export const handler = withHttp(async (event) => {
     username: String(profile?.username || ''),
     clips,
     airtime: {
-      /** What the bag earns today. Independent of the review queue. */
-      seconds: quote.seconds,
-      /** What the playlist has actually laid down — 0 until a clip is approved. */
+      /** This broadcast day's locked entitlement. Fixed at 2 AM ET; does not
+       *  move until the next cutover. */
+      seconds: dailySeconds,
+      /** What the playlist has actually laid down into the air still to come. */
       scheduledSeconds,
-      capped: quote.capped,
-      /** Share of circulating supply, as a fraction, for the 1:1 explainer. */
-      supplyShare: quote.supplyShare,
+      capped,
+      /** Share of circulating supply at the cutover, as a fraction. */
+      supplyShare,
       inventorySeconds: inventory,
+      /** Open air still to come today — why `scheduledSeconds` is smaller than
+       *  `seconds` late in the day, which otherwise looks like a bug. */
+      remainingSeconds: openAir.remainingSeconds,
+      /** Which broadcast day this is, when it was locked, and when the next
+       *  lock lands. A number that cannot change until a stated moment is only
+       *  trustworthy if the moment is stated. */
+      dayKey: dayWindow.key,
+      lockedAt: lock?.lockedAt ?? null,
+      nextLockAt: new Date(dayWindow.endMs).toISOString(),
       networkBlockEnabled: openAir.networkBlockEnabled,
       builtAt: schedule?.builtAt ?? null,
       /** Which of the four states this is. 'ok' when there is airtime and content. */

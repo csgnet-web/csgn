@@ -298,3 +298,19 @@ export function claimEligibility(
   }
   return OK
 }
+
+
+/**
+ * A slot time as ET wall clock — "9:00 PM".
+ *
+ * Lifted out of Schedule.tsx, where it was a page-local helper that other
+ * surfaces then re-implemented slightly differently. Times on a schedule are
+ * the one thing that must agree everywhere: a graphic saying 9:00 while the
+ * page says 21:00 is a channel that looks like it does not know its own
+ * running order.
+ */
+export function formatTimeET(value: unknown): string {
+  return new Date(toMillis(value)).toLocaleTimeString('en-US', {
+    timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit',
+  })
+}

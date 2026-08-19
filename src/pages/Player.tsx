@@ -19,6 +19,9 @@ import { isOBS, obsVersion } from '@/lib/environment'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
 import { WipeOverlay } from '@/components/ui/WipeOverlay'
 import IntermissionBoard from '@/components/player/IntermissionBoard'
+import ChannelIdent from '@/components/player/kit/ChannelIdent'
+import NowOnAir from '@/components/player/kit/NowOnAir'
+import ComingUpPanel from '@/components/player/kit/ComingUpPanel'
 import StatusCard from '@/components/player/StatusCard'
 import VodRotator, { type VodItem } from '@/components/player/VodRotator'
 import FeedCover from '@/components/player/FeedCover'
@@ -872,6 +875,27 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
     return (
       <div className="fixed inset-0 bg-black overflow-hidden">
         {preview === 'board' && <IntermissionBoard />}
+
+        {/* ── The broadcast package. Every one of these is a full-frame
+               1920×1080 graphic — frame them in OBS before they go to air. */}
+        {preview === 'ident' && <ChannelIdent />}
+        {preview === 'nowonair' && (
+          <NowOnAir
+            name={streamerName || 'Streamer'}
+            handle={(streamerName || 'streamer').toLowerCase()}
+            subtitle={slotLabel || 'Live on CSGN'}
+            viewers={1284}
+          />
+        )}
+        {preview === 'clipcredit' && (
+          <NowOnAir
+            kicker="Clip by"
+            name={streamerName || 'Member'}
+            handle={(streamerName || 'member').toLowerCase()}
+            subtitle="Posted to CSGN · airing between live streams"
+          />
+        )}
+        {preview === 'comingup' && <ComingUpPanel />}
         {preview === 'brb' && <StatusCard variant="brb" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
         {preview === 'starting' && <StatusCard variant="starting-soon" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
         {preview === 'lastcall' && <StatusCard variant="starting-soon" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} countdownSeconds={STARTING_SOON_COUNTDOWN_MS / 1_000} />}

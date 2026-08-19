@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Check, Clapperboard, Clock, ExternalLink, GripVertical, Link2,
-  Radio, Scissors, Sparkles, Trash2, TrendingUp,
+  Lock, Radio, Scissors, Sparkles, Trash2, TrendingUp,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/useAuth'
 import { LowerThird } from '@/components/broadcast/LowerThird'
@@ -59,13 +59,21 @@ interface Clip {
 }
 
 interface Airtime {
-  /** What the member's $CSGN earns today, whether or not anything is approved. */
+  /** This broadcast day's LOCKED entitlement — fixed at 2 AM ET, and it does
+   *  not move until the next cutover. */
   seconds: number
-  /** What the playlist has actually laid down for them. */
+  /** What the playlist has laid down into the air still to come. Smaller than
+   *  `seconds` late in the day, which is correct rather than a bug. */
   scheduledSeconds: number
   supplyShare: number
   capped: boolean
+  /** Open air across the whole broadcast day — the entitlement denominator. */
   inventorySeconds: number
+  /** Open air still to come today. */
+  remainingSeconds: number
+  dayKey: string
+  lockedAt: string | null
+  nextLockAt: string
   networkBlockEnabled: boolean
   builtAt: string | null
   /** Which of the four zeroes this is, decided server-side. 'ok' when > 0. */
@@ -220,6 +228,47 @@ function formatShare(fraction: number): string {
   if (pct >= 1) return `${pct.toFixed(1)}%`
   if (pct >= 0.01) return `${pct.toFixed(2)}%`
   return '<0.01%'
+}
+
+/**
+ * THE HARD STOP, ON SCREEN.
+ *
+ * The number above this is fixed for the broadcast day and a member needs to
+ * know that, because otherwise the honest behaviour looks broken: they buy more
+ * $CSGN at lunchtime, refresh, and nothing changes. Saying when it was decided
+ * and when it is decided again turns that from a bug report into a rule.
+ *
+ * The countdown is live because "tomorrow" is ambiguous at 1 AM — which is
+ * exactly when somebody deciding whether to buy now or wait would be looking.
+ */
+function LockNotice({ airtime }: { airtime: Airtime }) {
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 30_000)
+    return () => clearInterval(t)
+  }, [])
+
+  const nextMs = Date.parse(airtime.nextLockAt)
+  if (!Number.isFinite(nextMs)) return null
+  const left = Math.max(0, nextMs - nowMs)
+  const hours = Math.floor(left / 3_600_000)
+  const mins = Math.floor((left % 3_600_000) / 60_000)
+
+  return (
+    <div className="relative mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[11px]">
+      <Lock className="w-3 h-3 text-gray-500 shrink-0" />
+      <span className="text-gray-400">
+        Set at 2:00 AM ET and fixed until the next one.
+      </span>
+      <span className="font-mono text-gray-300 tabular-nums">
+        {hours > 0 ? `${hours}h ${String(mins).padStart(2, '0')}m` : `${mins}m`}
+      </span>
+      <span className="text-gray-600">to go.</span>
+      <span className="w-full text-gray-600 leading-relaxed">
+        Buy more now and it counts from the next one — that's what makes this number hold still.
+      </span>
+    </div>
+  )
 }
 
 /** $CSGN, readably. A raw 1800000 on a card is a number people misread. */
@@ -529,7 +578,9 @@ export default function Studio() {
 
           <div className="relative flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">Your airtime today</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
+                Your airtime · locked for today
+              </p>
               <p className="mt-1 text-5xl font-black font-display text-white leading-none tracking-tight tabular-nums">
                 {airtimeLabel(allowance)}
               </p>
@@ -590,7 +641,7 @@ export default function Studio() {
             {(airtime?.scheduledSeconds ?? 0) > 0 && (
               <p className="mt-2 text-[11px] text-gray-500">
                 <span className="font-mono text-live">{airtimeLabel(airtime!.scheduledSeconds)}</span>{' '}
-                already laid down on the next six hours of playlist.
+                laid down on the air still to come today.
               </p>
             )}
           </div>
@@ -603,9 +654,9 @@ export default function Studio() {
                 One to one with your $CSGN: hold twice as much, get twice as much.
                 {airtime?.capped && ' You are at the per-member ceiling, which exists so no one holder can take the whole channel.'}
               </p>
-              {/* THE WORKING, SHOWN. This number is checkable against the chain
-                  and against the market cap, and showing the two inputs is what
-                  makes it checkable rather than something to take on faith. */}
+              {/* THE WORKING, SHOWN. Checkable against the chain and against
+                  the market cap, which is what makes it a fact rather than
+                  something to take on faith. */}
               {airtime?.balance != null && (
                 <p className="relative mt-1.5 text-[11px] text-gray-600">
                   <span className="font-mono text-gray-400">{fmtCsgn(airtime.balance)} $CSGN</span>
@@ -613,6 +664,7 @@ export default function Studio() {
                   {' '}in <span className="font-mono">{shortWallet(airtime.walletAddress)}</span>.
                 </p>
               )}
+              {airtime && <LockNotice airtime={airtime} />}
             </>
           ) : (
             /* FOUR DIFFERENT ZEROES, four different things to do about it.

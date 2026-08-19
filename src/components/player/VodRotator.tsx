@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import IntermissionBoard from './IntermissionBoard'
+import ChannelIdent from './kit/ChannelIdent'
 
 export interface VodItem {
   url: string
@@ -128,6 +129,10 @@ function ClipCredit({ username, look, style, avatarUrl, title }: {
 }
 
 const BOARD_BREAK_MS = 60_000
+/** The ident that plays as the channel hands over between segments. Short —
+ *  it recurs constantly, and an ident that outstays its welcome is worse than
+ *  no ident at all. */
+const IDENT_MS = 2_600
 
 /**
  * Intermission programming: rotates member clips and admin promo VODs with the
@@ -148,6 +153,16 @@ const BOARD_BREAK_MS = 60_000
 export default function VodRotator({ items }: { items: VodItem[] }) {
   const [index, setIndex] = useState(0)
   const [onBoard, setOnBoard] = useState(true)
+  // The ident plays on every hand-over. This is what makes a rotation of other
+  // people's clips read as ONE CHANNEL rather than as a playlist — the recurring
+  // mark between segments is the entire signal.
+  const [ident, setIdent] = useState(true)
+
+  useEffect(() => {
+    if (!ident) return
+    const t = setTimeout(() => setIdent(false), IDENT_MS)
+    return () => clearTimeout(t)
+  }, [ident])
 
   // Board break between items (and before the first)
   useEffect(() => {
@@ -158,6 +173,7 @@ export default function VodRotator({ items }: { items: VodItem[] }) {
 
   const advance = () => {
     setIndex((i) => (i + 1) % Math.max(items.length, 1))
+    setIdent(true)
     setOnBoard(true)
   }
 
@@ -174,6 +190,9 @@ export default function VodRotator({ items }: { items: VodItem[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.url, isEmbed, onBoard])
 
+  // Ident first, then the board, then the clip. The order is the hand-over:
+  // brand, context, content.
+  if (ident) return <ChannelIdent onDone={() => setIdent(false)} />
   if (!current || onBoard) return <IntermissionBoard />
 
   if (isEmbed) {

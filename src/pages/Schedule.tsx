@@ -5,7 +5,7 @@ import { Radio, Crown, Check, Loader2, CalendarPlus, Twitch, Lock } from 'lucide
 import { db } from '@/config/firebase'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { isNetworkSlot, isSlotClaimable, toMillis, type Slot } from '@/lib/slots'
+import { formatTimeET, isNetworkSlot, isSlotClaimable, toMillis, type Slot } from '@/lib/slots'
 import { api } from '@/lib/api'
 import { Link } from 'react-router-dom'
 import RosterStrip from '@/components/schedule/RosterStrip'
@@ -31,10 +31,6 @@ function twitchHandleFromUrl(url?: string): string {
 
 
 const toDate = (value: unknown): Date => new Date(toMillis(value))
-
-function formatTimeET(value: unknown): string {
-  return toDate(value).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' })
-}
 
 function etDayKey(date: Date): string {
   return date.toLocaleDateString('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' })

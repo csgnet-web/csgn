@@ -129,14 +129,23 @@ export const api = {
       measured: boolean; order: number; status: string; rejectReason: string | null
     }>
     airtime: {
-      /** What the bag earns today — independent of the review queue. */
+      /** This broadcast day's LOCKED entitlement. Fixed at 2 AM ET. */
       seconds: number
-      /** What the playlist actually laid down. 0 until a clip is approved. */
+      /** What the playlist actually laid down into the air still to come. */
       scheduledSeconds: number
       capped: boolean
-      /** Share of circulating supply, as a fraction. */
+      /** Share of circulating supply at the cutover, as a fraction. */
       supplyShare: number
+      /** Open air across the whole broadcast day. */
       inventorySeconds: number
+      /** Open air still to come today. */
+      remainingSeconds: number
+      /** Which broadcast day (2 AM ET → 2 AM ET) this is. */
+      dayKey: string
+      /** When the day's proportions were fixed. */
+      lockedAt: string | null
+      /** When they are fixed again. */
+      nextLockAt: string
       networkBlockEnabled: boolean; builtAt: string | null
       /** Which state this is — see myClips.ts. */
       reason: 'ok' | 'no_clips' | 'no_wallet' | 'unreadable' | 'no_balance' | 'no_inventory'
