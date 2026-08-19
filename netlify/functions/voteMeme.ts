@@ -12,6 +12,7 @@ import { json, parseJson, requireMethod, withHttp } from './_shared/http'
 import { requireString } from './_shared/validators'
 import { checkRateLimit, clientIp } from './_shared/rateLimit'
 import { getCsgnBalance } from './_shared/solana'
+import { fetchJson } from './_shared/cache'
 import { bumpOnAirAction } from './_shared/onAirActions'
 
 type WalletProof = { type: string; walletAddress: string; exp: number; iat: number; jti: string }
@@ -34,13 +35,31 @@ export const handler = withHttp(async (event) => {
   const address = requireString(body.address, 'address')
   if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)) throw badRequest('Pick a coin from the board.', 'bad_mint')
 
-  // It must be ON the published board. An open nomination field is a moderation
-  // incident waiting to happen when the result goes on air — holders rank the
-  // curated set, they don't nominate into it.
+  // ── ON THE BOARD, OR A REAL COIN ──
+  //
+  // The board is the pick list, not the limit. A member who wants to back
+  // something that launched this morning should not be told it does not exist;
+  // the ranking's thresholds decide what makes the BOARD, and a vote is a
+  // member's own conviction rather than an editorial decision.
+  //
+  // What is still refused is a string that resolves to nothing. Every ballot is
+  // cast against a mint that has a real Solana pair, so the tally can never
+  // contain an address nobody can look up — which is the property that makes
+  // the whole ranking auditable.
   const board = await getDoc<{ coins?: Array<{ address?: string; symbol?: string }> }>('public/memeBoard')
   const entry = (board?.coins || []).find((c) => c?.address === address)
-  if (!entry) throw badRequest('That coin is not on the Meme 100 board.', 'not_on_board')
-  const symbol = String(entry.symbol || '').toUpperCase().slice(0, 12)
+
+  let symbol = String(entry?.symbol || '').toUpperCase().slice(0, 12)
+  if (!entry) {
+    const looked = await lookupSolanaCoin(address)
+    if (!looked) {
+      throw badRequest(
+        'No Solana trading pair found for that address. Check the contract address and try again.',
+        'unknown_mint',
+      )
+    }
+    symbol = looked.symbol
+  }
 
   const weight = Math.floor(await getCsgnBalance(wallet))
   if (weight <= 0) throw forbidden('You must hold $CSGN to vote — your voting power equals your $CSGN balance.')
@@ -84,3 +103,30 @@ export const handler = withHttp(async (event) => {
   }
   throw conflict('The meme vote is busy right now — please try again.', 'tally_contended')
 })
+
+
+/**
+ * Resolve a mint that is not on the board.
+ *
+ * Deliberately minimal: it answers "is this a real, tradeable Solana coin, and
+ * what is it called". It does not judge the coin and it does not add it to the
+ * board — an off-board vote counts toward that mint's tally and the coin
+ * appears in the ranking only if it later clears the published thresholds on
+ * its own.
+ */
+async function lookupSolanaCoin(address: string): Promise<{ symbol: string } | null> {
+  interface Pair {
+    chainId?: string
+    baseToken?: { symbol?: string }
+    liquidity?: { usd?: number }
+  }
+  const data = await fetchJson<{ pairs?: Pair[] }>(
+    `https://api.dexscreener.com/latest/dex/tokens/${address}`,
+    { timeoutMs: 4_000 },
+  )
+  const pairs = (data?.pairs ?? []).filter((p) => !p.chainId || p.chainId === 'solana')
+  if (pairs.length === 0) return null
+  const best = pairs.reduce((a, b) => ((b.liquidity?.usd ?? 0) > (a.liquidity?.usd ?? 0) ? b : a))
+  const symbol = String(best.baseToken?.symbol || '').toUpperCase().slice(0, 12)
+  return { symbol: symbol || address.slice(0, 4).toUpperCase() }
+}

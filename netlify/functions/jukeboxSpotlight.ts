@@ -44,13 +44,14 @@ import { requireString } from './_shared/validators'
 import { checkRateLimit, clientIp } from './_shared/rateLimit'
 import { verifySplPayment, CSGN_MINT_ADDRESS, CSGN_TOKEN_DECIMALS } from './_shared/solana'
 import { bumpOnAirAction } from './_shared/onAirActions'
+import { fetchJson } from './_shared/cache'
 import {
   nextJukeboxFloor, pushJukeboxWinner, JUKEBOX_BASE_FLOOR_CSGN, JUKEBOX_TTL_MS,
   type JukeboxWinner,
 } from './_shared/jukebox'
 
 type WalletProof = { type: string; walletAddress: string; exp: number; iat: number; jti: string }
-type Body = { proofToken?: string; signature?: string; symbol?: string; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }
+type Body = { proofToken?: string; signature?: string; address?: string; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }
 
 interface SpotlightDoc {
   symbol?: string
@@ -67,8 +68,21 @@ export const handler = withHttp(async (event) => {
   const proof = verifyProofToken<WalletProof>(requireString(body.proofToken, 'proofToken'), 'phantom_wallet')
   const wallet = proof.walletAddress
   const signature = requireString(body.signature, 'signature')
-  const symbol = requireString(body.symbol, 'symbol').toUpperCase().slice(0, 12)
-  if (!/^[A-Z0-9$]{2,12}$/.test(symbol)) throw badRequest('Enter a valid ticker symbol (2–12 chars).', 'bad_symbol')
+  // ── THE COIN IS A MINT, NOT A TYPED TICKER ──
+  //
+  // A free-text symbol put a string on television that resolved to nothing —
+  // two projects can share a ticker, and a viewer who looks one up finds the
+  // wrong coin. The bidder now names a contract address; we read the symbol off
+  // the chain. Any Solana mint with a real pair is biddable: the Meme 100's
+  // thresholds decide what makes the RANKING, not what somebody may pay to put
+  // in the spotlight.
+  const address = String(body.address || '').trim()
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)) {
+    throw badRequest('Pick a coin, or paste its Solana contract address.', 'bad_mint')
+  }
+  const resolved = await resolveCoin(address)
+  if (!resolved) throw badRequest('No Solana trading pair found for that address.', 'unknown_mint')
+  const symbol = resolved.symbol
 
   if (await getDoc(`spotlightPays/${signature}`)) throw conflict('That payment has already been used for a spotlight.', 'signature_used')
 
@@ -105,6 +119,9 @@ export const handler = withHttp(async (event) => {
 
   const spotlight = {
     symbol,
+    // The mint travels with the placement, so anything downstream — the ticker,
+    // a viewer, an auditor — can resolve the ticker to exactly one coin.
+    address,
     // A jukebox play is bought airtime, not an endorsement — the ticker renders
     // this as "PAID SPOTLIGHT" so a paid placement is never mistaken for a pick.
     paid: true,
@@ -121,6 +138,7 @@ export const handler = withHttp(async (event) => {
   // able to read config/ticker, which carries admin-only fields.
   await writeDoc('public/jukebox', {
     symbol,
+    address,
     bidCsgn: paidAmount,
     bidAt: nowISO,
     expiresAt: new Date(Date.now() + JUKEBOX_TTL_MS).toISOString(),
@@ -153,3 +171,19 @@ export const handler = withHttp(async (event) => {
     expiresAt: new Date(Date.now() + JUKEBOX_TTL_MS).toISOString(),
   })
 })
+
+
+/** Read a mint's symbol off the chain. The bidder names an address; the ticker
+ *  is never taken from what they typed. */
+async function resolveCoin(address: string): Promise<{ symbol: string } | null> {
+  interface Pair { chainId?: string; baseToken?: { symbol?: string }; liquidity?: { usd?: number } }
+  const data = await fetchJson<{ pairs?: Pair[] }>(
+    `https://api.dexscreener.com/latest/dex/tokens/${address}`,
+    { timeoutMs: 4_000 },
+  )
+  const pairs = (data?.pairs ?? []).filter((p) => !p.chainId || p.chainId === 'solana')
+  if (pairs.length === 0) return null
+  const best = pairs.reduce((a, b) => ((b.liquidity?.usd ?? 0) > (a.liquidity?.usd ?? 0) ? b : a))
+  const symbol = String(best.baseToken?.symbol || '').toUpperCase().slice(0, 12)
+  return { symbol: symbol || address.slice(0, 4).toUpperCase() }
+}

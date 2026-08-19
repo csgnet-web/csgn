@@ -204,6 +204,27 @@ export const api = {
     discovery?: { candidates?: number; qualified?: number } | null
   }>('memeBoard'),
 
+  /** Look up any Solana mint by contract address. The Meme 100 is the pick
+   *  list; this is the escape hatch for a coin that has not made the board —
+   *  it never adds anything to the ranking. See lookupCoin.ts. */
+  lookupCoin: (address: string) => functionFetch<{
+    coin: {
+      address: string; symbol: string; name: string; imageUrl: string
+      priceUsd: number; marketCapUsd: number; volumeH24Usd: number
+      priceChangeH24Pct: number; liquidityUsd: number; pairUrl: string
+      onBoard: boolean
+    }
+  }>(`lookupCoin?address=${encodeURIComponent(address)}`),
+
+  /** A wallet's $CSGN balance. Served by a function so there is ONE reader —
+   *  see walletBalance.ts. `balance` is null when the chain could not be read,
+   *  which is not the same as zero and must not be rendered as zero. */
+  walletBalance: (address: string) => functionFetch<{
+    address: string
+    balance: number | null
+    error?: string
+  }>(`walletBalance?address=${encodeURIComponent(address)}`),
+
   /** Who from the network is live right now. Public, one document read, no
    *  uids and no offline members — see publicRoster.ts. */
   roster: () => functionFetch<{
@@ -274,6 +295,6 @@ export const api = {
   /** Bid $CSGN for the broadcast spotlight. The amount is whatever the signed
    *  transfer actually moved — the server re-reads it on-chain and rejects
    *  anything under the standing bid's raise. */
-  jukeboxSpotlight: (proofToken: string, signature: string, coin: { symbol: string; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }) =>
+  jukeboxSpotlight: (proofToken: string, signature: string, coin: { address: string; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }) =>
     functionFetch<{ ok: boolean; symbol: string; currency: 'CSGN'; amount: number; requiredAmount: number; expiresAt: string }>('jukeboxSpotlight', { method: 'POST', body: JSON.stringify({ proofToken, signature, ...coin }) }),
 }

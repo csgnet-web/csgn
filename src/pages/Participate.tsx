@@ -106,8 +106,11 @@ export default function Participate() {
   // Coin Jukebox — an open $CSGN auction for the broadcast spotlight.
   const [jukebox, setJukebox] = useState<JukeboxDoc | null>(null)
   const [spotBid, setSpotBid] = useState<number | null>(null)
-  const [spotSymbol, setSpotSymbol] = useState('')
-  const [spotPair, setSpotPair] = useState('')
+  // The coin being bid for, as a CHOSEN mint — same picker the vote uses, so
+  // any Solana contract address works and the ticker is read off the chain
+  // rather than typed. A typed ticker put a string on television that resolved
+  // to nothing.
+  const [spotPick, setSpotPick] = useState<{ address: string; symbol: string } | null>(null)
   const [spotNote, setSpotNote] = useState('')
   const [spotBusy, setSpotBusy] = useState(false)
   const [spotMsg, setSpotMsg] = useState<string | null>(null)
@@ -220,16 +223,9 @@ export default function Participate() {
     setRnBusy(false)
   }
 
-  // A pasted DexScreener URL → its pair address; otherwise use the value as-is.
-  const extractPair = (raw: string): string => {
-    const t = raw.trim()
-    const m = t.match(/dexscreener\.com\/[^/]+\/([A-Za-z0-9]+)/)
-    return m ? m[1] : t
-  }
   const doSpotlight = async () => {
     setSpotErr(null); setSpotMsg(null)
-    const symbol = spotSymbol.trim().toUpperCase()
-    if (!/^[A-Z0-9$]{2,12}$/.test(symbol)) { setSpotErr('Enter a valid ticker symbol (2–12 characters).'); return }
+    if (!spotPick) { setSpotErr('Pick a coin, or paste its contract address.'); return }
     const bid = Math.floor(spotBid ?? minBid)
     if (!(bid >= minBid)) { setSpotErr(`The next bid has to be at least ${fmtFull(minBid)} $CSGN.`); return }
     setSpotBusy(true)
@@ -241,12 +237,11 @@ export default function Participate() {
       // signature server-side, which re-reads the transfer on-chain.
       const signature = await paySpotlightCsgn(addr, bid)
       const res = await api.jukeboxSpotlight(proof, signature, {
-        symbol,
-        dexPair: extractPair(spotPair) || undefined,
+        address: spotPick.address,
         note: spotNote.trim() || undefined,
       })
-      setSpotMsg(`🎶 ${symbol} takes the spotlight for ${fmtToken(res.amount)} $CSGN — it rises on air within a minute.`)
-      setSpotSymbol(''); setSpotPair(''); setSpotNote(''); setSpotBid(null)
+      setSpotMsg(`🎶 ${res.symbol} takes the spotlight for ${fmtToken(res.amount)} $CSGN — it rises on air within a minute.`)
+      setSpotPick(null); setSpotNote(''); setSpotBid(null)
       loadBalance(addr)
     } catch (e) {
       setSpotErr(e instanceof Error ? e.message : 'Bid failed.')
@@ -356,7 +351,24 @@ export default function Participate() {
           {walletAddress && (
             <div className="text-right">
               <p className="text-xs text-gray-500">$CSGN balance</p>
-              <p className="font-mono text-sm text-primary-300">{balanceLoading ? '…' : balance != null ? fmtFull(balance) : '—'}</p>
+              {balanceLoading ? (
+                <p className="font-mono text-sm text-gray-500">…</p>
+              ) : balance != null ? (
+                <p className="font-mono text-sm text-primary-300">{fmtFull(balance)}</p>
+              ) : (
+                // NOT a zero. A balance we could not read is its own state, and
+                // saying so is the difference between "the chain is busy" and
+                // "your tokens don't count" — which is what a bare 0 said here
+                // to a wallet holding 1.89 million.
+                <button
+                  type="button"
+                  onClick={() => loadBalance(walletAddress)}
+                  className="font-mono text-sm text-amber-300/90 hover:text-amber-200 cursor-pointer underline underline-offset-2 decoration-dotted"
+                  title="We could not reach Solana just now"
+                >
+                  Retry
+                </button>
+              )}
             </div>
           )}
           {!walletAddress && (
@@ -546,10 +558,7 @@ export default function Participate() {
             </div>
           ) : (
             <>
-              <div className="grid sm:grid-cols-2 gap-2">
-                <input value={spotSymbol} onChange={(e) => setSpotSymbol(e.target.value.slice(0, 12))} placeholder="Ticker symbol — e.g. BONK" className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-amber-500/60 outline-none px-3 py-2 text-sm uppercase" />
-                <input value={spotPair} onChange={(e) => setSpotPair(e.target.value)} placeholder="DexScreener URL or pair (optional)" className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-amber-500/60 outline-none px-3 py-2 text-sm" />
-              </div>
+              <MemeVotePicker value={spotPick?.address ?? ''} onChange={setSpotPick} disabled={spotBusy} />
               <input value={spotNote} onChange={(e) => setSpotNote(e.target.value.slice(0, 90))} placeholder="Spotlight note (optional) — shown under the price" className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-amber-500/60 outline-none px-3 py-2 text-sm" />
 
               {/* Prefilled with the minimum, because the common case is "just
@@ -570,8 +579,10 @@ export default function Participate() {
 
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <span className="text-xs text-gray-500">You sign in Phantom · paid to the CSGN treasury</span>
-                <Button size="sm" variant="gold" isLoading={spotBusy} onClick={() => void doSpotlight()} leftIcon={<Flame className="w-4 h-4" />}>
-                  Bid {fmtToken(Math.max(minBid, spotBid ?? minBid))} $CSGN
+                <Button size="sm" variant="gold" disabled={!spotPick} isLoading={spotBusy} onClick={() => void doSpotlight()} leftIcon={<Flame className="w-4 h-4" />}>
+                  {spotPick
+                    ? `Bid ${fmtToken(Math.max(minBid, spotBid ?? minBid))} for $${spotPick.symbol}`
+                    : 'Pick a coin to bid on'}
                 </Button>
               </div>
             </>

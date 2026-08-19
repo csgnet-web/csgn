@@ -50,6 +50,10 @@ export function MemeVotePicker({
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
+  // A coin resolved by pasting a contract address that is not on the board.
+  const [looked, setLooked] = useState<MemeCoin | null>(null)
+  const [looking, setLooking] = useState(false)
+  const [lookErr, setLookErr] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -66,7 +70,10 @@ export function MemeVotePicker({
     return () => { cancelled = true }
   }, [])
 
-  const selected = useMemo(() => coins.find((c) => c.address === value) ?? null, [coins, value])
+  const selected = useMemo(
+    () => coins.find((c) => c.address === value) ?? (looked?.address === value ? looked : null),
+    [coins, value, looked],
+  )
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -79,9 +86,38 @@ export function MemeVotePicker({
       .slice(0, MAX_RESULTS)
   }, [coins, query])
 
-  // A pasted address that matches nothing needs its own answer — "no results"
-  // for a valid-looking mint is genuinely confusing.
+  // A pasted address that matches nothing on the board is not an error — the
+  // board is the pick list, not the limit. Look it up live so a member can back
+  // a coin that launched this morning.
   const pastedUnknownMint = MINT_RE.test(query.trim()) && results.length === 0
+
+  useEffect(() => {
+    const address = query.trim()
+    if (!MINT_RE.test(address) || coins.some((c) => c.address === address)) {
+      setLooked(null); setLookErr('')
+      return
+    }
+    let cancelled = false
+    setLooking(true); setLookErr('')
+    // Debounced: somebody pasting an address produces one change event, but a
+    // slow paste or an edit produces several, and each is an outbound lookup.
+    const t = setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await api.lookupCoin(address)
+          if (!cancelled) setLooked(normalizeMemeBoard([res.coin])[0] ?? null)
+        } catch (err) {
+          if (!cancelled) {
+            setLooked(null)
+            setLookErr(err instanceof Error ? err.message : 'Could not find that coin.')
+          }
+        } finally {
+          if (!cancelled) setLooking(false)
+        }
+      })()
+    }, 300)
+    return () => { cancelled = true; clearTimeout(t); setLooking(false) }
+  }, [query, coins])
 
   if (loading) {
     return (
@@ -128,11 +164,40 @@ export function MemeVotePicker({
               The board is empty right now, so there is nothing to vote on yet.
             </p>
           ) : pastedUnknownMint ? (
-            <p className="text-[11px] text-amber-300/80 px-1 leading-relaxed">
-              That address isn't on the Meme 100. The board is assembled from coins clearing real
-              liquidity, volume and age thresholds on Solana — a coin can be perfectly real and
-              still not be on it yet.
-            </p>
+            <div className="space-y-2">
+              {looking && (
+                <p className="flex items-center gap-2 text-[11px] text-gray-500 px-1">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Looking that up on-chain…
+                </p>
+              )}
+              {looked && (
+                <>
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => { onChange({ address: looked.address, symbol: looked.symbol }); setOpen(false); setQuery('') }}
+                    className="w-full flex items-center gap-3 rounded-xl border border-cyan-500/30 bg-cyan-500/[0.05] px-3 py-2.5 text-left hover:bg-cyan-500/[0.1] cursor-pointer touch-manipulation disabled:opacity-50"
+                  >
+                    {looked.imageUrl
+                      ? <img src={looked.imageUrl} alt="" className="w-7 h-7 rounded-full object-cover bg-white/5 shrink-0" />
+                      : <span className="w-7 h-7 rounded-full bg-white/[0.06] shrink-0" />}
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-white truncate">${looked.symbol}</span>
+                      <span className="block text-[10px] text-gray-500 truncate">
+                        {memePrice(looked.priceUsd)} · {compactUsd(looked.volumeH24Usd)} vol
+                      </span>
+                    </span>
+                    <span className="text-[10px] uppercase tracking-wider text-gray-600 shrink-0">Off board</span>
+                  </button>
+                  <p className="text-[11px] text-gray-600 px-1 leading-relaxed">
+                    Not on the Meme 100 yet — the board only carries coins clearing its published
+                    liquidity, volume and age thresholds. You can still back it; your weight counts
+                    toward its tally.
+                  </p>
+                </>
+              )}
+              {lookErr && !looking && <p className="text-[11px] text-amber-300/80 px-1">{lookErr}</p>}
+            </div>
           ) : results.length === 0 ? (
             <p className="text-[11px] text-gray-600 px-1">Nothing on the board matches that.</p>
           ) : (

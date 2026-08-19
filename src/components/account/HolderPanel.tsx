@@ -28,7 +28,10 @@ export default function HolderPanel({ walletAddress }: { walletAddress?: string 
   // write-only (no setState on the synchronous path) and, more usefully, means
   // switching wallets shows "—" until the new balance lands rather than briefly
   // attributing the previous wallet's bag to the new one.
-  const [fetched, setFetched] = useState<{ wallet: string; balance: number } | null>(null)
+  // `balance: null` means WE COULD NOT READ IT, which is not zero. Keeping the
+  // distinction in state is what lets the panel say so instead of showing a
+  // holder a zero that reads as an accusation about their own wallet.
+  const [fetched, setFetched] = useState<{ wallet: string; balance: number | null } | null>(null)
   const [rightNowMin, setRightNowMin] = useState(DEFAULT_TOKEN_GATES.rightNowMinCsgn)
 
   useEffect(() => onSnapshot(
