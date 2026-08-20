@@ -208,7 +208,7 @@ describe('the holder panel', () => {
 describe('slots and fees', () => {
   it('gives an empty, actionable state when nothing is booked', async () => {
     await render()
-    expect(text()).toContain("You don't have a block booked")
+    expect(text()).toContain("Nothing booked — which is normal")
     expect(text()).toContain('No assigned slot history yet.')
   })
 

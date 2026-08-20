@@ -866,9 +866,10 @@ export default function Dashboard() {
           </Card>
         )}
 
-        {/* Your claimed slots — real data, straight from the schedule. This
-            replaced two dead cards (auction bids, "CEO Schedule requests") that
-            described mechanics the network no longer has. */}
+        {/* Hours the network has you booked on — real data, straight from the
+            schedule. Members no longer book these themselves; an operator assigns
+            the current hour when you go live, and guests are added by hand. The
+            card stays because seeing your own name on a schedule is the payoff. */}
         <Card hover={false} className="p-5">
           <h2 className="text-sm font-semibold text-white flex items-center gap-2">
             <Radio className="w-4 h-4 text-gray-400" /> Your upcoming slots
@@ -876,9 +877,9 @@ export default function Dashboard() {
           <div className="mt-3 space-y-2">
             {upcomingSlots.length === 0 ? (
               <p className="text-sm text-gray-500 leading-relaxed">
-                You don't have a block booked, and you probably don't need one. With forwarding on,
-                we carry you whenever you go live and you earn a share of $CSGN's trading fees for
-                the minutes you're on air. Reserve a block only if you want a guaranteed time.
+                Nothing booked — which is normal, and nothing to fix. With forwarding on we carry
+                you whenever you happen to go live, and you earn a share of $CSGN's trading fees for
+                the minutes you're actually on air. Your clips fill the hours in between.
               </p>
             ) : (
               upcomingSlots.map((slot) => (
@@ -895,7 +896,7 @@ export default function Dashboard() {
             )}
           </div>
           <Link to="/schedule" className="inline-block mt-3">
-            <Button variant="secondary" size="sm">{upcomingSlots.length === 0 ? 'Reserve a block' : 'Reserve another'}</Button>
+            <Button variant="secondary" size="sm">See the schedule</Button>
           </Link>
         </Card>
 

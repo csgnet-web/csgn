@@ -29,9 +29,10 @@ import {
 const PAGE_SIZE = 10
 
 const TERMS: Array<{ key: keyof RankedMemeCoin['breakdown']; label: string; hint: string }> = [
-  { key: 'momentum', label: 'Momentum', hint: 'turnover + how far it moved today' },
   { key: 'volume', label: '24h volume', hint: 'what actually traded' },
+  { key: 'momentum', label: 'Momentum', hint: 'turnover + how far it moved today' },
   { key: 'votes', label: 'Holder votes', hint: '$CSGN weight behind it' },
+  { key: 'maturity', label: 'Staying power', hint: 'how long it has held a market' },
   { key: 'size', label: 'Size', hint: 'market cap — an anchor, not the driver' },
 ]
 
@@ -311,14 +312,15 @@ export default function Meme100Board() {
       <p className="flex items-start gap-1.5 text-[11px] text-gray-600 leading-relaxed">
         <Info className="w-3.5 h-3.5 shrink-0 mt-px" />
         <span>
-          Score is out of 100: momentum {Math.round(POWER_WEIGHTS.momentum * 100)},
-          24h volume {Math.round(POWER_WEIGHTS.volume * 100)},
+          Score is out of 100: 24h volume {Math.round(POWER_WEIGHTS.volume * 100)},
+          momentum {Math.round(POWER_WEIGHTS.momentum * 100)},
           holder votes {Math.round(POWER_WEIGHTS.votes * 100)},
-          size {Math.round(POWER_WEIGHTS.size * 100)}. Momentum is turnover plus how far it moved,
-          which is what separates a coin having a day from a coin that is merely large. Until
-          holders start voting, that {Math.round(POWER_WEIGHTS.votes * 100)} is shared out across
-          the other three rather than left unscored. Tap a coin for its breakdown — coins are
-          discovered from live Solana trading, not from a list anyone types.
+          staying power {Math.round(POWER_WEIGHTS.maturity * 100)},
+          size {Math.round(POWER_WEIGHTS.size * 100)}. Momentum separates a coin having a day from
+          one that is merely large; staying power keeps the majors on a board that would otherwise
+          only show whatever launched this morning. Until holders start voting, that{' '}
+          {Math.round(POWER_WEIGHTS.votes * 100)} is shared across the other four rather than left
+          unscored. Tap a coin for its breakdown.
         </span>
       </p>
     </section>

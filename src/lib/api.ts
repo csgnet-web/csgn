@@ -95,7 +95,10 @@ export const api = {
     return functionFetch<{ profiles: PublicProfile[] }>(`publicProfiles?${q.toString()}`)
   },
   publicProfile: (username: string) => functionFetch<{ profile: PublicProfile | null }>(`publicProfiles?username=${encodeURIComponent(username)}`),
-  claimSlot: (slotId: string) => functionFetch<{ ok: boolean; slotId: string }>('claimSlot', { method: 'POST', body: JSON.stringify({ slotId }) }, true),
+  // NO claimSlot. Nobody reserves an hour any more — the operator assigns the
+  // current block to a roster member who is actually live (adminLiveNow), and
+  // every other hour runs the member clip reel. The endpoint was deleted with
+  // the buttons that called it, so a stale build can't book a phantom booking.
   /** Admin: record a manual SOL creator-fee transfer against a member's slots.
    *  The signature is the receipt — the server validates its shape, skips any
    *  slot that is already settled, and stamps the whole group in one batch. */

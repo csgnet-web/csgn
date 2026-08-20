@@ -231,7 +231,7 @@ describe('the 0-100 score', () => {
 
   it('breaks down into the four published weights, and they add up', () => {
     const [top] = rankMemeBoard(coins)
-    const parts = top.breakdown.votes + top.breakdown.volume + top.breakdown.momentum + top.breakdown.size
+    const parts = top.breakdown.votes + top.breakdown.volume + top.breakdown.momentum + top.breakdown.maturity + top.breakdown.size
     // Rounding each term independently can drift a point from the total; more
     // than that means the breakdown is not the score.
     expect(Math.abs(parts - top.score)).toBeLessThanOrEqual(2)
@@ -280,7 +280,7 @@ describe('rankMemeBoard — trending, not merely large', () => {
     ])
     const w = ranked[0].weights
     expect(w.votes).toBe(0)
-    expect(w.volume + w.momentum + w.size).toBeCloseTo(1, 6)
+    expect(w.volume + w.momentum + w.maturity + w.size).toBeCloseTo(1, 6)
     expect(ranked[0].score).toBeGreaterThan(65)
   })
 
@@ -289,7 +289,7 @@ describe('rankMemeBoard — trending, not merely large', () => {
     const ranked = rankMemeBoard(coins, { a: { tokens: 5_000, wallets: 1 } })
     expect(ranked[0].weights.votes).toBeCloseTo(POWER_WEIGHTS.votes, 6)
     const w = ranked[0].weights
-    expect(w.votes + w.volume + w.momentum + w.size).toBeCloseTo(1, 6)
+    expect(w.votes + w.volume + w.momentum + w.maturity + w.size).toBeCloseTo(1, 6)
   })
 
   it('caps turnover so a wash trade cannot buy the top spot', () => {
@@ -322,5 +322,46 @@ describe('rankMemeBoard — trending, not merely large', () => {
       { y: { tokens: 900_000, wallets: 4 } },
     )
     expect(ranked.map((c) => c.address)).toContain('y')
+  })
+})
+
+describe('rankMemeBoard — staying power keeps the majors on', () => {
+  const coin = (over: Partial<MemeCoin> & { address: string; symbol: string }): MemeCoin => ({
+    name: over.symbol, imageUrl: '', priceUsd: 0.001, marketCapUsd: 1_000_000,
+    volumeH24Usd: 100_000, priceChangeH24Pct: 0, pairUrl: '', priced: true, ageDays: 0, ...over,
+  })
+
+  it('ranks an established coin above a day-old one on comparable activity', () => {
+    // A "Meme 100" that ranks purely on today's activity has no BONK on it,
+    // and a viewer would rightly think it was broken.
+    const ranked = rankMemeBoard([
+      coin({ address: 'old', symbol: 'OLD', ageDays: 600, volumeH24Usd: 2_000_000, marketCapUsd: 50_000_000 }),
+      coin({ address: 'new', symbol: 'NEW', ageDays: 1, volumeH24Usd: 2_000_000, marketCapUsd: 50_000_000 }),
+    ])
+    expect(ranked[0].symbol).toBe('OLD')
+  })
+
+  it('does not let age alone beat a coin that is genuinely on fire', () => {
+    // Staying power is 15 points, not a veto. A dead two-year-old coin must
+    // still lose to something actually trading.
+    const ranked = rankMemeBoard([
+      coin({ address: 'stale', symbol: 'STALE', ageDays: 730, volumeH24Usd: 5_000, marketCapUsd: 200_000 }),
+      coin({ address: 'hot', symbol: 'HOT', ageDays: 2, volumeH24Usd: 40_000_000, priceChangeH24Pct: 180, marketCapUsd: 30_000_000 }),
+    ])
+    expect(ranked[0].symbol).toBe('HOT')
+  })
+
+  it('caps maturity so a five-year-old coin is not unbeatable', () => {
+    const two = rankMemeBoard([coin({ address: 'a', symbol: 'A', ageDays: 730 })])[0]
+    const five = rankMemeBoard([coin({ address: 'a', symbol: 'A', ageDays: 1825 })])[0]
+    expect(five.breakdown.maturity).toBe(two.breakdown.maturity)
+  })
+
+  it('treats an unknown age as no credit rather than as brand new', () => {
+    const t = rankMemeBoard([
+      coin({ address: 'a', symbol: 'A', ageDays: 0 }),
+      coin({ address: 'b', symbol: 'B', ageDays: 400 }),
+    ])
+    expect(t.find((c) => c.symbol === 'A')!.breakdown.maturity).toBe(0)
   })
 })

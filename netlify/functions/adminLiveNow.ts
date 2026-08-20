@@ -31,6 +31,8 @@ import {
 import { json, parseJson, requireMethod, withHttp } from './_shared/http'
 import { refreshLiveRoster, ROSTER_STALE_MS, type RosterEntry } from './_shared/liveRoster'
 import { operatorAlerts, recommendedMode, DEFAULT_LIVE_VIEWER_FLOOR } from './_shared/operatorAlerts'
+import { publishChannelMode } from './_shared/channelModeStore'
+import type { ModeSlot } from './_shared/channelMode'
 import { resolveBroadcast } from './resolveCurrentBroadcast'
 import { twitchLoginFromUrl } from './_shared/twitch'
 
@@ -108,6 +110,7 @@ export const handler = withHttp(async (event) => {
       sourceType: null, isGuest: null, guestAddedBy: null, updatedAt: new Date(),
     }, true)])
     const currentBroadcast = await resolveBroadcast()
+    await announceMode({ startTime: slot.startTime, status: 'open', type: slot.type })
     await auditLog('adminTakeOffAir', admin.uid, { slotId: slot.id })
     return json(200, { ok: true, slotId: slot.id, currentBroadcast })
   }
@@ -144,6 +147,10 @@ export const handler = withHttp(async (event) => {
     }, true)])
 
     const currentBroadcast = await resolveBroadcast()
+    await announceMode({
+      startTime: slot.startTime, status: 'live', type: slot.type,
+      assignedName: guestName, isGuest: true, sourceType: 'operator_guest',
+    })
     await auditLog('adminPutGuestOnAir', admin.uid, { slotId: slot.id, guestUrl, guestName })
     return json(200, { ok: true, slotId: slot.id, guest: true, guestName, currentBroadcast })
   }
@@ -186,12 +193,16 @@ export const handler = withHttp(async (event) => {
   }, true)])
 
   const currentBroadcast = await resolveBroadcast()
+  await announceMode({
+    startTime: slot.startTime, status: 'live', type: slot.type,
+    assignedUid: uid, assignedName: user.username || login, sourceType: 'operator_live',
+  })
   await auditLog('adminPutOnAir', admin.uid, { slotId: slot.id, uid, twitchUsername: login })
   return json(200, { ok: true, slotId: slot.id, uid, twitchUsername: login, currentBroadcast })
 })
 
 /** The block covering right now, if there is one. */
-async function currentSlot(): Promise<{ id: string; assignedUid?: string; assignedName?: string; sourceType?: string; startTime?: string } | null> {
+async function currentSlot(): Promise<{ id: string; assignedUid?: string; assignedName?: string; sourceType?: string; startTime?: string; type?: string } | null> {
   const now = new Date().toISOString()
   const rows = await queryCollection(
     'slots',
@@ -200,7 +211,7 @@ async function currentSlot(): Promise<{ id: string; assignedUid?: string; assign
     5,
   )
   for (const row of rows) {
-    const d = row.data as { startTime?: string; endTime?: string; assignedUid?: string; assignedName?: string; sourceType?: string }
+    const d = row.data as { startTime?: string; endTime?: string; assignedUid?: string; assignedName?: string; sourceType?: string; type?: string }
     if (typeof d.endTime === 'string' && d.endTime > now) {
       return {
         id: row.path.split('/').pop()!,
@@ -208,6 +219,7 @@ async function currentSlot(): Promise<{ id: string; assignedUid?: string; assign
         assignedName: d.assignedName,
         sourceType: d.sourceType,
         startTime: d.startTime,
+        type: d.type,
       }
     }
   }
@@ -219,4 +231,33 @@ function minutesSince(startTime?: string): number {
   const start = Date.parse(startTime ?? '')
   if (!Number.isFinite(start)) return 0
   return Math.max(0, Math.floor((Date.now() - start) / 60_000))
+}
+
+/**
+ * Republish the public "what's on and why" sign right after an operator action.
+ *
+ * The poller does this every minute anyway, so this is purely about LATENCY:
+ * without it, somebody put on air at 8:00:05 has the site telling visitors the
+ * clip reel is running for the rest of the minute. On a channel where the whole
+ * promise is "we cut to you while you're live", a sign that is a minute behind
+ * the picture is the difference between a network and a webpage about one.
+ *
+ * The slot shape is built from what we just WROTE rather than re-read, because
+ * a read here would race the write we just committed. Best-effort: an operator
+ * action that succeeded must not report failure because the sign lagged.
+ */
+async function announceMode(slot: ModeSlot): Promise<void> {
+  try {
+    const [meta, roster] = await Promise.all([
+      getDoc<{ networkBlockEnabled?: boolean }>('config/scheduleMeta'),
+      getDoc<RosterDoc>('public/liveRoster'),
+    ])
+    await publishChannelMode({
+      slot,
+      networkBlockEnabled: meta?.networkBlockEnabled !== false,
+      liveCount: (roster?.entries ?? []).filter((e) => e?.live).length,
+    })
+  } catch (err) {
+    console.warn('[adminLiveNow] channel mode publish failed', err)
+  }
 }

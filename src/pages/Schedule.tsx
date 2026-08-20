@@ -1,25 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { doc, onSnapshot } from 'firebase/firestore'
-import { Radio, Crown, Check, Loader2, CalendarPlus, Twitch, Lock } from 'lucide-react'
+import { Radio, Crown, Twitch } from 'lucide-react'
 import { db } from '@/config/firebase'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { formatTimeET, isNetworkSlot, isSlotClaimable, toMillis, type Slot } from '@/lib/slots'
-import { api } from '@/lib/api'
+import { formatTimeET, isNetworkSlot, toMillis, type Slot } from '@/lib/slots'
 import { Link } from 'react-router-dom'
 import RosterStrip from '@/components/schedule/RosterStrip'
-import { Button } from '@/components/ui/Button'
-import { useAuth } from '@/contexts/useAuth'
-import { Notice } from '@/components/ui/Notice'
-import { claimEligibility } from '@/lib/slotModel'
+import ChannelModeCard from '@/components/watch/ChannelModeCard'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
 import { usePageMeta } from '@/hooks/usePageMeta'
 
-// The schedule IS the claim surface — /queue folded into this page. Slots in the
-// CSGN Originals (network) block are programmed by the network; every other slot
-// is claimable in one tap by any verified account. Turning the network block off
-// (config/scheduleMeta.networkBlockEnabled = false) returns those hours to open.
+// The schedule is a RECORD, not a booking sheet. Slots in the CSGN Originals
+// (network) block are programmed by the network; every other hour either has a
+// roster streamer the operator put on, or it runs the member clip reel. Turning
+// the network block off (config/scheduleMeta.networkBlockEnabled = false) hands
+// those hours to the reel as well.
 
 const WEEK_SPAN = 7
 
@@ -51,66 +48,22 @@ function etMiddayFromOffset(offset: number): Date {
 export default function Schedule() {
   usePageMeta({
     title: "Schedule — Who's On CSGN Right Now",
-    description: "Who from the CSGN network is live right now, who was on earlier, and which blocks are still open to reserve. Connected streamers are carried automatically whenever they go live.",
+    description: "Who from the CSGN network is live right now, who was on earlier, and what is scheduled. Connected streamers are carried automatically whenever they go live — there is nothing to book.",
     path: '/schedule',
   })
 
-  const { user, profile } = useAuth()
   // Shared app-wide listener (-3h → +8d): already normalized, sorted, live, and
   // ticking nowMs. A second listener here would double every visitor's reads.
   const { allSlots, nowMs } = useLiveSlot()
   const [networkBlockEnabled, setNetworkBlockEnabled] = useState(true)
+  // Whether the 7 PM–3 AM owner block is running. Decides how hours are typed
+  // on the grid and whether the legend mentions CSGN Originals at all.
+  useEffect(() => onSnapshot(
+    doc(db, 'config', 'scheduleMeta'),
+    (snap) => setNetworkBlockEnabled(snap.exists() ? snap.data()?.networkBlockEnabled !== false : true),
+    () => setNetworkBlockEnabled(true),
+  ), [])
   const [selectedDay, setSelectedDay] = useState(0)
-  const [claimingId, setClaimingId] = useState<string | null>(null)
-  const [claimError, setClaimError] = useState('')
-  const eligibility = claimEligibility(user, profile)
-  /** Two words on the button; the full sentence lives in the notice up top. */
-  const blockedLabel = {
-    signed_out: 'Sign up',
-    email_unverified: 'Verify email',
-    no_wallet: 'Add wallet',
-    no_twitch: 'Add Twitch',
-    inactive: 'Unavailable',
-  }[eligibility.reason ?? 'signed_out']
-  const [claimedId, setClaimedId] = useState<string | null>(null)
-
-  useEffect(() => {
-    return onSnapshot(doc(db, 'config', 'scheduleMeta'), (snap) => {
-      const d = snap.exists() ? snap.data() : {}
-      setNetworkBlockEnabled(d.networkBlockEnabled !== false) // absent = on
-    }, () => {})
-  }, [])
-
-  const handleClaim = useCallback(async (slot: Slot) => {
-    if (!user || !profile) {
-      // Bounce through registration, then auto-resume this claim.
-      localStorage.setItem('pendingClaimSlotId', slot.id)
-      window.dispatchEvent(new Event('csgn:openRegister'))
-      return
-    }
-    setClaimingId(slot.id)
-    setClaimError('')
-    try {
-      await api.claimSlot(slot.id)
-      setClaimedId(slot.id) // the live listener refreshes the grid on its own
-    } catch (err) {
-      setClaimError(err instanceof Error ? err.message : 'Could not claim slot.')
-    } finally {
-      setClaimingId(null)
-    }
-  }, [profile, user])
-
-  // Resume a claim that bounced through registration.
-  useEffect(() => {
-    if (!user || !profile || claimingId) return
-    const pending = localStorage.getItem('pendingClaimSlotId')
-    if (!pending) return
-    const slot = allSlots.find((s) => s.id === pending)
-    if (!slot) return
-    localStorage.removeItem('pendingClaimSlotId')
-    void handleClaim(slot)
-  }, [user, profile, allSlots, claimingId, handleClaim])
-
   const days = useMemo(() => Array.from({ length: WEEK_SPAN }, (_, i) => {
     const d = etMiddayFromOffset(i)
     if (i === 0) return { label: 'Today', sub: d.toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' }) }
@@ -135,8 +88,12 @@ export default function Schedule() {
     return dayed
   }), [allSlots, days])
 
+  // How much of the week has nobody scheduled on it. Not "claimable" any more
+  // — nothing is claimed — but still worth stating, because an open hour is an
+  // hour the clip reel carries, and that is the product working rather than a
+  // gap in it.
   const openCount = useMemo(
-    () => allSlots.filter((s) => isSlotClaimable(s, networkBlockEnabled)).length,
+    () => allSlots.filter((s) => !s.assignedUid && !s.isGuest && !(isNetworkSlot(s) && networkBlockEnabled)).length,
     [allSlots, networkBlockEnabled],
   )
 
@@ -150,15 +107,12 @@ export default function Schedule() {
     const isLive = nowMs >= toMillis(slot.startTime) && nowMs < toMillis(slot.endTime)
     const isPast = toMillis(slot.endTime) <= nowMs
     const network = isNetworkSlot(slot) && networkBlockEnabled
-    const claimable = isSlotClaimable(slot, networkBlockEnabled)
-    const mine = !!user && slot.assignedUid === user.uid
-    const busy = claimingId === slot.id
-    const justClaimed = claimedId === slot.id
     const twitch = twitchHandleFromUrl(slot.streamUrl)
     // A guest occupies the block with no assignedUid — they are not a member —
     // so the cell has to check the name too or an aired guest reads as "Open".
-    const claimed = !!slot.assignedUid || !!slot.isGuest || justClaimed
-    const eligible = eligibility.ok
+    const claimed = !!slot.assignedUid || !!slot.isGuest
+    // An hour with nobody on it is not "available" — it is the clip reel's.
+    const reel = !claimed && !network
 
     return (
       <div
@@ -166,7 +120,7 @@ export default function Schedule() {
           isLive ? 'bg-primary-500/10'
             : isPast ? 'bg-transparent opacity-55'
             : network ? 'bg-gradient-to-b from-gold/[0.07] to-transparent'
-            : claimable ? 'bg-white/[0.015] hover:bg-white/[0.03]'
+            : reel ? 'bg-white/[0.015]'
             : ''
         }`}
       >
@@ -195,7 +149,7 @@ export default function Schedule() {
           ) : claimed ? (
             <>
               <p className={`truncate text-white font-bold ${compact ? 'text-sm' : 'text-[13px]'}`}>
-                {slot.assignedName || 'Claimed'}
+                {slot.assignedName || 'On Air'}
               </p>
               {/* A guest is the network vouching for somebody, not a member who
                   went live. Saying so is what keeps the roster meaningful. */}
@@ -214,59 +168,22 @@ export default function Schedule() {
                an em-dash, because "nothing aired" is real information about a
                channel and pretending the cell is empty hides it. */
             <p className="text-[11px] text-gray-600">Reel + clips</p>
-          ) : claimable ? (
-            /* One calm line. The old card shouted a two-line all-caps slogan
-               above a second all-caps button that said nearly the same thing —
-               two competing headlines in 112px, which is what made a week of
-               open slots read as noise. The button is the call to action; this
-               is just the label. */
-            <p className={`font-semibold leading-tight ${eligible ? 'text-gray-200' : 'text-gray-500'} ${compact ? 'text-sm' : 'text-[13px]'}`}>
-              {isLive ? 'On air now' : 'Open'}
+          ) : reel ? (
+            /* An hour with nobody scheduled is the CLIP REEL's hour, and saying
+               so is the point. "Open" implied something was missing; the reel
+               running is the product working. */
+            <p className={`font-semibold leading-tight text-gray-400 ${compact ? 'text-sm' : 'text-[13px]'}`}>
+              {isLive ? 'Clips on air' : 'Member clips'}
             </p>
           ) : (
             <p className="text-[11px] text-gray-600">—</p>
           )}
         </div>
 
-        {/* action — pinned to the bottom of every card */}
-        <div className="shrink-0 mt-1">
-          {isPast ? (
-            <p className="text-[10px] text-gray-600">{claimed ? 'Aired' : ''}</p>
-          ) : mine ? (
-            <p className="text-[11px] text-emerald-400 flex items-center gap-1 font-semibold"><Check className="w-3 h-3" /> Yours</p>
-          ) : justClaimed ? (
-            <p className="text-[11px] text-emerald-400 flex items-center gap-1 font-semibold"><Check className="w-3 h-3" /> Claimed</p>
-          ) : isPast ? (
-            /* A finished hour nobody was on. Said plainly rather than shown as
-               an em-dash, because "nothing aired" is real information about a
-               channel and pretending the cell is empty hides it. */
-            <p className="text-[11px] text-gray-600">Reel + clips</p>
-          ) : claimable ? (
-            /* GRAYED OUT WHEN YOU CAN'T ACTUALLY CLAIM IT.
-               An enabled button that always fails is the worst possible state:
-               it teaches the member that the site is broken rather than that
-               they have one thing left to do. Disabled + a plain reason, with
-               the fix explained once in the notice at the top of the page.
-               Also: flat fill, no glow, no scale-on-press — 84 of these on a
-               week view, and the shadows were most of why it looked jumbled. */
-            <button
-              onClick={() => void handleClaim(slot)}
-              disabled={busy || !eligible}
-              title={eligible ? undefined : eligibility.message}
-              className={`w-full rounded-lg text-[11px] font-semibold py-1.5 flex items-center justify-center gap-1.5 transition-colors ${
-                eligible
-                  ? 'bg-primary-500 hover:bg-primary-400 text-white cursor-pointer disabled:opacity-50'
-                  : 'bg-white/[0.04] border border-white/[0.08] text-gray-500 cursor-not-allowed'
-              }`}
-            >
-              {busy
-                ? <><Loader2 className="w-3 h-3 animate-spin" /> Claiming…</>
-                : eligible
-                  ? <><CalendarPlus className="w-3 h-3" /> {isLive ? 'Go live' : 'Reserve'}</>
-                  : <><Lock className="w-3 h-3" /> {blockedLabel}</>}
-            </button>
-          ) : null}
-        </div>
+        {/* NO ACTION. Nobody reserves a block any more — the channel runs
+            entirely off whoever from the roster is live, and the operator
+            decides who goes on. This grid is a RECORD of what aired and what
+            is scheduled, which is the only honest thing it can be now. */}
       </div>
     )
   }
@@ -297,31 +214,22 @@ export default function Schedule() {
           </div>
         </div>
 
-        {/* WHO IS ON, before what is bookable. See RosterStrip. */}
+        {/* THE RULE, THEN THE ROSTER, THEN THE RECORD.
+            The mode card says what is on and why — and expands into the actual
+            log of switches, which is what makes the rule checkable rather than
+            a claim. Everything below is the evidence for it. */}
+        <div className="mb-5">
+          <ChannelModeCard />
+        </div>
+
+        {/* WHO IS ON. See RosterStrip. */}
         <RosterStrip />
 
         {/* Legend */}
         <div className="flex flex-wrap items-center gap-3 mb-3 text-[11px] text-gray-500">
-          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-primary-500/40 border border-primary-500/50" /> Open — reserve it, or just go live</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-primary-500/40 border border-primary-500/50" /> Open — member clips carry it</span>
           {networkBlockEnabled && <span className="flex items-center gap-1.5"><Crown className="w-3 h-3 text-gold" /> CSGN Originals — 7 PM–3 AM ET</span>}
         </div>
-
-        {/* Tell the member what's missing BEFORE they press a button and get a
-            server rejection naming two requirements at once. Same rule the
-            server enforces (claimEligibility mirrors claimSlot.ts). */}
-        {!eligibility.ok && eligibility.message && (
-          <Notice
-            tone="warning"
-            className="mb-3"
-            action={eligibility.actionHref
-              ? <Link to={eligibility.actionHref}><Button variant="secondary" size="sm">{eligibility.actionLabel}</Button></Link>
-              : undefined}
-          >
-            {eligibility.message}
-          </Notice>
-        )}
-
-        {claimError && <Notice tone="error" className="mb-3">{claimError}</Notice>}
 
         {/* ── Mobile: day picker + single column ── */}
         <div className="lg:hidden">
@@ -365,9 +273,8 @@ export default function Schedule() {
           </div>
         </Card>
 
-        {/* Footer CTA — only worth showing to signed-out visitors */}
-        {!user && (
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mt-8">
+        {/* Footer CTA */}
+        <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mt-8">
             <Card hover={false} className="p-6 bg-primary-500/5 border-primary-500/20">
               <div className="flex items-start gap-4">
                 <div className="w-10 h-10 rounded-xl bg-primary-500/20 flex items-center justify-center shrink-0">
@@ -376,14 +283,18 @@ export default function Schedule() {
                 <div>
                   <h4 className="font-semibold text-white mb-1">Want to be on the schedule?</h4>
                   <p className="text-sm text-gray-400 leading-relaxed">
-                    Connect your Phantom wallet and Twitch account, tap <span className="text-primary-300 font-medium">Claim</span> on any open slot,
-                    and earn 30% of CSGN's trading fees for the time you stream. Takes under a minute.
+                    There is nothing to book.{' '}
+                    <Link to="/account" className="text-primary-300 font-medium hover:text-primary-200 underline underline-offset-2">
+                      Connect your Twitch
+                    </Link>{' '}
+                    once and turn on forwarding — when you go live, you show up on our board and we
+                    can put you on the channel. You earn a share of $CSGN's trading fees for the
+                    minutes you were actually carried.
                   </p>
                 </div>
               </div>
             </Card>
           </motion.div>
-        )}
       </div>
     </div>
   )

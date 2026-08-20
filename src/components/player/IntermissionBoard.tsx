@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
-import { formatESTRange, isNetworkSlot, isSlotClaimable, normalizeSlotStatus, slotIdentity, toMillis, CSGN_MINT, type Slot } from '@/lib/slots'
+import { formatESTRange, isNetworkSlot, slotIdentity, toMillis, CSGN_MINT, type Slot } from '@/lib/slots'
 import { X_HANDLE } from '@/lib/social'
 import { CsgnLogo } from '@/components/ui/CsgnLogo'
 import { formatPrice, compactUsd } from '@/lib/format'
@@ -12,11 +12,8 @@ const TAGLINES = [
   'The ESPN and TMZ of Crypto',
   '24/7. On-chain. Live on X.',
   'Streamers earn creator fees — live, on screen',
-  'This stage could be yours — claim it at csgn.fun',
+  'Hold $CSGN. Post a clip. Get on television.',
 ] as const
-
-
-
 
 function UpNextPanel({ slots, networkBlockEnabled }: { slots: Slot[]; networkBlockEnabled: boolean }) {
   return (
@@ -27,81 +24,105 @@ function UpNextPanel({ slots, networkBlockEnabled }: { slots: Slot[]; networkBlo
           slots.map((s) => (
             <div key={s.id} className="flex items-baseline justify-center gap-6">
               <span className="text-4xl font-black font-display text-white">
-                {slotIdentity(s, { networkBlockEnabled }).name}
+                {slotIdentity(s, { networkBlockEnabled, openName: 'Member Clips' }).name}
               </span>
               <span className="text-2xl font-mono text-primary-300">{formatESTRange(s)}</span>
             </div>
           ))
         ) : (
-          <p className="text-3xl font-display font-bold text-white">New slots open every day</p>
+          <p className="text-3xl font-display font-bold text-white">Clips roll around the clock</p>
         )}
       </div>
       <p className="text-xl text-gray-500">
-        Open slots are up for grabs at <span className="text-white font-bold">csgn.fun</span> — take one, go live, earn creator fees
+        Any hour without a live member runs the member reel — the more <span className="text-white font-bold">$CSGN</span> you hold, the more of it is yours
       </p>
     </div>
   )
 }
 
 /**
- * The headline act: the stage is empty RIGHT NOW and anyone can claim it.
- * Broadcast-billboard styling — marching gradient border, breathing glow,
- * radar rings and a sheen sweep on the "TAKE THIS SLOT" pill — plus the three
- * steps a viewer follows on their phone (Phantom browser → Twitch → go live).
- * Renders on the OBS output, so the CTA is a billboard, not a button.
+ * The headline act. NOT a claim billboard any more — nobody reserves an hour.
+ *
+ * The old panel sold "TAKE THIS SLOT", a path that no longer exists: the channel
+ * now runs off the roster, so the only two things a viewer can actually do are
+ * post a clip (free, airs by holdings) or connect Twitch once and get put on when
+ * they happen to be live. Advertising a button that isn't there was the fastest
+ * way to make the network look abandoned. This sells the two real doors.
  */
-function OpenStagePanel({ slot, isCurrent = false }: { slot: Slot | null; isCurrent?: boolean }) {
+function GetOnPanel() {
   return (
     <div className="flex flex-col items-center gap-10">
       <div className="flex flex-col items-center gap-3">
-        <p className="text-2xl font-black tracking-[0.4em] uppercase text-primary-400">The Stage Is Open</p>
+        <p className="text-2xl font-black tracking-[0.4em] uppercase text-primary-400">Two ways on the air</p>
         <p className="text-6xl font-black font-display text-white text-center leading-tight">
-          Go live on CSGN — right now
+          Post a clip. Or go live as you already do.
         </p>
       </div>
 
-      {/* Featured claimable slot — gradient-sweep frame around a glowing card */}
-      <div className="stage-border-sweep rounded-3xl p-[2px]">
-        <div className="stage-card-breathe rounded-3xl bg-[#0a0a14] px-14 py-9 flex items-center gap-12">
-          <div className="text-left">
-            <p className="text-sm uppercase tracking-[0.3em] text-gray-500 mb-2">{slot ? (isCurrent ? 'On Air Now' : 'Open Slot') : 'Next Open Slot'}</p>
-            <p className="text-4xl font-black font-mono text-white">{slot ? formatESTRange(slot) : 'Announced daily'}</p>
-            <p className="text-lg text-gray-400 mt-2">Streamed to X on <span className="text-white font-bold">@{X_HANDLE}</span> · you keep creator fees</p>
+      <div className="flex items-stretch gap-8">
+        <div className="stage-border-sweep rounded-3xl p-[2px]">
+          <div className="stage-card-breathe rounded-3xl bg-[#0a0a14] px-12 py-8 max-w-[520px] h-full text-left">
+            <p className="text-sm uppercase tracking-[0.3em] text-gray-500 mb-3">No tokens needed to start</p>
+            <p className="text-4xl font-black font-display text-white leading-tight">Post a clip</p>
+            <p className="text-lg text-gray-400 mt-3 leading-snug">
+              Drop a link from X, YouTube, TikTok or Instagram. It airs on the member reel — your share of the
+              hour tracks the <span className="text-white font-bold">$CSGN</span> you hold.
+            </p>
           </div>
-          <div className="relative shrink-0">
-            <span className="stage-ring" />
-            <span className="stage-ring" style={{ animationDelay: '1.3s' }} />
-            <span className="stage-cta-shine relative overflow-hidden inline-flex items-center gap-3 px-10 py-5 rounded-full bg-primary-500 text-white text-2xl font-black uppercase tracking-widest">
-              <span className="w-3 h-3 rounded-full bg-white animate-live-pulse" />
-              Take This Slot
-            </span>
+        </div>
+
+        <div className="stage-border-sweep rounded-3xl p-[2px]">
+          <div className="stage-card-breathe rounded-3xl bg-[#0a0a14] px-12 py-8 max-w-[520px] h-full text-left">
+            <p className="text-sm uppercase tracking-[0.3em] text-gray-500 mb-3">Nothing to schedule</p>
+            <p className="text-4xl font-black font-display text-white leading-tight">Connect Twitch</p>
+            <p className="text-lg text-gray-400 mt-3 leading-snug">
+              Grant CSGN permission once. Stream whenever you normally do — the network picks you up while
+              you're live and pays creator fees for the minutes you're on.
+            </p>
           </div>
         </div>
       </div>
 
-      {/* The three steps, exactly as a viewer does them on their phone */}
-      <div className="flex items-stretch gap-6">
+      <p className="text-2xl font-mono text-gray-400">csgn.fun · streamed to X on <span className="text-white font-bold">@{X_HANDLE}</span></p>
+    </div>
+  )
+}
+
+/**
+ * WHY THE CHANNEL IS IN CLIP MODE RIGHT NOW — said out loud, on the broadcast.
+ *
+ * The switch between the member reel and a live streamer is the single most
+ * confusing thing about a 24/7 channel with no fixed lineup. A viewer who tunes
+ * in twice and sees two different products, with no explanation, files the
+ * channel as broken. So the rule is published rather than inferred: clips are
+ * the floor, a live member is an interruption, and both are normal.
+ */
+function ModeExplainerPanel() {
+  return (
+    <div className="flex flex-col items-center gap-9">
+      <p className="text-2xl font-black tracking-[0.4em] uppercase text-gray-400">How this channel runs</p>
+      <div className="flex items-center gap-5">
         {[
-          ['1', 'Open csgn.fun in your Phantom wallet browser'],
-          ['2', 'Create your account & connect Twitch'],
-          ['3', 'Take the slot — you’re live on the network'],
-        ].map(([n, text]) => (
-          <div key={n} className="flex items-center gap-4 px-7 py-4 rounded-2xl bg-white/[0.04] border border-white/[0.1] max-w-[360px]">
-            <span className="shrink-0 w-10 h-10 rounded-full bg-primary-500/20 border border-primary-500/50 flex items-center justify-center text-xl font-black text-primary-300">{n}</span>
-            <span className="text-lg text-gray-300 text-left leading-snug">{text}</span>
+          ['Clip mode', 'Nobody from the roster is live', 'The member reel plays — clips ordered by holdings'],
+          ['Live mode', 'A member goes live on Twitch', 'The network cuts to them, usually within minutes'],
+          ['Back to clips', 'They end the stream or drop off', 'The reel resumes from where it left off'],
+        ].map(([title, when, what]) => (
+          <div key={title} className="px-9 py-7 rounded-2xl bg-white/[0.04] border border-white/[0.1] max-w-[400px] text-left">
+            <p className="text-2xl font-black font-display text-white">{title}</p>
+            <p className="text-sm uppercase tracking-[0.2em] text-primary-300 mt-2">{when}</p>
+            <p className="text-lg text-gray-400 mt-3 leading-snug">{what}</p>
           </div>
         ))}
       </div>
+      <p className="text-xl text-gray-500">Every switch is logged publicly at <span className="text-white font-bold">csgn.fun/schedule</span></p>
     </div>
   )
 }
 
 /**
  * Shown on /player when the hour ON AIR is a reserved CSGN Originals (network)
- * hour. It presents the block as programmed television, NOT a claimable stage —
- * so a network hour never renders the "Take This Slot" billboard even while it's
- * confirmed/live. Open hours are still advertised for claiming in the up-next
- * panel and the ticker strip below.
+ * hour, so a network hour reads as programmed television rather than as an
+ * ordinary clip hour.
  */
 function NetworkNowPanel({ slot }: { slot: Slot | null }) {
   const showName = slot ? slotIdentity(slot).name : 'CSGN Originals'
@@ -119,7 +140,7 @@ function NetworkNowPanel({ slot }: { slot: Slot | null }) {
       <div className="stage-border-sweep rounded-3xl p-[2px]">
         <div className="rounded-3xl bg-[#0a0a14] px-14 py-8 text-center max-w-[820px]">
           <p className="text-xl text-gray-300">Network programming — streamed to X on <span className="text-white font-bold">@{X_HANDLE}</span></p>
-          <p className="text-lg text-gray-500 mt-3">The CSGN Originals block runs 7 PM–3 AM ET. The open hours are yours to claim at <span className="text-white font-bold">csgn.fun</span></p>
+          <p className="text-lg text-gray-500 mt-3">The CSGN Originals block runs 7 PM–3 AM ET. Every other hour belongs to the members at <span className="text-white font-bold">csgn.fun</span></p>
         </div>
       </div>
     </div>
@@ -188,9 +209,9 @@ function TaglinePanel({ index }: { index: number }) {
 
 /**
  * The network intermission board — fully code-driven 1080p programming shown
- * whenever no streamer is live. Cycles branded panels: up-next schedule,
- * live token stats, follow card, taglines. `dimmed` renders it as the
- * backdrop behind BRB / starting-soon status cards.
+ * whenever no streamer is live. Cycles branded panels: how to get on, the
+ * clip/live rule, up-next, live token stats, follow card, taglines. `dimmed`
+ * renders it as the backdrop behind BRB / starting-soon status cards.
  */
 export default function IntermissionBoard({ dimmed = false }: { dimmed?: boolean }) {
   const { allSlots, currentSlot, nowMs, networkBlockEnabled } = useLiveSlot()
@@ -205,46 +226,23 @@ export default function IntermissionBoard({ dimmed = false }: { dimmed?: boolean
   const upcoming = allSlots.filter((s) => toMillis(s.startTime) > nowMs).slice(0, 3)
 
   // Is the hour on the air a reserved CSGN Originals (network) hour? If so the
-  // featured panel is the network billboard, never the "take this slot" one.
+  // featured panel is the network billboard rather than the recruiting one.
   const currentIsNetwork = !!currentSlot && isNetworkSlot(currentSlot) && networkBlockEnabled
 
-  // The open-stage billboard resolves to the CURRENT actual hour whenever this
-  // board is showing. It only ever renders when nobody is live, so the hour on
-  // the clock is an open stage right now — even if a streamer who dropped mid-hour
-  // or never showed is still nominally assigned to it. That's what stops /player
-  // from "skipping to the next slot" the moment someone drops off live: the revert
-  // lands on the same correct time slot, offered up for anyone to take and go live
-  // on immediately. A reserved network hour (handled above via currentIsNetwork)
-  // and an explicitly completed hour are the only ones that fall through to the
-  // next open slot — which still uses the isSlotClaimable rule /watch and
-  // /schedule share, so the surfaces agree.
-  const currentOpenStage =
-    currentSlot && !currentIsNetwork && normalizeSlotStatus(currentSlot.status) !== 'completed'
-      ? currentSlot
-      : null
-  const claimable =
-    currentOpenStage
-      ?? allSlots.find((s) => toMillis(s.startTime) > nowMs && isSlotClaimable(s, networkBlockEnabled))
-      ?? null
-  const claimableIsCurrent = claimable != null && claimable === currentSlot
-
-  // The featured panel alternates with the info panels. During a network hour it
-  // sells CSGN Originals; otherwise it sells the open stage. Either way the claim
-  // message for the OPEN hours still reaches viewers via up-next and the ticker.
   const featured = (key: string) =>
-    currentIsNetwork
-      ? <NetworkNowPanel key={key} slot={currentSlot} />
-      : <OpenStagePanel key={key} slot={claimable} isCurrent={claimableIsCurrent} />
+    currentIsNetwork ? <NetworkNowPanel key={key} slot={currentSlot} /> : <GetOnPanel key={key} />
 
   const panels = [
     featured('stage-a'),
     <UpNextPanel key="next" slots={upcoming} networkBlockEnabled={networkBlockEnabled} />,
     featured('stage-b'),
-    <TokenPanelBoard key="token" />,
+    <ModeExplainerPanel key="mode" />,
     featured('stage-c'),
-    <FollowPanel key="follow" />,
+    <TokenPanelBoard key="token" />,
     featured('stage-d'),
-    <TaglinePanel key="tag" index={Math.floor(panel / 8)} />,
+    <FollowPanel key="follow" />,
+    featured('stage-e'),
+    <TaglinePanel key="tag" index={Math.floor(panel / 10)} />,
   ]
 
   return (
@@ -262,11 +260,11 @@ export default function IntermissionBoard({ dimmed = false }: { dimmed?: boolean
         </span>
       </div>
 
-      {/* Live dot, top-right — the network never "pauses". Reads CSGN Originals
-          on a reserved hour, Stage Open when the hour is claimable. */}
+      {/* Mode flag, top-right — the network never "pauses". Names the mode the
+          channel is actually in so a viewer can read it off the screen. */}
       <div className="absolute top-14 right-14 flex items-center gap-2.5">
         <span className={`w-2.5 h-2.5 rounded-full animate-live-pulse ${currentIsNetwork ? 'bg-gold' : 'bg-primary-500'}`} />
-        <span className="text-sm font-bold tracking-[0.3em] uppercase text-gray-400">{currentIsNetwork ? 'CSGN Originals' : 'Stage Open'}</span>
+        <span className="text-sm font-bold tracking-[0.3em] uppercase text-gray-400">{currentIsNetwork ? 'CSGN Originals' : 'Clip Mode'}</span>
       </div>
 
       {/* Center panel carousel */}
@@ -280,8 +278,8 @@ export default function IntermissionBoard({ dimmed = false }: { dimmed?: boolean
       <div className="absolute bottom-0 inset-x-0 h-16 bg-black/50 border-t border-white/[0.08] flex items-center px-14 justify-between">
         <span className="text-sm font-mono tracking-[0.2em] uppercase text-gray-500">
           {currentIsNetwork
-            ? <>csgn originals · live on X · @{X_HANDLE} · claim the open hours at csgn.fun</>
-            : <>stage open · claim it at csgn.fun · live on X · @{X_HANDLE}</>}
+            ? <>csgn originals · live on X · @{X_HANDLE} · post a clip at csgn.fun</>
+            : <>clip mode · member reel · post yours at csgn.fun · live on X · @{X_HANDLE}</>}
         </span>
         <span className="text-sm font-mono text-gray-600">{CSGN_MINT}</span>
       </div>

@@ -36,7 +36,7 @@ export const CSGN_DECIMALS = 6
 // pure, Firestore-free, and unit-tested. Re-exported here so every existing
 // `from '@/lib/slots'` import keeps working.
 export type { SlotType, SlotStatus, SlotIdentity, SlotIdentityOptions } from './slotModel'
-export { SLOT_STATUSES, normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable, slotIdentity, assignmentStatus, toMillis, formatTimeET } from './slotModel'
+export { SLOT_STATUSES, normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isOpenHour, slotIdentity, assignmentStatus, toMillis, formatTimeET } from './slotModel'
 import { normalizeSlot, isNetworkSlot, type SlotType, type SlotStatus } from './slotModel'
 
 /** `void` is a slot the server settled at zero because the channel never went

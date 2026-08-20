@@ -108,7 +108,7 @@ export function Notice({ tone = 'info', title, children, action, compact, classN
 export function EmailNotice({ action }: { action?: React.ReactNode }) {
   return (
     <Notice tone="warning" title="Verify your email" action={action}>
-      We sent you a link. Verifying unlocks slot claims and your creator-fee payouts.
+      We sent you a link. Verifying puts you on the roster and unlocks your creator-fee payouts.
     </Notice>
   )
 }

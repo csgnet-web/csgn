@@ -86,7 +86,7 @@ export default function HolderPanel({ walletAddress }: { walletAddress?: string 
         {standing.disconnected && (
           <p className="flex items-start gap-2 text-xs text-gray-500 leading-relaxed">
             <Wallet className="w-4 h-4 shrink-0 mt-px text-gray-600" />
-            Connect a Phantom wallet to read your balance. Watching, claiming a block and
+            Connect a Phantom wallet to read your balance. Watching, posting clips and
             going live never require one.
           </p>
         )}

@@ -311,7 +311,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
               <p className="mt-6 text-center text-[11px] text-gray-500 leading-relaxed">
                 {SOCIAL_AUTH_ENABLED
-                  ? "No wallet needed to watch, post a clip or claim a block. You'll be asked for one when you've actually earned fees."
+                  ? "No wallet needed to watch, post a clip or go live. You'll be asked for one when you've actually earned fees."
                   : 'Google, X and email sign-in are being switched on shortly. Until then a Phantom wallet is the way in — and it is what your airtime and fees are paid against anyway.'}
               </p>
             </>

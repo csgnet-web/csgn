@@ -39,7 +39,7 @@ export const handler = withHttp(async (event) => {
     return updateWrite(slot.path, {
       type,
       status,
-      // Mirror of isSlotClaimable: network hours are reserved, and an open hour
+      // Mirror of isOpenHour: network hours are reserved, and an open hour
       // is claimable whenever nobody holds it and it hasn't been marked done —
       // including the hour currently on the air.
       isClaimable: type === 'open' && !assigned && status !== 'completed',

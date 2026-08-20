@@ -1,50 +1,45 @@
 /**
  * WHERE THE MEME 100 GETS ITS COINS.
  *
- * ── Why this file exists ───────────────────────────────────────────────────
+ * ── The lesson that shaped this file ───────────────────────────────────────
  *
- * The board shipped three times and came back with two coins each time. Each
- * round I fixed a real bug — thresholds too strict, then a re-fetch that
- * starved enrichment — and each time the board stayed empty, because the actual
- * problem was upstream of all of it:
+ * The board shipped four times and came back with two or three coins. Each
+ * round fixed something real — thresholds too strict, a re-fetch that starved
+ * enrichment, a search endpoint that was never a top-100 source — and each time
+ * it stayed empty, because every version made the same structural mistake:
  *
- *   **DexScreener's `/latest/dex/search` was never a top-100 source.**
+ *   **It trusted each source to supply MARKET DATA in a shape we guessed.**
  *
- * It is a SEARCH endpoint. It returns a capped handful of pairs matching a
- * string, across every chain, dominated by the same majors whatever you ask
- * for. Seventeen search terms against it produce a few dozen distinct Solana
- * mints, most of them the same ones. No amount of threshold tuning turns that
- * into a hundred names, because the hundred names were never in the response.
+ * Jupiter returns a hundred tokens. If its price field is `usdPrice` we read a
+ * price; if the API renamed it, or nests it, or returns it as a string, we read
+ * zero — and a coin with a price of zero is dropped by the quality filter. A
+ * hundred candidates become none, silently, and the failure looks identical to
+ * "nothing qualified".
  *
- * So discovery is now built on sources that are actually FOR this: endpoints
- * whose entire job is "the top N Solana tokens right now".
+ * ── The fix: separate DISCOVERY from ENRICHMENT ────────────────────────────
  *
- * ── The design rule ────────────────────────────────────────────────────────
+ * A source's only job is now to answer **"which mints are interesting right
+ * now"**. That is a list of base58 strings. It cannot be got wrong by a
+ * renamed field, because a mint address is unmistakable — it either matches
+ * the regex or it does not, and we scan the whole JSON body for them rather
+ * than reaching into a path we assumed.
  *
- * EVERY SOURCE IS INDEPENDENT AND OPTIONAL. Each returns what it can and null
- * on any failure; the board is the union of whatever answered. One provider
- * being down, rate-limiting, or changing its response shape costs us that
- * provider's coins and nothing else.
+ * ONE enricher then reads real market state for every candidate, from one
+ * provider, in one shape: DexScreener's token endpoint, which this codebase has
+ * used successfully all along. Thirty mints per request, issued in PARALLEL —
+ * the earlier version did twenty of these sequentially inside a serverless
+ * invocation and the later batches timed out, which is what "starved" meant.
  *
- * That is not defensive over-engineering — it is the direct lesson of this bug.
- * A single-source pipeline gave no signal about WHY it was empty, and three
- * separate fixes went into the wrong layer as a result. Every source now
- * reports how many coins it contributed, published on the board document, so
- * "which of these is broken" is a question the data answers.
- *
- * ── Parsing is deliberately lenient ────────────────────────────────────────
- *
- * Field names are read with fallbacks (`usdPrice` OR `price`, `mcap` OR
- * `marketCap` OR `fdv`). These are third-party APIs that version without
- * telling anybody, and a renamed field should cost us one number rather than
- * the whole source. Anything unparseable becomes zero and gets filtered by the
- * quality gates downstream, which is exactly where that decision belongs.
+ * The result is that adding a source is nearly risk-free. Worst case it
+ * contributes mints that turn out not to qualify. It can no longer poison the
+ * board with zero-priced rows, and it cannot break when somebody else ships an
+ * API change.
  */
 import { fetchJson } from './cache'
 
-/** The shape the board pipeline works in. Deliberately DexScreener-flavoured,
- *  because that is what the enrichment path already produces — every other
- *  source is adapted into it rather than the pipeline learning three shapes. */
+/** The shape the board pipeline works in — DexScreener's, because that is the
+ *  single enricher. Nothing else produces this; everything else produces
+ *  mints. */
 export interface SourcePair {
   chainId?: string
   pairCreatedAt?: number
@@ -59,261 +54,235 @@ export interface SourcePair {
   info?: { imageUrl?: string }
 }
 
-export interface SourceResult {
-  /** Human name, for the diagnostics published on the board. */
+export interface SourceDiag {
   source: string
-  pairs: Map<string, SourcePair>
-  /** Null when the source could not be reached or returned nothing usable. */
+  /** Mints this source proposed. */
+  found: number
+  /** Mints it proposed that nobody had proposed yet. */
+  contributed: number
   ok: boolean
   note?: string
 }
 
-const SOLANA_MINT_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
-const num = (...candidates: unknown[]): number => {
-  for (const c of candidates) {
-    const n = Number(c)
-    if (Number.isFinite(n) && n !== 0) return n
-  }
-  return 0
-}
+export const SOLANA_MINT_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
 
-/* ─────────────────────────────────────────────────────────────────────────
-   JUPITER — the primary source.
+/**
+ * Pull every Solana-looking mint out of an arbitrary JSON body.
+ *
+ * Deliberately shape-blind. Instead of `data.tokens.map(t => t.id)` — which
+ * breaks the day `tokens` becomes `data` or `id` becomes `address` — this walks
+ * the whole structure and collects anything that looks like a mint.
+ *
+ * That sounds crude and is exactly right for this job: a base58 string of 32–44
+ * characters inside a token API's response IS a mint, essentially always, and
+ * the few false positives (a pool address, a program id) are removed by the
+ * enricher, which simply finds no pair for them. Being slightly too permissive
+ * costs one wasted slot in a batch; being too specific costs the entire source.
+ */
+export function harvestMints(body: unknown, cap = 400): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
 
-   Jupiter's token API v2 has endpoints whose entire purpose is "the top N
-   Solana tokens right now", ranked, with market stats attached. One request
-   returns a hundred tokens with price, market cap, liquidity, 24h volume and
-   24h change already on them — which is both the right data and roughly a
-   twentieth of the requests the old path made to assemble worse data.
-
-   `toporganicscore` is the interesting one: Jupiter scores tokens by ORGANIC
-   trading — filtering wash volume and bot churn — which is very close to the
-   judgement the Meme 100 is trying to make, arrived at by somebody with far
-   more data than we have. `toptraded` is the raw-volume companion, used as a
-   second pass so a coin trading hard without a good organic score can still
-   appear and be ranked on our own terms.
-
-   Public, no API key. If the shape changes, the lenient parsing below costs us
-   fields rather than the source.
-   ───────────────────────────────────────────────────────────────────────── */
-
-const JUPITER_BASE = 'https://lite-api.jup.ag/tokens/v2'
-
-interface JupToken {
-  id?: string
-  address?: string
-  symbol?: string
-  name?: string
-  icon?: string
-  logoURI?: string
-  usdPrice?: number
-  price?: number
-  mcap?: number
-  marketCap?: number
-  fdv?: number
-  liquidity?: number
-  holderCount?: number
-  organicScore?: number
-  firstPool?: { createdAt?: string | number }
-  stats24h?: {
-    priceChange?: number
-    buyVolume?: number
-    sellVolume?: number
-    volume?: number
-  }
-}
-
-function jupToPair(t: JupToken): { address: string; pair: SourcePair } | null {
-  const address = String(t.id || t.address || '')
-  if (!SOLANA_MINT_RE.test(address)) return null
-
-  // Jupiter reports buy and sell volume separately; the board wants the total.
-  const s = t.stats24h ?? {}
-  const volume = num(s.volume, (Number(s.buyVolume) || 0) + (Number(s.sellVolume) || 0))
-
-  // `firstPool.createdAt` is when the token first had a market — the same thing
-  // DexScreener calls `pairCreatedAt`, and what the age gate is really asking.
-  const createdRaw = t.firstPool?.createdAt
-  const createdAt = typeof createdRaw === 'string' ? Date.parse(createdRaw) : Number(createdRaw) || 0
-
-  return {
-    address,
-    pair: {
-      chainId: 'solana',
-      pairCreatedAt: Number.isFinite(createdAt) && createdAt > 0 ? createdAt : undefined,
-      baseToken: { address, symbol: String(t.symbol || ''), name: String(t.name || '') },
-      priceUsd: String(num(t.usdPrice, t.price) || 0),
-      marketCap: num(t.mcap, t.marketCap, t.fdv),
-      fdv: num(t.fdv, t.mcap),
-      volume: { h24: volume },
-      priceChange: { h24: Number(s.priceChange) || 0 },
-      liquidity: { usd: num(t.liquidity) },
-      info: { imageUrl: String(t.icon || t.logoURI || '') },
-      url: `https://dexscreener.com/solana/${address}`,
-    },
-  }
-}
-
-async function jupiterList(path: string, label: string): Promise<SourceResult> {
-  const pairs = new Map<string, SourcePair>()
-  try {
-    const data = await fetchJson<JupToken[] | { tokens?: JupToken[] }>(`${JUPITER_BASE}/${path}`, { timeoutMs: 8_000 })
-    // Accept both a bare array and an envelope — the API has shipped both.
-    const list = Array.isArray(data) ? data : (data?.tokens ?? [])
-    for (const token of list) {
-      const mapped = jupToPair(token)
-      if (mapped) pairs.set(mapped.address, mapped.pair)
+  const walk = (node: unknown, depth: number) => {
+    if (out.length >= cap || depth > 8) return
+    if (typeof node === 'string') {
+      if (SOLANA_MINT_RE.test(node) && !seen.has(node)) { seen.add(node); out.push(node) }
+      return
     }
-    return { source: label, pairs, ok: pairs.size > 0, note: pairs.size === 0 ? 'no usable tokens' : undefined }
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item, depth + 1)
+      return
+    }
+    if (node && typeof node === 'object') {
+      for (const value of Object.values(node)) walk(value, depth + 1)
+    }
+  }
+
+  walk(body, 0)
+  return out
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DISCOVERY SOURCES — each answers "which mints are interesting", nothing more.
+   Every one returns [] on any failure. None can break the board.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+async function mintsFrom(url: string, source: string, cap: number, timeoutMs = 8_000): Promise<{ source: string; mints: string[]; note?: string }> {
+  try {
+    const body = await fetchJson<unknown>(url, { timeoutMs })
+    if (!body) return { source, mints: [], note: 'no response' }
+    const mints = harvestMints(body, cap)
+    return { source, mints, ...(mints.length === 0 ? { note: 'no mints in body' } : {}) }
   } catch (err) {
-    return { source: label, pairs, ok: false, note: err instanceof Error ? err.message : 'failed' }
+    return { source, mints: [], note: err instanceof Error ? err.message : 'failed' }
   }
 }
 
-/** Top tokens by Jupiter's organic-activity score — wash volume filtered out
- *  by somebody with far more data than we have. The primary source. */
-export const jupiterOrganic = (limit = 100) =>
-  jupiterList(`toporganicscore/24h?limit=${limit}`, 'jupiter:organic')
+const JUP = 'https://lite-api.jup.ag/tokens/v2'
 
-/** Top tokens by raw 24h volume. Catches a coin trading hard that the organic
- *  score has not caught up with — ranked on our own terms once here. */
-export const jupiterTraded = (limit = 100) =>
-  jupiterList(`toptraded/24h?limit=${limit}`, 'jupiter:traded')
+/**
+ * The discovery panel.
+ *
+ * Ordered roughly by how much we trust the source to surface things worth
+ * putting on television, but order only decides who gets credited for a mint in
+ * the diagnostics — every mint is enriched identically afterwards.
+ */
+function discoveryUrls(): Array<{ url: string; source: string; cap: number }> {
+  return [
+    // Jupiter — purpose-built "top N Solana tokens right now". Three different
+    // cuts, because they disagree in useful ways: organic filters wash trading,
+    // traded is raw volume, recent catches day-one coins that neither has yet.
+    { url: `${JUP}/toporganicscore/24h?limit=100`, source: 'jupiter:organic', cap: 120 },
+    { url: `${JUP}/toptraded/24h?limit=100`, source: 'jupiter:traded', cap: 120 },
+    { url: `${JUP}/toptrending/24h?limit=100`, source: 'jupiter:trending', cap: 120 },
+    { url: `${JUP}/recent?limit=60`, source: 'jupiter:recent', cap: 80 },
 
-/** Recently launched tokens with real markets. A memecoin's whole interesting
- *  life is often its first day, and a board about right now that systematically
- *  misses day-one coins is a board that is always late. */
-export const jupiterRecent = (limit = 60) =>
-  jupiterList(`recent?limit=${limit}`, 'jupiter:recent')
+    // DexScreener promotional feeds — a real signal of intent, a poor signal of
+    // size. Kept because they surface coins mid-run.
+    { url: 'https://api.dexscreener.com/token-boosts/top/v1', source: 'dex:boosts-top', cap: 60 },
+    { url: 'https://api.dexscreener.com/token-boosts/latest/v1', source: 'dex:boosts-new', cap: 60 },
+    { url: 'https://api.dexscreener.com/token-profiles/latest/v1', source: 'dex:profiles', cap: 40 },
+  ]
+}
 
-/* ─────────────────────────────────────────────────────────────────────────
-   DEXSCREENER — kept, but demoted.
+/**
+ * THE MAJORS, by ticker.
+ *
+ * You asked for the real-world memecoins — the ones a person would name if you
+ * asked them to list memecoins — to be on the board regardless of what a
+ * trending feed happens to be surfacing. That is right: a "Meme 100" without
+ * BONK is not credible, however good its long tail.
+ *
+ * These are searched BY SYMBOL rather than pinned by address, deliberately. I
+ * do not have a way to verify a mint address from inside this environment, and
+ * a wrong address hardcoded here would put the wrong coin on television — a
+ * far worse failure than a missing one. Searching resolves the ticker to
+ * whatever actually trades under it on Solana, with the deepest-liquidity pair
+ * winning, which is both verifiable and self-correcting.
+ *
+ * An admin can still pin exact mints via `config/memeBoard.mints`, and those
+ * bypass every threshold. This list is the floor, not the ceiling.
+ */
+export const MEME_MAJORS = [
+  'BONK', 'WIF', 'POPCAT', 'MEW', 'BOME', 'MOTHER', 'GIGA', 'PNUT',
+  'FWOG', 'MOODENG', 'CHILLGUY', 'ACT', 'GOAT', 'SPX', 'RETARDIO',
+  'MICHI', 'PONKE', 'SC', 'BILLY', 'DADDY', 'HARAMBE', 'NEIRO',
+  'ANSEM', 'TRUMP', 'MELANIA', 'AI16Z', 'GRIFFAIN', 'ARC', 'SWARMS',
+] as const
 
-   The boost feeds are a genuine signal of intent and a terrible signal of size,
-   so they top up the list rather than filling it. The search endpoint stays as
-   a last-resort source for the case where Jupiter is unreachable entirely.
-   ───────────────────────────────────────────────────────────────────────── */
+/** Generic category words. These widen the tail without naming anybody. */
+const CATEGORY_TERMS = ['pump', 'bonk', 'cat', 'dog', 'meme', 'ai', 'pepe', 'inu'] as const
 
-const DEX_TOKENS_BATCH = 30
+async function searchMints(term: string, source: string): Promise<{ source: string; mints: string[]; note?: string }> {
+  return mintsFrom(
+    `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(term)}`,
+    source, 60, 6_000,
+  )
+}
 
-/** Enrich bare mints through DexScreener. Used for admin pins and for the
- *  promo feeds, which carry an address and nothing else. */
-export async function dexEnrich(mints: string[]): Promise<Map<string, SourcePair>> {
+/* ═══════════════════════════════════════════════════════════════════════════
+   ENRICHMENT — one provider, one shape, issued in parallel.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const DEX_BATCH = 30
+/** Batches issued at once. Six × 30 = 180 mints per wave, comfortably inside a
+ *  function's budget, and DexScreener tolerates this rate. The sequential
+ *  version of this is what starved every previous attempt. */
+const DEX_CONCURRENCY = 6
+
+export async function enrichMints(mints: string[]): Promise<Map<string, SourcePair>> {
   const best = new Map<string, SourcePair>()
-  for (let i = 0; i < mints.length; i += DEX_TOKENS_BATCH) {
-    const batch = mints.slice(i, i + DEX_TOKENS_BATCH)
-    const data = await fetchJson<{ pairs?: SourcePair[] }>(
-      `https://api.dexscreener.com/latest/dex/tokens/${batch.join(',')}`,
-      { timeoutMs: 8_000 },
-    )
-    for (const pair of data?.pairs || []) {
-      if (pair.chainId && pair.chainId !== 'solana') continue
-      const addr = pair.baseToken?.address
-      if (!addr) continue
-      const prev = best.get(addr)
-      // Deepest liquidity wins — a thin pair quotes a price nobody can trade at.
-      if (!prev || (pair.liquidity?.usd ?? 0) > (prev.liquidity?.usd ?? 0)) best.set(addr, pair)
+  const batches: string[][] = []
+  for (let i = 0; i < mints.length; i += DEX_BATCH) batches.push(mints.slice(i, i + DEX_BATCH))
+
+  for (let i = 0; i < batches.length; i += DEX_CONCURRENCY) {
+    const wave = batches.slice(i, i + DEX_CONCURRENCY)
+    const results = await Promise.all(wave.map((batch) =>
+      fetchJson<{ pairs?: SourcePair[] }>(
+        `https://api.dexscreener.com/latest/dex/tokens/${batch.join(',')}`,
+        { timeoutMs: 8_000 },
+      )))
+    for (const data of results) {
+      for (const pair of data?.pairs || []) {
+        if (pair.chainId && pair.chainId !== 'solana') continue
+        const address = pair.baseToken?.address
+        if (!address) continue
+        const prev = best.get(address)
+        // Deepest liquidity wins — a thin pair quotes a price nobody can trade.
+        if (!prev || (pair.liquidity?.usd ?? 0) > (prev.liquidity?.usd ?? 0)) best.set(address, pair)
+      }
     }
   }
   return best
 }
 
-interface PromoRow { chainId?: string; tokenAddress?: string }
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE WHOLE PIPELINE
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-/** Mints from the DexScreener promotional feeds. Addresses only — they need
- *  enriching, so this is capped tight. */
-export async function dexPromoted(cap = 60): Promise<SourceResult> {
-  const pairs = new Map<string, SourcePair>()
-  try {
-    const [top, latest, profiles] = await Promise.all([
-      fetchJson<PromoRow[]>('https://api.dexscreener.com/token-boosts/top/v1', { timeoutMs: 6_000 }),
-      fetchJson<PromoRow[]>('https://api.dexscreener.com/token-boosts/latest/v1', { timeoutMs: 6_000 }),
-      fetchJson<PromoRow[]>('https://api.dexscreener.com/token-profiles/latest/v1', { timeoutMs: 6_000 }),
-    ])
-    const mints: string[] = []
-    for (const row of [...(top || []), ...(latest || []), ...(profiles || [])]) {
-      if (row?.chainId !== 'solana') continue
-      const address = String(row.tokenAddress || '')
-      if (SOLANA_MINT_RE.test(address) && !mints.includes(address)) mints.push(address)
-      if (mints.length >= cap) break
-    }
-    if (mints.length > 0) {
-      for (const [address, pair] of await dexEnrich(mints)) pairs.set(address, pair)
-    }
-    return { source: 'dexscreener:boosts', pairs, ok: pairs.size > 0 }
-  } catch (err) {
-    return { source: 'dexscreener:boosts', pairs, ok: false, note: err instanceof Error ? err.message : 'failed' }
-  }
-}
-
-/**
- * The old search path, kept as a floor.
- *
- * It is a bad top-100 source — that is the whole finding of this file — but it
- * is a bad source that has historically answered when others did not, and a
- * board with twenty coins beats a board with none.
- */
-const SEARCH_TERMS = ['SOL', 'USDC', 'bonk', 'pump', 'meme', 'cat', 'dog', 'ai'] as const
-
-export async function dexSearch(): Promise<SourceResult> {
-  const pairs = new Map<string, SourcePair>()
-  try {
-    const results = await Promise.all(SEARCH_TERMS.map((term) =>
-      fetchJson<{ pairs?: SourcePair[] }>(
-        `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(term)}`,
-        { timeoutMs: 6_000 },
-      )))
-    for (const result of results) {
-      for (const pair of result?.pairs ?? []) {
-        if (pair.chainId && pair.chainId !== 'solana') continue
-        const address = String(pair.baseToken?.address || '')
-        if (!SOLANA_MINT_RE.test(address)) continue
-        const prev = pairs.get(address)
-        if (!prev || (pair.liquidity?.usd ?? 0) > (prev.liquidity?.usd ?? 0)) pairs.set(address, pair)
-      }
-    }
-    return { source: 'dexscreener:search', pairs, ok: pairs.size > 0 }
-  } catch (err) {
-    return { source: 'dexscreener:search', pairs, ok: false, note: err instanceof Error ? err.message : 'failed' }
-  }
-}
-
-/**
- * Every source, merged, with a per-source count for the diagnostics.
- *
- * Order matters only for which pair data wins a collision: the first source to
- * report a mint keeps its numbers, so the highest-quality source is asked
- * first. Jupiter's stats are more complete than a search hit's, so Jupiter
- * goes first and DexScreener fills gaps rather than overwriting.
- */
-export async function discoverAllSources(): Promise<{
+export interface DiscoveryResult {
   pairs: Map<string, SourcePair>
-  diagnostics: Array<{ source: string; found: number; contributed: number; ok: boolean; note?: string }>
-}> {
-  const results = await Promise.all([
-    jupiterOrganic(100),
-    jupiterTraded(100),
-    jupiterRecent(60),
-    dexPromoted(60),
-    dexSearch(),
+  diagnostics: SourceDiag[]
+  /** Mints proposed but with no readable pair. High = enrichment struggling. */
+  unresolved: number
+}
+
+/**
+ * Every source, harvested, merged and enriched.
+ *
+ * @param extraMints Admin pins — enriched alongside everything else so a
+ *                   pinned coin gets the same market data as a discovered one.
+ * @param cap        Ceiling on mints enriched. The cost knob.
+ */
+export async function discoverAndEnrich(extraMints: string[] = [], cap = 360): Promise<DiscoveryResult> {
+  const feeds = await Promise.all([
+    ...discoveryUrls().map((d) => mintsFrom(d.url, d.source, d.cap)),
+    // The majors, one search each. Run in the same wave so a slow search does
+    // not add to the total time.
+    ...MEME_MAJORS.map((symbol) => searchMints(symbol, `major:${symbol}`)),
+    ...CATEGORY_TERMS.map((term) => searchMints(term, `term:${term}`)),
   ])
 
-  const pairs = new Map<string, SourcePair>()
-  const diagnostics = results.map((result) => {
-    let contributed = 0
-    for (const [address, pair] of result.pairs) {
-      if (pairs.has(address)) continue
-      pairs.set(address, pair)
-      contributed++
-    }
-    return {
-      source: result.source,
-      found: result.pairs.size,
-      contributed,
-      ok: result.ok,
-      ...(result.note ? { note: result.note } : {}),
-    }
-  })
+  const ordered: string[] = []
+  const seen = new Set<string>()
+  const diagnostics: SourceDiag[] = []
 
-  return { pairs, diagnostics }
+  // Admin pins first — they bypass thresholds later, so they must survive the
+  // cap even on a run where discovery returns hundreds.
+  for (const mint of extraMints) {
+    if (SOLANA_MINT_RE.test(mint) && !seen.has(mint)) { seen.add(mint); ordered.push(mint) }
+  }
+
+  // Majors next, so a busy trending feed can never crowd BONK off the board.
+  const majorFeeds = feeds.filter((f) => f.source.startsWith('major:'))
+  const otherFeeds = feeds.filter((f) => !f.source.startsWith('major:'))
+
+  const take = (feed: { source: string; mints: string[]; note?: string }, limit: number) => {
+    let contributed = 0
+    for (const mint of feed.mints.slice(0, limit)) {
+      if (seen.has(mint)) continue
+      seen.add(mint); ordered.push(mint); contributed++
+    }
+    diagnostics.push({
+      source: feed.source,
+      found: feed.mints.length,
+      contributed,
+      ok: feed.mints.length > 0,
+      ...(feed.note ? { note: feed.note } : {}),
+    })
+  }
+
+  // A ticker search returns the queried coin plus noise; the first few hits are
+  // the ones actually matching, so majors are taken shallow and wide.
+  for (const feed of majorFeeds) take(feed, 4)
+  for (const feed of otherFeeds) take(feed, 400)
+
+  const candidates = ordered.slice(0, cap)
+  const pairs = await enrichMints(candidates)
+
+  return {
+    pairs,
+    diagnostics,
+    unresolved: candidates.length - pairs.size,
+  }
 }

@@ -56,6 +56,7 @@ import { refreshAirtimeSchedule } from './_shared/airtimeSchedule'
 import { ensureDayLock } from './_shared/airtimeLock'
 import { refreshLiveRoster } from './_shared/liveRoster'
 import { operatorAlerts, recommendedMode, DEFAULT_LIVE_VIEWER_FLOOR } from './_shared/operatorAlerts'
+import { publishChannelMode } from './_shared/channelModeStore'
 
 const POLL_INTERVAL_MS = 15_000
 
@@ -702,7 +703,7 @@ export const handler = async () => {
   // read so a future notifier (email, push, a Discord webhook) has one place to
   // watch and cannot disagree with what the board shows.
   try {
-    const meta = await getDoc<{ liveViewerFloor?: number }>(SCHEDULE_META_PATH)
+    const meta = await getDoc<{ liveViewerFloor?: number; networkBlockEnabled?: boolean }>(SCHEDULE_META_PATH)
     const viewerFloor = meta?.liveViewerFloor != null && Number(meta.liveViewerFloor) >= 0
       ? Number(meta.liveViewerFloor)
       : DEFAULT_LIVE_VIEWER_FLOOR
@@ -722,6 +723,20 @@ export const handler = async () => {
       recommendation: recommendedMode(alertInput),
       viewerFloor,
       updatedAt: new Date().toISOString(),
+    })
+
+    // ── The PUBLIC half of the same question ──
+    //
+    // operatorAlerts says what the operator should do. This says what a viewer
+    // is looking at and why, in one sentence, on the same tick and from the
+    // same inputs — so the control room and the audience can never be told two
+    // different stories about what is on. Every surface (/watch, /schedule,
+    // /player, the OBS graphics) renders this stored verdict rather than
+    // deriving its own, which is what stopped four pages disagreeing before.
+    await publishChannelMode({
+      slot: active?.data ?? null,
+      networkBlockEnabled: meta?.networkBlockEnabled !== false,
+      liveCount: roster.filter((e) => e.live).length,
     })
   } catch (err) {
     console.warn('[feePoller] operatorAlerts write failed', err)

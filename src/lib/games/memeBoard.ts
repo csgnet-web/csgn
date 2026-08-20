@@ -29,6 +29,9 @@
 /* ─── Shape ─── */
 
 export interface MemeCoin {
+  /** How long the coin has had a market, in whole days. A scoring input —
+   *  see POWER_WEIGHTS.maturity. */
+  ageDays?: number
   /** Which discovery tier this coin cleared — 'pinned', 'core', 'wide' or
    *  'tail'. The board fills from the strictest tier down, so this is how far
    *  we had to relax to find a hundred names. Shown on the row so a marginal
@@ -60,10 +63,10 @@ export interface RankedMemeCoin extends MemeCoin {
    *  instead of in a FAQ nobody opens. */
   score: number
   /** The four weighted terms, each 0-100 and summing to `score`. */
-  breakdown: { votes: number; volume: number; momentum: number; size: number }
+  breakdown: { votes: number; volume: number; momentum: number; maturity: number; size: number }
   /** The weights actually applied. Differs from POWER_WEIGHTS when no votes
    *  have been cast and that term is redistributed — see rankMemeBoard. */
-  weights: { votes: number; volume: number; momentum: number; size: number }
+  weights: { votes: number; volume: number; momentum: number; maturity: number; size: number }
   /** $CSGN weight backing this coin. */
   votes: number
   /** Distinct wallets backing it. Decoration — tokens are the signal. */
@@ -112,6 +115,7 @@ export function normalizeMemeCoin(raw: unknown): MemeCoin | null {
     pairUrl: String(d.pairUrl ?? '').trim().slice(0, 300) || `https://dexscreener.com/solana/${address}`,
     priced: priceUsd > 0,
     tier: String(d.tier ?? '').trim().slice(0, 12) || undefined,
+    ageDays: Math.max(0, Math.floor(Number(d.ageDays) || 0)),
   }
 }
 
@@ -139,13 +143,24 @@ export function normalizeMemeBoard(raw: unknown): MemeCoin[] {
  */
 export const POWER_WEIGHTS = {
   /** Holder $CSGN vote weight. The community's stake in the ranking. */
-  votes: 0.30,
-  /** What actually traded in 24h, on a log scale. */
+  votes: 0.25,
+  /** What actually traded in 24h, on a log scale. The single most honest
+   *  measure of "is anything happening here". */
   volume: 0.25,
-  /** Turnover + how far it moved. THE TRENDING TERM — see below. */
-  momentum: 0.30,
+  /** Turnover + how far it moved. The trending term. */
+  momentum: 0.25,
+  /** How long the coin has had a market, on a log scale.
+   *
+   *  Added because a board of "top memecoins" that ranks purely on today's
+   *  activity has no BONK on it — a coin that has survived two years and still
+   *  trades is demonstrating something a coin that launched on Tuesday has not,
+   *  and a viewer would think a Meme 100 without the majors was broken.
+   *  Logarithmic and capped so it rewards SURVIVAL without making the board a
+   *  museum: the difference between one day and one month is large, between one
+   *  year and two is small. */
+  maturity: 0.15,
   /** Market cap, log scale. An anchor, not a driver. */
-  size: 0.15,
+  size: 0.10,
 } as const
 
 /**
@@ -217,16 +232,26 @@ export function rankMemeBoard(coins: MemeCoin[], votes: Record<string, VoteCell>
     return turnover * 0.6 + move * 0.4
   }
 
+  /**
+   * Maturity, capped at two years.
+   *
+   * Logarithmic so the difference between one day and one month is large and
+   * the difference between one year and two is small — the term rewards having
+   * SURVIVED, not having existed longest, which would make the board a museum.
+   */
+  const maturityOf = (c: MemeCoin) => Math.min(730, Math.max(0, Number(c.ageDays) || 0))
+
   const totalVotes = coins.reduce((sum, c) => sum + votesOf(c), 0)
 
   // With no votes cast, the votes weight is spread across the market terms in
   // their existing proportions rather than left on the floor.
-  const marketWeight = POWER_WEIGHTS.volume + POWER_WEIGHTS.momentum + POWER_WEIGHTS.size
+  const marketWeight = POWER_WEIGHTS.volume + POWER_WEIGHTS.momentum + POWER_WEIGHTS.maturity + POWER_WEIGHTS.size
   const spread = totalVotes > 0 ? 0 : POWER_WEIGHTS.votes
   const W = {
     votes: totalVotes > 0 ? POWER_WEIGHTS.votes : 0,
     volume: POWER_WEIGHTS.volume + spread * (POWER_WEIGHTS.volume / marketWeight),
     momentum: POWER_WEIGHTS.momentum + spread * (POWER_WEIGHTS.momentum / marketWeight),
+    maturity: POWER_WEIGHTS.maturity + spread * (POWER_WEIGHTS.maturity / marketWeight),
     size: POWER_WEIGHTS.size + spread * (POWER_WEIGHTS.size / marketWeight),
   }
 
@@ -234,6 +259,7 @@ export function rankMemeBoard(coins: MemeCoin[], votes: Record<string, VoteCell>
   const nVol = logNormalizer(coins, (c) => c.volumeH24Usd)
   const nSize = logNormalizer(coins, (c) => c.marketCapUsd)
   const nMomentum = normalizer(coins, momentumOf)
+  const nMaturity = logNormalizer(coins, maturityOf)
 
   return coins
     .map((c) => {
@@ -244,9 +270,10 @@ export function rankMemeBoard(coins: MemeCoin[], votes: Record<string, VoteCell>
         votes: W.votes * nVotes(c),
         volume: W.volume * nVol(c),
         momentum: W.momentum * nMomentum(c),
+        maturity: W.maturity * nMaturity(c),
         size: W.size * nSize(c),
       }
-      const power = breakdown.votes + breakdown.volume + breakdown.momentum + breakdown.size
+      const power = breakdown.votes + breakdown.volume + breakdown.momentum + breakdown.maturity + breakdown.size
       return {
         ...c,
         power,
@@ -258,6 +285,7 @@ export function rankMemeBoard(coins: MemeCoin[], votes: Record<string, VoteCell>
           votes: Math.round(breakdown.votes * 100),
           volume: Math.round(breakdown.volume * 100),
           momentum: Math.round(breakdown.momentum * 100),
+          maturity: Math.round(breakdown.maturity * 100),
           size: Math.round(breakdown.size * 100),
         },
         /** The weights actually used, so the UI can label the bars honestly

@@ -401,7 +401,7 @@ export default function TickerControlsCard({ railModule }: { railModule?: ReactN
               </p>
               <p className="text-xs text-gray-500">
                 {onAirAuto
-                  ? 'Both cards track the real schedule every minute — claimed slots show the streamer, open hours read “Open Stage”.'
+                  ? 'Both cards track the real schedule every minute — booked hours show the streamer, open hours read “Clip Mode”.'
                   : 'Pinned to what you typed. Turn auto back on to follow the schedule again.'}
               </p>
             </div>

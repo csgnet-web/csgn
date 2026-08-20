@@ -60,7 +60,7 @@
  */
 
 import { getDoc, writeDoc } from './firebaseAdmin'
-import { discoverAllSources, dexEnrich, type SourcePair } from './tokenSources'
+import { discoverAndEnrich, type SourcePair } from './tokenSources'
 
 export const MEME_BOARD_INTERVAL_MS = 5 * 60 * 1000
 /** How many coins the published board carries. It is called the Meme 100. */
@@ -74,7 +74,7 @@ const MEME_BOARD_SIZE = 100
  * almost everything that was left. A hundred-name board cannot be built from a
  * hundred-and-twenty candidates when the pass rate is under ten percent.
  */
-const MEME_DISCOVERY_CAP = 600
+const MEME_DISCOVERY_CAP = 360
 
 /**
  * On-chain quality gates. A coin must clear ALL of these.
@@ -183,6 +183,14 @@ const toBoardCoin = (address: string, p: DexPair | undefined) => ({
   volumeH24Usd: Number(p?.volume?.h24) || 0,
   priceChangeH24Pct: Number(p?.priceChange?.h24) || 0,
   liquidityUsd: Number(p?.liquidity?.usd) || 0,
+  /** How long this coin has had a market, in whole days.
+   *
+   *  A scoring input, not just a label. A memecoin that has survived a year is
+   *  a materially different proposition from one that launched on Tuesday, and
+   *  ranking purely on today's activity treats them as equals — which is how a
+   *  board of "top memecoins" ends up with no BONK on it. Zero when the pair
+   *  age is unknown, which the scorer reads as "no credit" rather than "new". */
+  ageDays: p?.pairCreatedAt ? Math.max(0, Math.floor((Date.now() - p.pairCreatedAt) / 86_400_000)) : 0,
   pairUrl: String(p?.url || `https://dexscreener.com/solana/${address}`),
 })
 
@@ -233,23 +241,21 @@ export async function refreshMemeBoard({ force = false } = {}): Promise<MemeBoar
     // provider's coins and nothing else. `sources` is published on the board
     // document, which is how "why is this thin" became a question the data
     // answers instead of three rounds of guessing.
-    const { pairs: discovered, diagnostics: sources } = await discoverAllSources()
+    // Sources propose MINTS; one enricher reads market state for all of them.
+    // See _shared/tokenSources.ts — a source can no longer poison the board
+    // with zero-priced rows or break on somebody else's API rename.
+    const { pairs: discovered, diagnostics: sources, unresolved } = await discoverAndEnrich(
+      pinned, MEME_DISCOVERY_CAP,
+    )
     for (const address of discovered.keys()) {
-      // Denylisted by an admin, or a major that is not a memecoin. A pinned
-      // mint survives both — pinning is the deliberate override.
+      // Denylisted by an admin, or a stablecoin / wrapped SOL. A pinned mint
+      // survives both — pinning is the deliberate override.
       if (denied.has(address) || (MEME_BOARD_EXCLUDE.has(address) && !pinned.includes(address))) {
         discovered.delete(address)
       }
     }
 
-    // Pinned mints that discovery did not already see. Enriched in one batch —
-    // an admin pins a handful, not hundreds.
-    const missingPins = pinned.filter((m) => !discovered.has(m))
-    if (missingPins.length > 0) {
-      for (const [address, pair] of await dexEnrich(missingPins)) discovered.set(address, pair)
-    }
-
-    const candidates = [...discovered.keys()].slice(0, MEME_DISCOVERY_CAP + pinned.length)
+    const candidates = [...discovered.keys()]
     if (candidates.length === 0) {
       return { ok: false, coins: 0, candidates: 0, skipped: false, reason: 'no_candidates' }
     }
@@ -306,6 +312,19 @@ export async function refreshMemeBoard({ force = false } = {}): Promise<MemeBoar
     // itself; the app re-ranks by power score once holder votes are folded in.
     const coins = [...chosen.values()].sort((a, b) => b.volumeH24Usd - a.volumeH24Usd)
 
+    // ── SANITY CHECK, LOGGED ──
+    // Four builds came back with two or three coins and the logs said nothing
+    // useful, because a thin board and a healthy one produced identical output.
+    // This line is the difference between "check the source table" and another
+    // round of guessing.
+    if (coins.length < MEME_BOARD_SIZE / 2) {
+      console.warn(
+        `[memeBoard] THIN: ${coins.length}/${MEME_BOARD_SIZE} coins from ${candidates.length} candidates ` +
+        `(${unresolved} had no readable pair). Sources: ` +
+        sources.map((s) => `${s.source}=${s.found}/+${s.contributed}${s.note ? `(${s.note})` : ''}`).join(' '),
+      )
+    }
+
     // Never publish an empty board over a good one — a discovery-feed outage
     // would otherwise wipe the ballot mid-vote.
     if (coins.length === 0) {
@@ -323,6 +342,11 @@ export async function refreshMemeBoard({ force = false } = {}): Promise<MemeBoar
       discovery: {
         candidates: candidates.length,
         qualified: coins.length,
+        /** Mints proposed but with no readable DexScreener pair. A high number
+         *  means enrichment is struggling, which is a completely different
+         *  problem from thresholds being strict — telling those two apart took
+         *  four attempts. */
+        unresolved,
         /** How many candidates were dropped for having no readable price at
          *  all. A high number here means enrichment is starving, which is a
          *  different problem from thresholds being too strict — and telling
