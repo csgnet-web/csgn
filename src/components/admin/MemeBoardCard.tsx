@@ -4,6 +4,7 @@ import { Coins, ExternalLink } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { db } from '@/config/firebase'
+import { api } from '@/lib/api'
 
 /**
  * MEME 100 — what's on the board, and the two levers over it.
@@ -45,6 +46,11 @@ export default function MemeBoardCard() {
   const [deny, setDeny] = useState('')
   const [coins, setCoins] = useState<BoardCoin[]>([])
   const [updatedAt, setUpdatedAt] = useState('')
+  // Per-source counts from the last build. When the board is thin this is the
+  // first thing to look at — it says WHICH provider went quiet, which took
+  // three rounds of guessing to learn the hard way.
+  const [sources, setSources] = useState<Array<{ source: string; found: number; contributed: number; ok: boolean; note?: string }>>([])
+  const [rebuilding, setRebuilding] = useState(false)
   const [discovery, setDiscovery] = useState<{ candidates?: number; qualified?: number } | null>(null)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
@@ -63,7 +69,27 @@ export default function MemeBoardCard() {
     setCoins(Array.isArray(d.coins) ? (d.coins as BoardCoin[]).slice(0, 12) : [])
     setUpdatedAt(typeof d.updatedAt === 'string' ? d.updatedAt : '')
     setDiscovery(d.discovery ?? null)
+    setSources(Array.isArray(d.sources) ? d.sources : [])
   }, () => {}), [])
+
+  /**
+   * Force a rebuild.
+   *
+   * The board is otherwise cut every five minutes by the poller, which means a
+   * change to the sources or the thresholds took five minutes to evaluate —
+   * long enough that debugging it turned into guesswork. This re-cuts on
+   * demand and the source table above updates with it.
+   */
+  const rebuild = async () => {
+    setRebuilding(true); setErr(''); setMsg('')
+    try {
+      const res = await api.memeBoard(true)
+      setMsg(`Rebuilt — ${res.coins.length} coins on the board.`)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Rebuild failed.')
+    }
+    setRebuilding(false)
+  }
 
   const save = async () => {
     setBusy(true); setErr(''); setMsg('')
@@ -97,16 +123,43 @@ export default function MemeBoardCard() {
         <h3 className="text-white font-semibold flex items-center gap-2">
           <Coins className="w-4 h-4 text-primary-400" /> Meme 100
         </h3>
-        {msg && <span className="text-xs text-emerald-300">{msg}</span>}
-        {err && <span className="text-xs text-red-300">{err}</span>}
+        <div className="flex items-center gap-3">
+          {msg && <span className="text-xs text-emerald-300">{msg}</span>}
+          {err && <span className="text-xs text-red-300">{err}</span>}
+          <Button size="sm" variant="secondary" isLoading={rebuilding} onClick={() => void rebuild()}>
+            Rebuild now
+          </Button>
+        </div>
       </div>
 
+      {/* ── WHERE THE COINS CAME FROM ──
+          The board is the union of several independent sources; any one of
+          them failing costs its coins and nothing else. This is how you tell
+          "the thresholds are strict" apart from "Jupiter is down", which are
+          the two explanations for a thin board and look identical without it. */}
+      {sources.length > 0 && (
+        <div>
+          <p className={label}>Sources, last build</p>
+          <div className="rounded-lg border border-white/[0.06] divide-y divide-white/[0.05] overflow-hidden">
+            {sources.map((src) => (
+              <div key={src.source} className="flex items-center gap-3 px-3 py-2 text-xs">
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${src.ok ? 'bg-live' : 'bg-primary-500'}`} />
+                <span className="font-mono text-gray-300 flex-1 truncate">{src.source}</span>
+                <span className="font-mono text-gray-500 tabular-nums">{src.found} found</span>
+                <span className="font-mono text-white tabular-nums w-16 text-right">+{src.contributed}</span>
+                {src.note && <span className="text-primary-300/70 truncate max-w-[160px]">{src.note}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div>
-        <p className={label}>On the board right now</p>
+        <p className={label}>On the board right now ({coins.length})</p>
         {coins.length === 0 ? (
           <p className="text-xs text-gray-500">
-            Nothing published yet. The poller builds this from live on-chain data every five minutes —
-            if it stays empty, check that the function is running.
+            Nothing published yet. Press Rebuild now — the source list above will say which
+            provider answered and which did not.
           </p>
         ) : (
           <>

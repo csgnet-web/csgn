@@ -32,7 +32,10 @@ import { refreshMemeBoard, type MemeBoardResult } from './_shared/memeBoard'
 interface BoardDoc {
   coins?: unknown[]
   updatedAt?: string
-  discovery?: { candidates?: number; qualified?: number }
+  discovery?: { candidates?: number; qualified?: number; unpriced?: number; byTier?: Record<string, number> }
+  /** Per-source counts — which provider gave us what. The single most useful
+   *  field on this document when the board comes back thin. */
+  sources?: Array<{ source: string; found: number; contributed: number; ok: boolean; note?: string }>
 }
 
 export const handler = withHttp(async (event) => {
@@ -40,11 +43,17 @@ export const handler = withHttp(async (event) => {
 
   const stored = await getDoc<BoardDoc>('public/memeBoard')
   const coins = Array.isArray(stored?.coins) ? stored!.coins! : []
-  if (coins.length > 0) {
+  // `?force=1` rebuilds even when a board exists — the admin panel's "rebuild
+  // now" button, so a thin board can be re-cut without waiting five minutes to
+  // find out whether a fix worked.
+  const force = String(event.queryStringParameters?.force || '') === '1'
+
+  if (coins.length > 0 && !force) {
     return json(200, {
       coins,
       updatedAt: stored?.updatedAt ?? null,
       discovery: stored?.discovery ?? null,
+      sources: stored?.sources ?? null,
       built: false,
     })
   }
@@ -53,7 +62,7 @@ export const handler = withHttp(async (event) => {
   // path in the app where an anonymous GET can trigger a dozen outbound calls.
   let result: MemeBoardResult
   try {
-    await checkRateLimit(clientIp(event), 'memeBoardBuild', 3)
+    await checkRateLimit(clientIp(event), 'memeBoardBuild', force ? 6 : 3)
     result = await refreshMemeBoard({ force: true })
   } catch {
     // Rate-limited. Not an error worth a 429 to the reader — they just get the
@@ -66,6 +75,7 @@ export const handler = withHttp(async (event) => {
     coins: Array.isArray(rebuilt?.coins) ? rebuilt!.coins! : [],
     updatedAt: rebuilt?.updatedAt ?? null,
     discovery: rebuilt?.discovery ?? null,
+    sources: rebuilt?.sources ?? null,
     built: true,
     // 'no_candidates' means DexScreener gave us nothing — upstream, not us.
     // 'none_qualified' means real coins were considered and none cleared the

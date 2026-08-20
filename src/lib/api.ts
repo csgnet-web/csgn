@@ -197,13 +197,15 @@ export const api = {
   /** The Meme 100, served by a function rather than read from Firestore.
    *  Builds the board on demand when the stored copy is empty, so a cold start
    *  or an undeployed rules file cannot leave the page blank. */
-  memeBoard: () => functionFetch<{
+  memeBoard: (force = false) => functionFetch<{
     coins: unknown[]
     updatedAt: string | null
     built: boolean
     reason?: string
-    discovery?: { candidates?: number; qualified?: number } | null
-  }>('memeBoard'),
+    discovery?: { candidates?: number; qualified?: number; unpriced?: number; byTier?: Record<string, number> } | null
+    /** Which provider gave us what. Read this first when the board is thin. */
+    sources?: Array<{ source: string; found: number; contributed: number; ok: boolean; note?: string }> | null
+  }>(`memeBoard${force ? '?force=1' : ''}`),
 
   /** Look up any Solana mint by contract address. The Meme 100 is the pick
    *  list; this is the escape hatch for a coin that has not made the board —

@@ -37,6 +37,22 @@
     # script-src/frame-src include www.google.com + www.gstatic.com for the
     # reCAPTCHA v3 loader used by Firebase App Check.
     #
+    # connect-src DELIBERATELY LISTS NO SOLANA RPC OR TOKEN API.
+    #
+    # Every chain read — balances, the Meme 100's sources, coin lookups — goes
+    # through our own functions and reaches the browser as same-origin JSON.
+    # That is not an accident of implementation, it is the rule:
+    #
+    #   THE BROWSER NEVER TALKS TO A CHAIN OR A TOKEN API DIRECTLY.
+    #
+    # It was broken once, and expensively. `src/lib/csgnBalance.ts` POSTed to
+    # api.mainnet-beta.solana.com from the page; this header blocked it; the
+    # function's `catch { return 0 }` turned that block into a balance of zero
+    # for every wallet on the site, for as long as the file existed. If you find
+    # yourself wanting to add an RPC host here, add a function instead — one
+    # reader, honest errors, and a CSP that stays narrow on a site that handles
+    # wallet signatures.
+    #
     # frame-src MUST list every clip platform. It listed youtube-nocookie only,
     # so a member could submit a TikTok or Instagram link, have it approved, and
     # watch it fail to render on air — the browser blocked the iframe and the

@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>CSGN — Broadcast HUD</title>
+<!--
+  ══ THE PERSISTENT HUD ══  1920 × 1080 OBS browser source
+
+  Everything that stays on screen whatever the programme is: the state flag,
+  the slug, the ET clock, the up-next strip, the price rail and the channel
+  wordmark.
+
+  ── Why this is a separate browser source and not part of /player ──
+
+  It is FURNITURE. It looks identical over a live stream, a clip or the
+  intermission board — so rendering it inside the React app meant every
+  per-second clock tick and every price update re-entered the app's render
+  tree, next to the video element, for no visual difference. It also forced
+  /player to hold Firestore listeners it needed for nothing else.
+
+  As its own source it composites on the GPU, costs the player page nothing,
+  and — the part that actually matters day to day — you can move it, hide it,
+  or turn it off for a vertical clip without touching a deploy.
+
+  ── Setup ──
+
+    Add a Browser Source, 1920 × 1080, URL: this file (or host it and point at
+    the URL). Position at 0,0 over the CSGN scene. Tick:
+      ☑ Shutdown source when not visible
+      ☑ Refresh browser when scene becomes active
+
+  ── Configuration ──
+
+  Reads the same public documents the site does, over Firestore's REST API —
+  no SDK, no build step, no key beyond the public project id. Set PROJECT_ID
+  below to your Firebase project. Everything it reads is world-readable.
+
+  ── Query parameters ──
+
+    ?bar=0        hide the up-next strip (use for vertical clip segments)
+    ?slug=0       hide the top slug band
+    ?price=0      hide the $CSGN rail
+    ?scale=0.8    scale the whole thing, for a non-1080p canvas
+-->
+<style>
+  /* Fonts are loaded from Google, matching the site. If OBS is offline the
+     fallback stack is a condensed system face — the layout is built on weights
+     and tracking rather than one specific typeface, so it degrades legibly. */
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Space+Grotesk:wght@700&family=JetBrains+Mono:wght@700&display=swap');
+
+  :root {
+    --accent: #ff2346;
+    --live:   #35ff8a;
+    --gold:   #ffb020;
+    --down:   #ff4d6a;
+    --ink:    #050507;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 1920px; height: 1080px;
+    /* TRANSPARENT. OBS composites this over the programme; a background
+       colour here would black out the video underneath. */
+    background: transparent;
+    overflow: hidden;
+    font-family: Inter, 'Helvetica Neue', Arial, sans-serif;
+    color: #fff;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #stage { position: absolute; inset: 0; transform-origin: top left; }
+
+  /* ── TOP BAND ── */
+  #top {
+    position: absolute; top: 32px; left: 40px; right: 40px;
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 32px;
+  }
+
+  #flag {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 16px; background: rgba(255,255,255,0.1);
+    font-weight: 900; text-transform: uppercase; letter-spacing: 0.28em;
+    font-size: 18px; line-height: 1; white-space: nowrap;
+  }
+  #flag.live { background: var(--accent); }
+  #flag .dot { width: 10px; height: 10px; border-radius: 50%; background: #fff; }
+  #flag.live .dot { animation: pulse 1.6s ease-in-out infinite; }
+  #flag:not(.live) .dot { display: none; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.25 } }
+
+  #slugwrap { display: flex; align-items: center; gap: 20px; min-width: 0; }
+  #slug {
+    font-family: 'Space Grotesk', Inter, sans-serif;
+    font-weight: 700; text-transform: uppercase; font-size: 30px;
+    line-height: 1; letter-spacing: -0.02em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 900px;
+  }
+  #sub { margin-top: 6px; font-size: 16px; color: rgba(255,255,255,0.55); line-height: 1;
+         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 720px; }
+
+  #clockwrap { text-align: right; white-space: nowrap; }
+  #clock { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 30px;
+           line-height: 1; font-variant-numeric: tabular-nums; }
+  #tz { margin-top: 6px; font-size: 12px; font-weight: 900; text-transform: uppercase;
+        letter-spacing: 0.28em; color: rgba(255,255,255,0.4); line-height: 1; }
+
+  /* ── BOTTOM BAND ── */
+  #bottom { position: absolute; left: 0; right: 0; bottom: 0; }
+
+  #next {
+    display: flex; align-items: stretch;
+    background: rgba(0,0,0,0.85);
+    border-top: 1px solid rgba(255,255,255,0.1);
+  }
+  #next .tag {
+    display: flex; align-items: center; padding: 0 20px; background: var(--accent);
+    font-size: 13px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.28em;
+  }
+  #nextitems {
+    display: flex; align-items: center; gap: 36px;
+    padding: 12px 24px; min-width: 0; overflow: hidden;
+  }
+  #nextitems .item { display: flex; align-items: baseline; gap: 12px; flex: none; }
+  #nextitems .t { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 17px;
+                  color: rgba(255,255,255,0.45); font-variant-numeric: tabular-nums; }
+  #nextitems .n { font-size: 19px; font-weight: 900; text-transform: uppercase; }
+  #nextitems .n.open { color: rgba(255,255,255,0.35); }
+  #nextitems .n.network { color: var(--gold); }
+
+  #idrow {
+    display: flex; align-items: center; justify-content: space-between; gap: 32px;
+    background: var(--ink); border-top: 3px solid var(--accent);
+    padding: 16px 40px;
+  }
+  #idleft { display: flex; align-items: center; gap: 28px; }
+  #wordmark { font-family: 'Space Grotesk', Inter, sans-serif; font-weight: 700;
+              text-transform: uppercase; font-size: 30px; line-height: 1; letter-spacing: -0.03em; }
+  .divider { width: 1px; height: 28px; background: rgba(255,255,255,0.15); }
+  .micro { font-size: 13px; font-weight: 900; text-transform: uppercase;
+           letter-spacing: 0.3em; color: rgba(255,255,255,0.4); line-height: 1; }
+
+  #idright { display: flex; align-items: center; gap: 32px; white-space: nowrap; }
+  .stat { display: flex; align-items: baseline; gap: 10px; }
+  .stat .v { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 24px;
+             line-height: 1; font-variant-numeric: tabular-nums; }
+  .stat .l { font-size: 12px; font-weight: 900; text-transform: uppercase;
+             letter-spacing: 0.22em; color: rgba(255,255,255,0.35); line-height: 1; }
+  .up { color: var(--live); } .down { color: var(--down); }
+  #url { font-size: 19px; font-weight: 900; text-transform: uppercase;
+         letter-spacing: 0.16em; color: rgba(255,255,255,0.7); line-height: 1; }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="top">
+    <div id="slugwrap">
+      <div id="flag" class="live"><span class="dot"></span><span id="flagtext">Live</span></div>
+      <div style="min-width:0">
+        <div id="slug">CSGN</div>
+        <div id="sub"></div>
+      </div>
+    </div>
+    <div id="clockwrap">
+      <div id="clock">—:—</div>
+      <div id="tz">ET</div>
+    </div>
+  </div>
+
+  <div id="bottom">
+    <div id="next">
+      <div class="tag">Next</div>
+      <div id="nextitems"></div>
+    </div>
+    <div id="idrow">
+      <div id="idleft">
+        <div id="wordmark">CSGN</div>
+        <div class="divider"></div>
+        <div class="micro">24/7</div>
+      </div>
+      <div id="idright">
+        <div class="stat hidden" id="viewers"><span class="v up" id="viewersv">0</span><span class="l">Watching</span></div>
+        <div class="stat hidden" id="price">
+          <span class="l">$CSGN</span>
+          <span class="v" id="pricev">—</span>
+          <span class="v" id="changev" style="font-size:18px"></span>
+        </div>
+        <div id="url">csgn.fun</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   CONFIGURATION — set this to your Firebase project id.
+   Everything read below is a world-readable document; there is no key here
+   and nothing secret is reachable from this file.
+   ══════════════════════════════════════════════════════════════════════════ */
+const PROJECT_ID = 'REPLACE_WITH_FIREBASE_PROJECT_ID'
+
+const REST = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`
+const q = new URLSearchParams(location.search)
+
+// ── Optional layout switches, so the operator can retune without a deploy ──
+if (q.get('bar') === '0') document.getElementById('next').classList.add('hidden')
+if (q.get('slug') === '0') document.getElementById('top').classList.add('hidden')
+const scale = parseFloat(q.get('scale') || '1')
+if (scale && scale !== 1) document.getElementById('stage').style.transform = `scale(${scale})`
+
+/* Firestore's REST API returns values wrapped in type tags. This unwraps the
+   handful of shapes we actually read; anything unexpected becomes null and the
+   panel that needed it stays hidden rather than drawing "undefined" on air. */
+function val(f) {
+  if (!f || typeof f !== 'object') return null
+  if ('stringValue' in f) return f.stringValue
+  if ('integerValue' in f) return Number(f.integerValue)
+  if ('doubleValue' in f) return Number(f.doubleValue)
+  if ('booleanValue' in f) return f.booleanValue
+  if ('timestampValue' in f) return f.timestampValue
+  if ('nullValue' in f) return null
+  if ('mapValue' in f) {
+    const out = {}
+    for (const [k, v] of Object.entries(f.mapValue.fields || {})) out[k] = val(v)
+    return out
+  }
+  if ('arrayValue' in f) return (f.arrayValue.values || []).map(val)
+  return null
+}
+
+async function readDoc(path) {
+  try {
+    const res = await fetch(`${REST}/${path}`, { cache: 'no-store' })
+    if (!res.ok) return null
+    const json = await res.json()
+    const out = {}
+    for (const [k, v] of Object.entries(json.fields || {})) out[k] = val(v)
+    return out
+  } catch { return null }
+}
+
+/* ── The clock. A channel without one is a video file. ── */
+function tickClock() {
+  document.getElementById('clock').textContent =
+    new Date().toLocaleTimeString('en-US', {
+      timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true,
+    })
+}
+tickClock(); setInterval(tickClock, 1000)
+
+/* ── Token rail ── */
+async function refreshToken() {
+  if (q.get('price') === '0') return
+  const stats = await readDoc('public/tokenStats')
+  const price = Number(stats?.priceUsd) || 0
+  if (!price) return
+  const el = document.getElementById('price')
+  el.classList.remove('hidden')
+  document.getElementById('pricev').textContent =
+    price < 0.01 ? `$${price.toFixed(6)}` : `$${price.toFixed(4)}`
+  const change = Number(stats?.priceChangeH24Pct) || 0
+  const chg = document.getElementById('changev')
+  chg.textContent = `${change >= 0 ? '+' : ''}${change.toFixed(1)}%`
+  chg.className = `v ${change >= 0 ? 'up' : 'down'}`
+}
+
+/* ── Who is on, and what is next ──
+   `public/currentBroadcast` is what the channel is carrying; the slots come
+   from the same collection /schedule reads. Both are world-readable. */
+async function refreshProgramme() {
+  const broadcast = await readDoc('public/currentBroadcast')
+  const source = String(broadcast?.source || '')
+  const live = source === 'slot' || source === 'emergency_override'
+
+  const flag = document.getElementById('flag')
+  flag.classList.toggle('live', live)
+  document.getElementById('flagtext').textContent = live ? 'Live' : 'Reel'
+
+  // The slug is set from the ticker document, which the poller keeps current
+  // with whoever is on — the same field the site's own banner reads.
+  const ticker = await readDoc('config/ticker')
+  const nowLive = ticker?.nowLive
+  document.getElementById('slug').textContent =
+    (nowLive && nowLive.name) ? nowLive.name : (live ? 'CSGN' : 'Member clips')
+  document.getElementById('sub').textContent =
+    (nowLive && nowLive.title) ? nowLive.title : (live ? '' : 'Holder airtime · posted by members')
+
+  const upNext = ticker?.upNext
+  const items = document.getElementById('nextitems')
+  items.innerHTML = ''
+  if (upNext && upNext.name) {
+    const div = document.createElement('div')
+    div.className = 'item'
+    div.innerHTML = `<span class="t">${upNext.startET || ''}</span><span class="n">${upNext.name}</span>`
+    items.appendChild(div)
+  } else {
+    document.getElementById('next').classList.add('hidden')
+  }
+}
+
+refreshToken(); refreshProgramme()
+// Sixty seconds. Everything here changes on the order of minutes, and a
+// browser source hammering Firestore from an encoder box is a bill.
+setInterval(refreshToken, 60_000)
+setInterval(refreshProgramme, 30_000)
+</script>
+</body>
+</html>

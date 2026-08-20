@@ -8,6 +8,15 @@ import Player from '@/pages/Player'
  * live blocks work exactly as they do on /player, and the gaps fall back to the
  * admin VOD playlist and then the branded board.
  *
+ * ── What it is, precisely ──────────────────────────────────────────────────
+ *
+ * `/player` with the holder-clip source switched off. Live blocks behave
+ * identically; the gaps fall back to the admin VOD playlist and then to the
+ * branded board — which is exactly how the channel ran before member clips
+ * existed. Neither page carries the persistent HUD any more: that is a separate
+ * OBS browser source (docs/obs/csgn-hud.html), so both players stay lean and
+ * the furniture is composited above whichever one you point at.
+ *
  * ── When to point OBS here ─────────────────────────────────────────────────
  *
  * When a clip is misbehaving on air and you need it off the channel NOW —

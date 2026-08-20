@@ -59,12 +59,10 @@
  * of thresholds — that's how $CSGN itself stays on its own board.
  */
 
-import { fetchJson } from './cache'
 import { getDoc, writeDoc } from './firebaseAdmin'
+import { discoverAllSources, dexEnrich, type SourcePair } from './tokenSources'
 
 export const MEME_BOARD_INTERVAL_MS = 5 * 60 * 1000
-/** DexScreener accepts up to 30 comma-separated addresses per request. */
-const DEX_TOKENS_BATCH = 30
 /** How many coins the published board carries. It is called the Meme 100. */
 const MEME_BOARD_SIZE = 100
 /**
@@ -77,10 +75,6 @@ const MEME_BOARD_SIZE = 100
  * hundred-and-twenty candidates when the pass rate is under ten percent.
  */
 const MEME_DISCOVERY_CAP = 600
-/** Promotional-feed mints we are willing to enrich per run. These are the only
- *  ones that still need a second round trip, so this is deliberately small —
- *  it is a top-up, not the main source. */
-const PROMO_ENRICH_CAP = 60
 
 /**
  * On-chain quality gates. A coin must clear ALL of these.
@@ -150,7 +144,15 @@ const SUSPICIOUS_TURNOVER = 50
 const SUSPICIOUS_MIN_LIQUIDITY_USD = 60_000
 
 const SOLANA_MINT_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
-/** Wrapped SOL and the major stables are not memecoins. */
+/**
+ * Wrapped SOL and the major stables are not memecoins.
+ *
+ * This matters far more now than it did. The old search-based discovery
+ * happened to bury them; Jupiter's top-traded list puts them at the very TOP,
+ * because by volume they are the biggest things on Solana by an enormous
+ * margin. Without this the Meme 100 would open with SOL, USDC and USDT — which
+ * is a correct list of what is traded and a useless list of memecoins.
+ */
 const MEME_BOARD_EXCLUDE = new Set([
   'So11111111111111111111111111111111111111112',
   'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
@@ -169,141 +171,6 @@ interface DexPair {
   url?: string
   liquidity?: { usd?: number }
   info?: { imageUrl?: string }
-}
-
-/**
- * Search terms used to discover coins BY TRADING, not by promotion.
- *
- * Every Solana memecoin of any size trades against one of these, so searching
- * them returns pairs ranked by real market activity. Deliberately generic — a
- * list of ticker names here would put us straight back to curating by hand.
- */
-const MEME_SEARCH_TERMS = [
-  // Quote assets: every Solana memecoin of any size trades against one of
-  // these, so searching them returns pairs ranked by real market activity.
-  'SOL', 'USDC', 'WSOL', 'USDT',
-  // Venues. DexScreener matches these against pair and DEX metadata, and they
-  // are where Solana memecoins are actually born and traded.
-  'pump', 'raydium', 'meteora', 'orca', 'bonk', 'jupiter', 'moonshot',
-  // Category words that appear in a large share of memecoin names and
-  // symbols. Deliberately GENERIC — naming specific coins here would put us
-  // straight back to curating a list by hand, which is the thing this whole
-  // module exists to avoid. These widen the net; only trading ranks what is
-  // caught in it.
-  'cat', 'dog', 'coin', 'ai', 'meme', 'inu', 'pepe', 'baby',
-]
-
-/**
- * Candidate Solana mints.
- *
- * TWO KINDS OF SOURCE, and the difference is the whole point of this function.
- *
- * `token-boosts` and `token-profiles` are PROMOTIONAL feeds: they list coins
- * whose teams paid DexScreener for a boost, or who recently filled in a profile.
- * That is a fine signal of intent and a terrible signal of size. On its own it
- * meant the "Meme 100" was really "the hundred coins someone paid to promote" —
- * a genuinely large, heavily traded coin whose team never bought a boost could
- * not appear on the board at all, however much volume it did.
- *
- * The search feed is the corrective: it returns pairs by actual market activity
- * against the majors, so a coin earns its way onto the board by being traded.
- * Both sets are merged, then every candidate is enriched with real pool state
- * and ranked by 24h volume, so promotion can put a coin in front of us but only
- * trading can rank it.
- *
- * Each source degrades independently — `fetchJson` returns null on any failure,
- * and a missing feed just means fewer candidates this run, never an empty board.
- */
-async function discoverSolanaPairs(): Promise<Map<string, DexPair>> {
-  type PromoRow = { chainId?: string; tokenAddress?: string }
-  const [boosts, boostsLatest, profiles, ...searches] = await Promise.all([
-    fetchJson<PromoRow[]>('https://api.dexscreener.com/token-boosts/top/v1'),
-    // `latest` churns much faster than `top` and surfaces coins mid-run rather
-    // than after they have already peaked — which for a board about what is
-    // happening now is the more useful half of the promotional feed.
-    fetchJson<PromoRow[]>('https://api.dexscreener.com/token-boosts/latest/v1'),
-    fetchJson<PromoRow[]>('https://api.dexscreener.com/token-profiles/latest/v1'),
-    ...MEME_SEARCH_TERMS.map((term) =>
-      fetchJson<{ pairs?: DexPair[] }>(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(term)}`),
-    ),
-  ])
-
-  /**
-   * ── KEEP THE PAIRS THE SEARCH ALREADY GAVE US ──
-   *
-   * This used to return a list of ADDRESSES, throwing away the DexPair objects
-   * the search endpoint had already returned — full liquidity, volume, price,
-   * market cap, pair age, the lot — and then re-fetch every one of them through
-   * `/latest/dex/tokens/`. That was the actual reason the board came back with
-   * two coins.
-   *
-   * Six hundred candidates at thirty per request is twenty SEQUENTIAL round
-   * trips, inside a serverless invocation with a wall-clock budget, against an
-   * endpoint that rate-limits. The early batches enriched; the later ones came
-   * back null; every mint in them scored as an all-zero row and was dropped by
-   * the `priceUsd > 0` filter. The board was not being filtered down to two
-   * coins — it was being STARVED down to two, by a re-fetch of data we were
-   * already holding.
-   *
-   * Now the search pairs are the primary source, and `enrichMints` is only
-   * called for the handful of mints that appear in the promotional feeds (which
-   * carry an address and nothing else) or are pinned by an admin. That is one
-   * or two batches instead of twenty.
-   */
-  const found = new Map<string, DexPair>()
-  const keepBest = (pair: DexPair) => {
-    const address = String(pair.baseToken?.address || '')
-    if (!SOLANA_MINT_RE.test(address) || MEME_BOARD_EXCLUDE.has(address)) return
-    if (pair.chainId && pair.chainId !== 'solana') return
-    const prev = found.get(address)
-    // Deepest-liquidity pair wins — a thin pair quotes a price nobody can trade.
-    if (!prev || (pair.liquidity?.usd ?? 0) > (prev.liquidity?.usd ?? 0)) found.set(address, pair)
-  }
-
-  for (const result of searches) {
-    for (const pair of result?.pairs ?? []) keepBest(pair)
-  }
-
-  // Promotional feeds carry an address only. Collected separately so they can
-  // be enriched in one small batch rather than dragging the whole set through
-  // a second round trip.
-  const promotedOnly: string[] = []
-  for (const row of [...(boosts || []), ...(boostsLatest || []), ...(profiles || [])]) {
-    if (row?.chainId !== 'solana') continue
-    const address = String(row.tokenAddress || '')
-    if (!SOLANA_MINT_RE.test(address) || MEME_BOARD_EXCLUDE.has(address)) continue
-    if (found.has(address)) continue
-    promotedOnly.push(address)
-  }
-
-  // Bounded: only what we could not already see, and only enough to top up.
-  const toEnrich = promotedOnly.slice(0, PROMO_ENRICH_CAP)
-  if (toEnrich.length > 0) {
-    for (const [address, pair] of await enrichMints(toEnrich)) {
-      if (!found.has(address)) found.set(address, pair)
-    }
-  }
-
-  return found
-}
-
-/** Deepest-liquidity Solana pair per mint. */
-async function enrichMints(mints: string[]): Promise<Map<string, DexPair>> {
-  const best = new Map<string, DexPair>()
-  for (let i = 0; i < mints.length; i += DEX_TOKENS_BATCH) {
-    const batch = mints.slice(i, i + DEX_TOKENS_BATCH)
-    const data = await fetchJson<{ pairs?: DexPair[] }>(
-      `https://api.dexscreener.com/latest/dex/tokens/${batch.join(',')}`,
-    )
-    for (const pair of data?.pairs || []) {
-      if (pair.chainId && pair.chainId !== 'solana') continue
-      const addr = pair.baseToken?.address
-      if (!addr) continue
-      const prev = best.get(addr)
-      if (!prev || (pair.liquidity?.usd ?? 0) > (prev.liquidity?.usd ?? 0)) best.set(addr, pair)
-    }
-  }
-  return best
 }
 
 const toBoardCoin = (address: string, p: DexPair | undefined) => ({
@@ -361,16 +228,25 @@ export async function refreshMemeBoard({ force = false } = {}): Promise<MemeBoar
     const pinned = clean(cfg?.mints).slice(0, 40)
     const denied = new Set(clean(cfg?.deny))
 
-    const discovered = await discoverSolanaPairs()
+    // EVERY SOURCE, MERGED. See _shared/tokenSources.ts — the board is the
+    // union of whatever answered, so one provider being down costs that
+    // provider's coins and nothing else. `sources` is published on the board
+    // document, which is how "why is this thin" became a question the data
+    // answers instead of three rounds of guessing.
+    const { pairs: discovered, diagnostics: sources } = await discoverAllSources()
     for (const address of discovered.keys()) {
-      if (denied.has(address)) discovered.delete(address)
+      // Denylisted by an admin, or a major that is not a memecoin. A pinned
+      // mint survives both — pinning is the deliberate override.
+      if (denied.has(address) || (MEME_BOARD_EXCLUDE.has(address) && !pinned.includes(address))) {
+        discovered.delete(address)
+      }
     }
 
     // Pinned mints that discovery did not already see. Enriched in one batch —
     // an admin pins a handful, not hundreds.
     const missingPins = pinned.filter((m) => !discovered.has(m))
     if (missingPins.length > 0) {
-      for (const [address, pair] of await enrichMints(missingPins)) discovered.set(address, pair)
+      for (const [address, pair] of await dexEnrich(missingPins)) discovered.set(address, pair)
     }
 
     const candidates = [...discovered.keys()].slice(0, MEME_DISCOVERY_CAP + pinned.length)
@@ -382,7 +258,7 @@ export async function refreshMemeBoard({ force = false } = {}): Promise<MemeBoar
     const now = Date.now()
     const pinnedSet = new Set(pinned)
 
-    const clearsTier = (p: DexPair | undefined, tier: Tier): boolean => {
+    const clearsTier = (p: SourcePair | undefined, tier: Tier): boolean => {
       if (!p) return false
       const liquidity = p.liquidity?.usd ?? 0
       const volume = p.volume?.h24 ?? 0
@@ -441,6 +317,9 @@ export async function refreshMemeBoard({ force = false } = {}): Promise<MemeBoar
       source: 'onchain',
       // Published so the board is auditable: how many candidates we looked at,
       // and how many cleared the on-chain gates to actually make it on air.
+      // WHICH SOURCE GAVE US WHAT. The single most useful thing on this
+      // document when the board looks thin.
+      sources,
       discovery: {
         candidates: candidates.length,
         qualified: coins.length,

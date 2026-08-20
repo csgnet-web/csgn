@@ -17,12 +17,41 @@ occlude each other.
 |---|---|---|---|
 | 1 | `/player` | The programme itself — live stream, or the clip reel | ✅ In app |
 | 2 | `csgn-pip.html` | Picture-in-picture frame for a second source | ✅ In repo |
-| 3 | `csgn-ticker.html` | Bottom ticker: price, fees, RIGHT NOW rail, coin spotlight | ✅ In repo |
-| 4 | `csgn-nowwatching.html` | Corner channel bug | ✅ In repo |
-| 5 | `csgn-lowerthirds.html` | Operator-triggered name strap | ✅ In repo |
+| 3 | `csgn-hud.html` | **Clock, slug, LIVE flag, up-next, price rail, wordmark** | ✅ In repo |
+| 4 | `csgn-ticker.html` | Bottom ticker: fees, RIGHT NOW rail, coin spotlight | ✅ In repo |
+| 5 | `csgn-nowwatching.html` | Corner channel bug | ✅ In repo |
+| 6 | `csgn-lowerthirds.html` | Operator-triggered name strap | ✅ In repo |
 
-Everything in this table exists. Nothing below needs commissioning — the list
-further down is what each one *draws*, so you know what you are looking at.
+Everything in this table exists. Nothing needs commissioning.
+
+### The rule about what lives where
+
+> **If a graphic would look identical over any source, it is FURNITURE and it
+> belongs in its own browser source — not in `/player`.**
+
+The HUD was briefly rendered inside the React app. It looked the same over a
+live stream, a clip and the intermission board, so every per-second clock tick
+and every price update re-entered the app's render tree next to the video
+element for no visual difference — and it forced `/player` to hold Firestore
+listeners it needed for nothing else.
+
+As its own source it composites on the GPU, costs the player page nothing, and
+you can move it, restyle it or switch it off for a vertical segment without a
+deploy. `/player` renders the PROGRAMME and the things timed to a programme
+change (the ident, the wipe). Everything else is a layer above it.
+
+`csgn-hud.html` takes query parameters so you can retune live:
+
+```
+?bar=0        hide the up-next strip — use during vertical clips
+?slug=0       hide the top band
+?price=0      hide the $CSGN rail
+?scale=0.8    scale for a non-1080p canvas
+```
+
+**Before first use:** open the file and set `PROJECT_ID` to your Firebase
+project id. Everything it reads is a world-readable document; there is no key
+in the file and nothing private is reachable from it.
 
 ---
 
