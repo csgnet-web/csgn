@@ -164,3 +164,109 @@ there is enough traffic for it to mean anything; not worth building now.
 `netlify/functions/_shared/operatorAlerts.ts`. The rules are unit-tested in
 `netlify/functions/__tests__/operatorAlerts.test.ts` — change a number and the
 tests tell you what behaviour you changed.*
+
+---
+
+## The business case for the mix
+
+Everything above is about which mode makes the better television in a given
+minute. This section is the other question you asked: **what mix makes CSGN
+the better business.** They do not have the same answer, and where they differ
+is worth being blunt about.
+
+### The three things a mode does for the company
+
+| | Clip mode | Live mode |
+|---|---|---|
+| **Proves the token does something** | Yes — this IS the utility. Every second of the reel is a holder's second. | No. A live hour pays a streamer, not holders. |
+| **Brings new people in** | Weakly. Clips are watched, not evangelised. | Strongly. A streamer live on CSGN tells their own audience. |
+| **Costs** | Near zero. No coordination, runs itself. | Operator attention, plus the airtime it takes from holders. |
+| **Fills 24 hours** | Yes, reliably, forever. | Never — you cannot staff a day. |
+
+Read that table and the strategy falls out of it: **clips are the product, live
+is the marketing.** A network that is all clips is a token with a screensaver.
+A network that is all live is a Twitch multistream with no reason for a token to
+exist. The mix is not a compromise between them, it is the actual design.
+
+### The number to aim for
+
+**Target roughly 15–25% of the broadcast day live, at this stage.**
+
+Not because that is optimal television — it isn't, more live would be better
+television today — but because of what each hour has to earn:
+
+- **Below ~10% live**, the model is unproven to the outside world. A streamer
+  considering connecting looks at the schedule, sees no member has been carried
+  in three days, and concludes the offer is theoretical. The single most
+  valuable thing a live hour does is *exist visibly*.
+- **Above ~30% live**, holders start to notice their airtime shrinking, and
+  they are the people who bought the token. Every live hour is an hour the reel
+  did not run and somebody's 1.8M $CSGN bought nothing that day. Do that often
+  enough and the airtime promise reads as conditional.
+
+At 24 hours, 15–25% is **3.5 to 6 hours live per day** — which is one or two
+streamers doing a normal session. That is achievable with a roster of ten and
+requires nothing from anybody.
+
+### Why the CSGN Originals block is the pressure valve
+
+The 7 PM–3 AM block is a third mode and it is the one with the most business
+leverage, because it is the only hour you fully control. It is where a *show*
+can exist — a repeating, nameable, appointment thing. Neither a clip reel nor
+an unpredictable live cut can be appointment viewing, and appointment viewing
+is what turns a channel into a habit.
+
+The honest sequencing:
+
+1. **Now**: block off, or lightly used. Clips + opportunistic live. Get the
+   loop working and visible.
+2. **Once there are ~10 connected channels**: use the block for one recurring
+   two-hour show a week. One. A weekly thing people can plan around beats a
+   nightly thing that skips.
+3. **Later**: the block becomes the schedule people quote when they describe
+   what CSGN is.
+
+### The rule this justifies, stated for the business
+
+> **Run clips by default. Cut to live when somebody clears the floor, because a
+> live member is the best advertisement the network has. Protect the block.**
+> Keep live between one-tenth and one-third of the day — under it you look
+> theoretical, over it you are spending the holders' product on marketing.
+
+### What to watch, monthly
+
+Four numbers. If you only ever look at four, look at these.
+
+| Number | Where it comes from | What it tells you |
+|---|---|---|
+| **% of the day live** | `public/channelMode` switch log | Whether the mix is drifting |
+| **Distinct members carried per week** | The schedule record | Is the offer real for more than one person |
+| **Clips submitted per week** | The review queue | Whether holders believe the airtime is worth using |
+| **Holders who have posted at least once** | Studio usage vs. holder count | The conversion that decides whether the token has utility or a story about utility |
+
+The fourth is the one that matters most and is the easiest to ignore. A holder
+who has never posted a clip is holding a promise; a holder who has posted is
+holding a product.
+
+---
+
+## Making the switch public (shipped)
+
+Every switch is now published, with its reason, at `public/channelMode`:
+
+- `/watch` and `/schedule` show the mode, one sentence of *why*, and one
+  sentence on *what changes it* — expandable into the log of recent switches
+  with times.
+- The intermission board on /player carries the same rule as a full-screen
+  panel, so it is on the broadcast itself.
+- The verdict is computed **once**, server-side, by
+  `_shared/channelMode.ts`, and every surface renders the stored sentence
+  rather than deriving its own.
+
+Why this is a business decision and not a nicety: a viewer who tunes in twice
+and sees two different products with no explanation concludes the channel is
+broken. Networks switch formats constantly and get away with it *because the
+audience knows the rule*. Publishing the rule is what converts "this thing is
+unpredictable" into "this thing has a schedule I understand" — and only the
+second one is something people come back to.
+

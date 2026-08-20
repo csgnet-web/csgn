@@ -59,7 +59,29 @@ and Firestore returns FAILED_PRECONDITION rather than degrading. Fetch and sort
 in JS unless the collection is genuinely large. The header on that function
 explains it.
 
-**5. Furniture belongs in OBS, not `/player`.**
+**5. Nobody claims an hour.** Claiming is gone — the endpoint, the buttons and
+the client method. An hour either has somebody the operator put on (because they
+are live and consented) or it runs the member reel. `isOpenHour` is what used to
+be `isSlotClaimable` and now means "nothing programmed here, so the reel has
+it"; `airEligibility` is what used to be `claimEligibility` and is now the
+roster gate. If you find yourself adding a "book this hour" button, the model
+has drifted.
+
+**6. Why the channel is in a mode is PUBLISHED, not inferred.**
+`_shared/channelMode.ts` turns the current slot into a mode plus one sentence of
+reason and one of what changes it. The poller writes it to `public/channelMode`
+every minute; `adminLiveNow` rewrites it immediately after an operator action so
+the sign is never a minute behind the picture. Every surface renders the stored
+sentence. Do not compute a mode in a component — that is how a live show once
+headlined "THE STAGE IS OPEN".
+
+**7. Three doors, one set of clip rules.**
+A clip reaches a reel by paste (`submitClip`), by the Android share sheet
+(`/share`), or by TikTok import (`tiktokVideos`). All three go through
+`_shared/clipIntake.ts`, which owns the cap, the dedupe, the ordering, the
+pending status and the exact runtime. A fourth door must use it too.
+
+**8. Furniture belongs in OBS, not `/player`.**
 If a graphic looks identical over any source, it is furniture. `/player` renders
 the programme and things timed to a programme change. Everything else is a
 separate browser source — it composites free on the GPU and can be retuned
@@ -80,6 +102,7 @@ Flip these without touching code:
 | `jukeboxFloorCsgn` | `config/tokenGates` | Opening bid. Admin UI |
 | `airtimeStartAt` | `config/season` | Verified-airtime cutover date |
 | Meme 100 pins/denies | `config/memeBoard` | Admin UI |
+| `TIKTOK_CLIENT_KEY` / `_SECRET` / `_REDIRECT_URI` | Netlify env | All three, or the TikTok panel stays hidden. `docs/setup-tiktok-and-share.md` |
 
 ---
 
@@ -94,6 +117,12 @@ Flip these without touching code:
    source.
 5. **Verify the Meme 100** — `docs/spec-meme-100.md` §7. This is the surface
    most likely to be wrong on first deploy, and I have never seen it work.
+6. **`firestore.rules` again, specifically**: `tiktokTokens/{uid}` must have NO
+   rule. No rule means no browser can reach it. There is a comment in the file
+   saying so; if somebody "tidies it up" by adding one, refresh tokens leak.
+7. **Install the PWA on an Android phone once** and share a post into it. The
+   share target cannot be tested any other way, and iOS does not implement it at
+   all (Safari's gap, not ours).
 
 ---
 
@@ -108,9 +137,13 @@ documentation and reasoning, and has never seen a real response:
 - **The jukebox on-chain bid path.** Never run against mainnet. Dry-run with a
   small bid.
 - **Twitch Helix sampling** with real credentials.
+- **The whole TikTok round trip.** OAuth, the Display API's envelope, the token
+  refresh. The parsing is tested against the documented shapes and nothing more.
+- **The Android share sheet.** It is an OS feature; it cannot be exercised from
+  a desktop browser at all.
 - **The clip pipeline end to end** with a real approved clip going to air.
 
-The unit tests cover the pure logic thoroughly — 639 of them, and they have
+The unit tests cover the pure logic thoroughly — around 700 of them, and they have
 caught real bugs (a negative crop start, a DST off-by-a-day, a payout summary
 persisting recipient records). They cannot cover a third party's response shape.
 
@@ -140,10 +173,11 @@ yours to decide.
 **If something is broken:** `spec-meme-100.md` (§3 first), then this file.
 
 **If you're deciding what to build:**
-1. `analysis-social-platform.md` — the loop is unclosed, and that is the game
-2. `analysis-clips-concept.md` — what is actually novel here
-3. `design-overview.md` — per-page grades and fixes
-4. `spec-social-import.md` — TikTok import, the biggest conversion lever
+1. `analysis-path-to-1m.md` — the whole picture, and what $1M actually costs
+2. `analysis-social-platform.md` — the loop is unclosed, and that is the game
+3. `analysis-clips-concept.md` — what is actually novel here
+4. `design-overview.md` — per-page grades and fixes
+5. `analysis-clip-vs-streamer-mode.md` — how much of the day should be live
 
 **If you're going on air:** `obs/GRAPHICS.md`, then `obs/README.md`.
 
