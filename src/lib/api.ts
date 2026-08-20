@@ -161,7 +161,38 @@ export const api = {
     }
     airings: Array<{ startsAt: string; seconds: number; clipId: string }>
   }>('myClips', {}, true),
-  /** Add a post to your reel. It lands pending — nothing airs unreviewed.
+  /* ── TikTok import ──
+   *
+   * Connecting an account changes the ask from "go and fetch a link" to "tick
+   * three of these", and it is the only way we ever learn a TikTok's real
+   * runtime — a pasted one falls back to a 45-second guess. See
+   * docs/spec-social-import.md. */
+  startTikTokOAuth: () =>
+    functionFetch<{ authUrl: string; state: string }>('startTikTokOAuth', { method: 'POST' }, true),
+  /** The member's own public TikToks, newest first, with real durations.
+   *  `connected: false` means reconnect — NOT "you have no videos". */
+  tiktokVideos: (cursor?: number | null) =>
+    functionFetch<{
+      connected: boolean
+      unreadable?: boolean
+      videos: Array<{
+        id: string; title: string; seconds: number; coverImageUrl: string
+        shareUrl: string; createdAt: string; alreadyOnReel: boolean
+      }>
+      cursor: number | null
+      hasMore: boolean
+      slotsLeft: number
+      maxPerImport?: number
+    }>(`tiktokVideos${cursor ? `?cursor=${cursor}` : ''}`, {}, true),
+  /** Put the ticked ones on the reel. Partial success is normal and reported. */
+  importTikToks: (videoIds: string[]) =>
+    functionFetch<{
+      ok: boolean
+      imported: Array<{ id: string; title: string; seconds: number }>
+      skipped: Array<{ videoId: string; reason: string }>
+      slotsLeft: number
+    }>('tiktokVideos', { method: 'POST', body: JSON.stringify({ videoIds }) }, true),
+    /** Add a post to your reel. It lands pending — nothing airs unreviewed.
    *  No length argument: the server reads the real runtime off the platform. */
   submitClip: (url: string, title: string) =>
     functionFetch<{ ok: boolean; clip: { id: string; platform: string; sourceUrl: string; title: string; thumbnailUrl: string; seconds: number; measured: boolean; order: number; status: string } }>(

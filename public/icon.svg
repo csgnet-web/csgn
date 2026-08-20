@@ -1,0 +1,28 @@
+<!--
+  The PWA icon. SVG rather than PNG on purpose: Chrome accepts a vector icon
+  with sizes="any" for installability, and this repo has no image pipeline —
+  a checked-in PNG would be a binary nobody can edit and that drifts from the
+  brand mark in src/components/ui/CsgnLogo.tsx the first time the mark changes.
+
+  Drawn on a full-bleed dark square so it composites correctly as a home-screen
+  icon, and the wordmark is inset well inside the safe area so the maskable
+  variant survives a circular crop on Android.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#12071c"/>
+      <stop offset="100%" stop-color="#06060e"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <circle cx="140" cy="120" r="150" fill="#ff2346" opacity="0.14"/>
+  <circle cx="420" cy="430" r="150" fill="#5000ff" opacity="0.14"/>
+  <g transform="translate(256 268) scale(2.55) translate(-76 -32)">
+    <text x="10" y="44" transform="skewX(-8)"
+          font-family="'Arial Black','Archivo Black',system-ui,sans-serif"
+          font-style="italic" font-weight="900" font-size="42" letter-spacing="-1"
+          fill="#f2ede1">CSGN</text>
+    <path d="M6 50 Q 70 52 146 32 Q 66 64 6 50 Z" fill="#ff2346"/>
+  </g>
+</svg>

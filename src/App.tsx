@@ -24,6 +24,7 @@ const Participate = lazy(() => import('@/pages/Participate'))
 const Treasury = lazy(() => import('@/pages/Treasury'))
 const Studio = lazy(() => import('@/pages/Studio'))
 const EmailComplete = lazy(() => import('@/pages/EmailComplete'))
+const Share = lazy(() => import('@/pages/Share'))
 
 function Loading() {
   return (
@@ -69,6 +70,8 @@ function AppContent() {
             <Route path="/participate" element={<Participate />} />
             <Route path="/treasury" element={<Treasury />} />
             <Route path="/studio" element={<Studio />} />
+            {/* Where Android's share sheet lands. See public/manifest.webmanifest. */}
+            <Route path="/share" element={<Share />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/player" element={<Player />} />
             {/* The revert path — same player, clips off. See OldPlayer.tsx. */}

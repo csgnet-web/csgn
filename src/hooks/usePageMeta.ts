@@ -18,11 +18,16 @@ import { useEffect } from 'react'
  * canonical tag is telling search engines every page IS the root — which is a
  * fast way to have five pages collapse into one result.
  */
-export function usePageMeta({ title, description, path }: {
+export function usePageMeta({ title, description, path, noIndex = false }: {
   title: string
   description: string
   /** Route path, e.g. '/studio'. Used for the canonical URL. */
   path?: string
+  /** Keep this route out of the index. For machine endpoints with a face on
+   *  them — /share is a share-sheet landing, not a page anyone should arrive
+   *  at from a search result, and a thin page in the index dilutes the real
+   *  ones. Restored on unmount like everything else here. */
+  noIndex?: boolean
 }) {
   useEffect(() => {
     const previousTitle = document.title
@@ -48,6 +53,11 @@ export function usePageMeta({ title, description, path }: {
       setMeta('meta[name="twitter:description"]', 'name', 'twitter:description', description),
     ]
 
+    let restoreRobots: (() => void) | undefined
+    if (noIndex) {
+      restoreRobots = setMeta('meta[name="robots"]', 'name', 'robots', 'noindex, nofollow')
+    }
+
     let restoreCanonical: (() => void) | undefined
     if (path) {
       const link = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]')
@@ -61,9 +71,10 @@ export function usePageMeta({ title, description, path }: {
     return () => {
       document.title = previousTitle
       for (const restore of restores) restore()
+      restoreRobots?.()
       restoreCanonical?.()
     }
-  }, [title, description, path])
+  }, [title, description, path, noIndex])
 }
 
 export default usePageMeta

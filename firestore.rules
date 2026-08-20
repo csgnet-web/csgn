@@ -59,6 +59,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // tiktokTokens/{uid} has NO RULE ON PURPOSE, and this comment is the only
+    // thing standing between that and somebody "fixing" it. It holds TikTok
+    // access and refresh tokens — credentials that can read a member's video
+    // list on their behalf. No rule means no client can reach it in any mode;
+    // only firebase-admin (which bypasses rules) touches it, from
+    // tiktokOAuthCallback and tiktokVideos. A refresh token in a document a
+    // browser can read is a refresh token that has leaked.
+
     match /users/{userId} {
       allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
       allow list: if isAdmin();

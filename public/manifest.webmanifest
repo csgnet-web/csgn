@@ -1,0 +1,33 @@
+{
+  "name": "CSGN — 24/7 Crypto Television",
+  "short_name": "CSGN",
+  "description": "A crypto channel that never goes dark. Share a clip straight into the network and it airs between live streams.",
+  "id": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#06060e",
+  "theme_color": "#06060e",
+  "categories": ["entertainment", "social", "finance"],
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" },
+    { "src": "/csgn-logo.jpg", "sizes": "512x512", "type": "image/jpeg", "purpose": "any" }
+  ],
+  "share_target": {
+    "action": "/share",
+    "method": "GET",
+    "enctype": "application/x-www-form-urlencoded",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
+  "shortcuts": [
+    { "name": "Watch", "short_name": "Watch", "url": "/watch" },
+    { "name": "My Reel", "short_name": "Reel", "url": "/studio" },
+    { "name": "Schedule", "short_name": "Schedule", "url": "/schedule" }
+  ]
+}

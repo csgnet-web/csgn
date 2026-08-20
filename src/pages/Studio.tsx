@@ -5,6 +5,8 @@ import {
   Lock, Radio, Scissors, Sparkles, Trash2, TrendingUp,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/useAuth'
+import { useSearchParams } from 'react-router-dom'
+import TikTokImport from '@/components/studio/TikTokImport'
 import { LowerThird } from '@/components/broadcast/LowerThird'
 import { JUPITER_SWAP_URL } from '@/config/token'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
@@ -487,6 +489,11 @@ export default function Studio() {
   })
 
   const { user, loading } = useAuth()
+  // How the TikTok round trip came back. The callback redirects here rather
+  // than to a page of its own — there is nothing to say that is not better said
+  // next to the picker it just filled.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tiktokReturn = searchParams.get('tiktok')
   const [clips, setClips] = useState<Clip[]>([])
   const [airtime, setAirtime] = useState<Airtime | null>(null)
   const [airings, setAirings] = useState<Array<{ startsAt: string; seconds: number; clipId: string }>>([])
@@ -793,6 +800,30 @@ export default function Studio() {
             />
           )}
         </section>
+
+        {/* ── 2a. Import, for anyone with TikTok connected ──
+            Above the paste box on purpose: ticking a video you already made is
+            a smaller ask than fetching a link, so the smaller ask goes first. */}
+        {tiktokReturn && (
+          <div className={`rounded-xl border px-4 py-3 text-[13px] ${
+            tiktokReturn === 'connected'
+              ? 'border-live/30 bg-live/[0.08] text-white'
+              : 'border-gold/30 bg-gold/[0.06] text-gold'
+          }`}>
+            {tiktokReturn === 'connected' && 'TikTok connected — your videos are below.'}
+            {tiktokReturn === 'cancelled' && 'TikTok connection cancelled. Nothing changed.'}
+            {tiktokReturn === 'expired' && 'That TikTok link expired. Start the connection again.'}
+            {tiktokReturn === 'failed' && "TikTok didn't complete the connection. Try again in a moment."}
+            <button
+              type="button"
+              onClick={() => setSearchParams({}, { replace: true })}
+              className="ml-2 underline text-[12px] opacity-70 hover:opacity-100"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+        <TikTokImport onImported={load} />
 
         {/* ── 2. Post something ── */}
         <section id="csgn-add-clip" className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 space-y-4 scroll-mt-24">

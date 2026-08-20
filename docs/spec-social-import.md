@@ -1,5 +1,13 @@
 # Connecting Instagram and TikTok to auto-load content
 
+> **STATUS — both recommendations below are now built.** The share-target PWA
+> ships in `public/manifest.webmanifest` + `src/pages/Share.tsx`, and the TikTok
+> Login Kit / Display API import ships in `netlify/functions/_shared/tiktok.ts`
+> + `src/components/studio/TikTokImport.tsx`. Setup instructions, environment
+> variables and the failure table are in **`docs/setup-tiktok-and-share.md`**.
+> The analysis below is kept as written because the reasoning — especially why
+> Instagram's own API is not worth building — is still the reasoning.
+
 You're right that this would make the product seamless. Here is exactly what it
 takes, what it costs, and where it breaks — because the honest summary is:
 

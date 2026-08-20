@@ -18,6 +18,21 @@
     <link rel="apple-touch-icon" href="/csgn-logo.jpg" />
 
     <!--
+      Installable, and therefore a SHARE TARGET. Once CSGN is on the home
+      screen, it appears in the Android share sheet: a member looking at their
+      own Reel in Instagram hits Share, picks CSGN, and lands on /share with the
+      link already in hand. That replaces "copy the link, switch apps, find the
+      box, paste" — four steps and an app switch — with one tap, and no API from
+      Meta is involved. See docs/spec-social-import.md for why that matters more
+      than an Instagram integration would.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="CSGN" />
+
+    <!--
       Link previews. This project lives or dies on being pasted into X, Telegram
       and Discord, and until these existed every one of those paste-ins rendered
       as a bare blue URL with no image, no title and no pitch. og:image must be
