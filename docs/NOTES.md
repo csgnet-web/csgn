@@ -115,8 +115,12 @@ Flip these without touching code:
    endpoints will throttle you.
 4. **`PROJECT_ID` in `docs/obs/csgn-hud.html`** — set before adding the browser
    source.
-5. **Verify the Meme 100** — `docs/spec-meme-100.md` §7. This is the surface
-   most likely to be wrong on first deploy, and I have never seen it work.
+5. **Verify the Meme 100** — run `npm run meme:probe` from your own machine
+   FIRST. It hits the real sources (which this environment cannot reach at all)
+   and its verdict line tells you whether a thin board is a discovery problem,
+   an enrichment problem or a threshold problem. Then `docs/spec-meme-100.md`
+   §7. This is the surface most likely to be wrong on first deploy, and I have
+   never seen it work.
 6. **`firestore.rules` again, specifically**: `tiktokTokens/{uid}` must have NO
    rule. No rule means no browser can reach it. There is a comment in the file
    saying so; if somebody "tidies it up" by adding one, refresh tokens leak.
@@ -170,7 +174,8 @@ yours to decide.
 
 ## Reading order for the docs
 
-**If something is broken:** `spec-meme-100.md` (§3 first), then this file.
+**If something is broken:** run `npm run meme:probe`, then `spec-meme-100.md`
+(§3 first), then this file.
 
 **If you're deciding what to build:**
 1. `analysis-path-to-1m.md` — the whole picture, and what $1M actually costs

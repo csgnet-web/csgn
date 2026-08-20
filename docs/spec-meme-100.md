@@ -70,6 +70,57 @@ numbers, so Jupiter (richer stats) is asked before DexScreener fills gaps.
 
 ## 3. Diagnosing a thin board — do this first
 
+### The 10-second version: `npm run meme:probe`
+
+```bash
+npm run meme:probe          # add --verbose to see sample mints
+```
+
+Run it from your own machine. It hits **the same sources the server hits**,
+reading the list straight out of `tokenSources.ts` so it can never drift, and
+prints two numbers that between them explain every thin board there has ever
+been:
+
+```
+  jupiter:organic         98 found  +98 new · 240ms
+  jupiter:traded         100 found  +14 new · 190ms
+  dex:boosts-top          52 found  +31 new · 310ms
+  ...
+  Discovery total: 214 distinct mints
+  Enrichment: 168/214 mints have a readable, priced pair
+
+  Verdict
+  ✓ 168 priced coins — a full board of 100 is available.
+```
+
+The verdict is the point. It says which of three things is true:
+
+| Verdict | What it means | Where to look |
+|---|---|---|
+| **✓ full board available** | The feeds are fine | Thresholds in `_shared/memeBoard.ts`, or a stale stored board. Press Rebuild now. |
+| **! enrichment starving** | Plenty of mints, few readable pairs | DexScreener rate limiting. Lower `DEX_CONCURRENCY`. |
+| **✗ discovery starving** | Few mints from the sources at all | A source URL moved. The failing ones are named. §4. |
+
+### The board cannot collapse any more
+
+Since `topUpBoard`, a thin run **tops itself up from the last good board**
+rather than publishing three coins over ninety-seven. Practically:
+
+- A run that finds 3 coins publishes those 3 plus 97 held from the previous
+  build, each marked `carriedFrom`.
+- Held rows older than **24 hours** are dropped instead — a day-old price is
+  defensible, a week-old one is a lie with a number on it.
+- The admin card shows a **held** tag on each carried row and a warning line
+  saying how many are held. **A full board with a high carry count means the
+  feeds are down and only the carry-over is hiding it** — that is the one state
+  that would otherwise be completely invisible.
+
+So "the board only loaded three coins" is now only reachable on a genuinely
+first-ever build. If you see it after the board has ever been healthy, the
+stored document was wiped.
+
+### The per-source table
+
 **Admin → Meme 100 → Rebuild now.** The card shows a per-source table:
 
 ```
@@ -195,6 +246,9 @@ the source on its presence so the board still works without it.
 ## 7. The fastest possible check
 
 ```bash
+# 0. The one that answers it fastest — runs the real sources from your machine
+npm run meme:probe
+
 # 1. Does the function work at all?
 curl -s "https://csgn.fun/.netlify/functions/memeBoard" | python3 -m json.tool | head -40
 

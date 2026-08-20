@@ -194,6 +194,82 @@ const toBoardCoin = (address: string, p: DexPair | undefined) => ({
   pairUrl: String(p?.url || `https://dexscreener.com/solana/${address}`),
 })
 
+/* ─── Never let a good board collapse ─── */
+
+/** A published board row. Loose on purpose — this function's job is to carry
+ *  rows forward without caring what is on them. */
+export interface CarriedCoin { address?: unknown; tier?: unknown; carriedFrom?: unknown }
+
+/** How stale a carried-over coin may be before it is dropped rather than
+ *  shown. A day-old price on a scoreboard is defensible; a week-old one is a
+ *  lie with a number on it. */
+export const MEME_CARRY_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
+/**
+ * TOP THE BOARD UP FROM THE LAST GOOD ONE.
+ *
+ * This is the answer to the failure that has been reported more than any other
+ * on this project: **the board came back with three coins.**
+ *
+ * Every previous fix attacked the cause — thresholds, re-fetch starvation, the
+ * wrong source type, shape-dependent parsing. All were real and all are fixed.
+ * None of them could promise the symptom would not happen again, because the
+ * board depends on third-party feeds that can and will have a bad five minutes.
+ *
+ * So this attacks the SYMPTOM instead, and it is the only thing here that can
+ * actually guarantee an outcome: a rebuild may add coins and may refresh them,
+ * but it can never shrink the board. A run that finds three coins publishes
+ * those three plus ninety-seven carried from the last good board. After one
+ * healthy build, "only three tokens loaded" stops being reachable.
+ *
+ * Two rules keep it honest:
+ *   • A carried coin is MARKED (`carriedFrom`), so the UI and the diagnostics
+ *     can tell fresh data from held data. Silently presenting stale numbers as
+ *     live ones would be trading one lie for another.
+ *   • A carried coin older than `MEME_CARRY_MAX_AGE_MS` is dropped. Better a
+ *     short board than a board of day-old prices.
+ *
+ * Pure, so the guarantee is pinned by tests rather than hoped for.
+ */
+export function topUpBoard<T extends CarriedCoin>(
+  fresh: T[],
+  previous: CarriedCoin[],
+  previousUpdatedAt: string | null | undefined,
+  size = MEME_BOARD_SIZE,
+  nowMs = Date.now(),
+): T[] {
+  if (fresh.length >= size) return fresh.slice(0, size)
+
+  const prevMs = Date.parse(previousUpdatedAt || '')
+  // No usable timestamp means we cannot say how old these are, and an unknown
+  // age is treated as too old — the same rule every reader in this codebase
+  // follows for a value it cannot verify.
+  if (!Number.isFinite(prevMs) || nowMs - prevMs > MEME_CARRY_MAX_AGE_MS) return fresh
+
+  const have = new Set(fresh.map((c) => String(c.address ?? '')))
+  const carried: T[] = []
+  for (const coin of previous) {
+    if (fresh.length + carried.length >= size) break
+    const address = String(coin?.address ?? '')
+    if (!address || have.has(address)) continue
+    have.add(address)
+    carried.push({
+      ...(coin as T),
+      // Preserve the ORIGINAL carry stamp when a coin has been held before, so
+      // the age check measures how long the data has actually been stale rather
+      // than resetting every five minutes and letting a row live forever.
+      carriedFrom: coin.carriedFrom ?? new Date(prevMs).toISOString(),
+    })
+  }
+  // A carried row that has itself aged out goes, even though the board it came
+  // from is recent — that is the case the naive check misses.
+  const live = carried.filter((c) => {
+    const t = Date.parse(String((c as CarriedCoin).carriedFrom ?? ''))
+    return Number.isFinite(t) && nowMs - t <= MEME_CARRY_MAX_AGE_MS
+  })
+  return [...fresh, ...live]
+}
+
 /** What a build run actually did — returned rather than logged, so the HTTP
  *  caller can tell a visitor "upstream is down" apart from "nothing qualified".
  *  `skipped` means the stored board was still fresh and was left alone. */
@@ -310,17 +386,25 @@ export async function refreshMemeBoard({ force = false } = {}): Promise<MemeBoar
 
     // Volume is the honest "what is actually happening" sort for the board
     // itself; the app re-ranks by power score once holder votes are folded in.
-    const coins = [...chosen.values()].sort((a, b) => b.volumeH24Usd - a.volumeH24Usd)
+    const built = [...chosen.values()].sort((a, b) => b.volumeH24Usd - a.volumeH24Usd)
+
+    // THE BOARD CANNOT SHRINK. A run that comes back thin tops itself up from
+    // the last good board rather than publishing three coins over ninety-seven.
+    // See topUpBoard — this is the only guarantee in this file that does not
+    // depend on somebody else's API having a good day.
+    const previousCoins = Array.isArray(existing?.coins) ? (existing!.coins! as CarriedCoin[]) : []
+    const coins = topUpBoard(built, previousCoins, existing?.updatedAt, MEME_BOARD_SIZE)
+    const carried = coins.length - built.length
 
     // ── SANITY CHECK, LOGGED ──
     // Four builds came back with two or three coins and the logs said nothing
     // useful, because a thin board and a healthy one produced identical output.
     // This line is the difference between "check the source table" and another
     // round of guessing.
-    if (coins.length < MEME_BOARD_SIZE / 2) {
+    if (built.length < MEME_BOARD_SIZE / 2) {
       console.warn(
-        `[memeBoard] THIN: ${coins.length}/${MEME_BOARD_SIZE} coins from ${candidates.length} candidates ` +
-        `(${unresolved} had no readable pair). Sources: ` +
+        `[memeBoard] THIN BUILD: ${built.length}/${MEME_BOARD_SIZE} fresh from ${candidates.length} candidates ` +
+        `(${unresolved} had no readable pair, ${carried} carried forward). Sources: ` +
         sources.map((s) => `${s.source}=${s.found}/+${s.contributed}${s.note ? `(${s.note})` : ''}`).join(' '),
       )
     }
@@ -341,7 +425,12 @@ export async function refreshMemeBoard({ force = false } = {}): Promise<MemeBoar
       sources,
       discovery: {
         candidates: candidates.length,
-        qualified: coins.length,
+        qualified: built.length,
+        /** How many rows on this board came from a PREVIOUS build because this
+         *  one came back thin. Zero on a healthy run. Anything else says the
+         *  feeds are struggling even though the board looks full — which is
+         *  exactly the thing that would otherwise be invisible. */
+        carried,
         /** Mints proposed but with no readable DexScreener pair. A high number
          *  means enrichment is struggling, which is a completely different
          *  problem from thresholds being strict — telling those two apart took

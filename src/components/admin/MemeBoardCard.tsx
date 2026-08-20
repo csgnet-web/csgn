@@ -36,6 +36,10 @@ interface BoardCoin {
   volumeH24Usd: number
   liquidityUsd: number
   marketCapUsd: number
+  /** Set when this row was HELD from an earlier build because the latest one
+   *  came back thin. Stale data presented as live would be trading one lie for
+   *  another, so it is marked here and on the public board. */
+  carriedFrom?: string
 }
 
 const usd = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n / 1e3).toFixed(0)}K` : `$${Math.round(n)}`)
@@ -51,7 +55,16 @@ export default function MemeBoardCard() {
   // three rounds of guessing to learn the hard way.
   const [sources, setSources] = useState<Array<{ source: string; found: number; contributed: number; ok: boolean; note?: string }>>([])
   const [rebuilding, setRebuilding] = useState(false)
-  const [discovery, setDiscovery] = useState<{ candidates?: number; qualified?: number } | null>(null)
+  const [discovery, setDiscovery] = useState<{
+    candidates?: number
+    qualified?: number
+    unresolved?: number
+    unpriced?: number
+    /** Rows held over from a previous build because this one came back thin.
+     *  A full board with a high carry count is the failure that would
+     *  otherwise be completely invisible — see topUpBoard. */
+    carried?: number
+  } | null>(null)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
@@ -168,6 +181,11 @@ export default function MemeBoardCard() {
                 <div key={coin.address} className="flex items-center gap-3 px-3 py-2">
                   <span className="w-5 text-xs font-mono text-gray-600">{i + 1}</span>
                   <span className="text-sm font-semibold text-white w-20 truncate">{coin.symbol || '—'}</span>
+                  {coin.carriedFrom && (
+                    <span className="text-[9px] uppercase tracking-wider text-gold shrink-0" title={`Held from ${new Date(String(coin.carriedFrom)).toLocaleString()} — this build did not re-read it`}>
+                      held
+                    </span>
+                  )}
                   <span className="text-xs font-mono text-gray-400">{usd(coin.volumeH24Usd)} vol</span>
                   <span className="text-xs font-mono text-gray-600 hidden sm:inline">{usd(coin.liquidityUsd)} liq</span>
                   <a
@@ -183,8 +201,21 @@ export default function MemeBoardCard() {
             </div>
             <p className="mt-1.5 text-[11px] text-gray-600">
               Ranked by real 24h volume{discovery?.candidates ? ` · ${discovery.qualified} of ${discovery.candidates} candidates cleared the thresholds` : ''}
+              {discovery?.unresolved ? ` · ${discovery.unresolved} had no readable pair` : ''}
               {updatedAt && ` · updated ${new Date(updatedAt).toLocaleTimeString()}`}
             </p>
+            {/* THE WARNING THAT MATTERS. A full board built from mostly held
+                rows looks perfect and is not — the feeds are down and the only
+                reason the page is not showing three coins is the carry-over.
+                Without this line that state is invisible for up to a day. */}
+            {(discovery?.carried ?? 0) > 0 && (
+              <p className="mt-1 text-[11px] text-gold">
+                {discovery!.carried} of these were held from the previous build — this run only
+                found {discovery?.qualified ?? 0} fresh. The sources above say which provider
+                stopped answering. Run <span className="font-mono">npm run meme:probe</span> locally
+                for the full picture.
+              </p>
+            )}
           </>
         )}
       </div>
