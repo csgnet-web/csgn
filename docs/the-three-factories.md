@@ -19,27 +19,65 @@ schedule with gaps in it — it carries every hour that nothing better is on,
 which is most of them. A clipper is on television for holding a token and
 posting something they already made. That is the deal, and it is a good one.
 
-**The denominator moves, and members should be told which one they are on:**
+**The denominator is a constant: a whole day, every day.**
 
-| Master block | Clip inventory | Why |
-|---|---|---|
-| Reserved (default) | **16 hours** | 7 PM–3 AM ET belongs to the MP |
-| Released | **24 hours** | the whole day is the reel's |
+```
+seconds = balance / 1,000,000,000 × 86,400
+```
 
-That switch is `config/scheduleMeta.networkBlockEnabled`, it takes effect on the
-next schedule rebuild, and it rewrites no slot documents. It is the entire
-16/24 lever.
+It used to move — sixteen hours on some days, twenty-four on others, against a
+measured circulating supply that drifted with the chart. Both are gone, because
+both broke the one thing that makes the promise believable: a member being able
+to check their own number on a phone.
 
-### STREAM FACTORY — *connect Twitch, be available*
+**An interruption is not a deduction.** When a streamer goes on or the MP takes
+the channel, the reel is PRE-EMPTED — it pauses and picks up where it left off.
+Nobody's entitlement moves. That is why clippers can be told plainly that the
+control room will break in whenever it wants to: it costs them nothing.
 
-Connect Twitch and grant CSGN permission to forward the channel. That puts you
-on the **Master Control roster**. The poller samples every consenting channel
-each minute, so the board always knows who is live.
+Check it with `npm run verify:airtime`.
+
+### STREAM FACTORY — *connect Twitch once, be available*
+
+Connect Twitch and grant CSGN permission to forward the channel. **That is the
+entire sign-up, and it happens once.** It puts you on the **Master Control
+roster**; the poller samples every consenting channel each minute, so the board
+always knows who is live.
 
 Being on the roster is **not a booking**. The Master of Programming decides who
 goes on and when. You stream exactly as you normally would; if you are worth
 carrying, the channel cuts to you, and you earn 30% of the creator fees your
 hour generates.
+
+#### How the MP decides — the ranked shortlist
+
+"Carry whoever has the most viewers" is the obvious rule and it fails three ways
+inside a week: the same streamer wins every night until the rest of the roster
+stops bothering, a six-hour-old stream ranks level with one that just started,
+and holding $CSGN counts for nothing.
+
+So Master Control ranks the live roster on four terms and shows the working:
+
+| Term | Weight | What it corrects for |
+|---|---|---|
+| **Audience** | 55% | the only signal that tracks "worth watching" without a human |
+| **Rotation** | 20% | somebody who has not been carried today |
+| **Freshness** | 15% | a stream that just started has an audience arriving, not leaving |
+| **Stake** | 10% | skin in the game — a nudge, never a veto |
+
+Audience is square-root-scaled, so the gap between 5 and 50 watchers matters far
+more than between 500 and 545 — and so a genuine gap stays decisive. The three
+corrections reorder near-ties; they cannot overturn a ten-fold difference.
+
+Each row carries the one fact most likely to change the decision
+(*"42 watching · not on yet today"*) and the button that acts on it.
+
+#### Being told, rather than watching
+
+Alerts go to a webhook (`OPERATOR_WEBHOOK_URL`) as well as the board, so they
+reach a phone with the laptop shut. Deduped by kind and subject and re-armed
+when a condition clears — an alert fires every minute for as long as it holds,
+and a notifier that repeats itself is one that gets muted.
 
 ### MYSELF FACTORY — *the MP's own encoder*
 

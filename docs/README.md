@@ -16,6 +16,7 @@
 | Prove it works before it pays anyone | [`dry-run.md`](dry-run.md) |
 | Switch on Google / X / email sign-in | [`auth-provider-setup.md`](auth-provider-setup.md) |
 | **Understand the product in one page** | [`the-three-factories.md`](the-three-factories.md) |
+| **Prove it works / test it myself** | [`testing-the-channel.md`](testing-the-channel.md) |
 | **Get from $3,600 to $1,000,000+** | [`analysis-path-to-1m.md`](analysis-path-to-1m.md) |
 | Work out why the Netlify bill is what it is | [`netlify-cost.md`](netlify-cost.md) |
 | Decide when to run clips vs. a live streamer | [`analysis-clip-vs-streamer-mode.md`](analysis-clip-vs-streamer-mode.md) |
@@ -69,6 +70,7 @@ Designs on the table, and the long-form thinking behind the product.
 | [`csgn-share.md`](csgn-share.md) | **A Nielsen ratings book for streaming.** Share over Rating, ET dayparts, the honest answer on US-only measurement, The Book and Sweeps |
 | [`master-plan.md`](master-plan.md) | The long-form original: who we are, the schedule model, the shows, the token audit, the 180-day plan |
 | [`growth-and-market-plan.md`](growth-and-market-plan.md) | Where the project stands, what the fee maths actually require for a given income, honest odds on market cap, and the six-month content and recruiting plan |
+| **[`testing-the-channel.md`](testing-the-channel.md)** | **Five things to check and how.** The 1:1 airtime ratio in ten seconds, every /player look without going live, stream mode end to end (including how to test it with no real streamer), the block timeline, and notifications |
 | **[`the-three-factories.md`](the-three-factories.md)** | **The product, stated once.** CLIP FACTORY / STREAM FACTORY / MYSELF FACTORY, the three modes they produce, the precedence order, the 16-vs-24-hour clip denominator, and the vocabulary to use verbatim |
 | [`netlify-cost.md`](netlify-cost.md) | Where the function bill was going (a 45-second sleep, every minute, forever), the duty cycle that replaced it, edge caching, and what to check if it is still high |
 | **[`analysis-path-to-1m.md`](analysis-path-to-1m.md)** | **The total rundown and the growth plan.** What exists and how solid it is, the two economic loops, what $1M actually costs in dollars (~$50–80k of net buying), the three growth engines, a 90-day plan, what not to do, and the honest odds |

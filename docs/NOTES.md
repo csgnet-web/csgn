@@ -67,7 +67,14 @@ it"; `airEligibility` is what used to be `claimEligibility` and is now the
 roster gate. If you find yourself adding a "book this hour" button, the model
 has drifted.
 
-**6. Three factories, three modes, one precedence order.**
+**6. Clip airtime is a CONSTANT ratio: balance / 1,000,000,000 x 86,400.**
+Clips run 24/7 and the denominator is a whole day, always. A streamer or the
+MP breaking in PRE-EMPTS the reel; it never deducts from anybody's
+entitlement. The supply is a fixed constant, not a measured circulating
+supply — a member has to be able to check their own number on a phone.
+`npm run verify:airtime` proves it; `airtimeRatio.test.ts` pins it.
+
+**7. Three factories, three modes, one precedence order.**
 CLIP FACTORY (TikTok, passive, 1:1 with supply), STREAM FACTORY (Twitch +
 forward consent, the MP picks), MYSELF FACTORY (the MP's own encoder,
 pre-empts everything). They produce CLIP MODE / STREAM MODE / MASTER MODE in
@@ -76,14 +83,14 @@ clips. The block is a DEFAULT, not a lock. Full statement in
 `docs/the-three-factories.md`; the rule is `_shared/channelMode.ts` and nowhere
 else.
 
-**7. Never pay a serverless container to wait.**
+**8. Never pay a serverless container to wait.**
 The fee poller used to `await sleep(15_000)` three times per run — 45 billed
 seconds a minute, forever, and probably terminated before its last writes
 because the file name lacks the hyphen that would make it a real background
 function. If something needs a delay, it needs a different cron entry. See
 `docs/netlify-cost.md`.
 
-**8. Why the channel is in a mode is PUBLISHED, not inferred.**
+**9. Why the channel is in a mode is PUBLISHED, not inferred.**
 `_shared/channelMode.ts` turns the current slot into a mode plus one sentence of
 reason and one of what changes it. The poller writes it to `public/channelMode`
 every minute; `adminLiveNow` rewrites it immediately after an operator action so
@@ -91,13 +98,13 @@ the sign is never a minute behind the picture. Every surface renders the stored
 sentence. Do not compute a mode in a component — that is how a live show once
 headlined "THE STAGE IS OPEN".
 
-**9. Three doors, one set of clip rules.**
+**10. Three doors, one set of clip rules.**
 A clip reaches a reel by paste (`submitClip`), by the Android share sheet
 (`/share`), or by TikTok import (`tiktokVideos`). All three go through
 `_shared/clipIntake.ts`, which owns the cap, the dedupe, the ordering, the
 pending status and the exact runtime. A fourth door must use it too.
 
-**10. Furniture belongs in OBS, not `/player`.**
+**11. Furniture belongs in OBS, not `/player`.**
 If a graphic looks identical over any source, it is furniture. `/player` renders
 the programme and things timed to a programme change. Everything else is a
 separate browser source — it composites free on the GPU and can be retuned
@@ -119,6 +126,7 @@ Flip these without touching code:
 | `airtimeStartAt` | `config/season` | Verified-airtime cutover date |
 | Meme 100 pins/denies | `config/memeBoard` | Admin UI |
 | `TIKTOK_CLIENT_KEY` / `_SECRET` / `_REDIRECT_URI` | Netlify env | All three, or the TikTok panel stays hidden. `docs/setup-tiktok-and-share.md` |
+| `OPERATOR_WEBHOOK_URL` | Netlify env | Discord/Slack webhook for Master Control alerts. Unset = board-only notifications |
 
 ---
 
@@ -192,6 +200,10 @@ yours to decide.
 
 **If something is broken:** run `npm run meme:probe`, then `spec-meme-100.md`
 (§3 first), then this file.
+
+**If you want to prove something works:** `testing-the-channel.md` — the
+airtime ratio, /player, stream mode, the block timeline and the notifier, each
+testable on its own without a second person.
 
 **If you're deciding what to build:**
 1. `analysis-path-to-1m.md` — the whole picture, and what $1M actually costs
