@@ -20,7 +20,7 @@
  * cause a hundred Twitch API calls is a lever somebody will eventually pull.
  */
 import { getDoc } from './_shared/firebaseAdmin'
-import { json, requireMethod, withHttp } from './_shared/http'
+import { cachedJson, requireMethod, withHttp } from './_shared/http'
 import { ROSTER_STALE_MS, type RosterEntry } from './_shared/liveRoster'
 
 interface RosterDoc { entries?: RosterEntry[]; updatedAt?: string }
@@ -52,12 +52,17 @@ export const handler = withHttp(async (event) => {
       }))
     : []
 
-  return json(200, {
+  // SERVED FROM THE EDGE. Every open /schedule and /watch tab asks for this
+  // once a minute; the underlying document is only rewritten by the poller,
+  // which itself runs at most once a minute and less when the channel is cold.
+  // Caching it for 45 seconds means one invocation serves every viewer in that
+  // window instead of one invocation per viewer.
+  return cachedJson({
     live,
     // The size of the network, which is a fact worth publishing even when
     // nobody happens to be on right now.
     memberCount: fresh ? (stored?.entries ?? []).length : 0,
     updatedAt,
     stale: !fresh,
-  })
+  }, { browserSeconds: 20, edgeSeconds: 45, staleSeconds: 120 })
 })

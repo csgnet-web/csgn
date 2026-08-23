@@ -1,5 +1,6 @@
 // Scheduled background function — runs every minute via cron.
-// Executes 4 DexScreener polls at 15-second intervals (t=0, 15s, 30s, 45s).
+// One DexScreener poll per run (it used to be four, 15 seconds apart, which
+// cost 45 seconds of billed container time every single minute).
 // Writes live creatorFees to the active slot doc in Firestore.
 // Browser clients NEVER call DexScreener — they read from the single Firestore listener.
 //
@@ -7,11 +8,10 @@
 //
 // Netlify serves every function at /.netlify/functions/<name>, scheduled ones
 // included, so "it's a cron job" is not an access control. Anyone who knows the
-// path could invoke this, and each invocation is the single most expensive
-// thing in the codebase: it holds a container for ~45 seconds of wall clock
-// (which is what Netlify bills), makes four DexScreener calls, a Twitch Helix
-// call, and a run of slot-lifecycle, vote-settlement and meme-board writes to
-// Firestore. Being a *background* function makes it worse, not better — it
+// path could invoke this, and each invocation is still the most expensive
+// thing in the codebase: a DexScreener call, a Twitch Helix call, and a run of
+// slot-lifecycle, vote-settlement and meme-board writes to Firestore — all
+// billed as wall clock. Being a *background* function makes it worse, not better — it
 // returns to the caller immediately and keeps working, so requests stack
 // concurrently instead of queueing.
 //
@@ -30,6 +30,25 @@
 // cron period: a guard that can reject the real scheduled run would be a
 // self-inflicted outage on the job that drives fees, slot lifecycle and token
 // stats. It skips, it never fails.
+//
+// ── The name lies, and it matters ──────────────────────────────────────────
+//
+// This file is called `feePollerBackground.ts`, but Netlify's background
+// convention needs a HYPHEN — `something-background.ts`. So this is an ordinary
+// scheduled function with an ordinary execution ceiling (tens of seconds), not
+// a 15-minute background one.
+//
+// That was not a cosmetic problem. The old version of this function polled
+// DexScreener four times with `await sleep(15_000)` between them, so the run
+// was ~46 seconds long and would have been KILLED partway through the loop —
+// which means everything after the loop (the config/ticker write, the on-air
+// now-live / up-next auto-fill) very likely never ran at all, on any tick, and
+// silently. A function that is billed for its wall clock and then terminated
+// before its last writes is the worst of both.
+//
+// The loop is gone. This pass should now finish in a couple of seconds. Keep it
+// that way: if a step here ever needs longer than a few seconds, it belongs in
+// its own genuinely-background function with the hyphen in its filename.
 
 import { queryCollection, countCollection, getDoc, writeDoc, commitWrites, createWrite, updateWrite, fieldFilter, order } from './_shared/firebaseAdmin'
 import { buildExpectedSlotsForDate, buildSlotDoc } from './_shared/schedule'
@@ -58,11 +77,11 @@ import { refreshLiveRoster } from './_shared/liveRoster'
 import { operatorAlerts, recommendedMode, DEFAULT_LIVE_VIEWER_FLOOR } from './_shared/operatorAlerts'
 import { publishChannelMode } from './_shared/channelModeStore'
 
-const POLL_INTERVAL_MS = 15_000
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
+// NO `sleep` HELPER, DELIBERATELY. There used to be one, used to hold this
+// function open for 45 billed seconds every minute. Netlify charges wall clock;
+// a serverless function that waits is a serverless function you are paying to
+// do nothing. If a future step needs a delay, it needs a different cron entry,
+// not a sleep.
 
 interface FeeState {
   baselineH24Usd: number
@@ -461,21 +480,16 @@ export function slotAirtime(slot: SlotDoc, startMs: number): (AirtimeResult & { 
   return { liveCheckCount, checkCount, ...payableAirtime({ liveCheckCount, checkCount }) }
 }
 
-async function pollAndWrite(dexData: DexData, active: SlotRow | null, tick: number, airtimeStart: number): Promise<void> {
+async function pollAndWrite(dexData: DexData, active: SlotRow | null, airtimeStart: number): Promise<void> {
   try {
     if (!active) return
 
     const slotId = active.path.split('/').pop()!
-    // Tick 0 reuses the row fetched at the top of the invocation; later ticks
-    // re-read just this one doc (1 read, not a range query) so admin-side
-    // changes — fees marked paid/declined, snapshot locked — stay visible
-    // mid-invocation.
-    let slotData = active.data
-    if (tick > 0) {
-      const fresh = await getDoc<SlotDoc>(active.path)
-      if (!fresh) return
-      slotData = fresh
-    }
+    // The row fetched at the top of the invocation, reused. There used to be a
+    // per-tick re-read here so admin changes made mid-invocation were visible;
+    // with one tick there is no mid-invocation, and the next run (60s later)
+    // reads fresh anyway. That is one Firestore read per minute saved.
+    const slotData = active.data
 
     const existing = slotData.creatorFees
     if (existing?.paymentStatus === 'paid' || existing?.paymentStatus === 'declined') return
@@ -612,13 +626,31 @@ async function pollAndWrite(dexData: DexData, active: SlotRow | null, tick: numb
 }
 
 // Netlify scheduled background function — handler runs once per cron invocation.
-// Executes 4 polls at 15s intervals within the single invocation. Each tick
-// fetches DexScreener once; the first successful tick also refreshes
-// public/tokenStats (~1 write/min) so token stats flow 24/7 even when no slot
-// is live.
-/** Shortest gap between two real runs. Below the 60s cron period on purpose —
- *  see the header: this must never be able to reject the scheduled run. */
-const MIN_RUN_INTERVAL_MS = 45_000
+// One DexScreener fetch per invocation, which also refreshes public/tokenStats
+// (~1 write/min) so token stats flow 24/7 even when no slot is live.
+/** Shortest gap between two real runs while the channel is HOT — something is
+ *  on air, or somebody on the roster is live. Below the 60s cron period on
+ *  purpose — see the header: this must never be able to reject the scheduled
+ *  run during an hour that decides money. */
+const HOT_RUN_INTERVAL_MS = 45_000
+
+/**
+ * Shortest gap between two real runs while the channel is COLD.
+ *
+ * Cold means: no slot assigned, nobody from the roster live, the clip reel
+ * carrying the channel. That is most of the day by design — clips are the
+ * source of last resort and the baseline — and during it a minute-by-minute
+ * pass is buying nothing. Nothing accrues, no fee is moving, no minute counter
+ * is running. The only question a cold tick answers is "has anybody gone live",
+ * and the operator is not cutting to them inside sixty seconds anyway.
+ *
+ * At 1,440 scheduled invocations a day this is the difference between paying
+ * for all of them and paying for a third. The cost is up to three minutes of
+ * detection lag on a streamer going live, which `adminLiveNow` short-circuits
+ * anyway by clearing the cold flag the moment an operator acts.
+ */
+export const COLD_RUN_INTERVAL_MS = 3 * 60_000
+
 const RUN_LOCK_PATH = 'config/feePollerRun'
 /** config/season only carries the airtime cutover today, and moving that date
  *  is a deliberate, rare admin act — an hour of staleness costs nothing. */
@@ -633,13 +665,17 @@ const SEASON_CONFIG_TTL_MS = 60 * 60 * 1000
  * here is a poll that silently never happens, so every ambiguous input resolves
  * toward running.
  */
-export function shouldRunPoll(lastStartedAt: string | undefined, nowMs: number): boolean {
+export function shouldRunPoll(lastStartedAt: string | undefined, nowMs: number, wasCold = false): boolean {
   if (!lastStartedAt) return true
   const last = new Date(lastStartedAt).getTime()
   if (!Number.isFinite(last) || last <= 0) return true
   const elapsed = nowMs - last
   if (elapsed < 0) return true
-  return elapsed >= MIN_RUN_INTERVAL_MS
+  // Cold only slows things down when the PREVIOUS run positively established
+  // that the channel was cold. An unknown state is treated as hot, so a missing
+  // or corrupt flag costs money rather than correctness — which is the right
+  // way round for a job that decides fees.
+  return elapsed >= (wasCold ? COLD_RUN_INTERVAL_MS : HOT_RUN_INTERVAL_MS)
 }
 
 /**
@@ -652,13 +688,30 @@ export function shouldRunPoll(lastStartedAt: string | undefined, nowMs: number):
  */
 async function claimRunSlot(): Promise<boolean> {
   try {
-    const lock = await getLockDoc<{ startedAt?: string }>(RUN_LOCK_PATH)
-    if (!shouldRunPoll(lock?.startedAt, Date.now())) return false
+    const lock = await getLockDoc<{ startedAt?: string; cold?: boolean }>(RUN_LOCK_PATH)
+    if (!shouldRunPoll(lock?.startedAt, Date.now(), lock?.cold === true)) return false
     await writeLockDoc(RUN_LOCK_PATH, { startedAt: new Date().toISOString() }, { merge: true })
     return true
   } catch (err) {
     console.warn('feePoller run lock unavailable, running anyway:', err)
     return true
+  }
+}
+
+/**
+ * Record whether the channel was cold on this pass, so the NEXT tick knows how
+ * long it may skip for.
+ *
+ * Stored rather than recomputed because hotness can only be known after the
+ * work — and the whole point is to let a tick decide, before doing any work,
+ * that it does not need to.
+ */
+async function recordDutyCycle(cold: boolean): Promise<void> {
+  try {
+    await writeLockDoc(RUN_LOCK_PATH, { cold, coldAt: new Date().toISOString() }, { merge: true })
+  } catch {
+    // Best-effort. Failing to write it means the next tick assumes hot, which
+    // costs an invocation and breaks nothing.
   }
 }
 
@@ -763,23 +816,34 @@ export const handler = async () => {
   await settleMemeVote()
   await refreshMemeBoard()
 
-  let tokenStatsWritten = false
-  let lastDex: DexData | null = null
-  for (let i = 0; i < 4; i++) {
-    const dexData = await fetchDexData()
-    if (dexData) {
-      lastDex = dexData
-      if (!tokenStatsWritten) {
-        try {
-          await writeDoc('public/tokenStats', { ...buildTokenStatsDoc(dexData) }, { merge: false })
-          tokenStatsWritten = true
-        } catch (err) {
-          console.error('[feePoller] tokenStats write error:', err)
-        }
-      }
-      await pollAndWrite(dexData, active, i, airtimeStart)
+  // ── ONE DexScreener read, then done ──
+  //
+  // This loop used to run four times per invocation with `await sleep(15_000)`
+  // between them, so every scheduled run held a billed container for 45 seconds
+  // doing nothing but waiting. Netlify bills wall clock: that was 1,440 runs a
+  // day x 45s = eighteen hours of paid compute per day, to produce four
+  // samples of a number instead of one. It was, by a wide margin, the most
+  // expensive line in this project.
+  //
+  // Dropping to a single sample is safe because fee accrual is CUMULATIVE and
+  // delta-based, not an average of samples: `_feeState` carries the running
+  // tier volume map and the previous estimate, so the same total is reached
+  // whether it is stepped once a minute or four times. The only thing lost is
+  // sub-minute attribution when the market cap crosses a pump.fun tier
+  // boundary mid-minute, which moves a fee by a fraction of a percent.
+  //
+  // If finer resolution is ever genuinely needed, raise the CRON RATE. Never
+  // re-add a sleep — paying for a container to wait is the one thing that
+  // cannot be optimised afterwards.
+  const dexData = await fetchDexData()
+  const lastDex: DexData | null = dexData
+  if (dexData) {
+    try {
+      await writeDoc('public/tokenStats', { ...buildTokenStatsDoc(dexData) }, { merge: false })
+    } catch (err) {
+      console.error('[feePoller] tokenStats write error:', err)
     }
-    if (i < 3) await sleep(POLL_INTERVAL_MS)
+    await pollAndWrite(dexData, active, airtimeStart)
   }
 
   // Publish CSGN token info + the live creator-fee beat to the broadcast ticker
@@ -816,4 +880,18 @@ export const handler = async () => {
   } catch (err) {
     console.error('[feePoller] ticker csgn/liveFee write error:', err)
   }
+
+  // ── How hard should the next tick work? ──
+  //
+  // COLD is the honest description of most of the day under the current model:
+  // clips are the source of last resort and the baseline, so unless the
+  // operator has put somebody on or a roster member is actually live, nothing
+  // on this pass changed and nothing on the next one will either. Saying so
+  // lets the next two ticks exit in milliseconds instead of doing a full pass
+  // to discover the same nothing.
+  //
+  // Note what counts as hot: an assigned slot OR anybody live on the roster.
+  // The second is what stops the channel going to sleep on the one thing it
+  // needs to notice — somebody worth cutting to going live.
+  await recordDutyCycle(!active && !roster.some((e) => e.live))
 }

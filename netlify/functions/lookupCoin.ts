@@ -20,7 +20,7 @@
  * that resolves to nothing.
  */
 import { badRequest, notFound } from './_shared/errors'
-import { json, requireMethod, withHttp } from './_shared/http'
+import { cachedJson, requireMethod, withHttp } from './_shared/http'
 import { checkRateLimit, clientIp } from './_shared/rateLimit'
 import { fetchJson, memo } from './_shared/cache'
 
@@ -61,7 +61,11 @@ export const handler = withHttp(async (event) => {
   // Deepest liquidity wins — a thin pair quotes a price nobody can trade at.
   const best = pairs.reduce((a, b) => ((b.liquidity?.usd ?? 0) > (a.liquidity?.usd ?? 0) ? b : a))
 
-  return json(200, {
+  // The same address gives the same answer to everybody, and DexScreener's own
+  // numbers do not move meaningfully inside two minutes. Cached at the edge so
+  // a coin somebody is pasting into the jukebox is looked up once, not once per
+  // keystroke-triggered retry.
+  return cachedJson({
     coin: {
       address,
       symbol: String(best.baseToken?.symbol || '').toUpperCase().slice(0, 12) || address.slice(0, 4).toUpperCase(),

@@ -26,7 +26,7 @@ import { requireAdminUser } from './_shared/auth'
 import { auditLog } from './_shared/audit'
 import { badRequest, notFound } from './_shared/errors'
 import {
-  commitWrites, fieldFilter, getDoc, order, queryCollection, updateWrite,
+  commitWrites, fieldFilter, getDoc, order, queryCollection, updateWrite, writeDoc,
 } from './_shared/firebaseAdmin'
 import { json, parseJson, requireMethod, withHttp } from './_shared/http'
 import { refreshLiveRoster, ROSTER_STALE_MS, type RosterEntry } from './_shared/liveRoster'
@@ -248,6 +248,13 @@ function minutesSince(startTime?: string): number {
  */
 async function announceMode(slot: ModeSlot): Promise<void> {
   try {
+    // WAKE THE POLLER. It runs on a duty cycle — when the channel is cold
+    // (clip mode, nobody live) it skips two ticks out of three to keep the
+    // Netlify bill down. An operator putting somebody on air is exactly the
+    // event that makes it hot again, and waiting up to three minutes for the
+    // poller to notice would delay the first minute of fee accrual on an hour
+    // somebody is actually broadcasting. One merge write buys that back.
+    await writeDoc('config/feePollerRun', { cold: false }, { merge: true })
     const [meta, roster] = await Promise.all([
       getDoc<{ networkBlockEnabled?: boolean }>('config/scheduleMeta'),
       getDoc<RosterDoc>('public/liveRoster'),

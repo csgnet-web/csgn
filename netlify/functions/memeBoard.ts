@@ -25,7 +25,7 @@
  * start, and the rate limiter stops that being a lever anybody can pull.
  */
 import { getDoc } from './_shared/firebaseAdmin'
-import { json, requireMethod, withHttp } from './_shared/http'
+import { cachedJson, json, requireMethod, withHttp } from './_shared/http'
 import { checkRateLimit, clientIp } from './_shared/rateLimit'
 import { refreshMemeBoard, type MemeBoardResult } from './_shared/memeBoard'
 
@@ -49,13 +49,18 @@ export const handler = withHttp(async (event) => {
   const force = String(event.queryStringParameters?.force || '') === '1'
 
   if (coins.length > 0 && !force) {
-    return json(200, {
+    // SERVED FROM THE EDGE. The board itself is only rebuilt every five
+    // minutes, so answering every visitor from a container is paying for a
+    // hundred identical invocations to read one unchanged document. `?force=1`
+    // takes a different path below and is never cached — an admin pressing
+    // "Rebuild now" and being handed the cached board would be maddening.
+    return cachedJson({
       coins,
       updatedAt: stored?.updatedAt ?? null,
       discovery: stored?.discovery ?? null,
       sources: stored?.sources ?? null,
       built: false,
-    })
+    }, { browserSeconds: 30, edgeSeconds: 120, staleSeconds: 600 })
   }
 
   // Cold start. Build one now — but rate-limited, because this is the only
@@ -67,7 +72,7 @@ export const handler = withHttp(async (event) => {
   } catch {
     // Rate-limited. Not an error worth a 429 to the reader — they just get the
     // empty board and the honest reason, same as any other empty result.
-    return json(200, { coins: [], updatedAt: null, built: false, reason: 'busy' })
+    return json(200, { coins: [], updatedAt: null, built: false, reason: 'busy' }, { 'Cache-Control': 'no-store' })
   }
 
   const rebuilt = await getDoc<BoardDoc>('public/memeBoard')
@@ -81,5 +86,5 @@ export const handler = withHttp(async (event) => {
     // 'none_qualified' means real coins were considered and none cleared the
     // on-chain thresholds. The page says something different for each.
     reason: result.reason,
-  })
+  }, { 'Cache-Control': 'no-store' })
 })
