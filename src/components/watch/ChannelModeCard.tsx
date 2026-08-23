@@ -22,15 +22,15 @@ import { useChannelMode, type ChannelMode, type ModeEvent } from '@/hooks/useCha
  */
 
 const MODE_ICON: Record<ChannelMode, typeof Radio> = {
-  live: Radio,
-  network: Tv,
-  clips: Clapperboard,
+  stream: Radio,
+  master: Tv,
+  clip: Clapperboard,
 }
 
 const MODE_TONE: Record<ChannelMode, { dot: string; text: string; ring: string }> = {
-  live: { dot: 'bg-live', text: 'text-live', ring: 'border-live/30' },
-  network: { dot: 'bg-gold', text: 'text-gold', ring: 'border-gold/30' },
-  clips: { dot: 'bg-primary-400', text: 'text-primary-300', ring: 'border-primary-500/25' },
+  stream: { dot: 'bg-live', text: 'text-live', ring: 'border-live/30' },
+  master: { dot: 'bg-gold', text: 'text-gold', ring: 'border-gold/30' },
+  clip: { dot: 'bg-primary-400', text: 'text-primary-300', ring: 'border-primary-500/25' },
 }
 
 function timeET(iso: string): string {
@@ -50,7 +50,7 @@ function dayET(iso: string): string {
 }
 
 function SwitchRow({ event }: { event: ModeEvent }) {
-  const tone = MODE_TONE[event.mode] ?? MODE_TONE.clips
+  const tone = MODE_TONE[event.mode] ?? MODE_TONE.clip
   return (
     <li className="flex items-start gap-3 py-2">
       <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${tone.dot}`} />
@@ -58,7 +58,7 @@ function SwitchRow({ event }: { event: ModeEvent }) {
         <p className="text-[12px] text-white leading-snug">
           <span className="font-mono text-gray-500">{timeET(event.at)} ET</span>{' '}
           <span className={`font-bold ${tone.text}`}>
-            {event.mode === 'live' ? (event.who || 'A member') : event.mode === 'network' ? 'CSGN Originals' : 'Clip reel'}
+            {event.mode === 'stream' ? (event.who || 'A member') : event.mode === 'master' ? (event.who || 'Master Mode') : 'Clip reel'}
           </span>
         </p>
         <p className="text-[11px] text-gray-500 leading-snug mt-0.5">{event.because}</p>
@@ -74,7 +74,7 @@ export default function ChannelModeCard({ compact = false }: { compact?: boolean
 
   if (!channelMode || stale) return null
 
-  const tone = MODE_TONE[channelMode.mode] ?? MODE_TONE.clips
+  const tone = MODE_TONE[channelMode.mode] ?? MODE_TONE.clip
   const Icon = MODE_ICON[channelMode.mode] ?? Clapperboard
   // The first entry of the log is the switch that is currently in force, so the
   // history below it starts at the second — otherwise the card explains the
@@ -92,7 +92,7 @@ export default function ChannelModeCard({ compact = false }: { compact?: boolean
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-gray-500">On air now</span>
             <span className={`inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.14em] ${tone.text}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${tone.dot} ${channelMode.mode === 'live' ? 'animate-pulse' : ''}`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${tone.dot} ${channelMode.mode !== 'clip' ? 'animate-pulse' : ''}`} />
               {channelMode.label}
             </span>
             {channelMode.who && (

@@ -19,7 +19,7 @@ vi.mock('@/hooks/useChannelMode', () => ({ useChannelMode: () => state }))
 const { default: ChannelModeCard } = await import('./ChannelModeCard')
 
 const doc = (over: Partial<ChannelModeDoc> = {}): ChannelModeDoc => ({
-  mode: 'clips',
+  mode: 'clip',
   label: 'Clip Mode',
   who: null,
   isGuest: false,
@@ -27,9 +27,9 @@ const doc = (over: Partial<ChannelModeDoc> = {}): ChannelModeDoc => ({
   nextSwitch: 'The moment a connected member goes live, the network can cut to them.',
   since: '2026-08-20T18:00:00.000Z',
   log: [
-    { at: '2026-08-20T18:00:00.000Z', mode: 'clips', who: null, because: 'Reel took over.' },
-    { at: '2026-08-20T16:00:00.000Z', mode: 'live', who: 'roblito', because: 'roblito went live.' },
-    { at: '2026-08-20T14:00:00.000Z', mode: 'clips', who: null, because: 'Reel took over.' },
+    { at: '2026-08-20T18:00:00.000Z', mode: 'clip', who: null, because: 'Reel took over.' },
+    { at: '2026-08-20T16:00:00.000Z', mode: 'stream', who: 'roblito', because: 'roblito went live.' },
+    { at: '2026-08-20T14:00:00.000Z', mode: 'clip', who: null, because: 'Reel took over.' },
   ],
   liveCount: 0,
   updatedAt: '2026-08-20T18:01:00.000Z',
@@ -65,7 +65,7 @@ describe('ChannelModeCard', () => {
 
   // A stalled poller must not leave an hours-old "LIVE: someone" on the page.
   it('renders nothing when the verdict is stale', () => {
-    state.channelMode = doc({ mode: 'live', who: 'roblito', label: 'Live' })
+    state.channelMode = doc({ mode: 'stream', who: 'roblito', label: 'Live' })
     state.stale = true
     mount()
     expect(text()).toBe('')
@@ -79,15 +79,15 @@ describe('ChannelModeCard', () => {
     expect(text()).toContain('cut to them')
   })
 
-  it('names who is on in live mode', () => {
-    state.channelMode = doc({ mode: 'live', label: 'Live', who: 'roblito', because: 'roblito is live on their own channel.' })
+  it('names who is on in STREAM MODE', () => {
+    state.channelMode = doc({ mode: 'stream', label: 'Live', who: 'roblito', because: 'roblito is live on their own channel.' })
     mount()
     expect(text()).toContain('roblito')
   })
 
   // A guest that reads identically to a member makes the roster meaningless.
   it('marks a guest as a guest', () => {
-    state.channelMode = doc({ mode: 'live', label: 'Live', who: 'ansem', isGuest: true })
+    state.channelMode = doc({ mode: 'stream', label: 'Live', who: 'ansem', isGuest: true })
     mount()
     expect(text()).toContain('Guest')
   })
@@ -115,7 +115,7 @@ describe('ChannelModeCard', () => {
   })
 
   it('offers no history control when there is nothing but the current mode', () => {
-    state.channelMode = doc({ log: [{ at: '2026-08-20T18:00:00.000Z', mode: 'clips', who: null, because: 'Reel took over.' }] })
+    state.channelMode = doc({ log: [{ at: '2026-08-20T18:00:00.000Z', mode: 'clip', who: null, because: 'Reel took over.' }] })
     mount()
     expect(host.querySelector('button')).toBeNull()
   })

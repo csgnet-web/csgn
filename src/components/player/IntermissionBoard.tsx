@@ -103,9 +103,9 @@ function ModeExplainerPanel() {
       <p className="text-2xl font-black tracking-[0.4em] uppercase text-gray-400">How this channel runs</p>
       <div className="flex items-center gap-5">
         {[
-          ['Clip mode', 'Nobody from the roster is live', 'The member reel plays — clips ordered by holdings'],
-          ['Live mode', 'A member goes live on Twitch', 'The network cuts to them, usually within minutes'],
-          ['Back to clips', 'They end the stream or drop off', 'The reel resumes from where it left off'],
+          ['Clip Mode', 'The floor — runs whenever nothing beats it', 'The member reel. Your share of the day is your share of $CSGN'],
+          ['Stream Mode', 'A member on the roster goes live', 'The network cuts to them — they connected Twitch and let us carry it'],
+          ['Master Mode', 'CSGN goes on directly', 'The control room takes the channel. 7 PM–3 AM ET is reserved for it'],
         ].map(([title, when, what]) => (
           <div key={title} className="px-9 py-7 rounded-2xl bg-white/[0.04] border border-white/[0.1] max-w-[400px] text-left">
             <p className="text-2xl font-black font-display text-white">{title}</p>
@@ -114,15 +114,14 @@ function ModeExplainerPanel() {
           </div>
         ))}
       </div>
-      <p className="text-xl text-gray-500">Every switch is logged publicly at <span className="text-white font-bold">csgn.fun/schedule</span></p>
+      <p className="text-xl text-gray-500">Every switch, and its reason, is published at <span className="text-white font-bold">csgn.fun/schedule</span></p>
     </div>
   )
 }
 
 /**
- * Shown on /player when the hour ON AIR is a reserved CSGN Originals (network)
- * hour, so a network hour reads as programmed television rather than as an
- * ordinary clip hour.
+ * Shown on /player when the hour ON AIR is inside the MASTER MODE block, so it
+ * reads as programmed television rather than as an ordinary clip hour.
  */
 function NetworkNowPanel({ slot }: { slot: Slot | null }) {
   const showName = slot ? slotIdentity(slot).name : 'CSGN Originals'
@@ -131,7 +130,7 @@ function NetworkNowPanel({ slot }: { slot: Slot | null }) {
       <div className="flex flex-col items-center gap-4">
         <div className="flex items-center gap-3">
           <span className="w-3 h-3 rounded-full bg-gold animate-live-pulse" />
-          <p className="text-2xl font-black tracking-[0.4em] uppercase text-gold">CSGN Originals</p>
+          <p className="text-2xl font-black tracking-[0.4em] uppercase text-gold">Master Mode</p>
         </div>
         <p className="text-7xl font-black font-display text-white text-center leading-tight">{showName}</p>
         {slot && <p className="text-3xl font-mono text-primary-300">{formatESTRange(slot)}</p>}
@@ -140,7 +139,7 @@ function NetworkNowPanel({ slot }: { slot: Slot | null }) {
       <div className="stage-border-sweep rounded-3xl p-[2px]">
         <div className="rounded-3xl bg-[#0a0a14] px-14 py-8 text-center max-w-[820px]">
           <p className="text-xl text-gray-300">Network programming — streamed to X on <span className="text-white font-bold">@{X_HANDLE}</span></p>
-          <p className="text-lg text-gray-500 mt-3">The CSGN Originals block runs 7 PM–3 AM ET. Every other hour belongs to the members at <span className="text-white font-bold">csgn.fun</span></p>
+          <p className="text-lg text-gray-500 mt-3">The master block runs 7 PM–3 AM ET. The other sixteen hours belong to the members at <span className="text-white font-bold">csgn.fun</span></p>
         </div>
       </div>
     </div>
@@ -225,8 +224,8 @@ export default function IntermissionBoard({ dimmed = false }: { dimmed?: boolean
 
   const upcoming = allSlots.filter((s) => toMillis(s.startTime) > nowMs).slice(0, 3)
 
-  // Is the hour on the air a reserved CSGN Originals (network) hour? If so the
-  // featured panel is the network billboard rather than the recruiting one.
+  // Is the hour on the air inside the MASTER MODE block? If so the featured
+  // panel is the master billboard rather than the recruiting one.
   const currentIsNetwork = !!currentSlot && isNetworkSlot(currentSlot) && networkBlockEnabled
 
   const featured = (key: string) =>
@@ -264,7 +263,7 @@ export default function IntermissionBoard({ dimmed = false }: { dimmed?: boolean
           channel is actually in so a viewer can read it off the screen. */}
       <div className="absolute top-14 right-14 flex items-center gap-2.5">
         <span className={`w-2.5 h-2.5 rounded-full animate-live-pulse ${currentIsNetwork ? 'bg-gold' : 'bg-primary-500'}`} />
-        <span className="text-sm font-bold tracking-[0.3em] uppercase text-gray-400">{currentIsNetwork ? 'CSGN Originals' : 'Clip Mode'}</span>
+        <span className="text-sm font-bold tracking-[0.3em] uppercase text-gray-400">{currentIsNetwork ? 'Master Mode' : 'Clip Mode'}</span>
       </div>
 
       {/* Center panel carousel */}
@@ -278,7 +277,7 @@ export default function IntermissionBoard({ dimmed = false }: { dimmed?: boolean
       <div className="absolute bottom-0 inset-x-0 h-16 bg-black/50 border-t border-white/[0.08] flex items-center px-14 justify-between">
         <span className="text-sm font-mono tracking-[0.2em] uppercase text-gray-500">
           {currentIsNetwork
-            ? <>csgn originals · live on X · @{X_HANDLE} · post a clip at csgn.fun</>
+            ? <>master mode · live on X · @{X_HANDLE} · post a clip at csgn.fun</>
             : <>clip mode · member reel · post yours at csgn.fun · live on X · @{X_HANDLE}</>}
         </span>
         <span className="text-sm font-mono text-gray-600">{CSGN_MINT}</span>

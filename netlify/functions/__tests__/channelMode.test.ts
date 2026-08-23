@@ -13,25 +13,25 @@ const slot = (over: Partial<ModeSlot> = {}): ModeSlot => ({
 })
 
 describe('describeChannelMode', () => {
-  it('is clip mode when nothing is programmed on the hour', () => {
+  it('is CLIP MODE when nothing is programmed on the hour', () => {
     const v = describeChannelMode({ slot: slot(), networkBlockEnabled: true })
-    expect(v.mode).toBe('clips')
+    expect(v.mode).toBe('clip')
     expect(v.who).toBeNull()
     expect(v.label).toBe('Clip Mode')
   })
 
-  it('is clip mode when there is no slot at all', () => {
+  it('is CLIP MODE when there is no slot at all', () => {
     const v = describeChannelMode({ slot: null, networkBlockEnabled: true })
-    expect(v.mode).toBe('clips')
+    expect(v.mode).toBe('clip')
     expect(v.since).toBeNull()
   })
 
-  it('is live when a member is assigned, and names them', () => {
+  it('is STREAM MODE when a member is assigned, and names them', () => {
     const v = describeChannelMode({ slot: slot({ assignedUid: 'u1', assignedName: 'roblito' }), networkBlockEnabled: true })
-    expect(v.mode).toBe('live')
+    expect(v.mode).toBe('stream')
     expect(v.who).toBe('roblito')
     expect(v.isGuest).toBe(false)
-    expect(v.because).toContain('gave CSGN permission')
+    expect(v.because).toContain('gave us permission')
   })
 
   // A guest that reads identically to a member makes the roster meaningless —
@@ -41,43 +41,63 @@ describe('describeChannelMode', () => {
       slot: slot({ isGuest: true, assignedName: 'ansem', sourceType: 'operator_guest' }),
       networkBlockEnabled: true,
     })
-    expect(v.mode).toBe('live')
+    expect(v.mode).toBe('stream')
     expect(v.isGuest).toBe(true)
     expect(v.because).toContain('guest of the network')
   })
 
-  it('is the network block on a reserved hour', () => {
+  it('is MASTER MODE inside the 7 PM-3 AM block', () => {
     const v = describeChannelMode({ slot: slot({ type: 'network' }), networkBlockEnabled: true })
-    expect(v.mode).toBe('network')
-    expect(v.label).toBe('CSGN Originals')
+    expect(v.mode).toBe('master')
+    expect(v.label).toBe('Master Mode')
   })
 
   // Switching the block off hands those hours back with no data migration —
   // the mode has to follow, or /watch says "CSGN Originals" over a clip reel.
-  it('a network hour with the block switched off is an ordinary clip hour', () => {
+  it('a block hour with the block switched off is an ordinary clip hour', () => {
     const v = describeChannelMode({ slot: slot({ type: 'network' }), networkBlockEnabled: false })
-    expect(v.mode).toBe('clips')
+    expect(v.mode).toBe('clip')
   })
 
   // The block is a default, not a lock: an operator cutting a live streamer
   // into a 9 PM hour must not leave the sign reading "CSGN Originals".
-  it('an operator placement outranks the network block', () => {
+  it('an operator placement outranks the MP block', () => {
     const v = describeChannelMode({
       slot: slot({ type: 'network', assignedUid: 'u1', assignedName: 'roblito', sourceType: 'operator_live' }),
       networkBlockEnabled: true,
     })
-    expect(v.mode).toBe('live')
+    expect(v.mode).toBe('stream')
     expect(v.who).toBe('roblito')
   })
 
   // A named CSGN Originals show is still the network, not a "live member".
-  it('a named network show stays network mode', () => {
+  it('a named block show stays MASTER MODE', () => {
     const v = describeChannelMode({
       slot: slot({ type: 'network', assignedName: 'CSGN @ NITE' }),
       networkBlockEnabled: true,
     })
-    expect(v.mode).toBe('network')
+    expect(v.mode).toBe('master')
     expect(v.who).toBe('CSGN @ NITE')
+  })
+
+  // MYSELF FACTORY. The MP on their own encoder pre-empts everything — there
+  // is no appeal above the person running the channel.
+  it('is MASTER MODE when the MP is on their own encoder', () => {
+    const v = describeChannelMode({
+      slot: slot({ assignedName: 'CSGN', sourceType: 'master', assignedUid: 'mp' }),
+      networkBlockEnabled: false,
+    })
+    expect(v.mode).toBe('master')
+    expect(v.because).toContain('Master of Programming')
+  })
+
+  it('the MP outranks a roster streamer and the block alike', () => {
+    const overStreamer = describeChannelMode({
+      slot: slot({ assignedName: 'CSGN', sourceType: 'master', assignedUid: 'mp', type: 'network' }),
+      networkBlockEnabled: true,
+    })
+    expect(overStreamer.mode).toBe('master')
+    expect(overStreamer.who).toBe('CSGN')
   })
 
   it('a completed hour is not treated as occupied', () => {
@@ -85,7 +105,7 @@ describe('describeChannelMode', () => {
       slot: slot({ assignedUid: 'u1', assignedName: 'roblito', status: 'completed' }),
       networkBlockEnabled: true,
     })
-    expect(v.mode).toBe('clips')
+    expect(v.mode).toBe('clip')
   })
 
   // Different sentence when somebody IS live but we are still on clips: the
@@ -128,7 +148,7 @@ describe('appendModeEvent', () => {
   it('records a switch', () => {
     const log = appendModeEvent(appendModeEvent([], clips, 'T0'), live, 'T1')
     expect(log).toHaveLength(2)
-    expect(log[0]).toMatchObject({ mode: 'live', who: 'roblito', at: 'T1' })
+    expect(log[0]).toMatchObject({ mode: 'stream', who: 'roblito', at: 'T1' })
   })
 
   // Cutting from one streamer to another is the switch a viewer most notices.

@@ -299,14 +299,23 @@ export const api = {
     }>
     recommendation: { mode: 'streamer' | 'clips'; uid: string | null; why: string }
   }>('adminLiveNow', {}, true),
-  /** Admin: put a member or a guest on the channel, or take the channel back. */
+  /** MASTER CONTROL — the one call that decides what is on the channel.
+   *
+   *  `put_on_air`      STREAM FACTORY: a roster member who is live and consented
+   *  `put_guest_on_air` a channel with no CSGN account, vouched for by the MP
+   *  `go_master`       MYSELF FACTORY: the MP's own encoder, pre-empts everything
+   *  `take_off_air`    hand the hour back to the clip reel */
   setOnAir: (body: {
     uid?: string
-    action: 'put_on_air' | 'take_off_air' | 'put_guest_on_air'
+    action: 'put_on_air' | 'take_off_air' | 'put_guest_on_air' | 'go_master'
     guestUrl?: string
     guestName?: string
+    masterName?: string
   }) =>
-    functionFetch<{ ok: boolean; slotId: string; uid?: string; twitchUsername?: string; guest?: boolean; guestName?: string }>(
+    functionFetch<{
+      ok: boolean; slotId: string; uid?: string; twitchUsername?: string
+      guest?: boolean; guestName?: string; master?: boolean; masterName?: string
+    }>(
       'adminLiveNow', { method: 'POST', body: JSON.stringify(body) }, true,
     ),
 

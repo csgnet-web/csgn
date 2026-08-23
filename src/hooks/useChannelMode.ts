@@ -12,12 +12,15 @@ import { db } from '@/config/firebase'
  * slightly different inputs is precisely how this codebase ended up with a live
  * network show headlined "THE STAGE IS OPEN".
  *
- * `null` means NOT READ YET — never "clip mode". A verdict we do not have is not
+ * `null` means NOT READ YET — never CLIP MODE. A verdict we do not have is not
  * a verdict of clips, and rendering unknown as a fact is the single most
  * expensive habit this project has had.
  */
 
-export type ChannelMode = 'live' | 'network' | 'clips'
+/** CLIP MODE (the member reel), STREAM MODE (a roster streamer the MP put on),
+ *  MASTER MODE (the MP live from their own encoder, or their 7 PM–3 AM block).
+ *  Mirrors netlify/functions/_shared/channelMode.ts — the server decides. */
+export type ChannelMode = 'master' | 'stream' | 'clip'
 
 export interface ModeEvent {
   at: string

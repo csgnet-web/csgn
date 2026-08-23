@@ -15,7 +15,9 @@
 | Put it on air | [`obs/README.md`](obs/README.md) |
 | Prove it works before it pays anyone | [`dry-run.md`](dry-run.md) |
 | Switch on Google / X / email sign-in | [`auth-provider-setup.md`](auth-provider-setup.md) |
+| **Understand the product in one page** | [`the-three-factories.md`](the-three-factories.md) |
 | **Get from $3,600 to $1,000,000+** | [`analysis-path-to-1m.md`](analysis-path-to-1m.md) |
+| Work out why the Netlify bill is what it is | [`netlify-cost.md`](netlify-cost.md) |
 | Decide when to run clips vs. a live streamer | [`analysis-clip-vs-streamer-mode.md`](analysis-clip-vs-streamer-mode.md) |
 | Switch on TikTok import and the share sheet | [`setup-tiktok-and-share.md`](setup-tiktok-and-share.md) |
 
@@ -67,6 +69,8 @@ Designs on the table, and the long-form thinking behind the product.
 | [`csgn-share.md`](csgn-share.md) | **A Nielsen ratings book for streaming.** Share over Rating, ET dayparts, the honest answer on US-only measurement, The Book and Sweeps |
 | [`master-plan.md`](master-plan.md) | The long-form original: who we are, the schedule model, the shows, the token audit, the 180-day plan |
 | [`growth-and-market-plan.md`](growth-and-market-plan.md) | Where the project stands, what the fee maths actually require for a given income, honest odds on market cap, and the six-month content and recruiting plan |
+| **[`the-three-factories.md`](the-three-factories.md)** | **The product, stated once.** CLIP FACTORY / STREAM FACTORY / MYSELF FACTORY, the three modes they produce, the precedence order, the 16-vs-24-hour clip denominator, and the vocabulary to use verbatim |
+| [`netlify-cost.md`](netlify-cost.md) | Where the function bill was going (a 45-second sleep, every minute, forever), the duty cycle that replaced it, edge caching, and what to check if it is still high |
 | **[`analysis-path-to-1m.md`](analysis-path-to-1m.md)** | **The total rundown and the growth plan.** What exists and how solid it is, the two economic loops, what $1M actually costs in dollars (~$50–80k of net buying), the three growth engines, a 90-day plan, what not to do, and the honest odds |
 | [`analysis-clip-vs-streamer-mode.md`](analysis-clip-vs-streamer-mode.md) | When the channel runs clips and when it carries a streamer — the viewer-floor rule, the thresholds and when to move them, the business case for a 15–25% live day, and the public switch log |
 | [`analysis-clips-concept.md`](analysis-clips-concept.md) | Whether clips are genuinely novel. The short answer: yes, and the invention is the scarcity, not the scrolling |

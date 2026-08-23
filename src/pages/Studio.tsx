@@ -768,10 +768,18 @@ export default function Studio() {
 
           {hasAirtime ? (
             <>
+              {/* THE DENOMINATOR, SAID OUT LOUD.
+                  Clip airtime is one-to-one with your share of the supply, but
+                  a share of WHAT was never stated — and it moves: with the
+                  7 PM–3 AM master block reserved, clips divide a sixteen-hour
+                  day; with it released, twenty-four. Somebody whose seconds
+                  jumped overnight deserves the reason rather than a mystery. */}
               <p className="relative mt-3 text-[11px] text-gray-500 leading-relaxed">
-                Out of {airtimeLabel(airtime?.inventorySeconds ?? 0)} of open air today
-                {airtime?.networkBlockEnabled === false && ' — the 7 PM–3 AM block is open right now, so there is more of it'}.
-                One to one with your $CSGN: hold twice as much, get twice as much.
+                Out of {airtimeLabel(airtime?.inventorySeconds ?? 0)} of clip air today
+                {airtime?.networkBlockEnabled === false
+                  ? ' — a full 24-hour day, because the 7 PM–3 AM master block is released right now'
+                  : ' — a 16-hour day, with 7 PM–3 AM ET reserved for the master block'}.
+                One to one with your $CSGN: your share of the 1,000,000,000 supply is your share of the reel.
                 {airtime?.capped && ' You are at the per-member ceiling, which exists so no one holder can take the whole channel.'}
               </p>
               {/* THE WORKING, SHOWN. Checkable against the chain and against

@@ -1,5 +1,11 @@
 # When should the channel run clips, and when should it run a streamer?
 
+> **Vocabulary note.** Since this was written the model has been named:
+> **CLIP MODE** (the member reel), **STREAM MODE** (a roster streamer the MP
+> puts on) and **MASTER MODE** (the MP's own encoder, or their 7 PM–3 AM
+> block). "Clips" and "streamer mode" below mean the first two.
+> `docs/the-three-factories.md` is the one-page statement.
+
 The rule you asked for, the reasoning behind it, and the numbers to turn as the
 network grows.
 
@@ -251,6 +257,12 @@ holding a product.
 ---
 
 ## Making the switch public (shipped)
+
+The verdict now names the three modes directly — `master`, `stream`, `clip` —
+and MASTER MODE has its own path: the MP pressing **I'm going on** in Master
+Control writes the current hour with `sourceType: 'master'`, which outranks a
+roster streamer and the block alike.
+
 
 Every switch is now published, with its reason, at `public/channelMode`:
 

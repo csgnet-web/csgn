@@ -1,17 +1,39 @@
 /**
- * WHY THIS IS WHAT'S ON — the public explanation of the channel's mode.
+ * WHAT'S ON, AND WHY — the public explanation of the channel's mode.
  *
- * ── The problem ────────────────────────────────────────────────────────────
+ * ── The three factories ────────────────────────────────────────────────────
  *
- * CSGN has no fixed lineup. A viewer who tunes in at 3 PM sees a clip reel and
- * at 4 PM sees somebody live, and nothing on screen or on the site ever told
- * them why. Two visits, two different products, no stated rule: the honest
- * conclusion a stranger draws is that the channel is broken or abandoned.
+ * CSGN takes content from exactly three places, and every one of them is a
+ * different deal:
  *
- * A network is allowed to switch formats — every network does — but only if the
- * switch is legible. "We're in the movie block" and "we cut to breaking news"
- * are both fine BECAUSE the audience knows the rule. So the rule is published
- * here rather than left to be inferred, in the plainest sentence that is true.
+ *   CLIP FACTORY    Connect TikTok. Your clips air passively, and the share of
+ *                   the day you get is your share of the token — one to one,
+ *                   tokens held over the 1,000,000,000 supply. Nothing to book,
+ *                   nothing to attend. Clips are the SOURCE OF LAST RESORT:
+ *                   they carry the channel whenever nothing better is on, which
+ *                   is most of it, and that is the job — not a consolation.
+ *
+ *   STREAM FACTORY  Connect Twitch and grant forwarding. That puts you on the
+ *                   Master Control roster. The Master of Programming decides
+ *                   who goes on and when. Being on the roster is not a booking.
+ *
+ *   MYSELF FACTORY  The MP's own OBS. Pre-empts everything, by definition —
+ *                   there is no appeal above the person running the channel.
+ *
+ * ── The three modes ────────────────────────────────────────────────────────
+ *
+ *   CLIP MODE    the member reel, ordered by holdings
+ *   STREAM MODE  a roster streamer the MP has put on
+ *   MASTER MODE  the MP, live from their own encoder
+ *
+ * ── Why this is published rather than inferred ─────────────────────────────
+ *
+ * A viewer who tunes in at 3 PM sees a clip reel and at 4 PM sees somebody
+ * live, and nothing on screen ever told them why. Two visits, two different
+ * products, no stated rule: the honest conclusion a stranger draws is that the
+ * channel is broken. Networks switch formats constantly and get away with it
+ * BECAUSE the audience knows the rule. So the rule is published here, in the
+ * plainest sentence that is true.
  *
  * ── Why the server decides and the client only displays ────────────────────
  *
@@ -29,12 +51,12 @@
 /** What the channel is doing. Three modes, no others — if you find yourself
  *  wanting a fourth, it is probably a `because` line, not a mode. */
 export type ChannelMode =
-  /** A roster member (or an operator-vouched guest) is being carried live. */
-  | 'live'
-  /** The CSGN Originals block is programmed on this hour. */
-  | 'network'
+  /** The MP is live from their own encoder. Pre-empts everything. */
+  | 'master'
+  /** A roster streamer the MP has put on (or an operator-vouched guest). */
+  | 'stream'
   /** Nobody is live; the member clip reel is carrying the channel. */
-  | 'clips'
+  | 'clip'
 
 export interface ModeSlot {
   assignedUid?: string | null
@@ -76,9 +98,20 @@ export interface ModeVerdict {
 }
 
 const GUEST_SOURCE = 'operator_guest'
+const OPERATOR_SOURCE = 'operator_live'
+/** The MP going on air themselves. Written by adminLiveNow's `go_master`. */
+const MASTER_SOURCE = 'master'
 
-/** Is this hour the reserved CSGN Originals block? */
-function isNetworkHour(slot: ModeSlot | null, networkBlockEnabled: boolean): boolean {
+/**
+ * Is this hour inside the MP's reserved block (7 PM–3 AM ET)?
+ *
+ * This is the switch that decides whether the clip reel is dividing a
+ * SIXTEEN-hour day or a TWENTY-FOUR-hour one. With the block on, those eight
+ * hours are the MP's and clips share the other sixteen; with it off, clips
+ * have the whole day. Nothing else changes and no slot doc is rewritten —
+ * that is the entire 16/24 lever.
+ */
+function isMasterBlockHour(slot: ModeSlot | null, networkBlockEnabled: boolean): boolean {
   if (!slot || !networkBlockEnabled) return false
   const t = String(slot.type || '')
   return t === 'network' || t === 'ceo'
@@ -100,68 +133,92 @@ function occupantName(slot: ModeSlot): string {
 /**
  * The mode the channel is in, and the reason, in the words a viewer reads.
  *
+ * ── The order of precedence, which IS the product ──────────────────────────
+ *
+ *   1. The MP is on their own encoder      → MASTER MODE
+ *   2. The MP has put a roster streamer on → STREAM MODE
+ *   3. The hour is inside the MP's block   → MASTER MODE (scheduled)
+ *   4. Anything else                       → CLIP MODE
+ *
+ * Two and three are in that order deliberately. The 7 PM–3 AM block is the
+ * MP's by default, not by lock: if they choose to put a streamer on inside it,
+ * the channel is showing that streamer and must say so. Checking the block
+ * first made the sign read "Master Mode" over somebody else's face.
+ *
  * Note what is deliberately NOT a reason: "the operator pressed a button".
- * True, and useless. What a viewer needs is the RULE — somebody from the roster
- * went live, so we cut to them; nobody is live, so the reel plays. The rule is
+ * True, and useless. What a viewer needs is the RULE — clips carry the channel
+ * unless something beats them, and the MP decides what beats them. The rule is
  * what makes the next switch predictable instead of arbitrary.
  */
 export function describeChannelMode(input: ModeInput): ModeVerdict {
   const { slot, networkBlockEnabled } = input
   const liveCount = Math.max(0, Number(input.liveCount) || 0)
   const since = slot?.startTime ? String(slot.startTime) : null
+  const source = String(slot?.sourceType || '')
+  const occupied = slot != null && hasOccupant(slot)
 
-  // An operator putting somebody on air OUTRANKS the block. The network block
-  // is a default, not a lock: if the operator cuts a live streamer into a 9 PM
-  // hour, the channel is showing that streamer and must say so. Checking the
-  // block first made the sign read "CSGN Originals" over somebody else's face.
-  const operatorPlaced = slot != null
-    && hasOccupant(slot)
-    && (String(slot.sourceType || '') === 'operator_live' || String(slot.sourceType || '') === GUEST_SOURCE)
-
-  if (!operatorPlaced && isNetworkHour(slot, networkBlockEnabled)) {
-    const name = slot && slot.assignedName ? String(slot.assignedName) : 'CSGN Originals'
+  // 1. THE MP, LIVE FROM THEIR OWN ENCODER. Pre-empts everything by
+  //    definition — there is no appeal above the person running the channel.
+  if (occupied && source === MASTER_SOURCE) {
     return {
-      mode: 'network',
-      label: 'CSGN Originals',
-      who: name,
+      mode: 'master',
+      label: 'Master Mode',
+      who: slot ? occupantName(slot) : 'CSGN',
       isGuest: false,
-      because: 'This hour is part of the CSGN Originals block, 7 PM–3 AM ET — programming the network runs itself.',
-      nextSwitch: 'When the block ends the channel goes back to the member reel, and any member who is live can be cut to.',
+      because: 'The Master of Programming is live on the network right now, straight from the CSGN control room.',
+      nextSwitch: 'When they end the broadcast the channel hands back — to a roster streamer if one is worth carrying, otherwise to the member clip reel.',
       since,
     }
   }
 
-  if (slot && hasOccupant(slot)) {
-    const guest = slot.isGuest === true || String(slot.sourceType || '') === GUEST_SOURCE
-    const name = occupantName(slot)
+  // 2. A ROSTER STREAMER THE MP PUT ON. Outranks the block: it is a default,
+  //    not a lock, and a streamer cut into a 9 PM hour is what is on screen.
+  if (occupied && (source === OPERATOR_SOURCE || source === GUEST_SOURCE || !isMasterBlockHour(slot, networkBlockEnabled))) {
+    const guest = slot!.isGuest === true || source === GUEST_SOURCE
+    const name = occupantName(slot!)
     return {
-      mode: 'live',
-      label: 'Live',
+      mode: 'stream',
+      label: 'Stream Mode',
       who: name,
       isGuest: guest,
       because: guest
-        ? `${name} is a guest of the network — invited on by the operator for this hour rather than picked up from the roster.`
-        : `${name} is live on their own channel right now and gave CSGN permission to carry it, so the network cut to them.`,
-      nextSwitch: 'When they end the stream — or the hour runs out — the channel returns to the member clip reel.',
+        ? `${name} is a guest of the network — invited on by the Master of Programming for this hour rather than picked up from the roster.`
+        : `${name} connected their Twitch to CSGN and gave us permission to carry it. They went live, and the Master of Programming put them on.`,
+      nextSwitch: 'When they end the stream — or the MP switches away — the channel returns to the member clip reel.',
       since,
     }
   }
 
-  // CLIP MODE. The baseline, and the thing to say confidently: it is not a
-  // fallback for a failure, it is what the token buys and what runs most of the
-  // day. Saying "nobody is live" apologetically taught viewers to read the
-  // normal state of the channel as an outage.
+  // 3. THE MP'S SCHEDULED BLOCK, 7 PM–3 AM ET. Also the reason the clip reel is
+  //    dividing sixteen hours rather than twenty-four.
+  if (isMasterBlockHour(slot, networkBlockEnabled)) {
+    const name = slot && slot.assignedName ? String(slot.assignedName) : 'CSGN Originals'
+    return {
+      mode: 'master',
+      label: 'Master Mode',
+      who: name,
+      isGuest: false,
+      because: 'This hour is inside the network block, 7 PM–3 AM ET — programming the Master of Programming runs directly.',
+      nextSwitch: 'At 3 AM ET the block ends and the rest of the day belongs to the members: the clip reel, and any streamer the MP cuts to.',
+      since,
+    }
+  }
+
+  // 4. CLIP MODE. The baseline, and the thing to say confidently: it is not a
+  //    fallback for a failure, it is what the token buys and what runs most of
+  //    the day. Saying "nobody is live" apologetically taught viewers to read
+  //    the normal state of the channel as an outage.
   return {
-    mode: 'clips',
+    mode: 'clip',
     label: 'Clip Mode',
     who: null,
     isGuest: false,
     because: liveCount > 0
       ? 'The member clip reel is on air. Streams are only cut to when they beat the reel — see the roster for who is live right now.'
-      : 'Nobody from the roster is streaming right now, so the member clip reel is carrying the channel — which is what it is for.',
+      : 'The member clip reel is carrying the channel. Every clip on it belongs to a holder, and their share of the day is their share of $CSGN.',
     nextSwitch: liveCount > 0
-      ? 'The channel cuts to a live member as soon as one of them clears the audience bar.'
-      : 'The moment a connected member goes live, the network can cut to them — usually within a minute or two.',
+      ? 'The channel cuts to a live member as soon as one of them clears the audience bar and the MP puts them on.'
+      : 'The moment a connected member goes live — or the MP goes on themselves — the channel cuts to them.',
     since,
   }
 }

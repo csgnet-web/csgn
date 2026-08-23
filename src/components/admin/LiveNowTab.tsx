@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Radio, RefreshCw, Eye, Users, Play, Square, ExternalLink, AlertTriangle, Bell, BellOff, UserPlus, Film } from 'lucide-react'
+import { Radio, RefreshCw, Eye, Users, Play, Square, ExternalLink, AlertTriangle, Bell, BellOff, UserPlus, Film, Crown } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { api } from '@/lib/api'
 
 /**
- * LIVE NOW — the operator's board.
+ * MASTER CONTROL — the one screen that decides what is on the channel.
  *
- * This is the control room for the model that replaced block-claiming. Members
- * connect Twitch once and grant permission to be forwarded; the poller samples
- * every one of them each minute; this screen shows who is on and puts them on
- * the channel in one click.
+ * Three sources feed CSGN and this board picks between them:
+ *
+ *   CLIP MODE    the member reel. The floor. Runs whenever nothing beats it,
+ *                which is most of the day, and that is the job.
+ *   STREAM MODE  the STREAM FACTORY roster — members who connected Twitch and
+ *                granted forwarding. The poller samples them every minute; the
+ *                Master of Programming decides which one goes on.
+ *   MASTER MODE  the MYSELF FACTORY — the MP's own encoder. Pre-empts
+ *                everything, because there is no appeal above the person
+ *                running the channel.
  *
  * Three things it deliberately shows that a simple "who is live" list would not:
  *
@@ -71,6 +77,11 @@ export default function LiveNowTab() {
   const [error, setError] = useState('')
 
   const [guestOpen, setGuestOpen] = useState(false)
+  /** What the MP is credited as on screen in MASTER MODE. Blank means CSGN —
+   *  most of the time the network's own name is the right answer, and asking
+   *  for it every time would put a form in front of the one control that has
+   *  to work instantly. */
+  const [masterName, setMasterName] = useState('')
   const [guestUrl, setGuestUrl] = useState('')
   const [guestName, setGuestName] = useState('')
 
@@ -136,6 +147,20 @@ export default function LiveNowTab() {
       setError(err instanceof Error ? err.message : 'Could not put them on air.')
     }
     setBusyUid(null)
+  }
+
+  /** MYSELF FACTORY. No eligibility check and no URL: the encoder is already
+   *  pointed at the network, and the MP does not need their own permission. */
+  const goMaster = async () => {
+    setBusyUid('__master__')
+    setError('')
+    try {
+      await api.setOnAir({ action: 'go_master', masterName: masterName.trim() })
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not take the channel.')
+    }
+    setBusyUid('')
   }
 
   const putGuestOnAir = async () => {
@@ -220,11 +245,30 @@ export default function LiveNowTab() {
           <p className="mt-0.5 text-sm font-bold text-white truncate">
             {onAirUid || onAirName
               ? <>{onAirName ?? 'Someone'} {onAirIsGuest && <span className="ml-1 text-[10px] uppercase tracking-wider text-gold border border-gold/40 rounded px-1.5 py-0.5">Guest · added by you</span>}</>
-              : <span className="text-gray-400">Clip reel</span>}
+              : <span className="text-gray-400">Clip reel — clip mode</span>}
           </p>
           {recommendation && <p className="mt-0.5 text-[11px] text-gray-500">{recommendation.why}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {/* MASTER MODE. First in the row because it is the one control that
+              always works — no roster, no consent, no live streamer required.
+              The name field sits beside it rather than behind a dialog: the
+              common case is going on as CSGN and pressing one button. */}
+          <input
+            value={masterName}
+            onChange={(e) => setMasterName(e.target.value.slice(0, 40))}
+            placeholder="On screen as… (CSGN)"
+            aria-label="Name on screen in master mode"
+            className="w-40 rounded-lg bg-white/[0.04] border border-white/[0.1] focus:border-gold/60 outline-none px-2.5 py-1.5 text-xs"
+          />
+          <Button
+            size="sm"
+            isLoading={busyUid === '__master__'}
+            onClick={() => void goMaster()}
+            leftIcon={<Crown className="w-3.5 h-3.5" />}
+          >
+            I'm going on
+          </Button>
           <Button size="sm" variant="secondary" onClick={() => setGuestOpen((v) => !v)} leftIcon={<UserPlus className="w-3.5 h-3.5" />}>
             Guest
           </Button>

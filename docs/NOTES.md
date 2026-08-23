@@ -67,7 +67,23 @@ it"; `airEligibility` is what used to be `claimEligibility` and is now the
 roster gate. If you find yourself adding a "book this hour" button, the model
 has drifted.
 
-**6. Why the channel is in a mode is PUBLISHED, not inferred.**
+**6. Three factories, three modes, one precedence order.**
+CLIP FACTORY (TikTok, passive, 1:1 with supply), STREAM FACTORY (Twitch +
+forward consent, the MP picks), MYSELF FACTORY (the MP's own encoder,
+pre-empts everything). They produce CLIP MODE / STREAM MODE / MASTER MODE in
+that precedence: MP's encoder > MP's chosen streamer > MP's 7 PM-3 AM block >
+clips. The block is a DEFAULT, not a lock. Full statement in
+`docs/the-three-factories.md`; the rule is `_shared/channelMode.ts` and nowhere
+else.
+
+**7. Never pay a serverless container to wait.**
+The fee poller used to `await sleep(15_000)` three times per run — 45 billed
+seconds a minute, forever, and probably terminated before its last writes
+because the file name lacks the hyphen that would make it a real background
+function. If something needs a delay, it needs a different cron entry. See
+`docs/netlify-cost.md`.
+
+**8. Why the channel is in a mode is PUBLISHED, not inferred.**
 `_shared/channelMode.ts` turns the current slot into a mode plus one sentence of
 reason and one of what changes it. The poller writes it to `public/channelMode`
 every minute; `adminLiveNow` rewrites it immediately after an operator action so
@@ -75,13 +91,13 @@ the sign is never a minute behind the picture. Every surface renders the stored
 sentence. Do not compute a mode in a component — that is how a live show once
 headlined "THE STAGE IS OPEN".
 
-**7. Three doors, one set of clip rules.**
+**9. Three doors, one set of clip rules.**
 A clip reaches a reel by paste (`submitClip`), by the Android share sheet
 (`/share`), or by TikTok import (`tiktokVideos`). All three go through
 `_shared/clipIntake.ts`, which owns the cap, the dedupe, the ordering, the
 pending status and the exact runtime. A fourth door must use it too.
 
-**8. Furniture belongs in OBS, not `/player`.**
+**10. Furniture belongs in OBS, not `/player`.**
 If a graphic looks identical over any source, it is furniture. `/player` renders
 the programme and things timed to a programme change. Everything else is a
 separate browser source — it composites free on the GPU and can be retuned

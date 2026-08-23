@@ -39,10 +39,12 @@ import { twitchLoginFromUrl } from './_shared/twitch'
 interface RosterDoc { entries?: RosterEntry[]; updatedAt?: string; liveCount?: number }
 type Body = {
   uid?: string
-  action?: 'put_on_air' | 'take_off_air' | 'put_guest_on_air'
+  action?: 'put_on_air' | 'take_off_air' | 'put_guest_on_air' | 'go_master'
   /** Guest only: the channel to carry, and who to credit on screen. */
   guestUrl?: string
   guestName?: string
+  /** MYSELF FACTORY only: what to call the MP on screen. */
+  masterName?: string
 }
 
 export const handler = withHttp(async (event) => {
@@ -93,7 +95,7 @@ export const handler = withHttp(async (event) => {
   const body = parseJson<Body>(event)
   // Explicit allowlist rather than a ternary — an unrecognised action must not
   // silently fall through to putting somebody on television.
-  const ACTIONS = ['put_on_air', 'take_off_air', 'put_guest_on_air'] as const
+  const ACTIONS = ['put_on_air', 'take_off_air', 'put_guest_on_air', 'go_master'] as const
   type Action = (typeof ACTIONS)[number]
   const requested = String(body.action || 'put_on_air') as Action
   if (!ACTIONS.includes(requested)) throw badRequest('Unknown action.', 'bad_action')
@@ -113,6 +115,50 @@ export const handler = withHttp(async (event) => {
     await announceMode({ startTime: slot.startTime, status: 'open', type: slot.type })
     await auditLog('adminTakeOffAir', admin.uid, { slotId: slot.id })
     return json(200, { ok: true, slotId: slot.id, currentBroadcast })
+  }
+
+  // ── THE MYSELF FACTORY ──
+  //
+  // The Master of Programming going on air from their own OBS. It pre-empts
+  // everything by definition — there is no appeal above the person running the
+  // channel — so it needs no eligibility check, no consent record and no
+  // stream URL: the encoder is already pointed at the network.
+  //
+  // It writes a slot exactly like the other two paths rather than an override,
+  // for the same reason they do: the fee ledger, the airtime sampler, the
+  // ticker and /schedule's record of who aired all read slots. A master hour
+  // that appeared in no history would be the one hour of the day the channel
+  // could not account for.
+  //
+  // `assignedUid` is the MP's own uid, so their minutes accrue like anybody
+  // else's. They are the network's biggest streamer; the books should say so.
+  if (action === 'go_master') {
+    const masterName = String(body.masterName || '').trim().slice(0, 40) || 'CSGN'
+    await commitWrites([updateWrite(`slots/${slot.id}`, {
+      status: 'live',
+      isClaimable: false,
+      sourceType: 'master',
+      assignedUid: admin.uid,
+      assignedUsername: masterName,
+      assignedName: masterName,
+      // Not a guest and not forwarded — cleared so a previous occupant's
+      // markings cannot survive onto the MP's own hour.
+      isGuest: null,
+      guestAddedBy: null,
+      twitchUserId: null,
+      twitchUsername: null,
+      twitchChannelUrl: null,
+      streamUrl: null,
+      updatedAt: new Date(),
+    }, true)])
+
+    const currentBroadcast = await resolveBroadcast()
+    await announceMode({
+      startTime: slot.startTime, status: 'live', type: slot.type,
+      assignedUid: admin.uid, assignedName: masterName, sourceType: 'master',
+    })
+    await auditLog('adminGoMaster', admin.uid, { slotId: slot.id, masterName })
+    return json(200, { ok: true, slotId: slot.id, master: true, masterName, currentBroadcast })
   }
 
   // ── A GUEST ──
