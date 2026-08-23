@@ -6,7 +6,7 @@ import {
   BarChart3, Plus, Crown,
   Trash2, UserCheck, AlertTriangle, Tv, DollarSign,
   Wallet, CheckCircle2, XCircle, RefreshCw, Link as LinkIcon, ExternalLink, Monitor, Activity,
-  Megaphone, Flame, Vote,
+  Megaphone, Flame, Vote, Film,
 } from 'lucide-react'
 import {
   collection, query, getDocs, doc, setDoc, onSnapshot, orderBy,
@@ -22,8 +22,11 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import TickerControlsCard from '@/components/admin/TickerControlsCard'
-import GameControlsCard from '@/components/admin/GameControlsCard'
+import BroadcastBannerCard from '@/components/admin/BroadcastBannerCard'
+import MemeBoardCard from '@/components/admin/MemeBoardCard'
 import { CreatorFeesTab } from '@/components/admin/CreatorFeesTab'
+import LiveNowTab from '@/components/admin/LiveNowTab'
+import ClipQueueTab from '@/components/admin/ClipQueueTab'
 import { VoteHistoryTab } from '@/components/admin/VoteHistoryTab'
 import { isVoteOpen, type VoteRecord } from '@/lib/votes'
 import { PUMP_FUN_FEE_TIERS, estimateCreatorFeeSOL, formatTierRange, resolvePumpFeeTier } from '@/lib/dexscreener'
@@ -48,7 +51,6 @@ import {
   acceptSlotRequest,
   declineSlotRequest,
   updateCreatorFees,
-  markFeesPaid,
   declineFeesPayment,
   formatESTRange,
   isNetworkSlot,
@@ -61,12 +63,13 @@ import {
   type CreatorFees,
 } from '@/lib/slots'
 
-type Tab = 'overview' | 'streamers' | 'schedule' | 'fees' | 'votes' | 'auth'
+type Tab = 'overview' | 'live' | 'streamers' | 'schedule' | 'fees' | 'clips' | 'votes' | 'auth'
 
 interface AuthEventData {
   id: string
   kind: string
-  ts: unknown
+  /** ISO string from adminAuthEvents (the server decodes the timestamp). */
+  ts: string | null
   uid: string | null
   twitchUsername: string | null
   errorMessage: string | null
@@ -120,6 +123,9 @@ function XSourceHint({ url }: { url: string }) {
 interface UserData {
   uid: string
   displayName: string
+  /** Handle, for telling two members with the same display name apart on the
+   *  Creator Fees payout groups. */
+  username?: string
   email: string
   role: string
   walletAddress?: string
@@ -618,16 +624,16 @@ export default function Admin() {
     setTestingAuthLog(false)
   }
 
+  /** Read through the server, not straight from Firestore. The browser query
+   *  this replaced failed with "Missing or insufficient permissions" whenever
+   *  firestore.rules had not been deployed — which is exactly when you most
+   *  want to look at the auth log. See netlify/functions/adminAuthEvents.ts. */
   const loadAuthEvents = useCallback(async () => {
     setAuthEventsLoading(true)
     setAuthEventsError(null)
     try {
-      const snap = await getDocs(query(
-        collection(db, 'auth_events'),
-        orderBy('ts', 'desc'),
-        limit(50),
-      ))
-      setAuthEvents(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<AuthEventData, 'id'>) })))
+      const { events } = await api.authEvents(50)
+      setAuthEvents(events)
     } catch (err: any) {
       setAuthEventsError(err?.message || 'Failed to load auth events.')
       setAuthEvents([])
@@ -895,11 +901,17 @@ export default function Admin() {
     setFeeActionLoading(null)
   }
 
-  const handleMarkPaid = async (slot: Slot) => {
-    if (!slot.assignedUid) return
-    setFeeActionLoading(slot.id)
+  /** Settle every outstanding hour for one member against one transfer. The
+   *  server owns this: it validates the signature, skips anything already
+   *  settled, writes the batch and the audit entry, and notifies the member. */
+  const handleMarkGroupPaid = async (uid: string, groupSlots: Slot[], txSignature: string) => {
+    if (!uid || groupSlots.length === 0) return
+    setFeeActionLoading(uid)
     try {
-      await markFeesPaid(slot.id)
+      const result = await api.markFeesPaid(groupSlots.map((s) => s.id), txSignature)
+      if (result.skipped.length > 0) {
+        setActionError(`${result.marked} marked paid. ${result.skipped.length} already settled and left alone.`)
+      }
       await loadFeeSlots()
     } catch (err: any) {
       setActionError(err?.message || 'Failed to mark as paid.')
@@ -947,10 +959,12 @@ export default function Admin() {
 
   const tabs = [
     { id: 'overview' as Tab, label: 'Overview', icon: BarChart3 },
+    { id: 'live' as Tab, label: 'Master Control', icon: Radio },
     { id: 'streamers' as Tab, label: 'Streamers', icon: Users },
     { id: 'schedule' as Tab, label: 'Schedule', icon: Clock },
     { id: 'fees' as Tab, label: 'Creator Fees', icon: DollarSign, count: pendingFeeCount, tone: 'amber' },
     { id: 'votes' as Tab, label: 'Vote History', icon: Vote, count: openVoteCount, tone: 'cyan' },
+    { id: 'clips' as Tab, label: 'Clips', icon: Film },
     { id: 'auth' as Tab, label: 'Auth Events', icon: Activity },
   ]
 
@@ -1434,9 +1448,11 @@ export default function Admin() {
               </div>
             )} />
 
-            {/* Game Control — the /watch strip (game, headline, countdown) plus
-                the Starting 5 purse/prize mode and the weekly Squares cadence. */}
-            <GameControlsCard />
+            {/* The /watch strip — headline, countdown and rotating lines. */}
+            <BroadcastBannerCard />
+
+            {/* Meme 100 — what's on the board, plus the pin/deny levers. */}
+            <MemeBoardCard />
 
           </div>
         )}
@@ -1489,8 +1505,8 @@ export default function Admin() {
                   isLoading={togglingNetwork}
                   onClick={handleToggleNetworkBlock}
                   title={networkBlockEnabled
-                    ? 'Network block ON — 7 PM–3 AM ET is reserved for CSGN Originals. Click to open those hours to claiming.'
-                    : 'Network block OFF — every slot is open to claim. Click to reserve 7 PM–3 AM ET again.'}
+                    ? 'Master block ON — 7 PM–3 AM ET is yours by default. Click to hand those hours back to the reel.'
+                    : 'Master block OFF — the reel has the whole day unless you break in. Click to reserve 7 PM–3 AM ET again.'}
                 >
                   {networkBlockEnabled ? 'Network block: ON' : 'Network block: OFF — all open'}
                 </Button>
@@ -1937,6 +1953,34 @@ export default function Admin() {
         )}
 
         {/* ── Creator Fees Tab ── */}
+        {activeTab === 'live' && (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Master Control</h3>
+              <p className="text-sm text-gray-400 mt-1">
+                Everyone who connected Twitch and gave permission to be forwarded. They sign up once
+                and stream as they normally would; you decide who goes on, when to switch, and when
+                to hand the channel back to the reel. The ranked list is a suggestion — nothing goes
+                on air without you.
+              </p>
+            </div>
+            <LiveNowTab />
+          </div>
+        )}
+
+        {activeTab === 'clips' && (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Clip review</h3>
+              <p className="text-sm text-gray-400 mt-1">
+                Member-submitted posts waiting to go on air. Open each one and watch it — nothing
+                here airs until you approve it.
+              </p>
+            </div>
+            <ClipQueueTab />
+          </div>
+        )}
+
         {activeTab === 'fees' && (
           <div className="space-y-6">
             <div>
@@ -1957,7 +2001,7 @@ export default function Admin() {
                 setFeeMarketCap(slot.creatorFees?.marketCapSOL?.toString() ?? '')
                 setFeeWallet(slot.creatorFees?.streamerWalletAddress ?? users.find((u) => u.uid === slot.assignedUid)?.walletAddress ?? '')
               }}
-              onMarkPaid={handleMarkPaid}
+              onMarkGroupPaid={handleMarkGroupPaid}
               onDecline={handleDeclineFee}
             />
 
@@ -2115,10 +2159,8 @@ export default function Admin() {
                     </td></tr>
                   )}
                   {authEvents.map((ev) => {
-                    const tsDate = ev.ts && typeof ev.ts === 'object' && 'toDate' in ev.ts && typeof (ev.ts as { toDate: unknown }).toDate === 'function'
-                      ? (ev.ts as { toDate: () => Date }).toDate()
-                      : null
-                    const tsLabel = tsDate ? tsDate.toLocaleString() : '—'
+                    const tsMs = ev.ts ? Date.parse(ev.ts) : NaN
+                    const tsLabel = Number.isFinite(tsMs) ? new Date(tsMs).toLocaleString() : '—'
                     const isFailure = ev.kind.endsWith('-failure')
                     return (
                       <tr key={ev.id} className="border-t border-white/[0.06]">

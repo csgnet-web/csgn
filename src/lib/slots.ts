@@ -4,6 +4,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db } from '@/config/firebase'
+import type { SlotAirtime } from './airtime'
 
 /* ─── Constants ─── */
 
@@ -24,7 +25,7 @@ export const PHASE_2_END_UTC = '2026-04-12T16:00:00.000Z'   // April 12, 2026 no
 export const CSGN_MINT = 'GFV7fphvprMr1PYpYGPJort2QP7JJLEp3J1Buu7Zpump'
 
 /** CSGN treasury wallet that receives bids */
-export const CSGN_TREASURY = 'CSGNUgUpBqTNM7EBZSMeA5jzPLFNR2hELhLjbHLpbEY4'
+export const CSGN_TREASURY = 'EftavCt6Tk2bzWJ9Dnz7cAvfa5RAnh8S9vZcrorV7Hmv'
 
 /** CSGN token decimals (pump.fun standard) */
 export const CSGN_DECIMALS = 6
@@ -35,16 +36,26 @@ export const CSGN_DECIMALS = 6
 // pure, Firestore-free, and unit-tested. Re-exported here so every existing
 // `from '@/lib/slots'` import keeps working.
 export type { SlotType, SlotStatus, SlotIdentity, SlotIdentityOptions } from './slotModel'
-export { SLOT_STATUSES, normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isSlotClaimable, slotIdentity, assignmentStatus, toMillis } from './slotModel'
+export { SLOT_STATUSES, normalizeSlotType, normalizeSlotStatus, normalizeSlot, isNetworkSlot, isOpenHour, slotIdentity, assignmentStatus, toMillis, formatTimeET } from './slotModel'
 import { normalizeSlot, isNetworkSlot, type SlotType, type SlotStatus } from './slotModel'
 
-export type FeePaymentStatus = 'pending' | 'paid' | 'declined'
+/** `void` is a slot the server settled at zero because the channel never went
+ *  live — decided, not awaiting a decision, so it leaves the payout queue. */
+export type FeePaymentStatus = 'pending' | 'paid' | 'declined' | 'void'
 
 export interface CreatorFees {
   tradingVolumeSOL: number     // admin inputs trading volume in SOL during slot
   tradingVolumeUSD?: number
+  /** What we owe: gross × the verified-airtime fraction. */
   feeOwedSOL: number           // tradingVolumeSOL * (tierCreatorFeeRate * 0.30)
   feeOwedUSD?: number
+  /** What the volume produced, before airtime. Absent on slots that ran before
+   *  verified airtime shipped, where feeOwed IS the gross. */
+  grossFeeSOL?: number
+  grossFeeUSD?: number
+  /** The server's airtime verdict — see netlify/functions/_shared/feeCalc.ts.
+   *  Read it, never recompute it. */
+  airtime?: SlotAirtime
   marketCapSOL?: number
   creatorFeeRate?: number
   streamerShareRate?: number
@@ -73,6 +84,9 @@ export interface CreatorFees {
   paymentStatus: FeePaymentStatus
   streamerWalletAddress: string
   paidAt?: string
+  /** On-chain receipt for the manual SOL transfer, and who recorded it. */
+  paidTxSignature?: string
+  paidByUid?: string
   declinedAt?: string
   declineReason?: string
   snapshotLockedAt?: unknown
@@ -96,6 +110,11 @@ export interface StreamActivity {
   firstLiveAt?: string      // ISO of the first time it was seen live this slot
   lastLiveAt?: string       // ISO of the most recent time it was seen live
   liveCheckCount?: number   // number of live samples (~minutes, 1 check/min)
+  checkCount?: number       // samples TAKEN, live or not — the fairness denominator
+  peakViewers?: number      // highest concurrent viewers seen this slot
+  viewerSampleSum?: number  // ÷ liveCheckCount = average concurrent viewers
+  lastTitle?: string        // stream title on the most recent live sample
+  lastGameName?: string     // Twitch category on the most recent live sample
   checkpoints?: string[]    // ISO timestamps sampled while the channel was live
 }
 
@@ -136,6 +155,14 @@ export interface Slot {
   streamActivity?: StreamActivity // server-logged Twitch live samples
   /** Legacy cosmetic flag from the "CEO Creator" era. No logic reads it. */
   ceoCreator?: boolean
+  /** An operator-added guest: somebody with no CSGN account, put on air by an
+   *  admin vouching for them personally. Marked everywhere it is shown so a
+   *  guest is never mistaken for a member who went live — and credited with no
+   *  on-air minutes, since those are what the fee split is computed from. */
+  isGuest?: boolean
+  /** How this slot came to be occupied — 'user_twitch' (claimed),
+   *  'operator_live' (an admin put a member on) or 'operator_guest'. */
+  sourceType?: string
   createdAt: unknown
 }
 
@@ -788,35 +815,11 @@ export async function updateCreatorFees(slotId: string, fees: CreatorFees): Prom
   await updateDoc(doc(db, SLOTS_COLLECTION, slotId), { creatorFees: fees })
 }
 
-/** Admin: mark creator fees as paid. */
-export async function markFeesPaid(slotId: string): Promise<void> {
-  const ref = doc(db, SLOTS_COLLECTION, slotId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) throw new Error('Slot not found')
-
-  const slot = snap.data() as Slot
-  const fees = slot.creatorFees
-  if (!fees) throw new Error('No fee record for this slot')
-
-  const updatedFees: CreatorFees = {
-    ...fees,
-    paymentStatus: 'paid',
-    paidAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  }
-
-  await updateDoc(ref, { creatorFees: updatedFees })
-
-  if (slot.assignedUid) {
-    await addUserNotification(slot.assignedUid, {
-      type: 'fee_paid',
-      slotId: slot.id,
-      slotLabel: slot.label,
-      slotStart: slot.startTime,
-      message: `Your creator fee payment of ${updatedFees.feeOwedSOL.toFixed(4)} SOL for ${slot.label} has been sent to your wallet!`,
-    })
-  }
-}
+// Marking fees paid is NOT here. It requires the on-chain signature of the
+// transfer that actually moved the SOL, is applied to a member's whole
+// outstanding group in one batch, and writes an audit entry — all of which
+// belongs on the server. See netlify/functions/adminMarkFeesPaid.ts, reached
+// through `api.markFeesPaid`.
 
 /** Admin: decline creator fee payment with reason. */
 export async function declineFeesPayment(slotId: string, reason: string): Promise<void> {

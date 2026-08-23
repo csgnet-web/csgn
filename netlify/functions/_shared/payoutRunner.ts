@@ -64,8 +64,21 @@ export interface RunOptions {
 export interface RunResult extends RunSummary {
   dryRun: boolean
   solvency: ReturnType<typeof checkSolvency>
-  /** Payouts parked for a human. */
-  review: PayoutRecord[]
+  /**
+   * Payouts parked for a human, in full.
+   *
+   * SEPARATE FROM `review`, which RunSummary defines as a COUNT. This used to
+   * redeclare `review` as the array, which does not actually satisfy the
+   * interface it extends — and because nothing typechecked `netlify/` until
+   * tsconfig.functions.json existed, the mismatch compiled and shipped. The
+   * consequence was live: `writeRunSummary` persisted the whole array of
+   * payout records — wallets and amounts — into the run summary document,
+   * where every other field is a scalar and a reader expects a number.
+   *
+   * The records stay in the returned result, where the caller can act on them.
+   * They no longer go into the stored summary.
+   */
+  reviewRecords: PayoutRecord[]
 }
 
 /* ─── The run ─── */
@@ -120,7 +133,8 @@ export async function runPayouts(deps: RunnerDeps, opts: RunOptions): Promise<Ru
     sourceId: opts.sourceId,
     requested: opts.requests.length,
     paid,
-    review: batch.review,
+    review: batch.review.length,
+    reviewRecords: batch.review,
     skipped: batch.skipped.length,
     totalCsgn: batch.totalCsgn,
     signatures,
@@ -136,7 +150,7 @@ export async function runPayouts(deps: RunnerDeps, opts: RunOptions): Promise<Ru
   if (!solvency.ok) {
     errors.push(`insolvent: ${solvency.reason}`)
     const result = summary(0, true)
-    await deps.writeRunSummary(result)
+    await deps.writeRunSummary(toStoredSummary(result))
     return result
   }
 
@@ -188,8 +202,27 @@ export async function runPayouts(deps: RunnerDeps, opts: RunOptions): Promise<Ru
   }
 
   const result = summary(paid, true)
-  await deps.writeRunSummary(result)
+  await deps.writeRunSummary(toStoredSummary(result))
   return result
+}
+
+/** The summary as it is STORED: scalars only. The full review records and the
+ *  solvency working stay in the returned result for the caller. */
+function toStoredSummary(result: RunResult): RunSummary {
+  return {
+    runId: result.runId,
+    startedAt: result.startedAt,
+    ...(result.finishedAt ? { finishedAt: result.finishedAt } : {}),
+    source: result.source,
+    sourceId: result.sourceId,
+    requested: result.requested,
+    paid: result.paid,
+    review: result.review,
+    skipped: result.skipped,
+    totalCsgn: result.totalCsgn,
+    signatures: result.signatures,
+    errors: result.errors,
+  }
 }
 
 /* ─── Recovery ─── */
@@ -239,49 +272,9 @@ async function reconcileStragglers(
 
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
-/* ─── Turning a settled game into payout requests ─── */
+/* ─── Turning a settled thing into payout requests ─── */
 
-/**
- * Squares: one request per period the winner took. The sourceId carries the
- * period key so a wallet winning two periods produces two distinct payouts
- * rather than colliding on one id — the exact case the `payoutId` doc warns
- * about.
- */
-export function squaresPayoutRequests(
-  boardId: string,
-  results: Array<{ periodKey: string; label: string; winner: { wallet: string; displayName: string } | null; payoutCsgn: number }>,
-): PayoutRequest[] {
-  return results
-    .filter((r) => r.winner && r.payoutCsgn > 0)
-    .map((r) => ({
-      source: 'squares' as const,
-      sourceId: `${boardId}:${r.periodKey}`,
-      wallet: r.winner!.wallet,
-      displayName: r.winner!.displayName,
-      amountCsgn: r.payoutCsgn,
-      note: `Squares — ${r.label}`,
-    }))
-}
-
-/** Starting 5: one request per paid finishing position on the slate. */
-export function startingFivePayoutRequests(
-  slateId: string,
-  payouts: Array<{ rank: number; wallet: string; displayName: string; payoutCsgn: number }>,
-): PayoutRequest[] {
-  return payouts
-    .filter((p) => p.payoutCsgn > 0)
-    .map((p) => ({
-      source: 'starting5' as const,
-      sourceId: `${slateId}:rank${p.rank}:${p.wallet}`,
-      wallet: p.wallet,
-      displayName: p.displayName,
-      amountCsgn: p.payoutCsgn,
-      note: `Starting 5 — ${ordinal(p.rank)} place`,
-    }))
-}
-
-function ordinal(n: number): string {
-  const s = ['th', 'st', 'nd', 'rd']
-  const v = n % 100
-  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`
-}
+// The two builders that lived here (Squares and Starting 5) went with those
+// games. A new source adds its own builder beside this comment and a value to
+// the `PayoutSource` union — that is the sanctioned way to feed this engine.
+// See docs/payout-wallet.md for what such a builder must not do.

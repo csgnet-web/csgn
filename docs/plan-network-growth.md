@@ -319,9 +319,10 @@ member requests, the claimant accepts. **No new data model.**
 - **$CSGN season pool** — automated through the existing ledger, top N by
   points at season end, via a new `'season'` `PayoutSource` (see cross-cutting
   rule 6 for exactly how far that is allowed to reach into the engine).
-  `adminSettleVote.ts` is the pattern to mirror: settle, write back, then pay. Note `GameControlsCard.tsx:39` already declares a
-  `'leaderboard'` prize mode ("Top 10 by points, rank curve") with nothing
-  behind it — that is the placeholder to fill.
+  `adminSettleVote.ts` is the pattern to mirror: settle, write back, then pay.
+  (The `'leaderboard'` prize mode this section used to point at lived in
+  `GameControlsCard.tsx`, which was removed with the games — there is no
+  placeholder left to fill, so C5 starts from the ledger's own contract.)
 - **SOL from fee revenue** — a stated share of network fee revenue, paid by
   hand until the claim contract.
 - Publish standings and the pool size on a public page. **The leaderboard is a
@@ -430,8 +431,9 @@ Everything else is an edit to a file named inline above.
 
    The one sanctioned exception is C5: paying a $CSGN season pool means adding a
    `'season'` value to the `PayoutSource` union and a `seasonPayoutRequests()`
-   builder beside the existing `squaresPayoutRequests` /
-   `startingFivePayoutRequests`. That is *using* the ledger the way it was
+   builder in `payoutRunner.ts`. (The Squares and Starting 5 builders that used
+   to model this were removed with those games — see `payout-wallet.md`, and note
+   the engine now has no endpoint at all.) That is *using* the ledger the way it was
    designed to be used — a new source, feeding the same engine — not modifying
    it. If a change to C5 requires touching the run sequence, the design is
    wrong; stop and re-plan rather than editing the sequence.

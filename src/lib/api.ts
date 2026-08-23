@@ -22,7 +22,6 @@ export interface PublicProfile {
   twitch: string
   bio: string
   slots: number
-  winnings: number
 }
 
 export type TwitchProof = { proofToken: string; twitch: { twitchUserId: string; username: string; displayName: string; profileImageUrl: string } }
@@ -60,8 +59,33 @@ export const api = {
   /** Record an email the client has already linked via Firebase on the profile.
    *  The address is read from the caller's ID token, never from the body. */
   linkEmail: () => functionFetch<{ ok: boolean; alreadyLinked?: boolean; email: string }>('linkEmail', { method: 'POST' }, true),
+  /** Change your username. The old handle is released back into the pool and
+   *  there is a cooldown — see changeUsername.ts. */
+  changeUsername: (username: string) =>
+    functionFetch<{ ok: boolean; username: string; unchanged?: boolean; caseOnly?: boolean; cooldownDays?: number }>(
+      'changeUsername', { method: 'POST', body: JSON.stringify({ username }) }, true,
+    ),
+  /** Turn stream forwarding on or off for an already-linked Twitch channel.
+   *  Takes effect on the next roster sample — within about a minute. */
+  setForwardConsent: (forwardConsent: boolean) =>
+    functionFetch<{ ok: boolean; forwardConsent: boolean }>(
+      'setForwardConsent', { method: 'POST', body: JSON.stringify({ forwardConsent }) }, true,
+    ),
+  /** Attach a Phantom wallet to an existing account, any time after sign-up.
+   *  Without this a social sign-up has no wallet on file, so its $CSGN balance
+   *  reads as zero and it is allocated no airtime — see linkPhantom.ts. */
+  linkPhantom: (phantomProofToken: string) =>
+    functionFetch<{ ok: boolean; alreadyLinked?: boolean; walletAddress: string; balance: number | null }>(
+      'linkPhantom', { method: 'POST', body: JSON.stringify({ phantomProofToken }) }, true,
+    ),
   /** Attach Twitch to an existing account, any time after sign-up. */
-  linkTwitch: (twitchProofToken: string) => functionFetch<{ ok: boolean; alreadyLinked?: boolean; twitch: { username: string; displayName: string; profileImageUrl?: string } }>('linkTwitch', { method: 'POST', body: JSON.stringify({ twitchProofToken }) }, true),
+  /** `forwardConsent` is the grant that lets CSGN re-broadcast any stream on
+   *  the channel — the thing that means a streamer never touches the schedule.
+   *  Sending it again on an already-linked channel is how it is withdrawn. */
+  linkTwitch: (twitchProofToken: string, forwardConsent = false) =>
+    functionFetch<{ ok: boolean; alreadyLinked?: boolean; forwardConsent?: boolean; twitch: { username: string; displayName: string; profileImageUrl?: string } }>(
+      'linkTwitch', { method: 'POST', body: JSON.stringify({ twitchProofToken, forwardConsent }) }, true,
+    ),
   /** Recommended members, or one member by username. Server-projected — the
    *  response never contains an email, wallet or role flag beyond the label. */
   publicProfiles: (params: { limit?: number; exclude?: string } = {}) => {
@@ -71,7 +95,248 @@ export const api = {
     return functionFetch<{ profiles: PublicProfile[] }>(`publicProfiles?${q.toString()}`)
   },
   publicProfile: (username: string) => functionFetch<{ profile: PublicProfile | null }>(`publicProfiles?username=${encodeURIComponent(username)}`),
-  claimSlot: (slotId: string) => functionFetch<{ ok: boolean; slotId: string }>('claimSlot', { method: 'POST', body: JSON.stringify({ slotId }) }, true),
+  // NO claimSlot. Nobody reserves an hour any more — the operator assigns the
+  // current block to a roster member who is actually live (adminLiveNow), and
+  // every other hour runs the member clip reel. The endpoint was deleted with
+  // the buttons that called it, so a stale build can't book a phantom booking.
+  /** Admin: record a manual SOL creator-fee transfer against a member's slots.
+   *  The signature is the receipt — the server validates its shape, skips any
+   *  slot that is already settled, and stamps the whole group in one batch. */
+  markFeesPaid: (slotIds: string[], txSignature: string) =>
+    functionFetch<{ ok: boolean; marked: number; skipped: string[]; totalSOL: number }>(
+      'adminMarkFeesPaid',
+      { method: 'POST', body: JSON.stringify({ slotIds, txSignature }) },
+      true,
+    ),
+  /** Create the CSGN profile for a Firebase user who signed in with Google, X
+   *  or an email link. Idempotent — answers `created: false` if one exists. */
+  finalizeSocialAccount: (username?: string) =>
+    functionFetch<{ created: boolean; user: unknown }>(
+      'finalizeSocialAccount', { method: 'POST', body: JSON.stringify({ username }) }, true,
+    ),
+
+  /* ── Clips: a member's reel of links that air between live hours ── */
+
+  /** Your clips, your slice of the day, and when you are next on. One call so
+   *  /studio can't show a stale allowance beside a fresh reel. */
+  myClips: () => functionFetch<{
+    onAirLook: string
+    onAirStyle: string
+    onAirMotion: string
+    showAvatarOnAir: boolean
+    /** The provider avatar we may put on air, captured from your ID token. */
+    socialAvatar: { provider: string; url: string } | null
+    username: string
+    clips: Array<{
+      id: string; platform: string; sourceUrl: string; title: string; thumbnailUrl: string
+      seconds: number; sourceSeconds: number; trimStartSeconds: number; trimEndSeconds: number
+      measured: boolean; order: number; status: string; rejectReason: string | null
+    }>
+    airtime: {
+      /** This broadcast day's LOCKED entitlement. Fixed at 2 AM ET. */
+      seconds: number
+      /** What the playlist actually laid down into the air still to come. */
+      scheduledSeconds: number
+      capped: boolean
+      /** Share of circulating supply at the cutover, as a fraction. */
+      supplyShare: number
+      /** Open air across the whole broadcast day. */
+      inventorySeconds: number
+      /** Open air still to come today. */
+      remainingSeconds: number
+      /** Which broadcast day (2 AM ET → 2 AM ET) this is. */
+      dayKey: string
+      /** When the day's proportions were fixed. */
+      lockedAt: string | null
+      /** When they are fixed again. */
+      nextLockAt: string
+      networkBlockEnabled: boolean; builtAt: string | null
+      /** Which state this is — see myClips.ts. */
+      reason: 'ok' | 'no_clips' | 'no_wallet' | 'unreadable' | 'no_balance' | 'no_inventory'
+      walletAddress: string
+      /** null means unread, not zero. */
+      balance: number | null
+      /** Why it could not be read, when it could not. */
+      balanceError: string
+    }
+    airings: Array<{ startsAt: string; seconds: number; clipId: string }>
+  }>('myClips', {}, true),
+  /* ── TikTok import ──
+   *
+   * Connecting an account changes the ask from "go and fetch a link" to "tick
+   * three of these", and it is the only way we ever learn a TikTok's real
+   * runtime — a pasted one falls back to a 45-second guess. See
+   * docs/spec-social-import.md. */
+  startTikTokOAuth: () =>
+    functionFetch<{ authUrl: string; state: string }>('startTikTokOAuth', { method: 'POST' }, true),
+  /** The member's own public TikToks, newest first, with real durations.
+   *  `connected: false` means reconnect — NOT "you have no videos". */
+  tiktokVideos: (cursor?: number | null) =>
+    functionFetch<{
+      connected: boolean
+      unreadable?: boolean
+      videos: Array<{
+        id: string; title: string; seconds: number; coverImageUrl: string
+        shareUrl: string; createdAt: string; alreadyOnReel: boolean
+      }>
+      cursor: number | null
+      hasMore: boolean
+      slotsLeft: number
+      maxPerImport?: number
+    }>(`tiktokVideos${cursor ? `?cursor=${cursor}` : ''}`, {}, true),
+  /** Put the ticked ones on the reel. Partial success is normal and reported. */
+  importTikToks: (videoIds: string[]) =>
+    functionFetch<{
+      ok: boolean
+      imported: Array<{ id: string; title: string; seconds: number }>
+      skipped: Array<{ videoId: string; reason: string }>
+      slotsLeft: number
+    }>('tiktokVideos', { method: 'POST', body: JSON.stringify({ videoIds }) }, true),
+    /** Add a post to your reel. It lands pending — nothing airs unreviewed.
+   *  No length argument: the server reads the real runtime off the platform. */
+  submitClip: (url: string, title: string) =>
+    functionFetch<{ ok: boolean; clip: { id: string; platform: string; sourceUrl: string; title: string; thumbnailUrl: string; seconds: number; measured: boolean; order: number; status: string } }>(
+      'submitClip', { method: 'POST', body: JSON.stringify({ url, title }) }, true,
+    ),
+  /** Your on-air identity: the colour, the shape, and whether your X picture
+   *  rides along. The avatar URL itself is never sent — the server reads it
+   *  from your signed ID token. See updateMyProfile.ts. */
+  setOnAirIdentity: (patch: { onAirLook?: string; onAirStyle?: string; onAirMotion?: string; showAvatarOnAir?: boolean }) =>
+    functionFetch<{ ok: boolean; socialAvatar: { provider: string; url: string } | null }>(
+      'updateMyProfile', { method: 'POST', body: JSON.stringify(patch) }, true,
+    ),
+  /** Reorder, retitle, retime or remove one of your own clips. */
+  updateMyClip: (clipId: string, patch: {
+    action: 'update' | 'remove'
+    order?: number
+    title?: string
+    /** Crop the member's own video. Bounded server-side by its real length. */
+    trimStartSeconds?: number
+    trimEndSeconds?: number
+  }) =>
+    functionFetch<{ ok: boolean; clipId?: string; removed?: string; reReview?: boolean }>(
+      'updateMyClip', { method: 'POST', body: JSON.stringify({ clipId, ...patch }) }, true,
+    ),
+  /** Admin: the clip review queue. */
+  clipQueue: (status = 'pending') => functionFetch<{ clips: Array<{
+    id: string; uid: string; username: string; platform: string; sourceUrl: string
+    title: string; seconds: number; status: string; createdAt: unknown
+  }> }>(`adminClipQueue?status=${encodeURIComponent(status)}`, {}, true),
+  /** Admin: approve or reject one clip. A rejection must carry a reason. */
+  reviewClip: (clipId: string, decision: 'approved' | 'rejected', reason = '') =>
+    functionFetch<{ ok: boolean; clipId: string; status: string }>(
+      'adminReviewClip', { method: 'POST', body: JSON.stringify({ clipId, decision, reason }) }, true,
+    ),
+
+  /** The Meme 100, served by a function rather than read from Firestore.
+   *  Builds the board on demand when the stored copy is empty, so a cold start
+   *  or an undeployed rules file cannot leave the page blank. */
+  memeBoard: (force = false) => functionFetch<{
+    coins: unknown[]
+    updatedAt: string | null
+    built: boolean
+    reason?: string
+    discovery?: { candidates?: number; qualified?: number; unpriced?: number; byTier?: Record<string, number> } | null
+    /** Which provider gave us what. Read this first when the board is thin. */
+    sources?: Array<{ source: string; found: number; contributed: number; ok: boolean; note?: string }> | null
+  }>(`memeBoard${force ? '?force=1' : ''}`),
+
+  /** Look up any Solana mint by contract address. The Meme 100 is the pick
+   *  list; this is the escape hatch for a coin that has not made the board —
+   *  it never adds anything to the ranking. See lookupCoin.ts. */
+  lookupCoin: (address: string) => functionFetch<{
+    coin: {
+      address: string; symbol: string; name: string; imageUrl: string
+      priceUsd: number; marketCapUsd: number; volumeH24Usd: number
+      priceChangeH24Pct: number; liquidityUsd: number; pairUrl: string
+      onBoard: boolean
+    }
+  }>(`lookupCoin?address=${encodeURIComponent(address)}`),
+
+  /** A wallet's $CSGN balance. Served by a function so there is ONE reader —
+   *  see walletBalance.ts. `balance` is null when the chain could not be read,
+   *  which is not the same as zero and must not be rendered as zero. */
+  walletBalance: (address: string) => functionFetch<{
+    address: string
+    balance: number | null
+    error?: string
+  }>(`walletBalance?address=${encodeURIComponent(address)}`),
+
+  /** Who from the network is live right now. Public, one document read, no
+   *  uids and no offline members — see publicRoster.ts. */
+  roster: () => functionFetch<{
+    live: Array<{
+      username: string; displayName: string; twitchUsername: string
+      profileImageUrl: string; viewerCount: number; title: string
+      gameName: string; startedAt: string
+    }>
+    memberCount: number
+    updatedAt: string | null
+    stale: boolean
+  }>('publicRoster'),
+
+  /** Admin: everybody in the network who is live on Twitch right now, plus
+   *  what the operator should do about it. */
+  liveNow: () => functionFetch<{
+    entries: Array<{
+      uid: string; username: string; twitchUsername: string; displayName: string
+      profileImageUrl: string; live: boolean; viewerCount: number; title: string
+      gameName: string; startedAt: string; liveMinutes: number; onAirMinutes: number
+      sampledAt: string
+    }>
+    updatedAt: string | null
+    onAirUid: string | null
+    onAirIsGuest: boolean
+    onAirName: string | null
+    staleAfterMs: number
+    viewerFloor: number
+    alerts: Array<{
+      kind: 'on_air_dropped' | 'pick_a_streamer' | 'switch_to_clips' | 'long_shift' | 'stronger_option'
+      severity: 'critical' | 'action' | 'info'
+      message: string
+      uid?: string
+      username?: string
+    }>
+    /** WHO TO PUT ON, RANKED. Audience, freshness, rotation fairness and
+     *  holdings — see netlify/functions/_shared/streamerRank.ts. */
+    shortlist: Array<{
+      uid: string
+      name: string
+      score: number
+      breakdown: { audience: number; freshness: number; rotation: number; stake: number }
+      why: string
+      viewerCount: number
+      gameName: string
+      title: string
+    }>
+    recommendation: { mode: 'streamer' | 'clips'; uid: string | null; why: string }
+  }>('adminLiveNow', {}, true),
+  /** MASTER CONTROL — the one call that decides what is on the channel.
+   *
+   *  `put_on_air`      STREAM FACTORY: a roster member who is live and consented
+   *  `put_guest_on_air` a channel with no CSGN account, vouched for by the MP
+   *  `go_master`       MYSELF FACTORY: the MP's own encoder, pre-empts everything
+   *  `take_off_air`    hand the hour back to the clip reel */
+  setOnAir: (body: {
+    uid?: string
+    action: 'put_on_air' | 'take_off_air' | 'put_guest_on_air' | 'go_master'
+    guestUrl?: string
+    guestName?: string
+    masterName?: string
+  }) =>
+    functionFetch<{
+      ok: boolean; slotId: string; uid?: string; twitchUsername?: string
+      guest?: boolean; guestName?: string; master?: boolean; masterName?: string
+    }>(
+      'adminLiveNow', { method: 'POST', body: JSON.stringify(body) }, true,
+    ),
+
+  /** Admin: the sign-in/sign-up audit feed. Served by a function rather than
+   *  read from Firestore so it works before firestore.rules is ever deployed. */
+  authEvents: (limit = 50) => functionFetch<{ events: Array<{
+    id: string; kind: string; uid: string | null; twitchUsername: string | null
+    errorMessage: string | null; ua: string | null; ts: string | null
+  }> }>(`adminAuthEvents?limit=${limit}`, {}, true),
   /** Admin: re-type every slot by its ET airtime (7 PM–3 AM network, rest open). */
   normalizeSlots: () => functionFetch<{ normalized: number; retyped: number }>('adminNormalizeExistingSlots', { method: 'POST' }, true),
   /** Close a vote and recompute its tally from live on-chain balances.
@@ -85,6 +350,9 @@ export const api = {
   /** Ballots are cast against the MINT, not a typed ticker — symbols collide
    *  and a string nobody can look up makes the ranking unauditable. */
   voteMeme: (proofToken: string, address: string) => functionFetch<{ ok: boolean; address: string; symbol: string; weight: number; tallies: Record<string, { tokens: number; wallets: number }> }>('voteMeme', { method: 'POST', body: JSON.stringify({ proofToken, address }) }),
-  jukeboxSpotlight: (proofToken: string, signature: string, coin: { symbol: string; currency?: 'SOL' | 'CSGN'; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }) =>
-    functionFetch<{ ok: boolean; symbol: string; currency: 'SOL' | 'CSGN'; amount: number; requiredAmount: number; sol?: number; requiredSol?: number }>('jukeboxSpotlight', { method: 'POST', body: JSON.stringify({ proofToken, signature, ...coin }) }),
+  /** Bid $CSGN for the broadcast spotlight. The amount is whatever the signed
+   *  transfer actually moved — the server re-reads it on-chain and rejects
+   *  anything under the standing bid's raise. */
+  jukeboxSpotlight: (proofToken: string, signature: string, coin: { address: string; coingeckoId?: string; dexPair?: string; dexChain?: string; note?: string }) =>
+    functionFetch<{ ok: boolean; symbol: string; currency: 'CSGN'; amount: number; requiredAmount: number; expiresAt: string }>('jukeboxSpotlight', { method: 'POST', body: JSON.stringify({ proofToken, signature, ...coin }) }),
 }

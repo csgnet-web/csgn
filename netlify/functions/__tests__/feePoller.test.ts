@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pickActiveSlot, shouldRunPoll } from '../feePollerBackground'
+import { pickActiveSlot, shouldRunPoll, slotAirtime, COLD_RUN_INTERVAL_MS } from '../feePollerBackground'
 
 const HOUR = 60 * 60 * 1000
 const now = Date.parse('2026-07-09T18:00:00.000Z')
@@ -47,8 +47,8 @@ describe('pickActiveSlot', () => {
 // ── shouldRunPoll — the single-flight guard on the most expensive function ──
 //
 // This job is publicly routable in principle (Netlify serves scheduled
-// functions at /.netlify/functions/<name>) and each run holds a container for
-// ~45s of billed wall clock while calling DexScreener, Twitch and Firestore.
+// functions at /.netlify/functions/<name>) and every run is billed wall clock
+// while calling DexScreener, Twitch and Firestore.
 // The guard bounds that. These tests pin BOTH halves of its contract, because
 // each has a different failure: too permissive and concurrent runs stack; too
 // strict and it rejects the real scheduled run, which would silently stall fee
@@ -85,5 +85,80 @@ describe('shouldRunPoll', () => {
   // future and wedge the poller off indefinitely.
   it('runs when the lock is dated in the future', () => {
     expect(shouldRunPoll(new Date(T + 10 * 60_000).toISOString(), T)).toBe(true)
+  })
+
+  // ── The duty cycle: two thirds of the Netlify bill ──
+  //
+  // When the channel is cold — clip mode, nobody live anywhere — a full pass
+  // every minute discovers the same nothing sixty times an hour. These tests
+  // pin that the slowdown applies ONLY to a positively-established cold state,
+  // because the failure mode on the other side is a poller that sleeps through
+  // an hour that decides money.
+  it('skips two ticks in three when the last pass found the channel cold', () => {
+    expect(shouldRunPoll(iso(60_000), T, true)).toBe(false)
+    expect(shouldRunPoll(iso(119_000), T, true)).toBe(false)
+    expect(shouldRunPoll(iso(COLD_RUN_INTERVAL_MS), T, true)).toBe(true)
+  })
+
+  it('never slows down when the channel is hot', () => {
+    expect(shouldRunPoll(iso(60_000), T, false)).toBe(true)
+  })
+
+  // An unknown state costs an invocation. A wrongly-cold state costs a minute
+  // of fee accrual on a live hour, so the default has to be hot.
+  it('treats an absent cold flag as hot', () => {
+    expect(shouldRunPoll(iso(60_000), T)).toBe(true)
+  })
+
+  // Cold must never wedge the poller: every ambiguous lock still runs.
+  it('runs on a garbled lock even when the last pass was cold', () => {
+    expect(shouldRunPoll('not a date', T, true)).toBe(true)
+    expect(shouldRunPoll(undefined, T, true)).toBe(true)
+    expect(shouldRunPoll(new Date(T + 10 * 60_000).toISOString(), T, true)).toBe(true)
+  })
+})
+
+// ── slotAirtime — where the payable fraction meets a real slot ──
+//
+// payableAirtime decides the rule (see feeCalc.test.ts); this decides whether
+// the rule reaches a given slot at all. Getting that wrong means re-scoring an
+// hour that already settled under different terms.
+
+describe('slotAirtime', () => {
+  const cutover = Date.parse('2026-09-01T00:00:00.000Z')
+  const slot = (startTime: string, activity?: Record<string, number>) => ({ startTime, streamActivity: activity })
+
+  it('does not reach a slot that started before the cutover', () => {
+    expect(slotAirtime(slot('2026-08-31T22:00:00.000Z', { liveCheckCount: 0, checkCount: 60 }), cutover)).toBeNull()
+    // Even a flagrant no-show: those terms were already settled, and changing
+    // what a finished hour owed after the fact is the thing we do not do.
+    expect(slotAirtime(slot('2020-01-01T00:00:00.000Z', { liveCheckCount: 0, checkCount: 120 }), cutover)).toBeNull()
+  })
+
+  it('scores a slot that started on or after the cutover', () => {
+    const verdict = slotAirtime(slot('2026-09-01T04:00:00.000Z', { liveCheckCount: 30, checkCount: 60 }), cutover)
+    expect(verdict).toMatchObject({ reason: 'prorated', liveCheckCount: 30, checkCount: 60 })
+    expect(verdict!.fraction).toBeCloseTo(0.5, 10)
+  })
+
+  it('carries the counts it judged on, so the stored verdict is checkable', () => {
+    const verdict = slotAirtime(slot('2026-09-02T00:00:00.000Z', { liveCheckCount: 58, checkCount: 60 }), cutover)
+    expect(verdict).toEqual({ liveCheckCount: 58, checkCount: 60, ratio: 58 / 60, fraction: 1, reason: 'full' })
+  })
+
+  it('fails open on a slot with no activity log at all', () => {
+    expect(slotAirtime(slot('2026-09-02T00:00:00.000Z'), cutover)).toMatchObject({ reason: 'unverified', fraction: 1 })
+  })
+
+  // A slot that was mid-flight when this shipped has live samples but no
+  // denominator. Backfilling the denominator from them lands on full credit
+  // rather than inventing a penalty out of a schema change.
+  it('backfills a missing denominator instead of penalising the streamer', () => {
+    const verdict = slotAirtime(slot('2026-09-01T12:00:00.000Z', { liveCheckCount: 44 }), cutover)
+    expect(verdict).toMatchObject({ checkCount: 44, fraction: 1, reason: 'full' })
+  })
+
+  it('ignores a slot with no readable start time', () => {
+    expect(slotAirtime({ streamActivity: { liveCheckCount: 0, checkCount: 60 } }, cutover)).toBeNull()
   })
 })

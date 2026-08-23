@@ -1,20 +1,20 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useCallback, useMemo, useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   Mail, Wallet, Trophy, Lock,
   CalendarCheck, Bell, AlertTriangle, CheckCircle2, Clock, Twitch, X as XIcon, Info,
-  ChevronLeft, ChevronRight, Radio,
+  ChevronLeft, ChevronRight, Radio, Pencil,
 } from 'lucide-react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/config/firebase'
 import { useAuth } from '@/contexts/useAuth'
 import type { UserNotification } from '@/contexts/AuthContext'
 import { fetchSlotsByAssignee, type Slot } from '@/lib/slots'
+import { airtimeLabel, airtimeNote, airtimeTone, readAirtime } from '@/lib/airtime'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import MemeVoteCard from '@/components/MemeVoteCard'
-import GamesPanel from '@/components/account/GamesPanel'
 import HolderPanel from '@/components/account/HolderPanel'
 import RecommendedProfiles from '@/components/account/RecommendedProfiles'
 import { Notice, EmailNotice, TwitchNotice } from '@/components/ui/Notice'
@@ -50,6 +50,56 @@ function Connection({
   )
 }
 
+/** Survives the redirect to Twitch and back. See handleConnectTwitch. */
+const FORWARD_CONSENT_KEY = 'csgn:twitchForwardConsent'
+
+/**
+ * THE FORWARDING GRANT, on screen.
+ *
+ * Worth stating plainly rather than burying in the terms, because it is the
+ * single thing that makes CSGN worth a streamer's time: tick it once and you
+ * never touch the schedule again. It is also a real permission over their work,
+ * so the copy says exactly what it allows and the control to withdraw it sits
+ * in the same place as the control to grant it.
+ *
+ * Defaults to ON at link time but is never silently applied — the box is
+ * visible above the button that triggers the link, and the server stores
+ * `false` unless the client actually sent `true`.
+ */
+function ForwardConsentBox({
+  checked, onChange, busy, linked,
+}: {
+  checked: boolean
+  onChange: (next: boolean) => void
+  busy?: boolean
+  linked?: boolean
+}) {
+  return (
+    <label className={`flex items-start gap-3 rounded-xl border p-3.5 cursor-pointer transition-colors ${
+      checked ? 'border-primary-500/30 bg-primary-500/[0.06]' : 'border-white/[0.09] bg-white/[0.02] hover:bg-white/[0.04]'
+    }`}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={busy}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 h-4 w-4 shrink-0 accent-primary-500 cursor-pointer"
+      />
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-white">
+          Let CSGN put my stream on the channel
+        </span>
+        <span className="mt-1 block text-[11px] text-gray-400 leading-relaxed">
+          You stream on Twitch exactly as you normally would. When you go live we can carry your
+          stream on CSGN and you earn your share of the trading fees for the minutes you are on.
+          No schedule to manage, no block to claim, nothing to install.
+          {linked && ' Turn this off any time — we stop checking your channel within a minute.'}
+        </span>
+      </span>
+    </label>
+  )
+}
+
 export default function Dashboard() {
   const { user, profile, signIn, resendVerification, refreshProfile, addEmailPassword } = useAuth()
   const [resending, setResending] = useState(false)
@@ -71,6 +121,16 @@ export default function Dashboard() {
   const [feePage, setFeePage] = useState(0)
   const [linkMsg, setLinkMsg] = useState('')
   const [linkErr, setLinkErr] = useState('')
+  // Ticked BEFORE the Twitch hop, so the grant is captured in the same gesture
+  // that links the channel rather than as a second thing to come back for.
+  const [forwardConsent, setForwardConsent] = useState(true)
+  const [consentBusy, setConsentBusy] = useState(false)
+
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  const [savingName, setSavingName] = useState(false)
+  const [nameErr, setNameErr] = useState('')
+  const [nameMsg, setNameMsg] = useState('')
   const upcomingSlots = useMemo(
     () => slotHistory.filter((s) => new Date(s.endTime).getTime() > Date.now()).slice(0, 6),
     [slotHistory],
@@ -88,6 +148,10 @@ export default function Dashboard() {
     () => slotHistory.find((s) => Date.now() >= new Date(s.startTime).getTime() && Date.now() < new Date(s.endTime).getTime()) ?? null,
     [slotHistory],
   )
+  // The server's verdict for the hour on the clock, read never recomputed.
+  const liveAirtime = readAirtime(liveAssignedSlot?.creatorFees?.airtime)
+  const liveAirtimeLabel = airtimeLabel(liveAirtime)
+  const liveAirtimeNote = airtimeNote(liveAirtime)
 
   // Creator Fee History — newest first, paginated 10 at a time so the page
   // stays clean; the back arrow walks toward older history.
@@ -140,12 +204,16 @@ export default function Dashboard() {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await api.linkTwitch(proof.proofToken)
+        // The tick made before the redirect, recovered on the way back.
+        const consented = localStorage.getItem(FORWARD_CONSENT_KEY) === '1'
+        localStorage.removeItem(FORWARD_CONSENT_KEY)
+        const res = await api.linkTwitch(proof.proofToken, consented)
         clearTwitchProof()
         if (cancelled) return
         setLinkMsg(res.alreadyLinked
           ? `Twitch already connected as ${res.twitch.displayName}.`
-          : `Twitch connected as ${res.twitch.displayName}. You can claim slots now.`)
+          : `Twitch connected as ${res.twitch.displayName}.${consented ? ' Just stream as usual — we will pick you up.' : ''}`)
+        setForwardConsent(Boolean(res.forwardConsent))
         await refreshProfile()
       } catch (err) {
         clearTwitchProof()
@@ -235,10 +303,13 @@ export default function Dashboard() {
     onLinked: async (result) => {
       setLinkErr('')
       try {
-        const res = await api.linkTwitch(result.twitchProofToken)
+        const consented = localStorage.getItem(FORWARD_CONSENT_KEY) === '1'
+        localStorage.removeItem(FORWARD_CONSENT_KEY)
+        const res = await api.linkTwitch(result.twitchProofToken, consented)
         setLinkMsg(res.alreadyLinked
           ? `Twitch already connected as ${res.twitch.displayName}.`
-          : `Twitch connected as ${res.twitch.displayName}. You can claim slots now.`)
+          : `Twitch connected as ${res.twitch.displayName}.${consented ? ' Just stream as usual — we will pick you up.' : ''}`)
+        setForwardConsent(Boolean(res.forwardConsent))
         await refreshProfile()
       } catch (err) {
         setLinkErr(err instanceof Error ? err.message : 'Could not connect Twitch.')
@@ -248,8 +319,51 @@ export default function Dashboard() {
 
   const handleConnectTwitch = () => {
     setLinkErr(''); setLinkMsg('')
+    // Forwarding is granted AFTER the channel exists, from the Connections
+    // list — see ForwardConsentBox's placement. The flag still rides through
+    // the redirect so the default survives it, but nothing is decided here.
+    localStorage.setItem(FORWARD_CONSENT_KEY, forwardConsent ? '1' : '0')
     void twitchLink.start()
   }
+
+  /**
+   * Turn forwarding on or off after the channel is already linked.
+   *
+   * Straight to the server, no OAuth: they have already proved they own the
+   * channel, and a permission that costs a five-step round trip to withdraw is
+   * not a permission anybody would actually withdraw.
+   */
+  const saveUsername = useCallback(async () => {
+    const next = nameDraft.trim()
+    if (next.length < 3) { setNameErr('At least 3 characters, letters, numbers and underscores.'); return }
+    setSavingName(true)
+    setNameErr(''); setNameMsg('')
+    try {
+      const res = await api.changeUsername(next)
+      setNameMsg(res.unchanged ? 'That is already your username.' : `You are now @${res.username}.`)
+      setEditingName(false)
+      await refreshProfile()
+    } catch (err) {
+      setNameErr(err instanceof Error ? err.message : 'Could not change your username.')
+    }
+    setSavingName(false)
+  }, [nameDraft, refreshProfile])
+
+  const toggleForwardConsent = useCallback(async (next: boolean) => {
+    setConsentBusy(true)
+    setLinkErr('')
+    try {
+      await api.setForwardConsent(next)
+      setForwardConsent(next)
+      setLinkMsg(next
+        ? 'Forwarding is on. Stream whenever you like — you will show up on the operator board and can be put on the channel.'
+        : 'Forwarding is off. We will stop checking your channel within a minute.')
+      await refreshProfile()
+    } catch (err) {
+      setLinkErr(err instanceof Error ? err.message : 'Could not save that.')
+    }
+    setConsentBusy(false)
+  }, [refreshProfile])
 
   const handleDismissNotification = async (notifId: string) => {
     if (!user) return
@@ -354,6 +468,10 @@ export default function Dashboard() {
   }
 
   const twitchLinked = Boolean(profile?.twitch?.verified)
+  // The stored grant wins over the local tick once a channel is actually
+  // linked — the tick only ever described an intent for a link that had not
+  // happened yet.
+  const consentOn = twitchLinked ? Boolean(profile?.twitch?.forwardConsent) : forwardConsent
   // Wallet-only accounts (signupWithPhantom) have no email, so there is nothing
   // to verify and nothing to nag about — the old unconditional check told them
   // to go check an inbox they never gave us. Adding an address later turns the
@@ -397,18 +515,27 @@ export default function Dashboard() {
               />
             )}
             {!twitchLinked && !twitchLink.handoff && (
-              <TwitchNotice
-                action={
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    isLoading={twitchLink.phase === 'starting' || twitchLink.phase === 'redirecting'}
-                    onClick={handleConnectTwitch}
-                  >
-                    Connect Twitch
-                  </Button>
-                }
-              />
+              <div className="space-y-3">
+                <TwitchNotice
+                  action={
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      isLoading={twitchLink.phase === 'starting' || twitchLink.phase === 'redirecting'}
+                      onClick={handleConnectTwitch}
+                    >
+                      Connect Twitch
+                    </Button>
+                  }
+                />
+                {/* NOT SHOWN HERE ANY MORE.
+                    A "let CSGN put my stream on the channel" box above a
+                    "Connect Twitch" button is a permission over a channel that
+                    does not exist yet — it reads as a second thing to decide
+                    before you can do the first. The grant now appears in the
+                    Connections list, next to the linked channel it governs, and
+                    only once there is one. Connecting is the whole ask here. */}
+              </div>
             )}
             {/* In-app browser: the Twitch hop cannot happen here, so the panel
                 takes the notice's place and waits for Safari to finish it. */}
@@ -446,7 +573,46 @@ export default function Dashboard() {
                 {/* break-words, not truncate: a long display name should wrap
                     onto a second line rather than vanish into an ellipsis. */}
                 <h1 className="text-xl sm:text-2xl font-semibold text-white leading-tight break-words">{displayName}</h1>
-                <p className="text-sm text-gray-500 mt-0.5 break-all">@{handle}</p>
+                {/* Editable in place. A username you cannot change is a typo
+                    you live with forever, and this one is public — it is what
+                    appears on the schedule and under your clips on air. */}
+                {editingName ? (
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-gray-500">@</span>
+                    <input
+                      value={nameDraft}
+                      onChange={(e) => setNameDraft(e.target.value.replace(/[^A-Za-z0-9_]/g, '').slice(0, 20))}
+                      onKeyDown={(e) => { if (e.key === 'Enter') void saveUsername(); if (e.key === 'Escape') setEditingName(false) }}
+                      autoFocus
+                      className="min-w-0 flex-1 rounded-lg bg-white/[0.05] border border-white/[0.14] focus:border-primary-500/60 outline-none px-2.5 py-1 text-sm font-mono text-white"
+                    />
+                    <Button size="sm" isLoading={savingName} onClick={() => void saveUsername()}>Save</Button>
+                    <button
+                      type="button"
+                      onClick={() => { setEditingName(false); setNameErr('') }}
+                      className="text-xs text-gray-500 hover:text-gray-300 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  /* The pencil is ALWAYS VISIBLE. It was hover-only, which
+                     means it did not exist at all on a phone and was invisible
+                     on desktop until you happened to mouse over a line of grey
+                     text — so nobody knew the username could be changed. An
+                     affordance you have to discover is not an affordance. */
+                  <button
+                    type="button"
+                    onClick={() => { setNameDraft(handle); setNameErr(''); setNameMsg(''); setEditingName(true) }}
+                    aria-label="Change your username"
+                    className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-white/[0.09] bg-white/[0.03] px-2.5 py-1 text-sm text-gray-400 hover:text-white hover:bg-white/[0.07] hover:border-white/[0.16] transition-colors cursor-pointer"
+                  >
+                    <span className="break-all">@{handle}</span>
+                    <Pencil className="w-3 h-3 shrink-0 text-gray-500" />
+                  </button>
+                )}
+                {nameErr && <p className="mt-1 text-[11px] text-red-300">{nameErr}</p>}
+                {nameMsg && <p className="mt-1 text-[11px] text-emerald-400">{nameMsg}</p>}
                 <div className="mt-2.5 flex flex-wrap items-center gap-2">
                   <span className="inline-flex items-center rounded-md border border-white/[0.1] bg-white/[0.04] px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider text-gray-400">
                     {role}
@@ -460,7 +626,7 @@ export default function Dashboard() {
               </div>
 
               <div className="shrink-0 sm:pt-1">
-                <Link to="/schedule" className="block"><Button size="sm" variant="secondary">Claim a slot</Button></Link>
+                <Link to="/schedule" className="block"><Button size="sm" variant="secondary">See who's on</Button></Link>
               </div>
             </div>
 
@@ -488,6 +654,18 @@ export default function Dashboard() {
               API response another member can reach. */}
           <div className="border-t border-white/[0.06] px-5 sm:px-6 pt-4 pb-3 grid gap-2.5 sm:grid-cols-3">
             <Connection Icon={Twitch} label="Twitch" value={twitchDisplay} connected={twitchLinked} />
+            {/* The grant lives next to the connection it governs, and is
+                withdrawable from the same place it was given. */}
+            {twitchLinked && (
+              <div className="pt-1">
+                <ForwardConsentBox
+                  checked={consentOn}
+                  busy={consentBusy}
+                  linked
+                  onChange={(next) => void toggleForwardConsent(next)}
+                />
+              </div>
+            )}
             <Connection Icon={Wallet} label="Wallet" value={savedWallet ? `${savedWallet.slice(0, 4)}…${savedWallet.slice(-4)}` : ''} connected={Boolean(savedWallet)} mono />
             <Connection Icon={Mail} label="Email" value={accountEmail} connected={Boolean(accountEmail) && Boolean(user.emailVerified)} />
           </div>
@@ -512,13 +690,24 @@ export default function Dashboard() {
           </div>
         </section>
 
-        {/* ── Games + holdings ──
-            Side by side on desktop, stacked on mobile. This is the gamification
-            surface: what you've won, and what your bag entitles you to next. */}
-        <div className="grid gap-6 lg:grid-cols-2">
-          <GamesPanel stats={profile?.gameStats} />
-          <HolderPanel walletAddress={savedWallet} />
-        </div>
+        {/* ── Holdings ── what the bag entitles you to. */}
+        <HolderPanel walletAddress={savedWallet} />
+
+        {/* The bag's most concrete use: minutes of television. Linked rather
+            than duplicated — /studio reads the live allocation and this page
+            should never render a second, staler copy of that number. */}
+        <Link
+          to="/studio"
+          className="flex items-center justify-between gap-3 rounded-xl border border-primary-500/20 bg-primary-500/[0.06] px-5 py-4 hover:bg-primary-500/[0.1] transition-colors"
+        >
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white">Your studio</p>
+            <p className="mt-0.5 text-xs text-gray-400 leading-relaxed">
+              Post a clip and it airs between the live blocks. How much time you get follows what you hold.
+            </p>
+          </div>
+          <span className="text-primary-300 text-sm shrink-0">Open →</span>
+        </Link>
 
         {/* Change your Meme-100 token vote from your profile, any time */}
         <MemeVoteCard />
@@ -532,11 +721,19 @@ export default function Dashboard() {
             <p className="mt-2 text-sm text-emerald-300 leading-snug">
               Live now ({new Date(liveAssignedSlot.startTime).toLocaleTimeString()}–{new Date(liveAssignedSlot.endTime).toLocaleTimeString()}):
               {' '}${liveEstimateUSD.toFixed(2)} ({liveEstimateSOL.toFixed(6)} SOL)
+              {liveAirtimeLabel && <span className="text-emerald-400/80"> · {liveAirtimeLabel}</span>}
             </p>
+          )}
+          {/* Same figure, same wording as /watch — the payable amount and the
+              airtime behind it, so the two surfaces can never disagree. */}
+          {liveAssignedSlot && liveAirtimeNote && (
+            <p className={`mt-1 text-xs leading-snug ${airtimeTone(liveAirtime)}`}>{liveAirtimeNote}</p>
           )}
           {liveAssignedSlot && liveVolumeSOL > 0 && (
             <p className="mt-1.5 text-xs text-gray-500 leading-relaxed break-words">
-              {liveVolumeSOL.toFixed(4)} SOL × tier creator fee × 30% = {liveEstimateSOL.toFixed(6)} SOL
+              {liveVolumeSOL.toFixed(4)} SOL × tier creator fee × 30%
+              {liveAirtime && liveAirtime.fraction < 1 ? ` × ${Math.round(liveAirtime.fraction * 100)}% airtime` : ''}
+              {' '}= {liveEstimateSOL.toFixed(6)} SOL
               {liveAssignedSlot.creatorFees?.marketCapTierLabel ? ` (${liveAssignedSlot.creatorFees.marketCapTierLabel})` : ''}
             </p>
           )}
@@ -578,6 +775,7 @@ export default function Dashboard() {
               pagedFees.map((slot) => {
                 const activity = slot.streamActivity
                 const liveMinutes = activity?.liveCheckCount ?? 0
+                const airtime = readAirtime(slot.creatorFees?.airtime)
                 return (
                   <div key={slot.id} className="border border-white/[0.08] rounded-lg p-3">
                     {/* min-w-0 on both columns is what stops a long slot label
@@ -588,7 +786,15 @@ export default function Dashboard() {
                         <p className="text-xs text-gray-500 mt-0.5 leading-snug">
                           {new Date(slot.startTime).toLocaleString()} – {new Date(slot.endTime).toLocaleString()}
                         </p>
-                        {activity && (
+                        {/* A settled hour shows the verdict that decided the
+                            amount; an hour from before verified airtime shipped
+                            still shows the raw sample count it always did. */}
+                        {airtime ? (
+                          <p className={`text-[11px] mt-1.5 flex items-start gap-1 leading-snug ${airtimeTone(airtime)}`}>
+                            <Radio className="w-3 h-3 shrink-0 mt-px" />
+                            <span>{airtimeLabel(airtime) ?? 'No live checks recorded'} — {airtimeNote(airtime)}</span>
+                          </p>
+                        ) : activity && (
                           <p className={`text-[11px] mt-1.5 flex items-start gap-1 leading-snug ${liveMinutes > 0 ? 'text-emerald-400' : 'text-gray-500'}`}>
                             <Radio className="w-3 h-3 shrink-0 mt-px" />
                             <span>
@@ -660,9 +866,10 @@ export default function Dashboard() {
           </Card>
         )}
 
-        {/* Your claimed slots — real data, straight from the schedule. This
-            replaced two dead cards (auction bids, "CEO Schedule requests") that
-            described mechanics the network no longer has. */}
+        {/* Hours the network has you booked on — real data, straight from the
+            schedule. Members no longer book these themselves; an operator assigns
+            the current hour when you go live, and guests are added by hand. The
+            card stays because seeing your own name on a schedule is the payoff. */}
         <Card hover={false} className="p-5">
           <h2 className="text-sm font-semibold text-white flex items-center gap-2">
             <Radio className="w-4 h-4 text-gray-400" /> Your upcoming slots
@@ -670,8 +877,9 @@ export default function Dashboard() {
           <div className="mt-3 space-y-2">
             {upcomingSlots.length === 0 ? (
               <p className="text-sm text-gray-500 leading-relaxed">
-                You don't have a slot booked. Every hour from 3 AM to 7 PM ET is open — claim one and you
-                earn 30% of $CSGN's trading fees the whole time you're on air.
+                Nothing booked — which is normal, and nothing to fix. With forwarding on we carry
+                you whenever you happen to go live, and you earn a share of $CSGN's trading fees for
+                the minutes you're actually on air. Your clips fill the hours in between.
               </p>
             ) : (
               upcomingSlots.map((slot) => (
@@ -688,7 +896,7 @@ export default function Dashboard() {
             )}
           </div>
           <Link to="/schedule" className="inline-block mt-3">
-            <Button variant="secondary" size="sm">{upcomingSlots.length === 0 ? 'Claim a slot' : 'Claim another'}</Button>
+            <Button variant="secondary" size="sm">See the schedule</Button>
           </Link>
         </Card>
 

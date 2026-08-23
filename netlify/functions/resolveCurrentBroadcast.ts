@@ -15,8 +15,16 @@ export async function resolveBroadcast() {
     source = 'emergency_override'; streamUrl = emergency.streamUrl
   } else {
     const now = new Date().toISOString()
-    const slots = await queryCollection('slots', [fieldFilter('status', 'IN', ['confirmed', 'live']), fieldFilter('startTime', 'LESS_THAN_OR_EQUAL', now)], [order('startTime', 'DESCENDING')], 10)
+    // ONE FILTER, ON THE FIELD WE ORDER BY. The previous version combined
+    // `status IN [...]` with a range on `startTime` and an `orderBy(startTime)`,
+    // which Firestore refuses without a composite index nobody had defined —
+    // so this threw, and every caller (claimSlot, the operator board, /player's
+    // resolve) got a 500 instead of a broadcast. See queryCollection's header.
+    // The status check is now done in JS over at most 20 rows.
+    const slots = await queryCollection('slots', [fieldFilter('startTime', 'LESS_THAN_OR_EQUAL', now)], [order('startTime', 'DESCENDING')], 20)
     const current = slots.find((s) => {
+      const status = String(s.data.status ?? '')
+      if (status !== 'confirmed' && status !== 'live') return false
       const url = s.data.streamUrl ?? s.data.twitchChannelUrl
       return typeof s.data.endTime === 'string' && String(s.data.endTime) > now && typeof url === 'string' && Boolean(url)
     })

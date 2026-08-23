@@ -1,0 +1,447 @@
+// HOLDER AIRTIME — who gets how much of the day, and exactly when it airs.
+//
+// The network is on 24/7 because the people who hold the token fill it. This
+// module is the whole rule, and it is pure: balances and clips in, a timestamped
+// playlist out. The poller does the reading and writing; nothing here touches
+// Firestore, so every case below is testable without a network.
+//
+// It lives server-side for the same reason `payableAirtime` does — the server
+// computes and stores, and every surface (/studio, /player, the OBS overlay)
+// reads the stored result. A second implementation on the client would drift,
+// and this one decides what goes on television.
+
+/* ─── Knobs ─── */
+
+/** Airtime for a member holding no $CSGN. Zero, deliberately.
+ *
+ *  AIRTIME IS THE TOKEN'S JOB. Holding is what buys a place on the broadcast,
+ *  and a free floor for everyone would make the number meaningless — a thousand
+ *  accounts holding nothing would carve up the day between them and the people
+ *  who actually hold would get less for it.
+ *
+ *  This does NOT contradict master-plan.md §5 ("never gates claiming a slot,
+ *  making an account, or going live"). Every one of those is still free and
+ *  unweighted: anyone can make an account, claim a two-hour block, and go live
+ *  holding zero. Airtime is a PROMOTION surface, the same class as the Right Now
+ *  rail — §5's own words are that the token "decides whose message gets
+ *  amplified, never who is allowed in".
+ *
+ *  Left as a knob rather than deleted so a promotion (a launch week, a giveaway)
+ *  can open a floor without a code change. */
+export const AIRTIME_FLOOR_SECONDS = 0
+
+/**
+ * THE DENOMINATOR. Fixed, not measured.
+ *
+ * Airtime is one to one with the token: your seconds are
+ * `balance / 1,000,000,000 x 86,400`. That is arithmetic anybody can do on a
+ * phone, and being able to do it is most of why the promise is believable.
+ *
+ * It used to be the CIRCULATING supply, derived from market cap over price on
+ * every member request. Three things wrong with that: it cost a DexScreener
+ * call on a member-facing path, it drifted (so the same bag bought different
+ * seconds on different days for reasons nobody could see), and it made the
+ * central promise of the product uncheckable without an API.
+ *
+ * If the supply is ever genuinely changed on chain, change this constant —
+ * deliberately, once, in one place.
+ */
+export const CSGN_TOTAL_SUPPLY = 1_000_000_000
+
+/** Seconds in a day. Clips run 24/7, so this is the whole inventory. */
+export const AIRTIME_DAY_SECONDS = 86_400
+
+/** No member may take more than this share of a day, however large their bag.
+ *  token-voting.md §2.5's anti-capture cap. Set to 1 for a pure, uncapped 1:1
+ *  split — see `weightMode` below for the trade that implies. */
+export const AIRTIME_MAX_SHARE = 0.25
+
+/** Shorter than this reads as a flicker on air; longer is a takeover. */
+export const AIRTIME_MIN_SEGMENT_SECONDS = 5
+export const AIRTIME_MAX_SEGMENT_SECONDS = 120
+
+/**
+ * How a bag converts to weight.
+ *
+ *   'linear' — 1:1 with tokens held. Twice the bag, twice the airtime. This is
+ *              the owner's stated design and the default.
+ *   'sqrt'   — sub-linear (token-voting.md §2.4). Four times the bag, twice the
+ *              airtime.
+ *
+ * The trade, stated once so it is on the record and not re-argued: under
+ * 'linear', a wallet holding 40% of supply is entitled to 40% of the broadcast,
+ * and AIRTIME_MAX_SHARE is the only thing standing between that wallet and the
+ * channel. Under 'sqrt' the cap rarely binds. Both are supported; the cap
+ * applies to both.
+ */
+export type AirtimeWeightMode = 'linear' | 'sqrt'
+
+export interface AirtimeOptions {
+  weightMode?: AirtimeWeightMode
+  floorSeconds?: number
+  maxShare?: number
+}
+
+/* ─── Allocation ─── */
+
+export interface AirtimeMember {
+  uid: string
+  /** $CSGN held, live — never a stored snapshot. See settleVotes doctrine. */
+  balance: number
+  /** Seconds of approved, ready-to-air content this member actually has. */
+  clipSeconds: number
+}
+
+export interface AirtimeAllocation {
+  uid: string
+  /** Seconds of the window this member is entitled to. */
+  seconds: number
+  /** Share of circulating supply, as a fraction. Reported for the UI. */
+  supplyShare: number
+  /** True when AIRTIME_MAX_SHARE clipped this member's entitlement. */
+  capped: boolean
+}
+
+/**
+ * Split an inventory of seconds across members by what they hold.
+ *
+ * The order of operations matters and is the whole design:
+ *
+ *   1. Everyone with content gets the FLOOR first. It comes off the top, so a
+ *      thousand small holders cannot be squeezed to zero by one large one.
+ *   2. What's left is split by weight (see AirtimeWeightMode).
+ *   3. The CAP is applied, and anything it claws back is redistributed across
+ *      the uncapped members — repeatedly, because redistributing can push the
+ *      next member over the cap too. Bounded to a handful of passes; the
+ *      remainder simply goes unallocated rather than looping forever.
+ *   4. Nobody is allocated more than they have content for. Unused seconds
+ *      return to the pool rather than being aired as dead time.
+ *
+ * Members with no content are excluded entirely — an allocation nobody can fill
+ * is just a gap in the broadcast.
+ */
+export function airtimeShares(
+  members: AirtimeMember[],
+  inventorySeconds: number,
+  supply: number,
+  options: AirtimeOptions = {},
+): AirtimeAllocation[] {
+  const weightMode = options.weightMode ?? 'linear'
+  const floor = Math.max(0, options.floorSeconds ?? AIRTIME_FLOOR_SECONDS)
+  const maxShare = Math.min(1, Math.max(0, options.maxShare ?? AIRTIME_MAX_SHARE))
+
+  const inventory = Math.max(0, Math.floor(Number(inventorySeconds) || 0))
+  const usableSupply = Number.isFinite(supply) && supply > 0 ? supply : 0
+
+  const eligible = members
+    // Two conditions, and both matter. Content, because an allocation nobody can
+    // fill is a gap in the broadcast. And a BALANCE, because airtime is what the
+    // token buys — a member holding nothing gets nothing here, and is told so
+    // plainly in /studio rather than being quietly scheduled for zero seconds.
+    .filter((m) => m && m.uid && Math.floor(Number(m.clipSeconds) || 0) > 0)
+    .filter((m) => floor > 0 || Math.max(0, Number(m.balance) || 0) > 0)
+    .map((m) => ({
+      uid: String(m.uid),
+      balance: Math.max(0, Number(m.balance) || 0),
+      clipSeconds: Math.floor(Number(m.clipSeconds) || 0),
+    }))
+
+  if (inventory === 0 || eligible.length === 0) return []
+
+  // 1. Floor off the top — but never more than the inventory can carry. With
+  //    more members than seconds, the floor itself is what gets shared.
+  const floorTotal = floor * eligible.length
+  const perMemberFloor = floorTotal > inventory ? Math.floor(inventory / eligible.length) : floor
+  const weighted = Math.max(0, inventory - perMemberFloor * eligible.length)
+
+  // 2. Weight.
+  const weightOf = (balance: number): number => {
+    if (usableSupply <= 0 || balance <= 0) return 0
+    const share = Math.min(1, balance / usableSupply)
+    return weightMode === 'sqrt' ? Math.sqrt(share) : share
+  }
+  const weights = new Map(eligible.map((m) => [m.uid, weightOf(m.balance)]))
+  const weightSum = [...weights.values()].reduce((a, b) => a + b, 0)
+
+  const raw = new Map(eligible.map((m) => [
+    m.uid,
+    perMemberFloor + (weightSum > 0 ? (weights.get(m.uid)! / weightSum) * weighted : weighted / eligible.length),
+  ]))
+
+  // 3. Cap, redistributing what it claws back.
+  const ceiling = inventory * maxShare
+  const capped = new Set<string>()
+  for (let pass = 0; pass < 8; pass++) {
+    const over = eligible.filter((m) => !capped.has(m.uid) && raw.get(m.uid)! > ceiling)
+    if (over.length === 0) break
+    let reclaimed = 0
+    for (const m of over) {
+      reclaimed += raw.get(m.uid)! - ceiling
+      raw.set(m.uid, ceiling)
+      capped.add(m.uid)
+    }
+    const open = eligible.filter((m) => !capped.has(m.uid))
+    if (open.length === 0) break
+    const openWeight = open.reduce((sum, m) => sum + weights.get(m.uid)!, 0)
+    for (const m of open) {
+      const bonus = openWeight > 0
+        ? (weights.get(m.uid)! / openWeight) * reclaimed
+        : reclaimed / open.length
+      raw.set(m.uid, raw.get(m.uid)! + bonus)
+    }
+  }
+
+  // 4. Never allocate more than a member has content for.
+  return eligible
+    .map((m) => ({
+      uid: m.uid,
+      seconds: Math.min(m.clipSeconds, Math.floor(raw.get(m.uid)!)),
+      supplyShare: usableSupply > 0 ? Math.min(1, m.balance / usableSupply) : 0,
+      capped: capped.has(m.uid),
+    }))
+    .filter((a) => a.seconds >= AIRTIME_MIN_SEGMENT_SECONDS)
+    // Stable: biggest first, then by share, then by uid so two runs over the
+    // same inputs produce byte-identical output.
+    .sort((a, b) => b.seconds - a.seconds || b.supplyShare - a.supplyShare || a.uid.localeCompare(b.uid))
+}
+
+/* ─── Inventory: which seconds are actually ours to fill ─── */
+
+export interface TimeRange { startMs: number; endMs: number }
+
+/**
+ * The stretches of the horizon that holder content may fill.
+ *
+ * Everything else on the schedule outranks it. A claimed hour that someone is
+ * going to broadcast is not negotiable, and the owner's block is the owner's.
+ * Subtracting them here — rather than checking at playback — is what lets a
+ * member be told, truthfully, that their clip airs at 2:04 PM.
+ *
+ * The 16-hour and 24-hour shapes the owner toggles between are not two code
+ * paths: with the network block enabled its hours arrive in `blocked` and the
+ * open window is ~16h; disable it and they simply stop arriving, so the same
+ * arithmetic yields ~24h. Nothing else changes.
+ */
+export function deriveAirtimeWindows(nowMs: number, horizonEndMs: number, blocked: TimeRange[]): TimeRange[] {
+  if (!(horizonEndMs > nowMs)) return []
+
+  const merged: TimeRange[] = []
+  for (const range of [...blocked]
+    .filter((r) => r && Number.isFinite(r.startMs) && Number.isFinite(r.endMs) && r.endMs > r.startMs)
+    .sort((a, b) => a.startMs - b.startMs)) {
+    const last = merged[merged.length - 1]
+    if (last && range.startMs <= last.endMs) last.endMs = Math.max(last.endMs, range.endMs)
+    else merged.push({ ...range })
+  }
+
+  const windows: TimeRange[] = []
+  let cursor = nowMs
+  for (const range of merged) {
+    if (range.endMs <= cursor) continue
+    if (range.startMs > cursor) windows.push({ startMs: cursor, endMs: Math.min(range.startMs, horizonEndMs) })
+    cursor = Math.max(cursor, range.endMs)
+    if (cursor >= horizonEndMs) break
+  }
+  if (cursor < horizonEndMs) windows.push({ startMs: cursor, endMs: horizonEndMs })
+
+  return windows.filter((w) => w.endMs - w.startMs >= AIRTIME_MIN_SEGMENT_SECONDS * 1000)
+}
+
+/** Total seconds across a set of windows. */
+export const windowSeconds = (windows: TimeRange[]): number =>
+  Math.floor(windows.reduce((sum, w) => sum + (w.endMs - w.startMs), 0) / 1000)
+
+/* ─── The schedule ─── */
+
+export interface AirtimeClip {
+  clipId: string
+  uid: string
+  username: string
+  /** The embed URL /player loads. */
+  url: string
+  /** 'youtube' | 'tiktok' | 'instagram' — the player picks its renderer by this. */
+  platform?: string
+  /** The original post, for on-screen credit. */
+  sourceUrl?: string
+  /** The member's on-air look id — their lower third's colour. */
+  look?: string
+  /** Which lower-third shape they picked — see ON_AIR_STYLES. */
+  style?: string
+  /** How their card arrives — see ON_AIR_MOTIONS. */
+  motion?: string
+  /** Their provider avatar, or '' when they have none or turned it off.
+   *  Carried here so the broadcast never has to look anything up at playback. */
+  avatarUrl?: string
+  title: string
+  seconds: number
+  /** The member's own ordering, low first. This is the "order your seconds"
+   *  promise — respect it exactly rather than re-sorting by anything clever. */
+  order: number
+}
+
+export interface ScheduleItem {
+  startsAt: string
+  endsAt: string
+  seconds: number
+  clipId: string
+  uid: string
+  username: string
+  url: string
+  platform?: string
+  sourceUrl?: string
+  look?: string
+  style?: string
+  motion?: string
+  avatarUrl?: string
+  title: string
+}
+
+/**
+ * Lay allocations out on the clock.
+ *
+ * Round-robin across members rather than draining one member's whole allocation
+ * before starting the next. A viewer should see the channel change hands every
+ * segment; a block of forty consecutive clips from the biggest holder is the
+ * failure this ordering exists to prevent, and it is the same failure the cap
+ * addresses at a different timescale.
+ *
+ * Deterministic given the same inputs, because the preview a member is shown has
+ * to be the truth. Anything that does not fit the horizon is simply not
+ * scheduled — the next rebuild will place it.
+ */
+export function buildAirtimeSchedule(
+  allocations: AirtimeAllocation[],
+  clips: AirtimeClip[],
+  windows: TimeRange[],
+): ScheduleItem[] {
+  const byMember = new Map<string, AirtimeClip[]>()
+  for (const clip of clips) {
+    if (!clip?.url || !clip.clipId) continue
+    const seconds = Math.floor(Number(clip.seconds) || 0)
+    if (seconds < AIRTIME_MIN_SEGMENT_SECONDS) continue
+    byMember.set(clip.uid, [...(byMember.get(clip.uid) ?? []), {
+      ...clip,
+      seconds: Math.min(seconds, AIRTIME_MAX_SEGMENT_SECONDS),
+    }])
+  }
+  for (const list of byMember.values()) {
+    list.sort((a, b) => a.order - b.order || a.clipId.localeCompare(b.clipId))
+  }
+
+  const remaining = new Map(allocations.map((a) => [a.uid, a.seconds]))
+  const cursorOf = new Map(allocations.map((a) => [a.uid, 0]))
+  const queue = allocations.map((a) => a.uid).filter((uid) => (byMember.get(uid)?.length ?? 0) > 0)
+  if (queue.length === 0) return []
+
+  const items: ScheduleItem[] = []
+  let turn = 0
+
+  for (const window of windows) {
+    let at = window.startMs
+    // `stalled` counts members passed over in a row; a full lap with nothing
+    // placeable means this window is done, and it is what stops the round-robin
+    // spinning forever on clips that no longer fit.
+    let stalled = 0
+
+    while (at < window.endMs && stalled < queue.length) {
+      const uid = queue[turn % queue.length]
+      turn++
+
+      const list = byMember.get(uid)!
+      const index = cursorOf.get(uid)!
+      const left = remaining.get(uid) ?? 0
+      const clip = list[index]
+      const fitsWindow = clip ? at + clip.seconds * 1000 <= window.endMs : false
+
+      if (!clip || left < (clip?.seconds ?? Infinity) || !fitsWindow) {
+        stalled++
+        continue
+      }
+
+      stalled = 0
+      items.push({
+        startsAt: new Date(at).toISOString(),
+        endsAt: new Date(at + clip.seconds * 1000).toISOString(),
+        seconds: clip.seconds,
+        clipId: clip.clipId,
+        uid,
+        username: clip.username,
+        url: clip.url,
+        platform: clip.platform ?? '',
+        sourceUrl: clip.sourceUrl ?? '',
+        look: clip.look ?? 'signal',
+        style: clip.style ?? 'bar',
+        motion: clip.motion ?? 'cut',
+        avatarUrl: clip.avatarUrl ?? '',
+        title: clip.title,
+      })
+      at += clip.seconds * 1000
+      remaining.set(uid, left - clip.seconds)
+      // Members loop their own reel once exhausted, so a member with one good
+      // clip and a large allocation still fills it rather than forfeiting.
+      cursorOf.set(uid, (index + 1) % list.length)
+    }
+  }
+
+  return items
+}
+
+/**
+ * WHAT A BAG IS WORTH, on its own.
+ *
+ * `airtimeShares` answers "how do we divide today's open air between the
+ * members who have content ready", which is the right question at scheduling
+ * time and the wrong one to show a member.
+ *
+ * The difference matters because of what a member saw: their entitlement was
+ * only ever computed as a side effect of building the playlist, so it was zero
+ * until they had a clip APPROVED. Somebody holding 1.8 million $CSGN who had
+ * just signed up was told "0 seconds" — not because their tokens were worth
+ * nothing, but because a moderator had not got to them yet. That reads as the
+ * token doing nothing, on the one screen built to show what the token does.
+ *
+ * So this is the entitlement as a pure function of the bag: what your holdings
+ * earn you today, whether or not you have anything queued to fill it. The
+ * Studio shows THIS. The scheduler still uses `airtimeShares`, because a
+ * playlist can only be built from clips that exist — but the two now agree,
+ * since a member with content gets the same number out of both.
+ *
+ * Deliberately NOT normalised against other members' holdings. It answers "what
+ * is my share of supply worth in seconds", which is stable, checkable against
+ * the chain, and does not move because a stranger bought or sold. The scheduler
+ * redistributes any unclaimed remainder among members who can actually fill it;
+ * that is a scheduling gain, not an entitlement, and promising it here would be
+ * promising something a quiet day takes away.
+ */
+export interface AirtimeQuote {
+  /** Seconds this bag earns out of the given inventory. */
+  seconds: number
+  /** Share of circulating supply, as a fraction. */
+  supplyShare: number
+  /** True when AIRTIME_MAX_SHARE clipped it. */
+  capped: boolean
+}
+
+export function airtimeQuote(
+  balance: number,
+  inventorySeconds: number,
+  supply: number,
+  options: AirtimeOptions = {},
+): AirtimeQuote {
+  const maxShare = options.maxShare ?? AIRTIME_MAX_SHARE
+  const floor = Math.max(0, Math.floor(options.floorSeconds ?? AIRTIME_FLOOR_SECONDS))
+  const inventory = Math.max(0, Math.floor(Number(inventorySeconds) || 0))
+  const held = Math.max(0, Number(balance) || 0)
+  const circulating = Math.max(1, Number(supply) || 0)
+
+  const supplyShare = Math.min(1, held / circulating)
+  if (inventory <= 0) return { seconds: floor, supplyShare, capped: false }
+
+  const weight = (options.weightMode ?? 'linear') === 'sqrt' ? Math.sqrt(supplyShare) : supplyShare
+  const uncapped = weight * inventory
+  const ceiling = maxShare * inventory
+  const capped = uncapped > ceiling
+  const seconds = Math.floor(Math.min(uncapped, ceiling))
+
+  return { seconds: Math.max(floor, seconds), supplyShare, capped }
+}

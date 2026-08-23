@@ -1,0 +1,54 @@
+# CSGN
+
+> A 24-hour crypto television channel that anyone can get on. Members post links
+> to clips they already made, and those clips air between live streams. Streamers
+> connect their Twitch channel once and are carried automatically whenever they
+> go live. Airtime is allocated one-to-one with the $CSGN a member holds.
+
+CSGN (Crypto Sports & Gaming Network) is a continuously broadcasting channel
+rather than a video platform. There is no feed and no algorithm — there is one
+channel, and at any moment it is showing exactly one thing.
+
+## What it actually does
+
+- **Clips.** A member pastes a link to an existing YouTube, TikTok or Instagram
+  post. Nothing is uploaded to CSGN — the platform that already hosts the video
+  keeps hosting it. A human reviews every clip before it can air.
+- **Live streams.** A member connects a Twitch channel and grants permission for
+  CSGN to re-broadcast it. CSGN samples every consenting channel about once a
+  minute; when a member is live, an operator can put them on the network in one
+  click. Nobody books a time slot.
+- **Airtime.** The share of the channel's open air a member is entitled to is
+  their share of the circulating $CSGN supply, one to one, capped so no single
+  holder can take the whole channel. It is calculated from the wallet balance
+  read live from Solana, not from a stored snapshot and not from how much the
+  member posts.
+- **Fees.** Streamers earn a share of $CSGN trading fees for the minutes they
+  were actually carried on the CSGN channel — not for being live on their own
+  channel, and not for reserving a block they did not show up for.
+
+## Key facts
+
+- Chain: Solana. Token: $CSGN, mint `GFV7fphvprMr1PYpYGPJort2QP7JJLEp3J1Buu7Zpump`
+- The token never gates having an account, connecting a channel, or going live.
+  Those are free. It determines promotion: clip airtime share, broadcast ticker
+  access, vote weight, and the coin spotlight auction.
+- Nothing is burned, staked, locked or escrowed. Voting and airtime weight are
+  simply the wallet's current on-chain balance.
+- Source code is MIT licensed at https://github.com/csgnet-web/csgn
+
+## Pages
+
+- [Watch](https://csgn.fun/watch): the live channel
+- [Schedule](https://csgn.fun/schedule): who is on the network right now, and what aired
+- [Studio](https://csgn.fun/studio): post a clip, see your airtime
+- [$CSGN](https://csgn.fun/participate): the Meme 100 board, network votes, the coin jukebox
+- [Treasury](https://csgn.fun/treasury): where the money goes, published
+- [About](https://csgn.fun/about): the full explanation
+- [Terms](https://csgn.fun/terms) · [Privacy](https://csgn.fun/privacy)
+
+## What CSGN is not
+
+- Not a video hosting service. It stores links, not files.
+- Not a social feed. There is one channel and one thing on it at a time.
+- Not a staking or yield product. Holding is not depositing.

@@ -14,8 +14,34 @@
 User-agent: *
 Allow: /
 Disallow: /player
+Disallow: /oldplayer
 Disallow: /admin
 Disallow: /account
 Disallow: /auth/
+
+# The models that now answer "what is CSGN" without anybody visiting the site
+# are explicitly welcome. A product nobody has heard of has nothing to gain by
+# hiding from the thing that summarises the web, and /llms.txt is written for
+# exactly this audience.
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
 
 Sitemap: https://csgn.fun/sitemap.xml

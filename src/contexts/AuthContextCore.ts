@@ -1,6 +1,5 @@
 import { createContext } from 'react'
 import type { User } from 'firebase/auth'
-import type { GameStats } from '@/lib/games/profile'
 
 export interface UserNotification {
   id: string
@@ -33,17 +32,22 @@ export interface UserProfile {
   createdAt: unknown
   updatedAt?: unknown
   phantom?: { verified: boolean; walletAddress: string; verifiedAt: unknown }
-  twitch?: { verified: boolean; twitchUserId: string; username: string; displayName: string; profileImageUrl: string; verifiedAt: unknown }
+  twitch?: {
+    verified: boolean; twitchUserId: string; username: string; displayName: string
+    profileImageUrl: string; verifiedAt: unknown
+    /** Permission for CSGN to forward any stream on this channel. Absent on
+     *  accounts linked before the grant existed, which reads as "not granted"
+     *  — the only safe way to read a missing permission. */
+    forwardConsent?: boolean
+    forwardConsentAt?: unknown
+    forwardConsentVersion?: number | null
+  }
   bio?: string
   walletAddress?: string
   twitchUsername?: string
   socialLinks?: { twitter?: string; twitch?: string }
   notifications?: UserNotification[]
   xp?: number
-  /** Lifetime Squares / Starting 5 record, written server-side by the game
-   *  settlement job. Absent until that job runs, which is why every field of
-   *  GameStats is optional and the profile renders defensible zeroes. */
-  gameStats?: GameStats
 }
 
 export interface AuthContextType {
@@ -53,6 +57,12 @@ export interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>
   /** Wallet login — exchanges a verified Phantom proof for a Firebase session. */
   signInWithPhantom: (phantomProofToken: string) => Promise<void>
+  /** One tap, no password, no wallet. Creates the CSGN profile on first use. */
+  signInWithGoogle: () => Promise<void>
+  signInWithX: () => Promise<void>
+  /** Email link sign-in: send the link, then redeem it on the landing page. */
+  sendEmailLink: (email: string) => Promise<void>
+  completeEmailLink: (href: string, fallbackEmail?: string) => Promise<void>
   signUp: (email: string, password: string, username: string, proofs: { phantomProofToken: string; twitchProofToken?: string }) => Promise<void>
   /** Wallet-only sign-up — no email, no password. See
    *  netlify/functions/signupWithPhantom.ts for why the wallet alone is enough. */

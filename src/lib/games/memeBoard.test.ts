@@ -206,3 +206,162 @@ describe('searching the board', () => {
     expect(searchBoard(ranked, 'zzzz')).toEqual([])
   })
 })
+
+// ── The published 0–100 score ──
+//
+// The board goes on air and is the ballot for a token-weighted vote, so "why is
+// this coin here" has to be answerable from the card. These pin the two
+// properties that make that possible: the number is stable and comparable, and
+// the four terms shown beneath it actually add up to it.
+
+describe('the 0-100 score', () => {
+  const coins = [
+    { address: 'A'.repeat(40), symbol: 'AAA', name: 'A', imageUrl: '', priceUsd: 1, marketCapUsd: 1_000_000, volumeH24Usd: 500_000, priceChangeH24Pct: 10, liquidityUsd: 100_000, pairUrl: '', priced: true },
+    { address: 'B'.repeat(40), symbol: 'BBB', name: 'B', imageUrl: '', priceUsd: 1, marketCapUsd: 100_000, volumeH24Usd: 10_000, priceChangeH24Pct: 1, liquidityUsd: 10_000, pairUrl: '', priced: true },
+  ]
+
+  it('is 0-100 and ordered the same way as the ranking', () => {
+    const ranked = rankMemeBoard(coins)
+    for (const c of ranked) {
+      expect(c.score).toBeGreaterThanOrEqual(0)
+      expect(c.score).toBeLessThanOrEqual(100)
+    }
+    expect(ranked[0].score).toBeGreaterThanOrEqual(ranked[1].score)
+  })
+
+  it('breaks down into the four published weights, and they add up', () => {
+    const [top] = rankMemeBoard(coins)
+    const parts = top.breakdown.votes + top.breakdown.volume + top.breakdown.momentum + top.breakdown.maturity + top.breakdown.size
+    // Rounding each term independently can drift a point from the total; more
+    // than that means the breakdown is not the score.
+    expect(Math.abs(parts - top.score)).toBeLessThanOrEqual(2)
+  })
+
+  it('credits the vote term only when holders actually backed a coin', () => {
+    const withVotes = rankMemeBoard(coins, { [coins[1].address]: { tokens: 5_000_000, wallets: 3 } })
+    const bbb = withVotes.find((c) => c.symbol === 'BBB')!
+    expect(bbb.breakdown.votes).toBeGreaterThan(0)
+    const aaa = withVotes.find((c) => c.symbol === 'AAA')!
+    expect(aaa.breakdown.votes).toBe(0)
+  })
+
+  it('survives an empty and a single-coin board', () => {
+    expect(rankMemeBoard([])).toEqual([])
+    const [only] = rankMemeBoard([coins[0]])
+    expect(only.score).toBeGreaterThan(0)
+    expect(only.score).toBeLessThanOrEqual(100)
+  })
+})
+
+describe('rankMemeBoard — trending, not merely large', () => {
+  const coin = (over: Partial<MemeCoin> & { address: string; symbol: string }): MemeCoin => ({
+    name: over.symbol, imageUrl: '', priceUsd: 0.001, marketCapUsd: 1_000_000,
+    volumeH24Usd: 100_000, priceChangeH24Pct: 0,
+    pairUrl: '', priced: true, ...over,
+  })
+
+  it('ranks a small coin having a day above a big quiet one', () => {
+    // The exact failure that motivated the rewrite: the board was topped by
+    // whatever was biggest, which is the opposite of what a channel about right
+    // now should lead with.
+    const ranked = rankMemeBoard([
+      coin({ address: 'big', symbol: 'BIG', marketCapUsd: 900_000_000, volumeH24Usd: 3_000_000, priceChangeH24Pct: 1 }),
+      coin({ address: 'hot', symbol: 'HOT', marketCapUsd: 4_000_000, volumeH24Usd: 12_000_000, priceChangeH24Pct: 140 }),
+    ])
+    expect(ranked[0].symbol).toBe('HOT')
+  })
+
+  it('does not leave the votes weight unscored when nobody has voted', () => {
+    // With no ballots the old formula capped every score at 65 and ranked on a
+    // partial formula. The weights must still sum to 1.
+    const ranked = rankMemeBoard([
+      coin({ address: 'a', symbol: 'A', volumeH24Usd: 5_000_000, priceChangeH24Pct: 50 }),
+      coin({ address: 'b', symbol: 'B', volumeH24Usd: 10_000 }),
+    ])
+    const w = ranked[0].weights
+    expect(w.votes).toBe(0)
+    expect(w.volume + w.momentum + w.maturity + w.size).toBeCloseTo(1, 6)
+    expect(ranked[0].score).toBeGreaterThan(65)
+  })
+
+  it('restores the votes weight as soon as one ballot exists', () => {
+    const coins = [coin({ address: 'a', symbol: 'A' }), coin({ address: 'b', symbol: 'B' })]
+    const ranked = rankMemeBoard(coins, { a: { tokens: 5_000, wallets: 1 } })
+    expect(ranked[0].weights.votes).toBeCloseTo(POWER_WEIGHTS.votes, 6)
+    const w = ranked[0].weights
+    expect(w.votes + w.volume + w.momentum + w.maturity + w.size).toBeCloseTo(1, 6)
+  })
+
+  it('caps turnover so a wash trade cannot buy the top spot', () => {
+    // 500x its own market cap in a day is not a signal, it is a laundromat.
+    const ranked = rankMemeBoard([
+      coin({ address: 'wash', symbol: 'WASH', marketCapUsd: 20_000, volumeH24Usd: 10_000_000, priceChangeH24Pct: 0 }),
+      coin({ address: 'real', symbol: 'REAL', marketCapUsd: 8_000_000, volumeH24Usd: 20_000_000, priceChangeH24Pct: 90 }),
+    ])
+    expect(ranked[0].symbol).toBe('REAL')
+  })
+
+  it('separates the middle of the board instead of flattening it to zero', () => {
+    // Log normalization exists for this: under linear normalization every coin
+    // below the largest scored near-identically, so ninety of a hundred rows
+    // were indistinguishable.
+    const coins = Array.from({ length: 10 }, (_, i) => coin({
+      address: `c${i}`, symbol: `C${i}`,
+      marketCapUsd: 10 ** (4 + i * 0.5),
+      volumeH24Usd: 10 ** (3 + i * 0.5),
+    }))
+    const ranked = rankMemeBoard(coins)
+    const mid = ranked.slice(3, 8).map((c) => c.score)
+    expect(new Set(mid).size).toBeGreaterThan(1)
+    expect(Math.max(...mid) - Math.min(...mid)).toBeGreaterThan(3)
+  })
+
+  it('still lets an unpriced coin appear and be voted on', () => {
+    const ranked = rankMemeBoard(
+      [coin({ address: 'x', symbol: 'X' }), { ...coin({ address: 'y', symbol: 'Y' }), priced: false, priceUsd: 0, marketCapUsd: 0, volumeH24Usd: 0 }],
+      { y: { tokens: 900_000, wallets: 4 } },
+    )
+    expect(ranked.map((c) => c.address)).toContain('y')
+  })
+})
+
+describe('rankMemeBoard — staying power keeps the majors on', () => {
+  const coin = (over: Partial<MemeCoin> & { address: string; symbol: string }): MemeCoin => ({
+    name: over.symbol, imageUrl: '', priceUsd: 0.001, marketCapUsd: 1_000_000,
+    volumeH24Usd: 100_000, priceChangeH24Pct: 0, pairUrl: '', priced: true, ageDays: 0, ...over,
+  })
+
+  it('ranks an established coin above a day-old one on comparable activity', () => {
+    // A "Meme 100" that ranks purely on today's activity has no BONK on it,
+    // and a viewer would rightly think it was broken.
+    const ranked = rankMemeBoard([
+      coin({ address: 'old', symbol: 'OLD', ageDays: 600, volumeH24Usd: 2_000_000, marketCapUsd: 50_000_000 }),
+      coin({ address: 'new', symbol: 'NEW', ageDays: 1, volumeH24Usd: 2_000_000, marketCapUsd: 50_000_000 }),
+    ])
+    expect(ranked[0].symbol).toBe('OLD')
+  })
+
+  it('does not let age alone beat a coin that is genuinely on fire', () => {
+    // Staying power is 15 points, not a veto. A dead two-year-old coin must
+    // still lose to something actually trading.
+    const ranked = rankMemeBoard([
+      coin({ address: 'stale', symbol: 'STALE', ageDays: 730, volumeH24Usd: 5_000, marketCapUsd: 200_000 }),
+      coin({ address: 'hot', symbol: 'HOT', ageDays: 2, volumeH24Usd: 40_000_000, priceChangeH24Pct: 180, marketCapUsd: 30_000_000 }),
+    ])
+    expect(ranked[0].symbol).toBe('HOT')
+  })
+
+  it('caps maturity so a five-year-old coin is not unbeatable', () => {
+    const two = rankMemeBoard([coin({ address: 'a', symbol: 'A', ageDays: 730 })])[0]
+    const five = rankMemeBoard([coin({ address: 'a', symbol: 'A', ageDays: 1825 })])[0]
+    expect(five.breakdown.maturity).toBe(two.breakdown.maturity)
+  })
+
+  it('treats an unknown age as no credit rather than as brand new', () => {
+    const t = rankMemeBoard([
+      coin({ address: 'a', symbol: 'A', ageDays: 0 }),
+      coin({ address: 'b', symbol: 'B', ageDays: 400 }),
+    ])
+    expect(t.find((c) => c.symbol === 'A')!.breakdown.maturity).toBe(0)
+  })
+})

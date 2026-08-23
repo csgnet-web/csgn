@@ -138,10 +138,52 @@ export function updateWrite(path: string, data: Record<string, unknown>, exists 
 export function createWrite(path: string, data: Record<string, unknown>) { return { update: { name: docName(path), fields: encodeFields(data) }, currentDocument: { exists: false } } }
 export function deleteWrite(path: string) { return { delete: docName(path) } }
 
+/**
+ * Run a Firestore query.
+ *
+ * ⚠️  ON `orderBy` AND COMPOSITE INDEXES — read this before adding one.
+ *
+ * Firestore refuses any query that combines an equality filter on one field
+ * with an `orderBy` on a DIFFERENT field unless a composite index for that
+ * exact pair exists. It does not degrade, sort in memory, or warn: it returns
+ * HTTP 400 FAILED_PRECONDITION, this function throws, and `withHttp` turns
+ * that into a 500 the caller sees as "Internal Server Error".
+ *
+ * That is not hypothetical — it is what broke clip upload end to end. Three
+ * separate queries paired `where(field == x)` with `orderBy(otherField)`,
+ * `firestore.indexes.json` defined none of them, and so:
+ *
+ *   • `myClips` 500'd, which is the call /studio makes on load — so the page
+ *     errored before anybody could paste a link, and the airtime block that
+ *     reads from the same response showed zero;
+ *   • `adminClipQueue` 500'd, so submitted clips never reached review;
+ *   • the airtime rebuild's query failed inside a try/catch, silently.
+ *
+ * One missing index file, three symptoms that looked like three bugs.
+ *
+ * So: if a result set is small and bounded (a member's 25 clips, a 400-clip
+ * review queue), DO NOT pass `orderBy` — fetch and sort in JS. It costs
+ * nothing at these sizes and cannot fail on a deploy step somebody forgot.
+ * Reserve `orderBy` for genuinely large collections, and when you use it with a
+ * filter, add the composite index to `firestore.indexes.json` in the same
+ * commit.
+ */
 export async function queryCollection(collectionId: string, where: unknown[], orderBy: unknown[] = [], limit = 50, parentPath?: string): Promise<Array<{ path: string; data: Record<string, unknown> }>> {
   const structuredQuery = { from: [{ collectionId }], where: where.length ? { compositeFilter: { op: 'AND', filters: where } } : undefined, orderBy, limit }
   const res = await authedFetch(runQueryUrl(parentPath), { method: 'POST', body: JSON.stringify({ structuredQuery }) })
-  if (!res.ok) throw new Error(`Firestore query failed: ${res.status} ${await res.text()}`)
+  if (!res.ok) {
+    const detail = await res.text()
+    // Name the cause. A raw 400 body from Firestore buried in a 500 is how a
+    // missing index goes undiagnosed for weeks — the message it returns
+    // contains a ready-made console link, and hiding it helps nobody.
+    if (/FAILED_PRECONDITION|requires an index/i.test(detail)) {
+      throw new Error(
+        `Firestore query on '${collectionId}' needs a composite index (filter + orderBy on different fields). ` +
+        `Either drop the orderBy and sort in JS, or add the index to firestore.indexes.json. Detail: ${detail}`,
+      )
+    }
+    throw new Error(`Firestore query failed: ${res.status} ${detail}`)
+  }
   const rows = await res.json() as Array<{ document?: { name: string; fields?: Fields } }>
   return rows.filter((r) => r.document).map((r) => ({ path: r.document!.name.split('/documents/')[1], data: decodeFields(r.document!.fields || {}) }))
 }

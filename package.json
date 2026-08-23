@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "meme:probe": "node scripts/probe-meme-sources.mjs",
+    "verify:airtime": "node scripts/verify-airtime.mjs"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.9",

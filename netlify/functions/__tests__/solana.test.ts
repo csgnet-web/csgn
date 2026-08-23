@@ -160,7 +160,10 @@ describe('isEstablishedWallet', () => {
   // a real rejection and lock members out during an RPC outage.
   it('throws (never returns false) when the RPC errors', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 503, json: async () => ({}) }) as unknown as Response))
-    await expect(isEstablishedWallet(WALLET_ADDR, MIN)).rejects.toThrow(/RPC error/i)
+    // The message names every endpoint it tried and why each failed — a
+    // single opaque "RPC error" is what made a throttle indistinguishable
+    // from an empty wallet in the logs.
+    await expect(isEstablishedWallet(WALLET_ADDR, MIN)).rejects.toThrow(/Every Solana RPC failed/i)
 
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ error: { message: 'boom' } }) }) as unknown as Response))
     await expect(isEstablishedWallet(WALLET_ADDR, MIN)).rejects.toThrow(/boom/i)

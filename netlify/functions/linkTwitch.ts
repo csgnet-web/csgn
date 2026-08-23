@@ -25,12 +25,36 @@ import { verifyProofToken } from './_shared/proofTokens'
 import { json, parseJson, requireMethod, withHttp } from './_shared/http'
 import { checkRateLimit, clientIp } from './_shared/rateLimit'
 
-type Body = { twitchProofToken?: string }
+type Body = { twitchProofToken?: string; forwardConsent?: boolean }
 type TwitchProof = {
   type: string; twitchUserId: string; username: string
   displayName: string; profileImageUrl: string; exp: number; iat: number; jti: string
 }
-type UserDoc = { twitch?: { verified?: boolean; twitchUserId?: string; username?: string } }
+type UserDoc = { twitch?: { verified?: boolean; twitchUserId?: string; username?: string; forwardConsent?: boolean } }
+
+/**
+ * THE FORWARDING GRANT.
+ *
+ * Linking Twitch used to mean one thing: prove you own the channel, so you can
+ * claim a block. It now also carries a permission — that CSGN may pick up any
+ * stream on that channel and re-broadcast it on the network — and that
+ * permission is the entire reason a streamer never has to touch the schedule
+ * again. They connect once and stream as they always would; we watch the
+ * channel and put them on when they are live.
+ *
+ * It is stored as a VERSIONED, TIMESTAMPED, SEPARATE flag rather than being
+ * implied by the link, for three reasons:
+ *
+ *  1. Re-broadcasting somebody's video is a real permission with real legal
+ *     weight (see /terms §4). "They clicked connect" is not a record of it.
+ *     `consentVersion` is what lets us prove WHICH wording they agreed to when
+ *     the terms change.
+ *  2. It has to be revocable without unlinking the channel — a streamer may
+ *     well want to claim blocks deliberately but not be forwarded automatically.
+ *  3. `_shared/liveRoster.ts` re-checks it on every single pass, so revoking it
+ *     stops the sampling within a minute rather than at some later cleanup.
+ */
+const FORWARD_CONSENT_VERSION = 1
 
 export const handler = withHttp(async (event) => {
   requireMethod(event, 'POST')
@@ -45,8 +69,31 @@ export const handler = withHttp(async (event) => {
 
   // Re-linking the SAME channel is a no-op success, not an error — a user who
   // taps "Connect Twitch" twice should not be told they've done something wrong.
+  const forwardConsent = body.forwardConsent === true
+  const now = new Date()
+
+  // Re-linking the same channel is where a consent CHANGE lands: the member
+  // ticked (or unticked) the box and pressed connect again. Treating it as a
+  // pure no-op would make the grant impossible to withdraw from the UI.
   if (user.twitch?.verified && user.twitch.twitchUserId === twitch.twitchUserId) {
-    return json(200, { ok: true, alreadyLinked: true, twitch: { username: twitch.username, displayName: twitch.displayName } })
+    if (forwardConsent !== (user.twitch.forwardConsent === true)) {
+      await commitWrites([updateWrite(`users/${authUser.uid}`, {
+        twitch: {
+          ...user.twitch,
+          forwardConsent,
+          forwardConsentVersion: forwardConsent ? FORWARD_CONSENT_VERSION : null,
+          forwardConsentAt: forwardConsent ? now : null,
+        },
+        updatedAt: now,
+      }, true)])
+      await auditLog(forwardConsent ? 'twitchForwardConsentGranted' : 'twitchForwardConsentRevoked', authUser.uid, {
+        twitchUserId: twitch.twitchUserId, username: twitch.username,
+      })
+    }
+    return json(200, {
+      ok: true, alreadyLinked: true, forwardConsent,
+      twitch: { username: twitch.username, displayName: twitch.displayName },
+    })
   }
   if (user.twitch?.verified) {
     throw conflict('This account already has a different Twitch channel linked.', 'twitch_already_linked')
@@ -55,7 +102,6 @@ export const handler = withHttp(async (event) => {
   const claimed = await getDoc(`uniqueTwitchUsers/${twitch.twitchUserId}`)
   if (claimed) throw conflict('This Twitch account is already linked to a CSGN account.', 'duplicate_twitch')
 
-  const now = new Date()
   try {
     await commitWrites([
       // CREATE, so a concurrent link of the same channel loses rather than
@@ -71,6 +117,11 @@ export const handler = withHttp(async (event) => {
           displayName: twitch.displayName,
           profileImageUrl: twitch.profileImageUrl || '',
           verifiedAt: now,
+          // Off unless explicitly granted. A permission to re-broadcast
+          // somebody's work must never be the default of a connect button.
+          forwardConsent,
+          forwardConsentVersion: forwardConsent ? FORWARD_CONSENT_VERSION : null,
+          forwardConsentAt: forwardConsent ? now : null,
         },
         updatedAt: now,
       }, true),
@@ -79,6 +130,6 @@ export const handler = withHttp(async (event) => {
     throw conflict('This Twitch account is already linked to a CSGN account.', 'duplicate_twitch')
   }
 
-  await auditLog('linkTwitch', authUser.uid, { twitchUserId: twitch.twitchUserId, username: twitch.username })
-  return json(200, { ok: true, twitch: { username: twitch.username, displayName: twitch.displayName, profileImageUrl: twitch.profileImageUrl || '' } })
+  await auditLog('linkTwitch', authUser.uid, { twitchUserId: twitch.twitchUserId, username: twitch.username, forwardConsent })
+  return json(200, { ok: true, forwardConsent, twitch: { username: twitch.username, displayName: twitch.displayName, profileImageUrl: twitch.profileImageUrl || '' } })
 })

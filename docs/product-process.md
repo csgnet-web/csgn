@@ -125,7 +125,7 @@ and not one to make silently.
    with the next slot time. Not both, and not a notification system. Right now
    there is no re-engagement channel at all, which makes every ad dollar a
    one-shot.
-3. **Hide the games until they are playable.** Squares, Starting 5, the Meme 100
+3. **Hide a feature until it is playable.** The Meme 100
    board, supply-weighted voting and the jukebox spotlight are real, tested
    code, and they are depth for an audience that does not exist yet. They are
    already off the main nav; finish the job by removing `GamesPanel`,

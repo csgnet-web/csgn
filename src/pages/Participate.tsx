@@ -1,18 +1,55 @@
 import { useCallback, useEffect, useState } from 'react'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { motion } from 'framer-motion'
-import { Wallet, Megaphone, Check, Trophy, AlertCircle, Vote as VoteIcon, Flame } from 'lucide-react'
+import { Wallet, Megaphone, Check, Trophy, AlertCircle, Vote as VoteIcon, Flame, Coins } from 'lucide-react'
 import { db } from '@/config/firebase'
 import { api } from '@/lib/api'
 import { proveWallet } from '@/lib/walletProof'
-import { paySpotlight, paySpotlightCsgn } from '@/lib/spotlightPay'
+import { paySpotlightCsgn } from '@/lib/spotlightPay'
 import { fetchCsgnBalance } from '@/lib/csgnBalance'
 import { DEFAULT_TOKEN_GATES, normalizeTokenGates } from '@/lib/tokenGates'
 import { usePhantomWallet } from '@/hooks/usePhantomWallet'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
+import Meme100Board from '@/components/participate/Meme100Board'
+import { SignInWall } from '@/components/auth/SignInWall'
+import MemeVotePicker from '@/components/participate/MemeVotePicker'
+import { useAuth } from '@/contexts/useAuth'
+import { usePageMeta } from '@/hooks/usePageMeta'
 
 interface VoteCfg { id: string; question: string; options: string[]; startISO?: string; status?: string }
+
+/** `public/jukebox`, exactly as jukeboxSpotlight publishes it. Nothing here
+ *  decides the price — the auction rule lives in
+ *  netlify/functions/_shared/jukebox.ts and the server re-derives it on every
+ *  bid. This is the stored verdict, read for display. */
+interface JukeboxWinner { symbol: string; bidCsgn: number; wonAt: string; wallet: string }
+interface JukeboxDoc {
+  symbol: string
+  bidCsgn: number
+  bidAt: string | null
+  expiresAt: string | null
+  nextBidCsgn: number
+  baseFloorCsgn: number
+  history: JukeboxWinner[]
+}
+const JUKEBOX_BASE_FLOOR_CSGN = 250_000
+/** Mirrors JUKEBOX_TTL_MS in netlify/functions/_shared/jukebox.ts. Display only
+ *  — the server decides when a bid actually expires; this just sizes the bar. */
+const JUKEBOX_TTL_MS = 12 * 60 * 60 * 1000
+
+/** A countdown, in the units somebody actually reads at each scale. Hours and
+ *  minutes far out, minutes and seconds in the last hour — because "11h 04m" is
+ *  what you want at the start of a reign and "04:12" is what you want at the
+ *  end, when the auction is about to reopen. */
+function countdown(msLeft: number): string {
+  const total = Math.max(0, Math.floor(msLeft / 1000))
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const sec = total % 60
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`
+  return `${m}:${String(sec).padStart(2, '0')}`
+}
 interface Cell { tokens: number; wallets: number }
 type Tally = Record<string, Cell>
 
@@ -23,7 +60,14 @@ const fmtToken = (n: number): string =>
 const fmtFull = (n: number): string => Math.round(n).toLocaleString('en-US')
 
 export default function Participate() {
-  const { walletAddress, connect, signMessage, isConnecting, balance: solBalance } = usePhantomWallet()
+  usePageMeta({
+    title: '$CSGN — The Meme 100, Votes and the Coin Jukebox',
+    description: "Back a memecoin on the Meme 100 with your $CSGN, vote on tonight's programming, and bid for the broadcast coin spotlight. Your weight is simply your on-chain balance.",
+    path: '/participate',
+  })
+
+  const { user, loading: authLoading } = useAuth()
+  const { walletAddress, connect, signMessage, isConnecting } = usePhantomWallet()
   const [balanceState, setBalanceState] = useState<number | null>(null)
   const [balanceLoading, setBalanceLoading] = useState(false)
 
@@ -34,6 +78,18 @@ export default function Participate() {
     return onSnapshot(doc(db, 'config', 'tokenGates'), (snap) => {
       setRightNowMin(normalizeTokenGates(snap.exists() ? snap.data() : null).rightNowMinCsgn)
     }, () => {})
+  }, [])
+
+  // A bid expires while somebody is looking at the page, so "is it still live"
+  // has to be state that ticks, not a Date.now() read during render — that is
+  // both impure and, worse, a screen that never notices the auction reopened.
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    // One second, because the jukebox panel shows a live countdown and a clock
+    // that only moves every thirty seconds reads as broken. One setState a
+    // second on a page this size costs nothing measurable.
+    const t = setInterval(() => setNowMs(Date.now()), 1_000)
+    return () => clearInterval(t)
   }, [])
 
   const [vote, setVote] = useState<VoteCfg | null>(null)
@@ -47,32 +103,48 @@ export default function Participate() {
   const [rnMsg, setRnMsg] = useState<string | null>(null)
   const [rnErr, setRnErr] = useState<string | null>(null)
 
-  // Coin Jukebox — pay SOL or $CSGN to spotlight a coin (TouchTunes-style)
-  const [spotSol, setSpotSol] = useState(0.1)
-  const [spotCsgn, setSpotCsgn] = useState(1_000_000)
-  const [spotCurrency, setSpotCurrency] = useState<'SOL' | 'CSGN'>('SOL')
-  const [spotSymbol, setSpotSymbol] = useState('')
-  const [spotPair, setSpotPair] = useState('')
+  // Coin Jukebox — an open $CSGN auction for the broadcast spotlight.
+  const [jukebox, setJukebox] = useState<JukeboxDoc | null>(null)
+  const [spotBid, setSpotBid] = useState<number | null>(null)
+  // The coin being bid for, as a CHOSEN mint — same picker the vote uses, so
+  // any Solana contract address works and the ticker is read off the chain
+  // rather than typed. A typed ticker put a string on television that resolved
+  // to nothing.
+  const [spotPick, setSpotPick] = useState<{ address: string; symbol: string } | null>(null)
   const [spotNote, setSpotNote] = useState('')
   const [spotBusy, setSpotBusy] = useState(false)
   const [spotMsg, setSpotMsg] = useState<string | null>(null)
   const [spotErr, setSpotErr] = useState<string | null>(null)
 
-  // Meme-100 community vote (token-weighted, no burn)
-  const [memeSymbol, setMemeSymbol] = useState('')
+  // The standing bid, published to its own world-readable doc by
+  // jukeboxSpotlight so this page never has to read admin-only config/ticker.
+  useEffect(() => {
+    return onSnapshot(doc(db, 'public', 'jukebox'), (snap) => {
+      const d = snap.exists() ? snap.data() : null
+      setJukebox(d ? {
+        symbol: String(d.symbol || ''),
+        bidCsgn: Number(d.bidCsgn) || 0,
+        bidAt: d.bidAt ? String(d.bidAt) : null,
+        expiresAt: d.expiresAt ? String(d.expiresAt) : null,
+        nextBidCsgn: Number(d.nextBidCsgn) || 0,
+        baseFloorCsgn: Number(d.baseFloorCsgn) || JUKEBOX_BASE_FLOOR_CSGN,
+        history: Array.isArray(d.history) ? (d.history as JukeboxWinner[]) : [],
+      } : null)
+    }, () => {})
+  }, [])
+
+
+  // Meme-100 community vote (token-weighted, no burn). The ballot is a CHOSEN
+  // coin, carrying its mint — never a typed ticker. See MemeVotePicker.
+  const [memePick, setMemePick] = useState<{ address: string; symbol: string } | null>(null)
   const [memeBusy, setMemeBusy] = useState(false)
   const [memeMsg, setMemeMsg] = useState<string | null>(null)
   const [memeErr, setMemeErr] = useState<string | null>(null)
-  const [memeTallies, setMemeTallies] = useState<Record<string, Cell>>({})
 
   // Current vote (config/ticker.vote)
   useEffect(() => {
     return onSnapshot(doc(db, 'config', 'ticker'), (snap) => {
       const data = snap.exists() ? snap.data() : {}
-      const sol = Number(data.spotlightSol)
-      if (sol > 0) setSpotSol(sol)
-      const csgn = Number(data.spotlightCsgn)
-      if (csgn > 0) setSpotCsgn(csgn)
       const v = data.vote as Record<string, unknown> | undefined
       setVote(
         v && v.id && Array.isArray(v.options)
@@ -82,13 +154,8 @@ export default function Participate() {
     })
   }, [])
 
-  // Live meme-100 community tally (world-readable public/memeVote).
-  useEffect(() => {
-    return onSnapshot(doc(db, 'public', 'memeVote'), (snap) => {
-      const t = snap.exists() ? (snap.data().tallies as Record<string, Cell> | undefined) : undefined
-      setMemeTallies(t && typeof t === 'object' ? t : {})
-    }, () => {})
-  }, [])
+  // public/memeVote is subscribed to inside Meme100Board, which is the only
+  // thing that reads the tallies now. One listener, one ranking.
 
   // Live tally for the current vote — derived so switching votes needs no
   // synchronous reset (keeps setState out of the effect body).
@@ -156,70 +223,58 @@ export default function Participate() {
     setRnBusy(false)
   }
 
-  // A pasted DexScreener URL → its pair address; otherwise use the value as-is.
-  const extractPair = (raw: string): string => {
-    const t = raw.trim()
-    const m = t.match(/dexscreener\.com\/[^/]+\/([A-Za-z0-9]+)/)
-    return m ? m[1] : t
-  }
   const doSpotlight = async () => {
     setSpotErr(null); setSpotMsg(null)
-    const symbol = spotSymbol.trim().toUpperCase()
-    if (!/^[A-Z0-9$]{2,12}$/.test(symbol)) { setSpotErr('Enter a valid ticker symbol (2–12 characters).'); return }
+    if (!spotPick) { setSpotErr('Pick a coin, or paste its contract address.'); return }
+    const bid = Math.floor(spotBid ?? minBid)
+    if (!(bid >= minBid)) { setSpotErr(`The next bid has to be at least ${fmtFull(minBid)} $CSGN.`); return }
     setSpotBusy(true)
     try {
       const addr = await ensureWallet()
-      // Prove the wallet first so a later-rejected payment wastes no on-chain action.
+      // Prove the wallet first so a later-rejected bid wastes no on-chain action.
       const proof = await proveWallet(addr, signMessage)
-      // Pay the treasury in the chosen currency (Phantom prompts + signs), then
-      // redeem the signature server-side — nothing is burned.
-      const signature = spotCurrency === 'CSGN'
-        ? await paySpotlightCsgn(addr, spotCsgn)
-        : await paySpotlight(addr, spotSol)
+      // Pay the treasury in $CSGN (Phantom prompts + signs), then redeem the
+      // signature server-side, which re-reads the transfer on-chain.
+      const signature = await paySpotlightCsgn(addr, bid)
       const res = await api.jukeboxSpotlight(proof, signature, {
-        symbol,
-        currency: spotCurrency,
-        dexPair: extractPair(spotPair) || undefined,
+        address: spotPick.address,
         note: spotNote.trim() || undefined,
       })
-      const paid = res.currency === 'CSGN' ? `${fmtToken(res.amount)} $CSGN` : `${res.amount} SOL`
-      setSpotMsg(`🎶 Paid ${paid} — ${symbol} rises in the broadcast spotlight within a minute.`)
-      setSpotSymbol(''); setSpotPair(''); setSpotNote('')
-      if (spotCurrency === 'CSGN') loadBalance(addr)
+      setSpotMsg(`🎶 ${res.symbol} takes the spotlight for ${fmtToken(res.amount)} $CSGN — it rises on air within a minute.`)
+      setSpotPick(null); setSpotNote(''); setSpotBid(null)
+      loadBalance(addr)
     } catch (e) {
-      setSpotErr(e instanceof Error ? e.message : 'Spotlight failed.')
+      setSpotErr(e instanceof Error ? e.message : 'Bid failed.')
     }
     setSpotBusy(false)
   }
-  const spotPrice = spotCurrency === 'CSGN' ? spotCsgn : spotSol
-  const spotBalance = spotCurrency === 'CSGN' ? balance : solBalance
-  const spotPriceLabel = spotCurrency === 'CSGN' ? `${fmtFull(spotCsgn)} $CSGN` : `${spotSol} SOL`
-  const canAffordSpotlight = spotBalance != null && spotBalance >= spotPrice
 
   const doVoteMeme = async () => {
     setMemeErr(null); setMemeMsg(null)
-    const symbol = memeSymbol.trim().toUpperCase()
-    if (!/^[A-Z0-9$]{2,12}$/.test(symbol)) { setMemeErr('Enter a valid ticker symbol (2–12 characters).'); return }
+    if (!memePick) { setMemeErr('Pick a coin from the board first.'); return }
     setMemeBusy(true)
     try {
       const addr = await ensureWallet()
       const proof = await proveWallet(addr, signMessage)
-      const res = await api.voteMeme(proof, symbol)
-      setMemeMsg(`Vote counted — ${fmtToken(res.weight)} $CSGN of power behind $${symbol}.`)
-      setMemeSymbol('')
+      // The MINT, not the symbol. The old code passed a typed ticker into a
+      // parameter the server validates as base58 — so every vote was rejected
+      // with `bad_mint` before it ever reached the tally.
+      const res = await api.voteMeme(proof, memePick.address)
+      // Hand the board the tallies the server just computed. No extra read, and
+      // the ranking moves under the person who moved it.
+      window.dispatchEvent(new CustomEvent('csgn:memeVoted', { detail: { tallies: res.tallies } }))
+      setMemeMsg(`Vote counted — ${fmtToken(res.weight)} $CSGN of power behind $${res.symbol}.`)
       loadBalance(addr)
     } catch (e) {
       setMemeErr(e instanceof Error ? e.message : 'Meme vote failed.')
     }
     setMemeBusy(false)
   }
-  // Community power ranking (by token weight); the ticker blends this with each
-  // coin's live volume + market cap for the on-air pick.
-  const memeRanked = Object.entries(memeTallies)
-    .map(([sym, c]) => ({ sym, tokens: c?.tokens || 0, wallets: c?.wallets || 0 }))
-    .filter((r) => r.tokens > 0)
-    .sort((a, b) => b.tokens - a.tokens)
-    .slice(0, 5)
+
+  // The community ranking used to be recomputed here from raw tallies. It now
+  // lives in Meme100Board, which reads the same tallies AND the on-chain board
+  // and runs the one published formula — so the standings on this page and the
+  // standings on air cannot disagree.
 
   const options = vote?.options ?? []
   const cells = options.map((_, i) => tally[String(i)] || { tokens: 0, wallets: 0 })
@@ -230,19 +285,54 @@ export default function Participate() {
   const closed = vote?.status === 'closed'
   const canPostRightNow = balance != null && balance >= rightNowMin
 
+  // The standing bid only sets the floor while it is LIVE. Once `expiresAt`
+  // passes, the spotlight reopens at the base floor — the same rule the server
+  // enforces in _shared/jukebox.ts, read here from the published verdict rather
+  // than recomputed.
+  const jukeboxExpiresMs = jukebox?.expiresAt ? Date.parse(jukebox.expiresAt) : NaN
+  const holdsSpotlight = Boolean(jukebox && jukebox.bidCsgn > 0 && Number.isFinite(jukeboxExpiresMs) && jukeboxExpiresMs > nowMs)
+  const baseFloor = jukebox?.baseFloorCsgn || JUKEBOX_BASE_FLOOR_CSGN
+  const minBid = holdsSpotlight ? Math.max(baseFloor, jukebox!.nextBidCsgn || 0) : baseFloor
+  const canAffordSpotlight = balance != null && balance >= minBid
+
+  // Every surface on this page spends or weighs a balance, and each one writes
+  // something against an account. Gating the whole page — the same wall Post
+  // and You use — beats four separate half-states inside it.
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
+  if (!user) {
+    return (
+      <SignInWall
+        Icon={Coins}
+        title="Your balance is your vote."
+        body="Back a coin on the Meme 100, decide tonight’s programming, bid a coin onto the broadcast spotlight, and put your own line on the live ticker."
+        cta="Sign in to take part"
+      />
+    )
+  }
+
   return (
     <motion.main
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="max-w-3xl mx-auto px-4 sm:px-6 py-10 space-y-8"
+      // pt-24 clears the FIXED header (h-16, lg:h-20). This page had a bare
+      // `py-10`, so the first thing on it — the Meme 100 heading — rendered
+      // underneath the CSGN wordmark in the top-left. Every other page already
+      // carries this offset; this one was missed when its own <header> was
+      // removed and the board became the first element.
+      className="max-w-3xl mx-auto px-4 sm:px-6 pt-24 lg:pt-28 pb-24 space-y-8"
     >
-      <header className="space-y-2">
-        <h1 className="text-3xl sm:text-4xl font-display font-black uppercase tracking-tight">Holder Zone</h1>
-        <p className="text-gray-400 text-sm sm:text-base">
-          Your $CSGN is your voice. Vote tonight’s programming — weighted by the tokens you hold — and, at{' '}
-          {fmtFull(rightNowMin)} $CSGN, put your own message on the live broadcast ticker.
-        </p>
-      </header>
+      {/* NO PAGE HEADER. The tab bar already says $CSGN, the wordmark is in the
+          top bar, and a third "$CSGN" title with a paragraph under it collided
+          with both. The sections below name themselves. */}
+
+      {/* THE MEME 100 leads — it is the most interesting thing on the page. */}
+      <Meme100Board />
 
       {/* Wallet status */}
       <Card hover={false} className="p-4 flex items-center justify-between gap-4">
@@ -261,7 +351,24 @@ export default function Participate() {
           {walletAddress && (
             <div className="text-right">
               <p className="text-xs text-gray-500">$CSGN balance</p>
-              <p className="font-mono text-sm text-primary-300">{balanceLoading ? '…' : balance != null ? fmtFull(balance) : '—'}</p>
+              {balanceLoading ? (
+                <p className="font-mono text-sm text-gray-500">…</p>
+              ) : balance != null ? (
+                <p className="font-mono text-sm text-primary-300">{fmtFull(balance)}</p>
+              ) : (
+                // NOT a zero. A balance we could not read is its own state, and
+                // saying so is the difference between "the chain is busy" and
+                // "your tokens don't count" — which is what a bare 0 said here
+                // to a wallet holding 1.89 million.
+                <button
+                  type="button"
+                  onClick={() => loadBalance(walletAddress)}
+                  className="font-mono text-sm text-amber-300/90 hover:text-amber-200 cursor-pointer underline underline-offset-2 decoration-dotted"
+                  title="We could not reach Solana just now"
+                >
+                  Retry
+                </button>
+              )}
             </div>
           )}
           {!walletAddress && (
@@ -381,57 +488,130 @@ export default function Participate() {
         </Card>
       </section>
 
-      {/* Coin Jukebox — pay SOL or $CSGN to spotlight your coin (TouchTunes-style) */}
+      {/* Coin Jukebox — an open $CSGN auction for the broadcast spotlight */}
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <Flame className="w-5 h-5 text-amber-400" />
           <h2 className="text-lg font-display font-bold uppercase tracking-wide">Coin Jukebox</h2>
         </div>
-        <Card hover={false} className="p-5 space-y-3">
+        <Card hover={false} className="p-5 space-y-4">
           <p className="text-sm text-gray-400">
-            Pay <span className="text-amber-300 font-semibold">{spotPriceLabel}</span> to play your coin into the broadcast’s{' '}
-            <span className="text-amber-300 font-semibold">crypto spotlight</span> — like a jukebox for crypto TV. It rises on air within a minute, and it all goes to the <span className="text-amber-300 font-semibold">CSGN treasury</span> — recycled into creator payouts + distribution, never burned.
+            The highest live bid holds the <span className="text-amber-300 font-semibold">crypto spotlight</span> on the
+            broadcast. Bids are in <span className="text-amber-300 font-semibold">$CSGN</span> and go straight to the{' '}
+            <span className="text-amber-300 font-semibold">CSGN treasury</span> — recycled into creator payouts and
+            distribution, never burned. A winning bid holds for <span className="text-amber-300 font-semibold">twelve hours</span>,
+            then the floor resets and the spotlight reopens.
           </p>
 
-          {/* Currency toggle — pay in SOL or in $CSGN */}
-          <div className="inline-flex rounded-xl border border-white/[0.1] bg-white/[0.03] p-0.5 text-sm">
-            {(['SOL', 'CSGN'] as const).map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setSpotCurrency(c)}
-                className={`px-4 py-1.5 rounded-lg font-semibold transition-colors cursor-pointer ${spotCurrency === c ? 'bg-amber-500/20 text-amber-200' : 'text-gray-400 hover:text-white'}`}
-              >
-                {c === 'CSGN' ? '$CSGN' : 'SOL'}
-              </button>
-            ))}
+          {/* WHO HOLDS IT NOW, FOR HOW LONG, AND WHAT IT COST.
+              An auction with an invisible standing bid is a price list with
+              extra steps — the number to beat is the product, and the clock
+              running down on it is what makes the whole thing feel live. */}
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.05] p-4">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-[0.16em] text-amber-400/80">On the spotlight</p>
+                <p className="mt-1 text-2xl font-black font-display text-white truncate">
+                  {holdsSpotlight ? `$${jukebox!.symbol}` : 'Open'}
+                </p>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  {holdsSpotlight
+                    ? <>Won with <span className="font-mono text-amber-300">{fmtFull(jukebox!.bidCsgn)} $CSGN</span></>
+                    : 'No live bid — it opens at the floor.'}
+                </p>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Next bid from</p>
+                <p className="mt-1 font-mono text-lg font-bold text-amber-300 tabular-nums">{fmtFull(minBid)}</p>
+                <p className="text-[10px] text-gray-600">$CSGN</p>
+              </div>
+            </div>
+
+            {/* THE CLOCK. A twelve-hour reign with no visible countdown is just
+                a number that changes when you happen to reload. */}
+            {holdsSpotlight && (
+              <div className="mt-3 pt-3 border-t border-amber-500/15">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Holds for</span>
+                  <span className="font-mono text-sm font-bold text-white tabular-nums">
+                    {countdown(jukeboxExpiresMs - nowMs)}
+                  </span>
+                </div>
+                <div className="mt-1.5 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-amber-500 to-yellow-400 transition-[width] duration-1000 ease-linear"
+                    style={{ width: `${Math.max(0, Math.min(100, ((jukeboxExpiresMs - nowMs) / JUKEBOX_TTL_MS) * 100))}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {!walletAddress ? (
-            <Button onClick={() => void connect()} isLoading={isConnecting} leftIcon={<Wallet className="w-4 h-4" />}>Connect Phantom to play a coin</Button>
+            <Button onClick={() => void connect()} isLoading={isConnecting} leftIcon={<Wallet className="w-4 h-4" />}>Connect Phantom to bid</Button>
           ) : !canAffordSpotlight ? (
             <div className="flex items-start gap-2 text-sm text-amber-300/90 bg-amber-500/[0.06] border border-amber-500/20 rounded-xl p-3">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
               <span>
-                You have {spotBalance != null ? (spotCurrency === 'CSGN' ? fmtFull(spotBalance) : spotBalance.toFixed(3)) : '—'} {spotCurrency === 'CSGN' ? '$CSGN' : 'SOL'}. You need {spotPriceLabel} to play a spotlight.
+                You hold {balance != null ? fmtFull(balance) : '—'} $CSGN. The next bid needs {fmtFull(minBid)}.
               </span>
             </div>
           ) : (
             <>
-              <div className="grid sm:grid-cols-2 gap-2">
-                <input value={spotSymbol} onChange={(e) => setSpotSymbol(e.target.value.slice(0, 12))} placeholder="Ticker symbol — e.g. BONK" className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-amber-500/60 outline-none px-3 py-2 text-sm uppercase" />
-                <input value={spotPair} onChange={(e) => setSpotPair(e.target.value)} placeholder="DexScreener URL or pair (optional)" className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-amber-500/60 outline-none px-3 py-2 text-sm" />
-              </div>
+              <MemeVotePicker value={spotPick?.address ?? ''} onChange={setSpotPick} disabled={spotBusy} />
               <input value={spotNote} onChange={(e) => setSpotNote(e.target.value.slice(0, 90))} placeholder="Spotlight note (optional) — shown under the price" className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-amber-500/60 outline-none px-3 py-2 text-sm" />
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs text-gray-500">Pays {spotPriceLabel} · you sign in Phantom · goes to the CSGN treasury</span>
-                <Button size="sm" variant="gold" isLoading={spotBusy} onClick={() => void doSpotlight()} leftIcon={<Flame className="w-4 h-4" />}>Play to Spotlight</Button>
+
+              {/* Prefilled with the minimum, because the common case is "just
+                  take it" and making somebody compute the raise is friction on
+                  the one screen where they are trying to give us money. */}
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Your bid, in $CSGN</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={minBid}
+                  step={1000}
+                  value={spotBid ?? minBid}
+                  onChange={(e) => setSpotBid(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+                  className="w-full rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-amber-500/60 outline-none px-3 py-2 text-sm font-mono tabular-nums"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="text-xs text-gray-500">You sign in Phantom · paid to the CSGN treasury</span>
+                <Button size="sm" variant="gold" disabled={!spotPick} isLoading={spotBusy} onClick={() => void doSpotlight()} leftIcon={<Flame className="w-4 h-4" />}>
+                  {spotPick
+                    ? `Bid ${fmtToken(Math.max(minBid, spotBid ?? minBid))} for $${spotPick.symbol}`
+                    : 'Pick a coin to bid on'}
+                </Button>
               </div>
             </>
           )}
 
           {spotMsg && <p className="text-sm text-emerald-400 flex items-center gap-1.5"><Check className="w-4 h-4" /> {spotMsg}</p>}
           {spotErr && <p className="text-sm text-red-400 flex items-center gap-1.5"><AlertCircle className="w-4 h-4" /> {spotErr}</p>}
+
+          {/* PREVIOUS WINNERS. An auction with no visible history has no
+              reference price — a first-time bidder cannot tell whether the
+              floor is cheap or absurd. This is the comparable. */}
+          {(jukebox?.history?.length ?? 0) > 0 && (
+            <div className="pt-3 border-t border-white/[0.06]">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Previous winners</p>
+              <ul className="mt-2 space-y-1.5">
+                {jukebox!.history.slice(0, 6).map((w, i) => (
+                  <li key={`${w.symbol}-${w.wonAt}-${i}`} className="flex items-baseline justify-between gap-3 text-[11px]">
+                    <span className="font-semibold text-gray-300 truncate">${w.symbol}</span>
+                    <span className="flex items-baseline gap-2 shrink-0">
+                      <span className="font-mono text-amber-300/80 tabular-nums">{fmtToken(w.bidCsgn)}</span>
+                      <span className="text-gray-600">
+                        {new Date(w.wonAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </Card>
       </section>
 
@@ -443,26 +623,24 @@ export default function Participate() {
         </div>
         <Card hover={false} className="p-5 space-y-3">
           <p className="text-sm text-gray-400">
-            Back a memecoin with your <span className="text-cyan-300 font-semibold">$CSGN voting power</span> — no burn, no stake, nothing leaves your wallet. Your weight = your balance. The board blends the community vote with each coin’s live <span className="text-cyan-300 font-semibold">volume + market cap</span> and airs the pick.
+            Back a memecoin with your <span className="text-cyan-300 font-semibold">$CSGN voting power</span> — no burn, no stake, nothing leaves your wallet. Your weight = your balance. Holder votes are the largest single term in the board’s score, so this is what moves the ranking that goes on air.
           </p>
-
-          {memeRanked.length > 0 && (
-            <div className="rounded-xl bg-white/[0.03] border border-white/[0.08] p-3 space-y-1.5">
-              {memeRanked.map((r, i) => (
-                <div key={r.sym} className="flex items-center justify-between text-sm">
-                  <span className="text-gray-300"><span className="text-gray-500 font-mono mr-2">{i + 1}</span>${r.sym}</span>
-                  <span className="font-mono text-gray-400" title={`${Math.round(r.tokens).toLocaleString('en-US')} $CSGN · ${r.wallets} wallets`}>{fmtToken(r.tokens)} · {r.wallets}w</span>
-                </div>
-              ))}
-            </div>
-          )}
 
           {!walletAddress ? (
             <Button onClick={() => void connect()} isLoading={isConnecting} leftIcon={<Wallet className="w-4 h-4" />}>Connect Phantom to vote</Button>
           ) : (
-            <div className="flex gap-2">
-              <input value={memeSymbol} onChange={(e) => setMemeSymbol(e.target.value.slice(0, 12))} placeholder="Memecoin ticker — e.g. WIF" className="flex-1 rounded-xl bg-white/[0.04] border border-white/[0.1] focus:border-cyan-500/60 outline-none px-3 py-2 text-sm uppercase" />
-              <Button size="sm" isLoading={memeBusy} onClick={() => void doVoteMeme()} leftIcon={<VoteIcon className="w-4 h-4" />}>Cast vote</Button>
+            <div className="space-y-3">
+              <MemeVotePicker value={memePick?.address ?? ''} onChange={setMemePick} disabled={memeBusy} />
+              <Button
+                size="sm"
+                className="w-full"
+                disabled={!memePick}
+                isLoading={memeBusy}
+                onClick={() => void doVoteMeme()}
+                leftIcon={<VoteIcon className="w-4 h-4" />}
+              >
+                {memePick ? `Back $${memePick.symbol} with my $CSGN` : 'Pick a coin to back'}
+              </Button>
             </div>
           )}
           <p className="text-xs text-gray-500">One vote per wallet — re-voting moves your full weight. {balance != null && `Your power: ${fmtFull(balance)} $CSGN.`}</p>

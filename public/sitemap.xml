@@ -32,6 +32,21 @@
     <priority>0.6</priority>
   </url>
   <url>
+    <loc>https://csgn.fun/watch</loc>
+    <changefreq>hourly</changefreq>
+    <priority>0.95</priority>
+  </url>
+  <url>
+    <loc>https://csgn.fun/studio</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://csgn.fun/privacy</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  <url>
     <loc>https://csgn.fun/terms</loc>
     <changefreq>yearly</changefreq>
     <priority>0.2</priority>

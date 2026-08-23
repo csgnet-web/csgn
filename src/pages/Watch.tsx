@@ -1,35 +1,34 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { formatESTRange, isSlotClaimable, slotIdentity, type Slot } from '@/lib/slots'
-import { api } from '@/lib/api'
+import { formatESTRange, slotIdentity } from '@/lib/slots'
 import { parseXPostId } from '@/lib/xembed'
-import { useAuth } from '@/contexts/useAuth'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
 import XBroadcastEmbed from '@/components/watch/XBroadcastEmbed'
 import OfflinePanel from '@/components/watch/OfflinePanel'
 import TokenPanel from '@/components/watch/TokenPanel'
 import ScheduleStrip from '@/components/watch/ScheduleStrip'
+import ChannelModeCard from '@/components/watch/ChannelModeCard'
 import StreamInfoBar from '@/components/watch/StreamInfoBar'
-import GameBanner from '@/components/watch/GameBanner'
-import { JoinStrip } from '@/components/watch/JoinStrip'
+import BroadcastBanner from '@/components/watch/BroadcastBanner'
 import { WipeOverlay } from '@/components/ui/WipeOverlay'
 
-/** The default strip copy. Whatever an admin sets in config/gameBanner wins;
+/** The default strip copy. Whatever an admin sets in config/broadcastBanner wins;
  *  this is what shows before anything has been configured. */
 const bannerItems = [
-  'STARTING 5 — 100,000 $CSGN FOR A PERFECT CARD',
-  'SQUARES — WEEKLY BOARD, FREE TO ENTER',
   "CSGN: Crypto's Entertainment Flagship",
   'Connect Your Twitch and Go Live on CSGN',
+  'EVERY BLOCK PAYS 30% OF THE FEES IT GENERATES',
+  'HOLD $CSGN — POST A CLIP — GET ON TELEVISION',
 ] as const
 
-/** When nobody holds the current slot, the banner sells the empty stage instead.
+/** When nobody from the roster is on, the channel is running the member reel —
+ *  so the banner sells the two real ways on, not a booking that no longer exists.
  *  Kept at four faces because the banner is a 3D prism (rotateX every 90deg). */
 const openStageBanner = [
-  'STAGE IS OPEN! GO LIVE NOW!',
-  'Connect your Twitch/Phantom and earn fees!',
+  'CLIP MODE — THE MEMBER REEL IS ON AIR',
+  'Post a clip at csgn.fun — no tokens needed to start',
   "CSGN: Crypto's Entertainment Flagship",
-  'Claim a slot at csgn.fun/schedule',
+  'Connect Twitch once — we carry you whenever you go live',
 ] as const
 
 export default function Watch() {
@@ -46,41 +45,46 @@ export default function Watch() {
     return () => clearTimeout(t)
   }, [showSignupNotice, navigate, location.pathname])
 
-  const { user, profile } = useAuth()
-  const { currentSlot, allSlots, manualOverride, networkBlockEnabled, gameBanner } = useLiveSlot()
-  const [claiming, setClaiming] = useState(false)
-  const [claimError, setClaimError] = useState('')
+  const { currentSlot, manualOverride, networkBlockEnabled, broadcastBanner } = useLiveSlot()
   const [showWipe, setShowWipe] = useState(false)
-  const prevSlotIdRef = useRef<string | null>(null)
   const wipeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Wipe animation — triggers on slot change
+  // Wipe animation — triggers when the hour changes hands.
+  //
+  // A RENDER-PHASE ADJUSTMENT, not an effect. Setting state inside an effect
+  // that watches the same value causes a second render pass every time the slot
+  // changes; comparing against a state variable during render lets React
+  // discard the first pass entirely. Same pattern /player uses for its mode
+  // flip, and the one the react-hooks lint rule is asking for.
+  const [prevSlotId, setPrevSlotId] = useState<string | null>(currentSlot?.id ?? null)
+  const currentSlotId = currentSlot?.id ?? null
+  if (prevSlotId !== currentSlotId) {
+    setPrevSlotId(currentSlotId)
+    if (prevSlotId !== null) setShowWipe(true)
+  }
+
+  // Clearing the wipe IS a timer, so it stays in an effect.
   useEffect(() => {
-    const newId = currentSlot?.id ?? null
-    if (prevSlotIdRef.current !== null && newId !== prevSlotIdRef.current) {
-      setShowWipe(true)
-      if (wipeTimerRef.current) clearTimeout(wipeTimerRef.current)
-      wipeTimerRef.current = setTimeout(() => setShowWipe(false), 1400)
-    }
-    prevSlotIdRef.current = newId
+    if (!showWipe) return
+    wipeTimerRef.current = setTimeout(() => setShowWipe(false), 1400)
     return () => {
       if (wipeTimerRef.current) clearTimeout(wipeTimerRef.current)
     }
-  }, [currentSlot?.id])
+  }, [showWipe])
 
   // The on-page player embeds CSGN's X broadcast post — the URL the admin
   // pushes to config/liveStream once per OBS session. The slot's raw Twitch
   // URL is intentionally NOT used here; that feed is consumed by /player
   // (OBS capture) and re-broadcast to X as the CSGN output.
-  const broadcastPostId = useMemo(() => (manualOverride?.url ? parseXPostId(manualOverride.url) : null), [manualOverride?.url])
+  const broadcastPostId = useMemo(() => (manualOverride?.url ? parseXPostId(manualOverride.url) : null), [manualOverride])
   const broadcastUrl = manualOverride?.url && manualOverride.url.trim() ? manualOverride.url.trim() : null
 
-  // One rule for who's on this hour and whether it's a claimable open stage —
-  // shared with the schedule strip, the offline board and the server ticker, so
-  // a live "CSGN @ NITE" can never headline "THE STAGE IS OPEN" and a claimed
-  // hour can never read "Open Slot". The stage is "open" only when the current
-  // hour has no programming on it (see slotIdentity).
-  const identity = slotIdentity(currentSlot, { networkBlockEnabled, openName: 'Open Slot' })
+  // One rule for who's on this hour, shared with the schedule strip, the
+  // offline board and the server ticker, so a live "CSGN @ NITE" can never
+  // headline as an empty hour and a booked hour can never read "Member Reel".
+  // The hour is "open" only when it has no programming on it (see slotIdentity)
+  // — which now means the clip reel has it, not that it is up for grabs.
+  const identity = slotIdentity(currentSlot, { networkBlockEnabled, openName: 'Member Reel' })
   const stageOpen = identity.isOpen
 
   // A manual X-broadcast override can still name the host when the slot itself is
@@ -90,7 +94,7 @@ export default function Watch() {
     const v = (value ?? '').trim()
     return v && !/^csgn/i.test(v) ? v : ''
   }
-  const streamerName = stageOpen ? (notNetworkBrand(manualOverride?.streamerName) || 'Open Slot') : identity.name
+  const streamerName = stageOpen ? (notNetworkBrand(manualOverride?.streamerName) || 'Member Reel') : identity.name
   const streamTitle = notNetworkBrand(currentSlot?.streamTitle) || notNetworkBrand(manualOverride?.title) || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
   // Nobody on the stage right now → sell the open stage rather than the coming-soons.
@@ -100,54 +104,25 @@ export default function Watch() {
   // so the OFFLINE→LIVE flip tracks the slot status automatically.
   const slotLive = Boolean(currentSlot && (currentSlot.status === 'confirmed' || currentSlot.status === 'live'))
 
-  // One rule, shared with /schedule and the server. The old hand-rolled check
-  // (status === 'open') hid the button on the airing hour the moment its status
-  // drifted, and offered it on network hours the server would then reject.
-  const canClaimCurrent = !!currentSlot && isSlotClaimable(currentSlot, networkBlockEnabled)
-
-  const handleClaimSlot = useCallback(async (slot: Slot) => {
-    if (!user || !profile) {
-      localStorage.setItem('pendingClaimSlotId', slot.id)
-      window.dispatchEvent(new Event('csgn:openRegister'))
-      return
-    }
-    setClaiming(true)
-    setClaimError('')
-    try {
-      await api.claimSlot(slot.id)
-    } catch (err) {
-      setClaimError(err instanceof Error ? err.message : 'Could not claim slot.')
-    } finally {
-      setClaiming(false)
-    }
-  }, [profile, user])
-
-  const handleClaimCurrent = useCallback(async () => {
-    if (!currentSlot) return
-    await handleClaimSlot(currentSlot)
-  }, [currentSlot, handleClaimSlot])
-
-  useEffect(() => {
-    if (!user || !profile || claiming) return
-    const pending = localStorage.getItem('pendingClaimSlotId')
-    if (!pending) return
-    const slot = allSlots.find((item) => item.id === pending)
-    if (!slot) return
-    localStorage.removeItem('pendingClaimSlotId')
-    void handleClaimSlot(slot)
-  }, [user, profile, allSlots, claiming, handleClaimSlot])
+  // NO CLAIM BUTTON. The channel runs off the roster: members connect Twitch
+  // once, grant forwarding, and an operator puts them on when they are live.
+  // A "Go live now" button on the stage promised a path that no longer exists
+  // — pressing it booked a block nobody would have watched for.
 
   const isLive = Boolean(broadcastPostId) || slotLive
 
   return (
-    <div className="flex h-screen pt-16 bg-[#050507] overflow-hidden">
+    // h-dvh, not h-screen: on mobile Safari `100vh` is the height WITHOUT the
+    // browser chrome, so the last ~80px of this shell sat under the URL bar and
+    // the tab bar. `dvh` tracks the real visible box as the chrome collapses.
+    <div className="flex h-dvh pt-16 bg-[#050507] overflow-hidden pb-[var(--csgn-tabbar)] lg:pb-0">
 
       {/* ── Main content ── */}
       <div className="flex-1 flex flex-col overflow-y-auto min-w-0">
         {showSignupNotice && (
           <div className="shrink-0 px-4 sm:px-5 pt-3">
             <div className="max-w-[1280px] mx-auto rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
-              Account created. Connect Twitch when you're ready to claim an hour and go on air.
+              Account created. Post a clip to get on the reel, or connect Twitch and we'll carry you when you go live.
             </div>
           </div>
         )}
@@ -158,7 +133,7 @@ export default function Watch() {
             <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-white animate-pulse' : 'bg-gray-500'}`} />
             <span className="text-white font-black tracking-[0.25em] text-sm uppercase">{isLive ? 'LIVE' : 'OFFLINE'}</span>
           </div>
-          <GameBanner banner={gameBanner} fallbackLines={banner} />
+          <BroadcastBanner banner={broadcastBanner} fallbackLines={banner} />
         </div>
 
         {/* Broadcast stage — X embeds self-size (max 550px wide), so this is a
@@ -185,34 +160,34 @@ export default function Watch() {
           streamTitle={streamTitle}
           slotLabel={slotLabel}
           currentSlot={currentSlot}
-          canClaimCurrent={canClaimCurrent}
-          claiming={claiming}
-          claimError={claimError}
-          onClaimCurrent={() => void handleClaimCurrent()}
           stageOpen={stageOpen}
         />
 
+        {/* WHY THIS IS WHAT'S ON. Sits directly under the stage because that is
+            where the question gets asked — a viewer who just saw a clip reel
+            where a live stream was an hour ago reads this before anything else. */}
+        <div className="shrink-0 px-4 sm:px-5 pt-1 pb-4">
+          <div className="max-w-[1280px] mx-auto">
+            <ChannelModeCard />
+          </div>
+        </div>
+
         {/* Today's schedule — on mobile this sits above the $CSGN panel; on
             desktop the token panel lives in the sidebar so order is moot here. */}
-        <ScheduleStrip claiming={claiming} onClaimSlot={(slot) => void handleClaimSlot(slot)} />
+        <ScheduleStrip />
 
         {/* Mobile token panel */}
         <div className="lg:hidden shrink-0 px-5 py-5 border-b border-white/[0.06]">
           <TokenPanel broadcastUrl={broadcastUrl} />
         </div>
 
-        {/* What used to be here: two permanently disabled "Coming Soon" game
-            tiles, occupying the largest block on the page below the stage. They
-            cost a first-time visitor a scroll and gave back nothing — a dead
-            button is a worse advertisement for a product than no button. The
-            space now carries the pitch and the sign-up, which is what a cold
-            visitor from an ad or an X link actually needs. The games come back
-            here when they are playable, not before. */}
-        <JoinStrip
-          signedIn={Boolean(user)}
-          twitchLinked={Boolean(profile?.twitch?.verified)}
-          onGetStarted={() => window.dispatchEvent(new Event('csgn:openRegister'))}
-        />
+        {/* The page ENDS at the token panel, deliberately.
+            What used to sit below here — first two dead "Coming Soon" game
+            tiles, then a pitch block with three sign-up cards — was a second
+            page bolted under a broadcast. Somebody who came to watch a stream
+            was handed a brochure the moment they scrolled past the links, and a
+            brochure under a live video reads as a landing page, not a channel.
+            The ways in are the tab bar, permanently, one tap away. */}
       </div>
 
       {/* ── Right: Token panel sidebar (desktop only) ── */}

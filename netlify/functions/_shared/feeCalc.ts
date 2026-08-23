@@ -54,6 +54,100 @@ export function formatTierRange(tier: PumpFeeTier): string {
     : `${tier.minMarketCapSOL.toLocaleString()} - ${tier.maxMarketCapSOL.toLocaleString()} SOL`
 }
 
+/* ─── Verified airtime ─── */
+
+/**
+ * The fee a slot generated is what the VOLUME produced. What we owe is that
+ * number scaled by how much of the slot the streamer was actually broadcasting.
+ * This is the single home of that rule: the poller computes it and stores the
+ * result on the slot, and every surface — /watch, /account, the admin Payable
+ * view — reads the stored value. There is deliberately no client-side twin.
+ */
+
+/** At or above this share of samples live, the hour pays in full. An encoder
+ *  restart, a Twitch hiccup or a five-minute BRB costs the streamer nothing. */
+export const AIRTIME_FULL_CREDIT = 0.85
+/** Below this share, the hour pays nothing — the stream did not happen. */
+export const AIRTIME_FLOOR = 0.20
+/** Below this many samples we cannot judge the hour at all. */
+export const AIRTIME_MIN_SAMPLES = 10
+
+export type AirtimeReason = 'full' | 'prorated' | 'no_show' | 'unverified'
+
+export interface AirtimeResult {
+  /** What to multiply the gross fee by. */
+  fraction: number
+  /** Live samples ÷ samples taken. Reported even when it didn't decide the fraction. */
+  ratio: number
+  reason: AirtimeReason
+}
+
+/**
+ * The payable fraction of a slot's gross creator fee.
+ *
+ * THE DENOMINATOR IS SAMPLES TAKEN, NEVER SLOT MINUTES. Netlify's scheduler is
+ * at-least-once and drifts, and the poller self-throttles at 45s
+ * (`shouldRunPoll`), so an hour can easily produce 40 samples instead of 60.
+ * Dividing by wall-clock minutes would dock a streamer a third of their fee for
+ * OUR outage. Divide by what we actually asked, and a run we never made simply
+ * doesn't count against anyone.
+ *
+ * The bands:
+ *   • fewer than AIRTIME_MIN_SAMPLES samples → `unverified`, fraction 1.0.
+ *     Thin telemetry is our problem, so it fails OPEN toward the streamer and
+ *     gets flagged for review — the same posture as the `walletCheck:
+ *     'unavailable'` fail-open in signupWithPhantom.ts.
+ *   • ratio ≥ AIRTIME_FULL_CREDIT → paid in full. The grace band.
+ *   • ratio in [AIRTIME_FLOOR, AIRTIME_FULL_CREDIT) → paid that share of the
+ *     hour. Pro-rating means exactly what it says — live for 60% of the samples
+ *     pays 60% — because a rescaled curve would be a second penalty on top of
+ *     the missing minutes and would stop being explicable in one sentence.
+ *   • ratio < AIRTIME_FLOOR → nothing, `no_show`.
+ */
+export function payableAirtime(activity: { liveCheckCount: number; checkCount: number }): AirtimeResult {
+  const checkCount = Math.max(0, Math.floor(Number(activity?.checkCount) || 0))
+  // A live count above the sample count is corrupt telemetry (a slot sampled
+  // before checkCount existed, say). Clamp rather than report a ratio > 1.
+  const liveCheckCount = Math.min(checkCount, Math.max(0, Math.floor(Number(activity?.liveCheckCount) || 0)))
+  // Guarded rather than relying on the band checks: zero samples is the normal
+  // state of a slot nobody has polled yet, not an edge case.
+  const ratio = checkCount > 0 ? liveCheckCount / checkCount : 0
+
+  if (checkCount < AIRTIME_MIN_SAMPLES) return { fraction: 1, ratio, reason: 'unverified' }
+  if (ratio >= AIRTIME_FULL_CREDIT) return { fraction: 1, ratio, reason: 'full' }
+  if (ratio < AIRTIME_FLOOR) return { fraction: 0, ratio, reason: 'no_show' }
+  return { fraction: ratio, ratio, reason: 'prorated' }
+}
+
+/**
+ * When verified airtime started deciding money.
+ *
+ * A completed hour's terms are settled. Re-scoring one after the fact — even
+ * upward — is the credibility loss this product is built against, so the rule
+ * binds on slots that START at or after the cutover and never reaches back.
+ * Mechanically a finished slot is never re-polled either; this gate is what
+ * stops an hour that was already ON AIR when the change shipped from having its
+ * terms changed underneath the person streaming it.
+ */
+export const AIRTIME_DEFAULT_START_AT = '2026-08-15T00:00:00.000Z'
+
+/** Cutover instant from `config/season`, falling back to the shipped default.
+ *  Anything that isn't an ISO date string falls back too: `Date.parse` reads
+ *  plenty of junk as a real date (`'42'` is the year 2042), and a config typo
+ *  that silently moves the cutover a decade out would switch the rule off for
+ *  every slot with nothing to show why. */
+export function airtimeStartMs(config: { airtimeStartAt?: unknown } | null | undefined): number {
+  const raw = config?.airtimeStartAt
+  const configured = typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}/.test(raw) ? Date.parse(raw) : NaN
+  return Number.isFinite(configured) ? configured : Date.parse(AIRTIME_DEFAULT_START_AT)
+}
+
+/** Does the verified-airtime rule apply to this slot at all? */
+export function airtimeAppliesToSlot(slotStartTime: string | undefined, startMs: number): boolean {
+  const start = Date.parse(String(slotStartTime ?? ''))
+  return Number.isFinite(start) && start >= startMs
+}
+
 const DS_API = 'https://api.dexscreener.com/token-pairs/v1'
 const DS_CHAIN = 'solana'
 

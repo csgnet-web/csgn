@@ -26,12 +26,12 @@ account and pay rent), and it is the *common* case for a real winner.
 | | |
 |---|---|
 | Payout wallet | `EftavCt6Tk2bzWJ9Dnz7cAvfa5RAnh8S9vZcrorV7Hmv` |
-| Treasury | `CSGNUgUpBqTNM7EBZSMeA5jzPLFNR2hELhLjbHLpbEY4` |
+| Treasury | `EftavCt6Tk2bzWJ9Dnz7cAvfa5RAnh8S9vZcrorV7Hmv` |
 | $CSGN mint | `GFV7fphvprMr1PYpYGPJort2QP7JJLEp3J1Buu7Zpump` |
 
 ```bash
 npm install
-npm test          # 475 tests — all green before anything else
+npm test          # full suite — all green before anything else
 npm run lint
 npm run build
 ```
@@ -54,22 +54,16 @@ npm run dev               # http://localhost:5173
    report real state (a missing wallet reads "Not connected", not a green chip).
 ☐ Resize to 375px wide. **Nothing overlaps.** The avatar sits above the name, the
    name wraps rather than truncating, stats stay in their cells.
-☐ Holder Standing shows your $CSGN balance and share of supply, and the two
-   allowance bars agree with what you hold.
+☐ Holder Standing shows your $CSGN balance and share of supply.
 
-### 1.2 Game Control → the /watch strip
+### 1.2 Broadcast Banner → the /watch strip
 
-Admin → Broadcast Control → **Game Control**.
-
-☐ Set a countdown 3 minutes out. `/watch` shows it and **ticks every second**.
-☐ Under one minute the clock turns amber.
-☐ Let it hit zero: the strip falls back to the rotating lines. It does not blank,
-   and it does not sit at `00:00`.
-☐ Change the rotating lines. `/watch` picks them up without a reload.
-☐ Set mode **Off**: the default network copy returns.
-☐ Enter one line only — the prism still shows four faces, no blank quarter turn.
-☐ Change the Squares entry fee and rake. The **"Full board pays"** figure updates,
-   and matches what `/account` shows. At 6,250 and 20% it reads **500,000**.
+☐ Set a headline and a countdown target in Broadcast Control. The strip on
+   `/watch` picks both up without a deploy, and the card's live preview renders
+   through the same resolver the page uses.
+☐ Let the countdown expire. The strip falls back to the rotating lines rather
+   than going blank.
+☐ Set the banner to **off**. The page's own default copy takes over.
 
 ### 1.3 Slots and the player
 
@@ -81,55 +75,24 @@ Admin → Broadcast Control → **Game Control**.
 
 ---
 
-## 2. Game settlement — dry run, no chain
-
-The engines are pure, so a settlement can be exercised end to end in a REPL with
-no Firestore and no wallet. This is the cheapest place to find a bad purse.
-
-```bash
-npx tsx      # or: node --experimental-strip-types
-```
-
-```ts
-import { settleSlate } from './src/lib/games/startingFive.ts'
-import { boardEconomics, settleBoard, drawDigits } from './src/lib/games/squares.ts'
-```
-
-### 2.1 Starting 5 — the perfect card
-
-☐ A slate where every pick finishes green pays the purse.
-☐ **One red pick** anywhere → `perfect` is empty and `rolloverCsgn` is the full purse.
-☐ **An empty price snapshot** → nothing is paid and the purse rolls. *(This is the
-   six-figure failure: unpriced picks score flat, and flat clears a zero
-   threshold. If this test ever pays out, stop and fix it before anything else.)*
-☐ Lottery mode **with no seed** → pays nobody, returns a `note`, rolls the purse.
-☐ Lottery mode **with a seed** → same seed, same winner, every time.
-
-### 2.2 Squares — the pool
-
-☐ A full board at 6,250/20% → `poolCsgn` 625,000, `rakeCsgn` 125,000,
-   `prizeCsgn` **500,000**.
-☐ A 40-square board → prize 200,000, `toppedUp: false`. **A short board pays a
-   short prize** — if this ever tops up without `guaranteePrize`, the treasury is
-   silently subsidising every quiet week.
-☐ A seed sampled *before* `entriesCloseAt` is refused.
-☐ The same blockhash draws the same digits, twice.
-☐ Paid out + rolled over = the prize, exactly. No dust.
-
-☐ **Gate:** every box in §2 ticked.
-
----
-
 ## 3. Payout dry run — real ledger, no money
 
-`adminRunPayouts` is **dry-run by default**. It builds the batch, checks
-solvency, and reports — without signing anything.
+> **Not runnable today.** Squares and Starting 5 were the payout engine's only
+> sources, and both are gone. `_shared/payouts.ts` and `_shared/payoutRunner.ts`
+> are retained and still tested, but **no endpoint is wired to them** — see
+> [`payout-wallet.md`](payout-wallet.md). §3 and §4 stay here in full because the
+> next thing that pays (season prizes, airtime rewards) must clear every one of
+> these boxes before it moves a token. Wire the endpoint, then run this section
+> from the top.
+
+The endpoint that replaces `adminRunPayouts` must be **dry-run by default**: it
+builds the batch, checks solvency, and reports — without signing anything.
 
 ```bash
-curl -s -X POST https://<site>/.netlify/functions/adminRunPayouts \
+curl -s -X POST https://<site>/.netlify/functions/<payout-endpoint> \
   -H "Authorization: Bearer $ADMIN_ID_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"source":"starting5","sourceId":"slate-2026-08-02"}' | jq
+  -d '{"source":"<source>","sourceId":"<id>"}' | jq
 ```
 
 Read the response, don't skim it:
@@ -182,9 +145,9 @@ recipient, for **1,000 $CSGN**.
 
 ```bash
 # Dry run first. Always.
-curl ... -d '{"source":"squares","sourceId":"<test-board>"}' | jq
+curl ... -d '{"source":"<source>","sourceId":"<test-id>"}' | jq
 # Then, and only then:
-curl ... -d '{"source":"squares","sourceId":"<test-board>","dryRun":false}' | jq
+curl ... -d '{"source":"<source>","sourceId":"<test-id>","dryRun":false}' | jq
 ```
 
 ☐ `paid: 1`, `errors: []`, one signature returned.
@@ -258,7 +221,7 @@ node docs/obs/ticker-smoke.mjs   # all checks pass
 ## 6. What to do when a step fails
 
 **Stop at the failing gate.** The steps are ordered by blast radius, and a
-failure in §2 will reappear as a wrong number in §4 where it costs real tokens.
+failure in §1 will reappear as a wrong number in §4 where it costs real tokens.
 
 **Never "fix forward" past §4.4.** Any idempotency failure is a halt: the whole
 payout path is unsafe until the cause is understood, not patched.

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { RefreshCw, Twitch, Users, X } from 'lucide-react'
 import { api, type PublicProfile } from '@/lib/api'
-import { formatTokens } from '@/lib/games/profile'
 
 /** Remembers a dismissal across reloads. Closing a rail should stay closed —
  *  re-showing it on the next visit is how a suggestion becomes nagging. */
@@ -111,7 +110,6 @@ function ProfileCard({ profile }: { profile: PublicProfile }) {
         <p className="text-[11px] text-gray-500 truncate mt-0.5">@{profile.username}</p>
         <p className="text-[11px] text-gray-600 truncate mt-0.5">
           {profile.slots > 0 ? `${profile.slots} slot${profile.slots === 1 ? '' : 's'}` : 'New member'}
-          {profile.winnings > 0 && ` · ${formatTokens(profile.winnings)} won`}
         </p>
       </div>
       {profile.twitch && <Twitch className="w-4 h-4 shrink-0 text-gray-500" />}

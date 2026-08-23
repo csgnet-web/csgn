@@ -23,8 +23,8 @@ service cloud.firestore {
     }
 
     // public/ and config/ hold well-known single docs (tokenStats, liveStream,
-    // vodPlaylist, emergencyOverride, scheduleMeta, ticker) — clients only ever
-    // read them by ID, so collection listing stays off.
+    // vodPlaylist, emergencyOverride, scheduleMeta, ticker, season) — clients
+    // only ever read them by ID, so collection listing stays off.
     match /public/{docId} {
       allow get: if true;
       allow list: if false;
@@ -58,6 +58,14 @@ service cloud.firestore {
       allow list: if isAdmin();
       allow write: if isAdmin();
     }
+
+    // tiktokTokens/{uid} has NO RULE ON PURPOSE, and this comment is the only
+    // thing standing between that and somebody "fixing" it. It holds TikTok
+    // access and refresh tokens — credentials that can read a member's video
+    // list on their behalf. No rule means no client can reach it in any mode;
+    // only firebase-admin (which bypasses rules) touches it, from
+    // tiktokOAuthCallback and tiktokVideos. A refresh token in a document a
+    // browser can read is a refresh token that has leaked.
 
     match /users/{userId} {
       allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
@@ -107,10 +115,23 @@ service cloud.firestore {
     // exists (signin-start / signin-failure / signup-email-start), so a
     // `create: if isSignedIn()` rule silently dropped exactly those and left the
     // admin's Auth Events tab looking empty during failed sign-ups.
+    // The admin panel reads these through netlify/functions/adminAuthEvents
+    // (firebase-admin, rules bypassed) so the tab works even on a project where
+    // these rules have never been deployed. The read allowance stays for the
+    // Firebase console and any future direct reader.
     match /auth_events/{eventId} {
       allow create: if false;
       allow read: if isAdmin();
       allow update, delete: if false;
+    }
+
+    // Member-submitted clips: links to posts on Instagram / TikTok / YouTube
+    // that air between live hours. Server-only, like every other collection
+    // that decides what goes on television — the review status is the whole
+    // safety story and a member must not be able to set their own to approved.
+    match /clips/{clipId} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     match /rateLimits/{docId} {

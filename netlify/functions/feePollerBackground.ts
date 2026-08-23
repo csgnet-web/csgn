@@ -1,5 +1,6 @@
 // Scheduled background function — runs every minute via cron.
-// Executes 4 DexScreener polls at 15-second intervals (t=0, 15s, 30s, 45s).
+// One DexScreener poll per run (it used to be four, 15 seconds apart, which
+// cost 45 seconds of billed container time every single minute).
 // Writes live creatorFees to the active slot doc in Firestore.
 // Browser clients NEVER call DexScreener — they read from the single Firestore listener.
 //
@@ -7,11 +8,10 @@
 //
 // Netlify serves every function at /.netlify/functions/<name>, scheduled ones
 // included, so "it's a cron job" is not an access control. Anyone who knows the
-// path could invoke this, and each invocation is the single most expensive
-// thing in the codebase: it holds a container for ~45 seconds of wall clock
-// (which is what Netlify bills), makes four DexScreener calls, a Twitch Helix
-// call, and a run of slot-lifecycle, vote-settlement and meme-board writes to
-// Firestore. Being a *background* function makes it worse, not better — it
+// path could invoke this, and each invocation is still the most expensive
+// thing in the codebase: a DexScreener call, a Twitch Helix call, and a run of
+// slot-lifecycle, vote-settlement and meme-board writes to Firestore — all
+// billed as wall clock. Being a *background* function makes it worse, not better — it
 // returns to the caller immediately and keeps working, so requests stack
 // concurrently instead of queueing.
 //
@@ -30,28 +30,61 @@
 // cron period: a guard that can reject the real scheduled run would be a
 // self-inflicted outage on the job that drives fees, slot lifecycle and token
 // stats. It skips, it never fails.
+//
+// ── The name lies, and it matters ──────────────────────────────────────────
+//
+// This file is called `feePollerBackground.ts`, but Netlify's background
+// convention needs a HYPHEN — `something-background.ts`. So this is an ordinary
+// scheduled function with an ordinary execution ceiling (tens of seconds), not
+// a 15-minute background one.
+//
+// That was not a cosmetic problem. The old version of this function polled
+// DexScreener four times with `await sleep(15_000)` between them, so the run
+// was ~46 seconds long and would have been KILLED partway through the loop —
+// which means everything after the loop (the config/ticker write, the on-air
+// now-live / up-next auto-fill) very likely never ran at all, on any tick, and
+// silently. A function that is billed for its wall clock and then terminated
+// before its last writes is the worst of both.
+//
+// The loop is gone. This pass should now finish in a couple of seconds. Keep it
+// that way: if a step here ever needs longer than a few seconds, it belongs in
+// its own genuinely-background function with the hyphen in its filename.
 
 import { queryCollection, countCollection, getDoc, writeDoc, commitWrites, createWrite, updateWrite, fieldFilter, order } from './_shared/firebaseAdmin'
 import { buildExpectedSlotsForDate, buildSlotDoc } from './_shared/schedule'
 import { deriveNowLive, deriveUpNext, type OnAirSlot } from './_shared/onAir'
 import { readLiveWeights, settleTally, type BallotRow } from './_shared/settleVotes'
-import { fetchJson } from './_shared/cache'
+import { memo } from './_shared/cache'
+import { refreshMemeBoard } from './_shared/memeBoard'
 import { getDoc as getLockDoc, writeDoc as writeLockDoc } from './_shared/firebaseAdmin'
 import {
   buildTokenStatsDoc,
   fetchDexData,
   resolvePumpFeeTier,
   formatTierRange,
+  payableAirtime,
+  airtimeStartMs,
+  airtimeAppliesToSlot,
   PUMP_FUN_FEE_TIERS,
   STREAMER_SHARE_OF_CREATOR_FEE,
+  type AirtimeResult,
   type DexData,
 } from './_shared/feeCalc'
+import { sampleTwitchStream, twitchAppToken, twitchLoginFromUrl } from './_shared/twitch'
+import { refreshAirtimeSchedule } from './_shared/airtimeSchedule'
+import { ensureDayLock } from './_shared/airtimeLock'
+import { CSGN_TOTAL_SUPPLY } from './_shared/airtime'
+import { refreshLiveRoster } from './_shared/liveRoster'
+import { operatorAlerts, recommendedMode, DEFAULT_LIVE_VIEWER_FLOOR } from './_shared/operatorAlerts'
+import { publishChannelMode } from './_shared/channelModeStore'
+import { rankStreamers } from './_shared/streamerRank'
+import { notifyOperator } from './_shared/notify'
 
-const POLL_INTERVAL_MS = 15_000
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
+// NO `sleep` HELPER, DELIBERATELY. There used to be one, used to hold this
+// function open for 45 billed seconds every minute. Netlify charges wall clock;
+// a serverless function that waits is a serverless function you are paying to
+// do nothing. If a future step needs a delay, it needs a different cron entry,
+// not a sleep.
 
 interface FeeState {
   baselineH24Usd: number
@@ -66,7 +99,11 @@ interface CreatorFees {
   snapshotLockedAt?: string
   paidAt?: string
   declineReason?: string
+  feeOwedSOL?: number
   feeOwedUSD?: number
+  /** What the volume produced, before verified airtime is applied. */
+  grossFeeSOL?: number
+  grossFeeUSD?: number
 }
 
 interface StreamActivity {
@@ -76,6 +113,12 @@ interface StreamActivity {
   firstLiveAt?: string
   lastLiveAt?: string
   liveCheckCount?: number
+  /** Samples taken, live or not — the fairness denominator. See payableAirtime. */
+  checkCount?: number
+  peakViewers?: number
+  viewerSampleSum?: number
+  lastTitle?: string
+  lastGameName?: string
   checkpoints?: string[]
 }
 
@@ -86,6 +129,8 @@ interface SlotDoc {
   endTime?: string
   streamUrl?: string
   walletAddress?: string
+  /** Who holds this block. The real "someone took this" — see claimSlot.ts. */
+  assignedUid?: string
   assignedName?: string
   streamTitle?: string
   creatorFees?: CreatorFees
@@ -100,69 +145,43 @@ interface SlotRow {
 
 /* ─── Twitch Helix: verify the slot's channel is actually live ─── */
 
-let cachedTwitchToken: { token: string; exp: number } | null = null
-
-async function twitchAppToken(): Promise<string | null> {
-  const clientId = process.env.TWITCH_CLIENT_ID
-  const clientSecret = process.env.TWITCH_CLIENT_SECRET
-  if (!clientId || !clientSecret) return null
-  const now = Date.now()
-  if (cachedTwitchToken && cachedTwitchToken.exp > now + 60_000) return cachedTwitchToken.token
-  try {
-    const data = await fetchJson<{ access_token?: string; expires_in?: number }>(
-      'https://id.twitch.tv/oauth2/token',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, grant_type: 'client_credentials' }).toString(),
-      },
-    )
-    if (!data?.access_token) return null
-    cachedTwitchToken = { token: data.access_token, exp: now + (data.expires_in ?? 3600) * 1000 }
-    return cachedTwitchToken.token
-  } catch {
-    return null
-  }
-}
-
-function twitchLoginFromUrl(url?: string): string | null {
-  if (!url) return null
-  const match = String(url).match(/twitch\.tv\/([^/?#]+)/i)
-  return match ? match[1].replace(/^@/, '').toLowerCase() : null
-}
-
-async function isTwitchChannelLive(login: string, token: string): Promise<boolean> {
-  try {
-    const data = await fetchJson<{ data?: unknown[] }>(
-      `https://api.twitch.tv/helix/streams?user_login=${encodeURIComponent(login)}`,
-      { headers: { 'Client-Id': process.env.TWITCH_CLIENT_ID || '', Authorization: `Bearer ${token}` } },
-    )
-    return Array.isArray(data?.data) && data.data.length > 0
-  } catch {
-    return false
-  }
-}
-
 /**
  * Once a minute, sample whether the active slot's Twitch channel is actually
  * broadcasting and append a timestamp to the slot's streamActivity log. Kept in
  * a separate top-level field so the fee-poll writes never clobber it.
+ *
+ * Two things this counts, and the difference between them decides money:
+ * `liveCheckCount` is how often the channel was up, `checkCount` is how often
+ * we ASKED. A sample we failed to take — no token, Helix down, request timed
+ * out — increments neither, because the streamer must never be docked for our
+ * outage (see payableAirtime).
+ *
+ * Returns the record it wrote so the caller can use this minute's numbers
+ * without re-reading the doc.
  */
-async function logSlotActivity(row: SlotRow | null): Promise<void> {
+async function logSlotActivity(row: SlotRow | null): Promise<StreamActivity | null> {
   try {
-    if (!row) return
+    if (!row) return null
     const slot = row.data
     const login = twitchLoginFromUrl(slot.streamUrl)
-    if (!login) return
+    if (!login) return null
     const token = await twitchAppToken()
-    if (!token) return
+    if (!token) return null
 
-    const live = await isTwitchChannelLive(login, token)
+    const sample = await sampleTwitchStream(login, token)
+    // No answer at all is not an answer of "offline" — drop the sample entirely.
+    if (!sample) return null
+
+    const live = sample.live
     const nowISO = new Date().toISOString()
     const prev = slot.streamActivity ?? {}
     const prevCheckpoints = Array.isArray(prev.checkpoints) ? prev.checkpoints : []
     // Keep the last ~4h of per-minute samples (well within a 2h slot + buffer).
     const checkpoints = live ? [...prevCheckpoints, nowISO].slice(-240) : prevCheckpoints
+    // Slots sampled before checkCount existed carry live samples with no
+    // denominator. Seeding from liveCheckCount says "we asked at least this
+    // often", which is true and keeps a mid-flight slot at a sane ratio.
+    const prevCheckCount = prev.checkCount ?? prev.liveCheckCount ?? 0
 
     const streamActivity: StreamActivity = {
       channel: login,
@@ -171,13 +190,22 @@ async function logSlotActivity(row: SlotRow | null): Promise<void> {
       firstLiveAt: prev.firstLiveAt ?? (live ? nowISO : undefined),
       lastLiveAt: live ? nowISO : prev.lastLiveAt,
       liveCheckCount: (prev.liveCheckCount ?? 0) + (live ? 1 : 0),
+      checkCount: prevCheckCount + 1,
+      peakViewers: Math.max(prev.peakViewers ?? 0, sample.viewerCount),
+      // Live samples only — an offline channel's zero would drag the average
+      // toward "nobody watched" rather than measuring the broadcast.
+      viewerSampleSum: (prev.viewerSampleSum ?? 0) + (live ? sample.viewerCount : 0),
+      lastTitle: sample.title || prev.lastTitle,
+      lastGameName: sample.gameName || prev.lastGameName,
       checkpoints,
     }
 
     const slotId = row.path.split('/').pop()!
     await writeDoc(`slots/${slotId}`, { streamActivity }, { merge: true })
+    return streamActivity
   } catch (err) {
     console.error('[feePoller] logSlotActivity error:', err)
+    return null
   }
 }
 
@@ -391,185 +419,6 @@ async function advanceSlotLifecycles(): Promise<SlotRow[]> {
  * almost nothing, often enough that the on-air power ranking reflects real,
  * currently-held conviction rather than everything anyone ever felt.
  */
-/**
- * Seed and refresh public/memeBoard FROM ON-CHAIN ACTIVITY.
- *
- * Discovery, not curation. The board used to be a hand-typed list of mints,
- * which meant the "Meme 100" was really "the coins someone remembered to add".
- * Now it's assembled from what is actually trading on Solana right now:
- *
- *   1. DISCOVER — DexScreener's boosted-token and latest-profile feeds give a
- *      wide, constantly-churning set of Solana mints that people are actively
- *      promoting and trading.
- *   2. ENRICH — read the real pool state for each mint. Deepest-liquidity pair
- *      wins, because a thin pair quotes a price nobody can trade at.
- *   3. FILTER — apply hard on-chain thresholds (below). This is the step that
- *      turns a firehose into a board.
- *   4. RANK — by 24h volume, and keep the top MEME_BOARD_SIZE.
- *
- * The thresholds are the whole safety story, because this list goes ON AIR and
- * is the ballot for a token-weighted vote. Without them, a rug minted ninety
- * seconds ago with $200 of liquidity lands on the broadcast next to real coins,
- * and the vote legitimises it. So a coin has to clear all of:
- *
- *   • MIN_LIQUIDITY_USD  — someone can actually trade it
- *   • MIN_VOLUME_H24_USD — it is actually being traded
- *   • MIN_PAIR_AGE_MS    — it has survived longer than a launch snipe
- *
- * A DENYLIST (`config/memeBoard.deny`) remains, because "it cleared the numbers"
- * is not the same as "we are happy to put it on television". An ALLOWLIST
- * (`config/memeBoard.mints`) still works too and is always included regardless
- * of thresholds — that's how $CSGN itself stays on its own board.
- */
-
-const MEME_BOARD_INTERVAL_MS = 5 * 60 * 1000
-/** DexScreener accepts up to 30 comma-separated addresses per request. */
-const DEX_TOKENS_BATCH = 30
-/** How many coins the published board carries. */
-const MEME_BOARD_SIZE = 60
-/** Discovery cap — how many candidate mints we're willing to enrich per run. */
-const MEME_DISCOVERY_CAP = 120
-
-/* On-chain quality gates. A coin must clear ALL of these to be discovered. */
-const MIN_LIQUIDITY_USD = 25_000
-const MIN_VOLUME_H24_USD = 50_000
-const MIN_PAIR_AGE_MS = 24 * 60 * 60 * 1000
-
-const SOLANA_MINT_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
-/** Wrapped SOL and the major stables are not memecoins. */
-const MEME_BOARD_EXCLUDE = new Set([
-  'So11111111111111111111111111111111111111112',
-  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-  'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
-])
-
-interface DexPair {
-  chainId?: string
-  pairCreatedAt?: number
-  baseToken?: { address?: string; symbol?: string; name?: string }
-  priceUsd?: string
-  marketCap?: number
-  fdv?: number
-  volume?: { h24?: number }
-  priceChange?: { h24?: number }
-  url?: string
-  liquidity?: { usd?: number }
-  info?: { imageUrl?: string }
-}
-
-/** Candidate Solana mints from DexScreener's discovery feeds. */
-async function discoverSolanaMints(): Promise<string[]> {
-  type Row = { chainId?: string; tokenAddress?: string }
-  const [boosts, profiles] = await Promise.all([
-    fetchJson<Row[]>('https://api.dexscreener.com/token-boosts/top/v1'),
-    fetchJson<Row[]>('https://api.dexscreener.com/token-profiles/latest/v1'),
-  ])
-  const out: string[] = []
-  const seen = new Set<string>()
-  for (const row of [...(boosts || []), ...(profiles || [])]) {
-    if (row?.chainId !== 'solana') continue
-    const mint = String(row.tokenAddress || '')
-    if (!SOLANA_MINT_RE.test(mint) || seen.has(mint) || MEME_BOARD_EXCLUDE.has(mint)) continue
-    seen.add(mint)
-    out.push(mint)
-    if (out.length >= MEME_DISCOVERY_CAP) break
-  }
-  return out
-}
-
-/** Deepest-liquidity Solana pair per mint. */
-async function enrichMints(mints: string[]): Promise<Map<string, DexPair>> {
-  const best = new Map<string, DexPair>()
-  for (let i = 0; i < mints.length; i += DEX_TOKENS_BATCH) {
-    const batch = mints.slice(i, i + DEX_TOKENS_BATCH)
-    const data = await fetchJson<{ pairs?: DexPair[] }>(
-      `https://api.dexscreener.com/latest/dex/tokens/${batch.join(',')}`,
-    )
-    for (const pair of data?.pairs || []) {
-      if (pair.chainId && pair.chainId !== 'solana') continue
-      const addr = pair.baseToken?.address
-      if (!addr) continue
-      const prev = best.get(addr)
-      if (!prev || (pair.liquidity?.usd ?? 0) > (prev.liquidity?.usd ?? 0)) best.set(addr, pair)
-    }
-  }
-  return best
-}
-
-const toBoardCoin = (address: string, p: DexPair | undefined) => ({
-  address,
-  symbol: String(p?.baseToken?.symbol || '').toUpperCase().slice(0, 12),
-  name: String(p?.baseToken?.name || '').slice(0, 60),
-  imageUrl: String(p?.info?.imageUrl || ''),
-  priceUsd: Number(p?.priceUsd) || 0,
-  marketCapUsd: Number(p?.marketCap ?? p?.fdv) || 0,
-  volumeH24Usd: Number(p?.volume?.h24) || 0,
-  priceChangeH24Pct: Number(p?.priceChange?.h24) || 0,
-  liquidityUsd: Number(p?.liquidity?.usd) || 0,
-  pairUrl: String(p?.url || `https://dexscreener.com/solana/${address}`),
-})
-
-async function refreshMemeBoard(): Promise<void> {
-  try {
-    const existing = await getDoc<{ updatedAt?: string }>('public/memeBoard')
-    const last = Date.parse(existing?.updatedAt || '')
-    if (Number.isFinite(last) && Date.now() - last < MEME_BOARD_INTERVAL_MS) return
-
-    const cfg = await getDoc<{ mints?: unknown; deny?: unknown }>('config/memeBoard')
-    const clean = (v: unknown) => (Array.isArray(v) ? v : [])
-      .map((m) => String(m ?? '').trim())
-      .filter((m) => SOLANA_MINT_RE.test(m))
-    const pinned = clean(cfg?.mints).slice(0, 40)
-    const denied = new Set(clean(cfg?.deny))
-
-    const discovered = (await discoverSolanaMints()).filter((m) => !denied.has(m))
-    const candidates = [...new Set([...pinned, ...discovered])].slice(0, MEME_DISCOVERY_CAP + pinned.length)
-    if (candidates.length === 0) return
-
-    const enriched = await enrichMints(candidates)
-    const now = Date.now()
-    const pinnedSet = new Set(pinned)
-
-    const qualifies = (address: string, p: DexPair | undefined): boolean => {
-      // Pinned coins bypass the thresholds — that's what pinning means, and it's
-      // how $CSGN stays on its own board on a quiet day.
-      if (pinnedSet.has(address)) return true
-      if (!p) return false
-      if ((p.liquidity?.usd ?? 0) < MIN_LIQUIDITY_USD) return false
-      if ((p.volume?.h24 ?? 0) < MIN_VOLUME_H24_USD) return false
-      const age = p.pairCreatedAt ? now - p.pairCreatedAt : 0
-      if (age < MIN_PAIR_AGE_MS) return false
-      return true
-    }
-
-    const coins = candidates
-      .filter((address) => !denied.has(address))
-      .filter((address) => qualifies(address, enriched.get(address)))
-      .map((address) => toBoardCoin(address, enriched.get(address)))
-      // Volume is the honest "what is actually happening" sort for the board
-      // itself; the app re-ranks by power score once holder votes are folded in.
-      .sort((a, b) => b.volumeH24Usd - a.volumeH24Usd)
-      .slice(0, MEME_BOARD_SIZE)
-
-    // Never publish an empty board over a good one — a discovery-feed outage
-    // would otherwise wipe the ballot mid-vote.
-    if (coins.length === 0) return
-
-    await writeDoc('public/memeBoard', {
-      coins,
-      source: 'onchain',
-      thresholds: {
-        minLiquidityUsd: MIN_LIQUIDITY_USD,
-        minVolumeH24Usd: MIN_VOLUME_H24_USD,
-        minPairAgeHours: MIN_PAIR_AGE_MS / 3_600_000,
-      },
-      updatedAt: new Date().toISOString(),
-    })
-  } catch (err) {
-    console.warn('refreshMemeBoard failed', err)
-  }
-}
-
 const MEME_SETTLE_INTERVAL_MS = 30 * 60 * 1000
 const MEME_SETTLE_MAX_BALLOTS = 150
 
@@ -619,32 +468,64 @@ async function fetchNextSlot(): Promise<SlotRow | null> {
   }
 }
 
-async function pollAndWrite(dexData: DexData, active: SlotRow | null, tick: number): Promise<void> {
+/**
+ * The verified-airtime verdict for a slot, or null when the rule does not
+ * reach it (a slot that started before the cutover keeps its original terms
+ * forever — see airtimeAppliesToSlot).
+ */
+export function slotAirtime(slot: SlotDoc, startMs: number): (AirtimeResult & { liveCheckCount: number; checkCount: number }) | null {
+  if (!airtimeAppliesToSlot(slot.startTime, startMs)) return null
+  const activity = slot.streamActivity ?? {}
+  const liveCheckCount = activity.liveCheckCount ?? 0
+  // Same backfill as logSlotActivity: no denominator means "at least as many
+  // asks as live answers", which lands on full credit rather than a penalty.
+  const checkCount = activity.checkCount ?? activity.liveCheckCount ?? 0
+  return { liveCheckCount, checkCount, ...payableAirtime({ liveCheckCount, checkCount }) }
+}
+
+async function pollAndWrite(dexData: DexData, active: SlotRow | null, airtimeStart: number): Promise<void> {
   try {
     if (!active) return
 
     const slotId = active.path.split('/').pop()!
-    // Tick 0 reuses the row fetched at the top of the invocation; later ticks
-    // re-read just this one doc (1 read, not a range query) so admin-side
-    // changes — fees marked paid/declined, snapshot locked — stay visible
-    // mid-invocation.
-    let slotData = active.data
-    if (tick > 0) {
-      const fresh = await getDoc<SlotDoc>(active.path)
-      if (!fresh) return
-      slotData = fresh
-    }
+    // The row fetched at the top of the invocation, reused. There used to be a
+    // per-tick re-read here so admin changes made mid-invocation were visible;
+    // with one tick there is no mid-invocation, and the next run (60s later)
+    // reads fresh anyway. That is one Firestore read per minute saved.
+    const slotData = active.data
 
     const existing = slotData.creatorFees
     if (existing?.paymentStatus === 'paid' || existing?.paymentStatus === 'declined') return
     if (existing?.snapshotLockedAt) return
 
+    // ── Snapshot lock: the hour is over, so freeze what it owes ──
+    //
+    // This is where the number stops moving. The gross stays on the record as
+    // what the volume produced; feeOwed keeps its meaning — what we owe — and
+    // becomes gross × the verified-airtime fraction. An hour nobody streamed
+    // settles as 'void' rather than 'pending', so it leaves the admin's payout
+    // queue instead of sitting there as a judgement call.
     if (slotData.endTime && Date.now() > new Date(slotData.endTime).getTime()) {
-      await writeDoc(
-        `slots/${slotId}`,
-        { 'creatorFees.snapshotLockedAt': new Date().toISOString(), 'creatorFees.updatedAt': new Date().toISOString() },
-        { merge: true },
-      )
+      const nowISO = new Date().toISOString()
+      const lock: Record<string, unknown> = {
+        'creatorFees.snapshotLockedAt': nowISO,
+        'creatorFees.updatedAt': nowISO,
+      }
+      const airtime = slotAirtime(slotData, airtimeStart)
+      if (airtime) {
+        // grossFee* is written on every poll below; the feeOwed fallback covers
+        // a slot whose numbers an admin entered by hand and that this poller
+        // therefore never accrued.
+        const grossSOL = existing?.grossFeeSOL ?? existing?.feeOwedSOL ?? 0
+        const grossUSD = existing?.grossFeeUSD ?? existing?.feeOwedUSD ?? 0
+        lock['creatorFees.grossFeeSOL'] = grossSOL
+        lock['creatorFees.grossFeeUSD'] = grossUSD
+        lock['creatorFees.airtime'] = airtime
+        lock['creatorFees.feeOwedSOL'] = grossSOL * airtime.fraction
+        lock['creatorFees.feeOwedUSD'] = grossUSD * airtime.fraction
+        lock['creatorFees.paymentStatus'] = airtime.reason === 'no_show' ? 'void' : 'pending'
+      }
+      await writeDoc(`slots/${slotId}`, lock, { merge: true })
       return
     }
 
@@ -704,11 +585,22 @@ async function pollAndWrite(dexData: DexData, active: SlotRow | null, tick: numb
       })
       .sort((a, b) => b.volumeSOL - a.volumeSOL)
 
+    // Apply verified airtime to the RUNNING number too, not just at the lock.
+    // /watch and /account read this field straight off the slot doc, and a
+    // payable meter that only rises while the streamer is genuinely on air is
+    // the whole retention mechanic — it also means the client never needs its
+    // own copy of the rule. Early in an hour the sample count is below
+    // AIRTIME_MIN_SAMPLES, so it reads `unverified` and shows the full amount.
+    const airtime = slotAirtime(slotData, airtimeStart)
+    const payableSOL = airtime ? feeSOL * airtime.fraction : feeSOL
+    const payableUSD = airtime ? feeUSD * airtime.fraction : feeUSD
+
     const updatedFees = {
       tradingVolumeSOL: deltaVolumeSOL,
       tradingVolumeUSD: estimatedSlotVolumeUsd,
-      feeOwedSOL: feeSOL,
-      feeOwedUSD: feeUSD,
+      feeOwedSOL: payableSOL,
+      feeOwedUSD: payableUSD,
+      ...(airtime ? { grossFeeSOL: feeSOL, grossFeeUSD: feeUSD, airtime } : {}),
       marketCapSOL,
       creatorFeeRate: tier.creatorFeeRate,
       streamerShareRate: tier.creatorFeeRate * STREAMER_SHARE_OF_CREATOR_FEE,
@@ -737,14 +629,35 @@ async function pollAndWrite(dexData: DexData, active: SlotRow | null, tick: numb
 }
 
 // Netlify scheduled background function — handler runs once per cron invocation.
-// Executes 4 polls at 15s intervals within the single invocation. Each tick
-// fetches DexScreener once; the first successful tick also refreshes
-// public/tokenStats (~1 write/min) so token stats flow 24/7 even when no slot
-// is live.
-/** Shortest gap between two real runs. Below the 60s cron period on purpose —
- *  see the header: this must never be able to reject the scheduled run. */
-const MIN_RUN_INTERVAL_MS = 45_000
+// One DexScreener fetch per invocation, which also refreshes public/tokenStats
+// (~1 write/min) so token stats flow 24/7 even when no slot is live.
+/** Shortest gap between two real runs while the channel is HOT — something is
+ *  on air, or somebody on the roster is live. Below the 60s cron period on
+ *  purpose — see the header: this must never be able to reject the scheduled
+ *  run during an hour that decides money. */
+const HOT_RUN_INTERVAL_MS = 45_000
+
+/**
+ * Shortest gap between two real runs while the channel is COLD.
+ *
+ * Cold means: no slot assigned, nobody from the roster live, the clip reel
+ * carrying the channel. That is most of the day by design — clips are the
+ * source of last resort and the baseline — and during it a minute-by-minute
+ * pass is buying nothing. Nothing accrues, no fee is moving, no minute counter
+ * is running. The only question a cold tick answers is "has anybody gone live",
+ * and the operator is not cutting to them inside sixty seconds anyway.
+ *
+ * At 1,440 scheduled invocations a day this is the difference between paying
+ * for all of them and paying for a third. The cost is up to three minutes of
+ * detection lag on a streamer going live, which `adminLiveNow` short-circuits
+ * anyway by clearing the cold flag the moment an operator acts.
+ */
+export const COLD_RUN_INTERVAL_MS = 3 * 60_000
+
 const RUN_LOCK_PATH = 'config/feePollerRun'
+/** config/season only carries the airtime cutover today, and moving that date
+ *  is a deliberate, rare admin act — an hour of staleness costs nothing. */
+const SEASON_CONFIG_TTL_MS = 60 * 60 * 1000
 
 /**
  * The lock decision, with the I/O taken out so every case is testable.
@@ -755,13 +668,17 @@ const RUN_LOCK_PATH = 'config/feePollerRun'
  * here is a poll that silently never happens, so every ambiguous input resolves
  * toward running.
  */
-export function shouldRunPoll(lastStartedAt: string | undefined, nowMs: number): boolean {
+export function shouldRunPoll(lastStartedAt: string | undefined, nowMs: number, wasCold = false): boolean {
   if (!lastStartedAt) return true
   const last = new Date(lastStartedAt).getTime()
   if (!Number.isFinite(last) || last <= 0) return true
   const elapsed = nowMs - last
   if (elapsed < 0) return true
-  return elapsed >= MIN_RUN_INTERVAL_MS
+  // Cold only slows things down when the PREVIOUS run positively established
+  // that the channel was cold. An unknown state is treated as hot, so a missing
+  // or corrupt flag costs money rather than correctness — which is the right
+  // way round for a job that decides fees.
+  return elapsed >= (wasCold ? COLD_RUN_INTERVAL_MS : HOT_RUN_INTERVAL_MS)
 }
 
 /**
@@ -774,13 +691,30 @@ export function shouldRunPoll(lastStartedAt: string | undefined, nowMs: number):
  */
 async function claimRunSlot(): Promise<boolean> {
   try {
-    const lock = await getLockDoc<{ startedAt?: string }>(RUN_LOCK_PATH)
-    if (!shouldRunPoll(lock?.startedAt, Date.now())) return false
+    const lock = await getLockDoc<{ startedAt?: string; cold?: boolean }>(RUN_LOCK_PATH)
+    if (!shouldRunPoll(lock?.startedAt, Date.now(), lock?.cold === true)) return false
     await writeLockDoc(RUN_LOCK_PATH, { startedAt: new Date().toISOString() }, { merge: true })
     return true
   } catch (err) {
     console.warn('feePoller run lock unavailable, running anyway:', err)
     return true
+  }
+}
+
+/**
+ * Record whether the channel was cold on this pass, so the NEXT tick knows how
+ * long it may skip for.
+ *
+ * Stored rather than recomputed because hotness can only be known after the
+ * work — and the whole point is to let a tick decide, before doing any work,
+ * that it does not need to.
+ */
+async function recordDutyCycle(cold: boolean): Promise<void> {
+  try {
+    await writeLockDoc(RUN_LOCK_PATH, { cold, coldAt: new Date().toISOString() }, { merge: true })
+  } catch {
+    // Best-effort. Failing to write it means the next tick assumes hot, which
+    // costs an invocation and breaks nothing.
   }
 }
 
@@ -801,30 +735,140 @@ export const handler = async () => {
   const active = pickActiveSlot(rows)
 
   // Sample real Twitch activity for the active slot (1 Helix call/min) so the
-  // Creator Fees log can prove the streamer was actually live, not intermission.
-  await logSlotActivity(active)
+  // Creator Fees log can prove the streamer was actually live, not intermission
+  // — and so this minute's sample is in the denominator the fee is scaled by.
+  // Patched onto the row we already hold so the first poll tick below sees the
+  // sample it just took instead of a minute-old one.
+  const sampled = await logSlotActivity(active)
+  if (active && sampled) active.data.streamActivity = sampled
+
+  // When verified airtime started deciding money. One cheap read, cached per
+  // container, because the answer changes roughly never.
+  const airtimeStart = airtimeStartMs(
+    await memo('config:season', SEASON_CONFIG_TTL_MS, () => getDoc<{ airtimeStartAt?: string }>('config/season')),
+  )
+
+  // Sample every consenting member's Twitch channel — one Helix request per 100
+  // of them — so the operator's board knows who is live and the minute counters
+  // that decide the fee split keep ticking. This is what lets a streamer sign up
+  // once and never think about the schedule again.
+  const roster = await refreshLiveRoster(active?.data.assignedUid ?? null)
+
+  // Publish what the operator should be doing about it, every minute, whether
+  // or not anybody has the board open. Written to a doc rather than computed on
+  // read so a future notifier (email, push, a Discord webhook) has one place to
+  // watch and cannot disagree with what the board shows.
+  try {
+    const meta = await getDoc<{ liveViewerFloor?: number; networkBlockEnabled?: boolean }>(SCHEDULE_META_PATH)
+    const viewerFloor = meta?.liveViewerFloor != null && Number(meta.liveViewerFloor) >= 0
+      ? Number(meta.liveViewerFloor)
+      : DEFAULT_LIVE_VIEWER_FLOOR
+    const alertInput = {
+      roster: roster.map((e) => ({
+        uid: e.uid, username: e.username, displayName: e.displayName,
+        live: e.live, viewerCount: e.viewerCount,
+      })),
+      onAirUid: active?.data.assignedUid ?? null,
+      onAirMinutes: active?.data.startTime
+        ? Math.max(0, Math.floor((Date.now() - Date.parse(active.data.startTime)) / 60_000))
+        : 0,
+      viewerFloor,
+    }
+    const alerts = operatorAlerts(alertInput)
+    // WHO TO PUT ON, RANKED. Not just "somebody is live" — an ordered shortlist
+    // with a reason on each row, so the decision is a glance rather than a
+    // comparison. See _shared/streamerRank.ts for why viewer count alone is the
+    // wrong rule.
+    const shortlist = rankStreamers(
+      roster.map((e) => ({
+        uid: e.uid,
+        username: e.username,
+        displayName: e.displayName,
+        live: e.live,
+        viewerCount: e.viewerCount,
+        streamMinutes: streamMinutesOf(e.startedAt),
+        onAirMinutesToday: e.onAirMinutes,
+        balance: 0,
+        gameName: e.gameName,
+        title: e.title,
+      })),
+      viewerFloor,
+    ).slice(0, 8)
+
+    await writeDoc('public/operatorAlerts', {
+      alerts,
+      shortlist,
+      recommendation: recommendedMode(alertInput),
+      viewerFloor,
+      updatedAt: new Date().toISOString(),
+    })
+
+    // AND TELL THE MP, with the tab closed. Deduped hard — see _shared/notify.
+    await notifyOperator(alerts)
+
+    // ── The PUBLIC half of the same question ──
+    //
+    // operatorAlerts says what the operator should do. This says what a viewer
+    // is looking at and why, in one sentence, on the same tick and from the
+    // same inputs — so the control room and the audience can never be told two
+    // different stories about what is on. Every surface (/watch, /schedule,
+    // /player, the OBS graphics) renders this stored verdict rather than
+    // deriving its own, which is what stopped four pages disagreeing before.
+    await publishChannelMode({
+      slot: active?.data ?? null,
+      networkBlockEnabled: meta?.networkBlockEnabled !== false,
+      liveCount: roster.filter((e) => e.live).length,
+    })
+  } catch (err) {
+    console.warn('[feePoller] operatorAlerts write failed', err)
+  }
+
+  // Take the day's lock if 2 AM ET has passed and it has not been taken yet.
+  // Idempotent and cheap — one document read on every tick but the first after
+  // a cutover. Called BEFORE the schedule rebuild so the playlist is always
+  // laid against locked proportions rather than racing them.
+  // The supply is a CONSTANT, not a measurement — see CSGN_TOTAL_SUPPLY. This
+  // used to derive circulating supply from market cap over price, which made a
+  // member's seconds drift with the chart for reasons they could not check.
+  await ensureDayLock(async () => CSGN_TOTAL_SUPPLY)
+
+  // Rebuild the holder-airtime playlist the channel runs on between live hours.
+  // Supply is injected so this module's cached DexScreener read is reused
+  // rather than the scheduler making a second one of its own.
+  await refreshAirtimeSchedule(async () => CSGN_TOTAL_SUPPLY)
 
   // Re-anchor the Meme-100 to what voters actually still hold (every 30 min).
   await settleMemeVote()
   await refreshMemeBoard()
 
-  let tokenStatsWritten = false
-  let lastDex: DexData | null = null
-  for (let i = 0; i < 4; i++) {
-    const dexData = await fetchDexData()
-    if (dexData) {
-      lastDex = dexData
-      if (!tokenStatsWritten) {
-        try {
-          await writeDoc('public/tokenStats', buildTokenStatsDoc(dexData), { merge: false })
-          tokenStatsWritten = true
-        } catch (err) {
-          console.error('[feePoller] tokenStats write error:', err)
-        }
-      }
-      await pollAndWrite(dexData, active, i)
+  // ── ONE DexScreener read, then done ──
+  //
+  // This loop used to run four times per invocation with `await sleep(15_000)`
+  // between them, so every scheduled run held a billed container for 45 seconds
+  // doing nothing but waiting. Netlify bills wall clock: that was 1,440 runs a
+  // day x 45s = eighteen hours of paid compute per day, to produce four
+  // samples of a number instead of one. It was, by a wide margin, the most
+  // expensive line in this project.
+  //
+  // Dropping to a single sample is safe because fee accrual is CUMULATIVE and
+  // delta-based, not an average of samples: `_feeState` carries the running
+  // tier volume map and the previous estimate, so the same total is reached
+  // whether it is stepped once a minute or four times. The only thing lost is
+  // sub-minute attribution when the market cap crosses a pump.fun tier
+  // boundary mid-minute, which moves a fee by a fraction of a percent.
+  //
+  // If finer resolution is ever genuinely needed, raise the CRON RATE. Never
+  // re-add a sleep — paying for a container to wait is the one thing that
+  // cannot be optimised afterwards.
+  const dexData = await fetchDexData()
+  const lastDex: DexData | null = dexData
+  if (dexData) {
+    try {
+      await writeDoc('public/tokenStats', { ...buildTokenStatsDoc(dexData) }, { merge: false })
+    } catch (err) {
+      console.error('[feePoller] tokenStats write error:', err)
     }
-    if (i < 3) await sleep(POLL_INTERVAL_MS)
+    await pollAndWrite(dexData, active, airtimeStart)
   }
 
   // Publish CSGN token info + the live creator-fee beat to the broadcast ticker
@@ -861,4 +905,28 @@ export const handler = async () => {
   } catch (err) {
     console.error('[feePoller] ticker csgn/liveFee write error:', err)
   }
+
+  // ── How hard should the next tick work? ──
+  //
+  // COLD is the honest description of most of the day under the current model:
+  // clips are the source of last resort and the baseline, so unless the
+  // operator has put somebody on or a roster member is actually live, nothing
+  // on this pass changed and nothing on the next one will either. Saying so
+  // lets the next two ticks exit in milliseconds instead of doing a full pass
+  // to discover the same nothing.
+  //
+  // Note what counts as hot: an assigned slot OR anybody live on the roster.
+  // The second is what stops the channel going to sleep on the one thing it
+  // needs to notice — somebody worth cutting to going live.
+  await recordDutyCycle(!active && !roster.some((e) => e.live))
+}
+
+/** Minutes since a Twitch stream started, for the freshness term in the
+ *  shortlist ranking. Unknown reads as 0, which the scorer treats as "just
+ *  started" — the safe direction, since a stream we cannot age is more likely
+ *  to be new than six hours old. */
+function streamMinutesOf(startedAt?: string): number {
+  const t = Date.parse(startedAt ?? '')
+  if (!Number.isFinite(t)) return 0
+  return Math.max(0, Math.floor((Date.now() - t) / 60_000))
 }

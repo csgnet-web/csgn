@@ -6,7 +6,7 @@ import {
   type PayoutRequest, type PayoutRecord, type PayoutLimits,
 } from '../_shared/payouts'
 import {
-  runPayouts, squaresPayoutRequests, startingFivePayoutRequests,
+  runPayouts,
   type RunnerDeps,
 } from '../_shared/payoutRunner'
 
@@ -20,12 +20,12 @@ const W = {
 const NOW = new Date('2026-08-02T22:00:00.000Z')
 
 const req = (over: Partial<PayoutRequest> = {}): PayoutRequest => ({
-  source: 'starting5',
+  source: 'creator_fee',
   sourceId: 'slate-1:rank1',
   wallet: W.a,
   displayName: 'alice',
   amountCsgn: 100_000,
-  note: 'Starting 5 — 1st place',
+  note: 'Creator fee — slot-1',
   ...over,
 })
 
@@ -60,22 +60,22 @@ describe('address validation', () => {
 
 describe('the idempotency key', () => {
   it('is derived only from what the payout is for', () => {
-    expect(payoutId('squares', 'board-1:q1', W.a)).toBe(`squares:board-1_q1:${W.a}`)
+    expect(payoutId('slot_vote', 'board-1:q1', W.a)).toBe(`slot_vote:board-1_q1:${W.a}`)
   })
 
   it('is stable across calls — no timestamp, no nonce', () => {
-    expect(payoutId('squares', 'board-1', W.a)).toBe(payoutId('squares', 'board-1', W.a))
+    expect(payoutId('slot_vote', 'board-1', W.a)).toBe(payoutId('slot_vote', 'board-1', W.a))
   })
 
-  it('separates different sources, games and winners', () => {
-    const base = payoutId('squares', 'board-1', W.a)
-    expect(payoutId('starting5', 'board-1', W.a)).not.toBe(base)
-    expect(payoutId('squares', 'board-2', W.a)).not.toBe(base)
-    expect(payoutId('squares', 'board-1', W.b)).not.toBe(base)
+  it('separates different sources, ids and winners', () => {
+    const base = payoutId('slot_vote', 'board-1', W.a)
+    expect(payoutId('creator_fee', 'board-1', W.a)).not.toBe(base)
+    expect(payoutId('slot_vote', 'board-2', W.a)).not.toBe(base)
+    expect(payoutId('slot_vote', 'board-1', W.b)).not.toBe(base)
   })
 
   it('never contains a slash, which Firestore document ids forbid', () => {
-    expect(payoutId('squares', 'board/1/q1', W.a)).not.toContain('/')
+    expect(payoutId('slot_vote', 'board/1/q1', W.a)).not.toContain('/')
   })
 })
 
@@ -158,7 +158,7 @@ describe('building a batch', () => {
   })
 
   it('silently drops ids already in the ledger — a re-run is normal, not an error', () => {
-    const existingIds = new Set([payoutId('starting5', 'slate-1:rank1', W.a)])
+    const existingIds = new Set([payoutId('creator_fee', 'slate-1:rank1', W.a)])
     const batch = buildPayoutBatch([req()], ctx({ existingIds }))
     expect(batch.payable).toHaveLength(0)
     expect(batch.skipped).toHaveLength(0)
@@ -340,7 +340,7 @@ describe('a payout run', () => {
   it('pays a clean field and records confirmed signatures', async () => {
     const h = harness()
     const result = await runPayouts(h.deps, {
-      source: 'starting5',
+      source: 'creator_fee',
       sourceId: 'slate-1',
       requests: [req({ sourceId: 'slate-1:r1', wallet: W.a }), req({ sourceId: 'slate-1:r2', wallet: W.b })],
     })
@@ -362,13 +362,13 @@ describe('a payout run', () => {
       return { ...inner, send: async () => { order.push('broadcast'); return inner.signature } }
     }
 
-    await runPayouts(h.deps, { source: 'squares', sourceId: 'b1', requests: [req()] })
+    await runPayouts(h.deps, { source: 'slot_vote', sourceId: 'b1', requests: [req()] })
     expect(order).toEqual(['recorded', 'broadcast'])
   })
 
   it('NEVER pays twice when the same settlement runs again', async () => {
     const h = harness()
-    const opts = { source: 'starting5' as const, sourceId: 'slate-1', requests: [req()] }
+    const opts = { source: 'creator_fee' as const, sourceId: 'slate-1', requests: [req()] }
 
     const first = await runPayouts(h.deps, opts)
     const second = await runPayouts(h.deps, opts)
@@ -381,7 +381,7 @@ describe('a payout run', () => {
   it('refuses to start when the wallet cannot cover the field', async () => {
     const h = harness({}, { balanceCsgn: 1 })
     const result = await runPayouts(h.deps, {
-      source: 'starting5', sourceId: 'slate-1', requests: [req({ amountCsgn: 500_000 })],
+      source: 'creator_fee', sourceId: 'slate-1', requests: [req({ amountCsgn: 500_000 })],
     })
 
     expect(result.paid).toBe(0)
@@ -394,7 +394,7 @@ describe('a payout run', () => {
   it('dry-runs without signing, claiming, or sending anything', async () => {
     const h = harness()
     const result = await runPayouts(h.deps, {
-      source: 'starting5', sourceId: 'slate-1', requests: [req()], dryRun: true,
+      source: 'creator_fee', sourceId: 'slate-1', requests: [req()], dryRun: true,
     })
 
     expect(result.dryRun).toBe(true)
@@ -407,7 +407,7 @@ describe('a payout run', () => {
 
   it('leaves a timed-out transaction in sending, NOT failed, so the chain decides', async () => {
     const h = harness({}, { failSendOn: 0 })
-    const result = await runPayouts(h.deps, { source: 'squares', sourceId: 'b1', requests: [req()] })
+    const result = await runPayouts(h.deps, { source: 'slot_vote', sourceId: 'b1', requests: [req()] })
 
     expect(result.paid).toBe(0)
     expect(result.errors[0]).toContain('confirmation timeout')
@@ -423,7 +423,7 @@ describe('a payout run', () => {
       amountRaw: '1000000', createdAt: NOW.toISOString(),
     })
 
-    const result = await runPayouts(h.deps, { source: 'starting5', sourceId: 'slate-1', requests: [] })
+    const result = await runPayouts(h.deps, { source: 'creator_fee', sourceId: 'slate-1', requests: [] })
     expect(h.ledger.get('stuck')!.status).toBe('confirmed')
     expect(result.signatures).toContain('sig-old')
     expect(h.signCalls).toBe(0)
@@ -436,7 +436,7 @@ describe('a payout run', () => {
       amountRaw: '1000000', createdAt: NOW.toISOString(),
     })
 
-    await runPayouts(h.deps, { source: 'starting5', sourceId: 'slate-1', requests: [] })
+    await runPayouts(h.deps, { source: 'creator_fee', sourceId: 'slate-1', requests: [] })
     expect(h.ledger.get('stuck')!.status).toBe('failed')
   })
 
@@ -447,7 +447,7 @@ describe('a payout run', () => {
       amountRaw: '1000000', createdAt: NOW.toISOString(),
     })
 
-    await runPayouts(h.deps, { source: 'starting5', sourceId: 'slate-1', requests: [] })
+    await runPayouts(h.deps, { source: 'creator_fee', sourceId: 'slate-1', requests: [] })
     expect(h.ledger.get('stuck')!.status).toBe('sending')
     expect(h.signCalls).toBe(0)
   })
@@ -459,7 +459,7 @@ describe('a payout run', () => {
       amountRaw: '1000000', createdAt: NOW.toISOString(),
     })
 
-    await runPayouts(h.deps, { source: 'starting5', sourceId: 'slate-1', requests: [] })
+    await runPayouts(h.deps, { source: 'creator_fee', sourceId: 'slate-1', requests: [] })
     expect(h.ledger.get('torn')!.status).toBe('pending')
     expect(h.ledger.get('torn')!.failureReason).toBe('torn_write_recovered')
   })
@@ -467,24 +467,28 @@ describe('a payout run', () => {
   it('writes parked payouts to the ledger so a human can find them', async () => {
     const h = harness()
     const result = await runPayouts(h.deps, {
-      source: 'squares', sourceId: 'b1', requests: [req({ amountCsgn: 9_000_000 })],
+      source: 'slot_vote', sourceId: 'b1', requests: [req({ amountCsgn: 9_000_000 })],
     })
 
     expect(result.paid).toBe(0)
-    expect(result.review).toHaveLength(1)
+    // `review` is the COUNT (it is what goes into the stored run summary);
+    // `reviewRecords` carries the parked payouts themselves. These used to be
+    // the same field declared two incompatible ways — see RunResult.
+    expect(result.review).toBe(1)
+    expect(result.reviewRecords).toHaveLength(1)
     expect([...h.ledger.values()][0].status).toBe('needs_review')
     expect(h.broadcasts).toHaveLength(0)
   })
 
   it('skips a payout another concurrent run already claimed', async () => {
     const h = harness()
-    const claimed = payoutId('starting5', 'slate-1:r1', W.a)
+    const claimed = payoutId('creator_fee', 'slate-1:r1', W.a)
     h.ledger.set(claimed, {
       ...req(), id: claimed, status: 'pending', amountRaw: '1', createdAt: NOW.toISOString(),
     })
 
     const result = await runPayouts(h.deps, {
-      source: 'starting5', sourceId: 'slate-1',
+      source: 'creator_fee', sourceId: 'slate-1',
       requests: [req({ sourceId: 'slate-1:r1', wallet: W.a }), req({ sourceId: 'slate-1:r2', wallet: W.b })],
     })
 
@@ -494,48 +498,8 @@ describe('a payout run', () => {
   it('always writes a run summary for the audit trail', async () => {
     const writeRunSummary = vi.fn(async () => {})
     const h = harness({ writeRunSummary })
-    await runPayouts(h.deps, { source: 'squares', sourceId: 'b1', requests: [req()] })
+    await runPayouts(h.deps, { source: 'slot_vote', sourceId: 'b1', requests: [req()] })
     expect(writeRunSummary).toHaveBeenCalledOnce()
   })
 })
 
-describe('turning settled games into payout requests', () => {
-  it('gives each squares period its own id so one wallet can win twice', () => {
-    const requests = squaresPayoutRequests('board-1', [
-      { periodKey: 'q1', label: 'End of 1st', winner: { wallet: W.a, displayName: 'alice' }, payoutCsgn: 150_000 },
-      { periodKey: 'f', label: 'Final', winner: { wallet: W.a, displayName: 'alice' }, payoutCsgn: 500_000 },
-      { periodKey: 'h', label: 'Halftime', winner: null, payoutCsgn: 0 },
-    ])
-
-    expect(requests).toHaveLength(2)
-    expect(new Set(requests.map((r) => payoutId(r.source, r.sourceId, r.wallet))).size).toBe(2)
-  })
-
-  it('skips rolled-over periods', () => {
-    expect(squaresPayoutRequests('b1', [
-      { periodKey: 'q1', label: 'End of 1st', winner: null, payoutCsgn: 150_000 },
-    ])).toEqual([])
-  })
-
-  it('labels Starting 5 finishes with an ordinal', () => {
-    const requests = startingFivePayoutRequests('slate-1', [
-      { rank: 1, wallet: W.a, displayName: 'alice', payoutCsgn: 300_000 },
-      { rank: 2, wallet: W.b, displayName: 'bob', payoutCsgn: 180_000 },
-      { rank: 3, wallet: W.c, displayName: 'cam', payoutCsgn: 120_000 },
-    ])
-
-    expect(requests.map((r) => r.note)).toEqual([
-      'Starting 5 — 1st place',
-      'Starting 5 — 2nd place',
-      'Starting 5 — 3rd place',
-    ])
-  })
-
-  it('gives tied ranks distinct ids by binding the wallet in', () => {
-    const requests = startingFivePayoutRequests('slate-1', [
-      { rank: 1, wallet: W.a, displayName: 'alice', payoutCsgn: 240_000 },
-      { rank: 1, wallet: W.b, displayName: 'bob', payoutCsgn: 240_000 },
-    ])
-    expect(new Set(requests.map((r) => payoutId(r.source, r.sourceId, r.wallet))).size).toBe(2)
-  })
-})

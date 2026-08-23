@@ -2,11 +2,12 @@
 // unit-tested directly and reused server-side. `slots.ts` re-exports all of it.
 //
 // Two blocks only, no auctions:
-//   'open'    — anyone with a verified account can claim it (3 AM – 7 PM ET)
+//   'open'    — nothing programmed; the member clip reel has it, unless the
+//               operator puts a live roster streamer on (3 AM – 7 PM ET)
 //   'network' — CSGN Originals block (7 PM – 3 AM ET), programmed by the network
 //
 // The network block can be switched off globally (config/scheduleMeta →
-// networkBlockEnabled: false), which returns those hours to open claiming
+// networkBlockEnabled: false), which hands those hours back to the member reel
 // without rewriting a single slot doc.
 
 /**
@@ -37,8 +38,8 @@ export function toMillis(value: unknown): number {
 export type SlotType = 'open' | 'network'
 
 export type SlotStatus =
-  | 'open'      // claimable
-  | 'confirmed' // claimed / network-assigned
+  | 'open'      // nothing programmed — clip hour
+  | 'confirmed' // a streamer or network show is booked on it
   | 'live'      // currently airing
   | 'completed' // finished airing
 
@@ -56,7 +57,7 @@ export function normalizeSlotType(value: unknown): SlotType {
 }
 
 /** Map any stored (possibly legacy) status onto the current model. Auction-era
- *  statuses collapse back to 'open' so those slots become claimable again. */
+ *  statuses collapse back to 'open' so those hours return to the reel. */
 export function normalizeSlotStatus(value: unknown): SlotStatus {
   const v = String(value || '') as SlotStatus | LegacySlotStatus
   if (v === 'confirmed' || v === 'live' || v === 'completed') return v
@@ -75,22 +76,29 @@ export function isNetworkSlot(slot: { type?: unknown }): boolean {
 }
 
 /**
- * Can a viewer claim this slot right now?
+ * Is this hour OPEN — nothing programmed on it, so the member reel has it?
+ *
+ * This used to be `isSlotClaimable`, back when a member could reserve a block.
+ * Nobody reserves anything now: the operator puts a roster member on when they
+ * are actually live, and every hour without one runs clips. The rule didn't
+ * change, only what it's for — "open" is now the input to the clip schedule
+ * rather than an invitation to book.
  *
  * **Assignment decides, not status.** On an unassigned slot the status field is
- * bookkeeping — it drifts (an admin sets the airing hour to 'live' to push a
+ * bookkeeping — it drifts (an operator sets the airing hour to 'live' to push a
  * stream, a legacy doc says 'confirmed', the clock advances it) and none of that
- * means a person took the hour. What means the hour is taken is `assignedUid`.
+ * means a person is on the hour. What means the hour is taken is `assignedUid`.
  *
- * So: an unassigned slot that hasn't ended is claimable, including **the hour
- * that is on the air right now** — which is the single most valuable slot to
- * claim, because the claimant can go live immediately. Only an explicit
- * 'completed' marker stops it, since that's a deliberate "this one is finished".
+ * So: an unassigned slot that hasn't ended is open, including **the hour that is
+ * on the air right now** — which is exactly what lets the channel fall back to
+ * clips the instant a streamer drops off, rather than sitting dark until the top
+ * of the next hour. Only an explicit 'completed' marker stops it, since that's a
+ * deliberate "this one is finished".
  *
  * Network slots are reserved for CSGN Originals — unless the block is switched
- * off globally, which hands those hours back to open claiming.
+ * off globally, which hands those hours back to the member reel.
  */
-export function isSlotClaimable(
+export function isOpenHour(
   slot: { type?: unknown; status?: unknown; assignedUid?: string | null; endTime: string },
   networkBlockEnabled = true,
 ): boolean {
@@ -124,7 +132,7 @@ export function assignmentStatus(
 
 /**
  * How a slot presents anywhere in the app — the single source of truth for "who
- * is on this hour, what do we call it, and is it a claimable open stage." Every
+ * is on this hour, what do we call it, and is the hour open." Every
  * viewer surface (the /watch headline, the schedule strip, the up-next list, the
  * offline + intermission boards) reads from this one function so they can never
  * disagree.
@@ -134,8 +142,8 @@ export function assignmentStatus(
  *   - a LIVE network show ("CSGN @ NITE") that read "THE STAGE IS OPEN" because
  *     the old heading blanked any name starting with "CSGN" and fell back to the
  *     open-stage copy, and
- *   - a claimed hour ("csgnet") that read "Open Slot" because a non-network slot
- *     was assumed to be unclaimed.
+ *   - a booked hour ("csgnet") that read "Open Slot" because a non-network slot
+ *     was assumed to have nobody on it.
  *
  * The whole model is **programmed vs. open**:
  *   - a reserved CSGN Originals hour (network + block on), OR a slot a creator /
@@ -152,7 +160,7 @@ export interface SlotIdentity {
   name: string
   /** Secondary line: the stream title or the block — never "Open Slot" once programmed. */
   kind: string
-  /** True only when nothing is programmed and the hour is a claimable open stage. */
+  /** True only when nothing is programmed — i.e. the hour belongs to the reel. */
   isOpen: boolean
   /** True when this is a CSGN Originals (network) hour. */
   isNetwork: boolean
@@ -160,11 +168,11 @@ export interface SlotIdentity {
 
 export interface SlotIdentityOptions {
   networkBlockEnabled?: boolean
-  /** Headline for a genuinely open hour. Default 'Open Slot' (Watch passes 'THE STAGE IS OPEN'). */
+  /** Headline for an hour with nothing programmed. Default 'Member Reel'. */
   openName?: string
-  /** Secondary line for an open hour. Default 'Open Slot'. */
+  /** Secondary line for that hour. Default 'Clips from members'. */
   openKind?: string
-  /** Secondary line for a claimed hour that has no stream title. Default 'Live on CSGN'. */
+  /** Secondary line for a booked hour that has no stream title. Default 'Live on CSGN'. */
   liveKind?: string
 }
 
@@ -178,8 +186,8 @@ export function slotIdentity(
   options: SlotIdentityOptions = {},
 ): SlotIdentity {
   const networkBlockEnabled = options.networkBlockEnabled ?? true
-  const openName = options.openName ?? 'Open Slot'
-  const openKind = options.openKind ?? 'Open Slot'
+  const openName = options.openName ?? 'Member Reel'
+  const openKind = options.openKind ?? 'Clips from members'
   const liveKind = options.liveKind ?? 'Live on CSGN'
 
   const assignedName = String(slot?.assignedName ?? '').trim()
@@ -197,31 +205,31 @@ export function slotIdentity(
     // reserved hour is simply CSGN Originals. Either way the block is the kind.
     return { name: assignedName || streamTitle || CSGN_ORIGINALS, kind: CSGN_ORIGINALS, isOpen: false, isNetwork: true }
   }
-  // A creator holds an open-block hour — headline them, never "Open Slot".
-  return { name: assignedName || 'Claimed', kind: streamTitle || liveKind, isOpen: false, isNetwork: false }
+  // A creator is on an open-block hour — headline them, never "Open Slot".
+  return { name: assignedName || 'On Air', kind: streamTitle || liveKind, isOpen: false, isNetwork: false }
 }
 
 
-/* ─── Who may claim ─── */
+/* ─── Who the network can put on air ─── */
 
 /**
- * Why a signed-in member can't claim an hour — or that they can.
+ * Why a member isn't eligible to be put on air — or that they are.
  *
- * This MIRRORS the checks in netlify/functions/claimSlot.ts. The server is the
- * authority and always re-checks; this exists so the UI can say the same thing
- * the server would, BEFORE the round trip. Before it existed, a member with no
- * Twitch linked saw an enabled "Take Slot" button, pressed it, and got
- * "Verified Phantom and Twitch are required" — a sentence that names two things
- * without saying which one is missing or what to do about it.
+ * This is the ROSTER gate. It was the claim gate until claiming was removed;
+ * the checks are the same because they were never really about booking an hour,
+ * they were about whether there is a real channel to forward and a real account
+ * behind it. `setForwardConsent` and `adminLiveNow` are the servers that enforce
+ * it; this exists so the UI can name the ONE missing thing before a round trip,
+ * instead of a member reading "Verified Phantom and Twitch are required" and
+ * having to guess which half they're missing.
  *
- * If you change a rule in claimSlot.ts, change it here too. The tests pin the
- * pairing, not the wording.
+ * The tests pin the pairing of reason → message, not the wording.
  */
-export type ClaimBlocker = 'signed_out' | 'email_unverified' | 'no_wallet' | 'no_twitch' | 'inactive'
+export type AirBlocker = 'signed_out' | 'email_unverified' | 'no_wallet' | 'no_twitch' | 'inactive'
 
-export interface ClaimEligibility {
+export interface AirEligibility {
   ok: boolean
-  reason?: ClaimBlocker
+  reason?: AirBlocker
   /** What to tell the member. Names the ONE thing that's missing. */
   message?: string
   /** Label for the button that fixes it. */
@@ -230,14 +238,14 @@ export interface ClaimEligibility {
   actionHref?: string
 }
 
-export interface ClaimUser {
+export interface AirUser {
   /** Absent/empty on a wallet-only account, which is what makes the email
    *  verification check conditional rather than universal. */
   email?: string | null
   emailVerified?: boolean
 }
 
-export interface ClaimProfile {
+export interface AirProfile {
   status?: string
   role?: string
   phantom?: { verified?: boolean; walletAddress?: string }
@@ -245,16 +253,16 @@ export interface ClaimProfile {
   twitch?: { verified?: boolean; username?: string }
 }
 
-const OK: ClaimEligibility = { ok: true }
+const OK: AirEligibility = { ok: true }
 
-export function claimEligibility(
-  user: ClaimUser | null | undefined,
-  profile: ClaimProfile | null | undefined,
-): ClaimEligibility {
+export function airEligibility(
+  user: AirUser | null | undefined,
+  profile: AirProfile | null | undefined,
+): AirEligibility {
   if (!user || !profile) {
     return {
       ok: false, reason: 'signed_out',
-      message: 'Create an account to claim this hour — it takes about a minute.',
+      message: 'Create an account to join the roster — it takes about a minute.',
       actionLabel: 'Get started',
     }
   }
@@ -267,29 +275,50 @@ export function claimEligibility(
     return { ok: false, reason: 'inactive', message: 'This account is not active. Contact an admin.' }
   }
   // Only accounts that HAVE an email must verify it. A wallet-only account never
-  // gave one, so an unconditional check here locked it out of claiming forever —
+  // gave one, so an unconditional check here locked it out of the roster forever —
   // and the gate it was standing in for is the pair below: the wallet that gets
   // paid, and the Twitch channel that goes on air. Those are the real ones.
   if (user.email && user.emailVerified !== true) {
     return {
       ok: false, reason: 'email_unverified',
-      message: 'Verify your email to claim a slot. We sent you a link.',
+      message: 'Verify your email to join the roster. We sent you a link.',
       actionLabel: 'Resend email', actionHref: '/account',
     }
   }
-  if (!profile.phantom?.verified || !(profile.phantom?.walletAddress || profile.walletAddress)) {
-    return {
-      ok: false, reason: 'no_wallet',
-      message: 'Connect your Phantom wallet — it is where your creator fees get paid.',
-      actionLabel: 'Connect wallet', actionHref: '/account',
-    }
-  }
+  // NO WALLET CHECK HERE, deliberately.
+  //
+  // A wallet protects one thing: where SOL lands. That matters when we owe
+  // somebody money, which is AFTER they have been on air — not before they join.
+  // Requiring it up front meant a streamer with no crypto could not get on the
+  // network at all, which was the single biggest thing standing between this
+  // network and the people it wants on it.
+  //
+  // Fees earned without a wallet are HELD, never dropped: the Creator Fees tab
+  // shows those members greyed with the amount waiting, and `adminMarkFeesPaid`
+  // cannot settle a slot until there is somewhere to send it. The 'no_wallet'
+  // blocker below is kept in the union for that payout-time prompt.
   if (!profile.twitch?.verified || !profile.twitch?.username) {
     return {
       ok: false, reason: 'no_twitch',
-      message: 'Connect Twitch to claim a slot. It is the channel the network puts on air.',
+      message: 'Connect Twitch to join the roster. It is the channel the network puts on air.',
       actionLabel: 'Connect Twitch', actionHref: '/account',
     }
   }
   return OK
+}
+
+
+/**
+ * A slot time as ET wall clock — "9:00 PM".
+ *
+ * Lifted out of Schedule.tsx, where it was a page-local helper that other
+ * surfaces then re-implemented slightly differently. Times on a schedule are
+ * the one thing that must agree everywhere: a graphic saying 9:00 while the
+ * page says 21:00 is a channel that looks like it does not know its own
+ * running order.
+ */
+export function formatTimeET(value: unknown): string {
+  return new Date(toMillis(value)).toLocaleTimeString('en-US', {
+    timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit',
+  })
 }

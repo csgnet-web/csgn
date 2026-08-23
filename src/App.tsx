@@ -1,9 +1,11 @@
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { AuthProvider } from '@/contexts/AuthContext'
+import { AuthModalProvider } from '@/contexts/AuthModalProvider'
 import { LiveSlotProvider } from '@/contexts/LiveSlotContext'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
+import { BottomNav } from '@/components/layout/BottomNav'
 import { CSGNMark } from '@/components/ui/Logo'
 import { lazy, Suspense } from 'react'
 
@@ -14,10 +16,15 @@ const Dashboard = lazy(() => import('@/pages/Dashboard'))
 const PublicProfile = lazy(() => import('@/pages/PublicProfile'))
 const Admin = lazy(() => import('@/pages/Admin'))
 const Player = lazy(() => import('@/pages/Player'))
+const OldPlayer = lazy(() => import('@/pages/OldPlayer'))
 const Terms = lazy(() => import('@/pages/Terms'))
+const Privacy = lazy(() => import('@/pages/Privacy'))
 const TwitchComplete = lazy(() => import('@/pages/TwitchComplete'))
 const Participate = lazy(() => import('@/pages/Participate'))
 const Treasury = lazy(() => import('@/pages/Treasury'))
+const Studio = lazy(() => import('@/pages/Studio'))
+const EmailComplete = lazy(() => import('@/pages/EmailComplete'))
+const Share = lazy(() => import('@/pages/Share'))
 
 function Loading() {
   return (
@@ -32,7 +39,8 @@ function Loading() {
 
 function AppContent() {
   const location = useLocation()
-  const isPlayerPage = location.pathname === '/player'
+  // Both player routes are chrome-free OBS capture surfaces.
+  const isPlayerPage = location.pathname === '/player' || location.pathname === '/oldplayer'
   // Watch is a full-viewport app shell; /player is a chrome-free OBS capture.
   const isWatchPage = location.pathname === '/' || location.pathname === '/watch'
   const showFooter = !isPlayerPage && !isWatchPage
@@ -61,15 +69,32 @@ function AppContent() {
             <Route path="/vote" element={<Participate />} />
             <Route path="/participate" element={<Participate />} />
             <Route path="/treasury" element={<Treasury />} />
+            <Route path="/studio" element={<Studio />} />
+            {/* Where Android's share sheet lands. See public/manifest.webmanifest. */}
+            <Route path="/share" element={<Share />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/player" element={<Player />} />
+            {/* The revert path — same player, clips off. See OldPlayer.tsx. */}
+            <Route path="/oldplayer" element={<OldPlayer />} />
             <Route path="/terms" element={<Terms />} />
+            <Route path="/privacy" element={<Privacy />} />
             <Route path="/auth/twitch/complete" element={<TwitchComplete />} />
+            <Route path="/auth/email/complete" element={<EmailComplete />} />
           </Routes>
         </AnimatePresence>
       </Suspense>
 
       {showFooter && <Footer />}
+
+      {/* The tab bar sits above everything except modals, on every route but the
+          OBS capture. The spacer keeps the last line of a page clear of it —
+          without it, every page's final element hides under the bar on a phone. */}
+      {!isPlayerPage && (
+        <>
+          <div className="lg:hidden" style={{ height: 'var(--csgn-tabbar)' }} aria-hidden="true" />
+          <BottomNav />
+        </>
+      )}
     </div>
   )
 }
@@ -79,7 +104,12 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <LiveSlotProvider>
-          <AppContent />
+          {/* Inside both, because the sheet reads auth state and the tab bar
+              reads the live slot — and outside AppContent so any route can open
+              it without rendering its own copy. */}
+          <AuthModalProvider>
+            <AppContent />
+          </AuthModalProvider>
         </LiveSlotProvider>
       </AuthProvider>
     </BrowserRouter>

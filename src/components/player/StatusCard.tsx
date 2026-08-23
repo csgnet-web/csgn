@@ -47,9 +47,9 @@ function CountdownRing({ seconds }: { seconds: number }) {
 
 /**
  * Full-screen network status card over a dimmed intermission backdrop.
- * `starting-soon`: a slot streamer hasn't gone live yet. Passing `countdownSeconds`
+ * `starting-soon`: a booked streamer hasn't gone live yet. Passing `countdownSeconds`
  * switches it to the last-call phase — go live before the count ends or the hour
- * reverts to open-to-claim intermission (the same current time slot).
+ * reverts to the member reel (the same current time slot).
  * `brb`: a live feed dropped — held for the BRB grace window while the
  * hidden player listens for the streamer's return.
  */
@@ -92,7 +92,7 @@ export default function StatusCard({
             ) : lastCall ? (
               <>
                 <span className="font-bold text-white">{streamerName || 'The next streamer'}</span>, go live now —
-                when the countdown ends this stage opens for anyone to claim
+                when the countdown ends the channel returns to the member reel
                 {slotLabel ? <span className="font-mono text-primary-300"> · {slotLabel}</span> : null}
               </>
             ) : (

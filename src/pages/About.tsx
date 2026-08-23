@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { CSGN_MINT } from '@/lib/slots'
+import { usePageMeta } from '@/hooks/usePageMeta'
 
 /**
  * About — what CSGN is, and how every part of it actually works.
@@ -42,160 +43,108 @@ function Term({ label, children }: { label: string; children: React.ReactNode })
 }
 
 export default function About() {
+  usePageMeta({
+    title: 'About CSGN — How the 24/7 Crypto Channel Works',
+    description: "How CSGN works: post a link to a clip you already made and it airs between live streams, or connect your Twitch once and get carried automatically. Airtime is one-to-one with the $CSGN you hold.",
+    path: '/about',
+  })
+
   return (
     <div className="min-h-screen pt-24 lg:pt-28 pb-24">
       <div className="max-w-2xl mx-auto px-4 sm:px-6 space-y-8">
 
         <header>
           <h1 className="text-3xl sm:text-4xl font-bold font-display text-white leading-tight">
-            A television network for crypto, with the door left open.
+            A 24-hour TV channel for crypto that anyone can get on.
           </h1>
           <p className="mt-4 text-base text-gray-400 leading-relaxed">
-            CSGN runs 24 hours a day. There's a schedule — twelve two-hour blocks, every day, the
-            same way there's been a schedule since 1948. Eight of those blocks are open, and the way
-            you get one is that you take it.
+            CSGN is always broadcasting. When a streamer from the network goes live, we put them on
+            the channel. When nobody's live, we play clips our members sent in. That's the whole
+            product — a channel that never goes dark, made out of other people's work.
           </p>
           <p className="mt-3 text-base text-gray-400 leading-relaxed">
-            That's the whole idea. Everything below is how it works.
+            There's no audition and no application. Post a link, or connect your Twitch and keep
+            streaming exactly as you already do.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <Link to="/schedule"><Button variant="primary" size="md">See what's open</Button></Link>
-            <Link to="/watch"><Button variant="secondary" size="md">Watch now</Button></Link>
+            <Link to="/watch"><Button variant="primary" size="md">Watch the channel</Button></Link>
+            <Link to="/studio"><Button variant="secondary" size="md">Post a clip</Button></Link>
           </div>
         </header>
 
-        <Section title="Why a schedule and not a feed">
-          <p>
-            Every crypto app you've used gives you a feed. A feed is a slot machine — you put a
-            thought in, pull the handle, and something else decides whether anyone hears it. You
-            don't have a spot. You have a chance, and it resets every morning.
-          </p>
-          <p>
-            Television never worked that way, but television also never let you in. There's no open
-            call at ESPN. You can't claim eleven o'clock.
-          </p>
-          <p>
-            We're the third thing: a real channel with a real schedule and real holes in it. If
-            nobody's booked 3 PM, 3 PM is yours. Nobody votes on whether you're interesting. The
-            hour was empty and you took it.
-          </p>
-        </Section>
-
-        <Section title="Claiming an hour">
-          <p>
-            Open blocks run from 3 AM to 7 PM ET. From 7 PM to 3 AM we run our own programming —
-            CSGN Originals — so those hours aren't claimable.
-          </p>
-          <p>You need two things:</p>
+        <Section title="Two ways to get on">
           <div className="grid gap-2.5 sm:grid-cols-2">
-            <Term label="A wallet">
-              Connect Phantom. It's how you sign in — signing a message is the whole account, no
-              email and no password — and it's where your share of the fees goes.
+            <Term label="Post a clip">
+              Paste a link to something you already put on YouTube, TikTok or Instagram. We check
+              it, then it airs between the live streams. You don't have to be there.
             </Term>
-            <Term label="A Twitch channel">
-              You stream to your own channel as normal. We put it on the network. This is also what
-              stops one person claiming the whole week.
+            <Term label="Connect your Twitch">
+              Tick one box giving us permission to carry your stream. Then just stream. When you go
+              live we can put you on the channel, and you earn a share of trading fees for the
+              minutes you're actually on.
             </Term>
           </div>
           <p>
-            You keep streaming where you already stream. Claiming a slot doesn't move you anywhere —
-            it puts your channel on a network with a lower third, a ticker and a schedule, in front
-            of people who came for the channel rather than for you. That's the difference.
+            Live wins over clips. If a streamer goes on while your clip was queued, their stream
+            takes the air and your clip moves to the next gap.
+          </p>
+        </Section>
+
+        <Section title="Going live without managing anything">
+          <p>
+            This used to mean booking a two-hour block and remembering to be online for it. It
+            doesn't any more. You connect Twitch once, grant permission, and carry on with your
+            week. We check your channel about once a minute, and when you're live you show up on
+            our board and can be put on the channel.
           </p>
           <p>
-            While you're on air you earn <strong className="text-white">30% of $CSGN's trading
-            fees</strong> for the whole block. Not a tip jar, not a share of ad revenue that doesn't
-            exist yet — a cut of what the token actually generates while you're the one on screen.
+            You're paid for the minutes we actually carried you — not for being live on your own
+            channel, and not for booking something you didn't show up to. If our checks fail,
+            that's our problem and you're paid in full.
+          </p>
+          <p>
+            You can still reserve a specific block if you want a guaranteed time. Most people
+            don't, and don't need to.
+          </p>
+        </Section>
+
+        <Section title="Clips, and how much airtime you get">
+          <p>
+            Between live streams the channel plays clips members sent in. How much of that time is
+            yours is <strong className="text-white">one to one with the $CSGN you hold</strong> —
+            hold 1% of the supply, get 1% of the open air. Hold twice as much, get twice as much.
+          </p>
+          <p>
+            Your airtime is worked out from your wallet, not from your posting. It's yours whether
+            or not you've uploaded anything, and you can see the number, the balance behind it and
+            the share of supply it came from on your{' '}
+            <Link to="/studio" className="text-primary-400 hover:text-primary-300 underline">studio page</Link>.
+          </p>
+          <p>
+            There's a ceiling on how much of a day one member can take, so nobody can buy the whole
+            channel. Every clip is watched by a person before it airs. Clips don't earn trading
+            fees — live streams do. What holding buys you is the audience.
           </p>
         </Section>
 
         <Section title="What the token does">
           <p>
-            $CSGN isn't a key. It doesn't gate making an account, claiming a slot, or going live —
-            all of that is free and always will be. What it does is decide what gets{' '}
-            <em>promoted</em>.
+            $CSGN never gates having an account, connecting your Twitch, or going live — those are
+            free and always will be. What it decides is what gets <em>promoted</em>: your share of
+            clip airtime, whether you can put a line on the broadcast ticker, your weight in the
+            Meme 100, and what it costs to win the coin spotlight.
           </p>
           <p>
-            The important part: <strong className="text-white">holding is not spending.</strong>{' '}
-            Nothing here burns your tokens, locks them, escrows them, or asks you to deposit them.
-            Your voting power is simply what's in your wallet right now, read from the chain. Sell
-            tomorrow and your weight goes with it. That's the entire mechanic.
+            <strong className="text-white">Holding is not spending.</strong> Nothing is burned,
+            locked, escrowed or deposited. Your weight is simply what's in your wallet right now,
+            read from the chain. Sell tomorrow and it goes with you.
           </p>
-          <div className="grid gap-2.5">
-            <Term label="Meme 100">
-              A ranked board of coins. You back one with your $CSGN and the standings go on air. The
-              rank blends holder votes, 24h volume, market cap and how much is actually happening on
-              the chart — and every coin on it has its contract address right there on the card, so
-              you can check what you're backing. Change your pick whenever you like; your weight
-              moves with you.
-            </Term>
-            <Term label="Right Now">
-              Hold enough $CSGN and you can push a line onto the broadcast ticker. Your words, on
-              the network, on air.
-            </Term>
-            <Term label="Coin Jukebox">
-              Pay to put a coin in the spotlight, in SOL or $CSGN. Like TouchTunes, for the ticker.
-              The money goes to the treasury.
-            </Term>
-            <Term label="Network votes">
-              Holders decide things that affect the channel. Weight is your balance, tallies are
-              re-checked against live on-chain holdings when a vote closes, and the totals are
-              public.
-            </Term>
-          </div>
           <p>
-            <strong className="text-white">We never burn anything.</strong> Burning destroys capital
-            once for a press release. Instead everything the network takes in goes to one public
-            treasury under published rules, so you can watch the balance and hold us to it. It's on{' '}
+            Everything the network takes in goes to one public treasury under published rules, so
+            you can watch the balance:{' '}
             <Link to="/treasury" className="text-primary-400 hover:text-primary-300 underline">
               /treasury
             </Link>.
-          </p>
-        </Section>
-
-        <Section title="The games">
-          <p>
-            Two, and they work on opposite principles on purpose.
-          </p>
-          <div className="grid gap-2.5 sm:grid-cols-2">
-            <Term label="Starting 5 — daily, free">
-              Pick five coins off the day's slate, one from each size tier, and name a captain. Go
-              5-for-5 and you take a share of 100,000 $CSGN. Nobody goes perfect, the jackpot rolls
-              into tomorrow. It's free to enter — how many lineups you get depends on what you hold,
-              and everybody gets at least one.
-            </Term>
-            <Term label="Squares — weekly, paid">
-              The office pool. Buy squares on a 10×10 grid, digits get drawn after entries close,
-              and the winner takes 500,000 $CSGN on a full board. This is the one game that costs
-              money: the prize is the entry pool minus a published rake. A short board pays a
-              shorter prize — we don't pretend otherwise.
-            </Term>
-          </div>
-          <p>
-            Both draws are reproducible. The random numbers come from a Solana blockhash sampled
-            <em> after</em> entries close, run through a published function — so nobody, including
-            us, could know the result while the game was open, and anyone can re-derive it
-            afterwards.
-          </p>
-          <p className="text-gray-500">
-            Neither game is open yet. The engines are built and tested; the boards go live once the
-            first slate runs.
-          </p>
-        </Section>
-
-        <Section title="Your profile">
-          <p>
-            Your profile is at <span className="font-mono text-gray-300">/account</span>. It shows
-            your slots and what they earned, your $CSGN holdings and what they entitle you to, your
-            game record, and your Meme 100 vote — which you can change from there any time.
-          </p>
-          <p>
-            Other members can find you at{' '}
-            <span className="font-mono text-gray-300">csgn.fun/u/yourname</span>. That page shows
-            your name, your Twitch, your slots and your winnings.{' '}
-            <strong className="text-white">It does not show your wallet address, and it does not
-            show an email if you gave one.</strong> Both are visible to you and nobody else — neither
-            is in any response another member can reach.
           </p>
         </Section>
 
@@ -206,15 +155,14 @@ export default function About() {
             <p className="mt-1 font-mono text-xs text-gray-300 break-all">{CSGN_MINT}</p>
           </div>
           <p className="text-gray-500">
-            Nothing on this site is financial advice. The games pay real tokens to real people and
-            the token can go to zero like any other. Don't put in money you need.
+            Nothing here is financial advice. The token can go to zero like any other. Don't put in
+            money you need.
           </p>
         </Section>
 
         <Section title="Open source">
           <p>
-            All of it. The player, the schedule, the games, the payout ledger, the broadcast
-            graphics — MIT licensed, on{' '}
+            All of it — MIT licensed, on{' '}
             <a
               href="https://github.com/csgnet-web/csgn"
               target="_blank"
@@ -222,19 +170,19 @@ export default function About() {
               className="text-primary-400 hover:text-primary-300 underline"
             >
               GitHub
-            </a>. Fork it, point the wallets at your own, and run your own network. We'd rather the
-            idea spread than be the only ones with it.
+            </a>. Fork it, point the wallets at your own, run your own network.
           </p>
         </Section>
 
         <section className="border-t border-white/[0.08] pt-8">
-          <p className="text-base text-white font-medium">There's an empty hour on the schedule.</p>
+          <p className="text-base text-white font-medium">The channel is on right now.</p>
           <p className="mt-2 text-sm text-gray-400 leading-relaxed">
-            Go look at it. If it's still open, it's yours.
+            Something you made could be on it tonight. Paste a link — it takes about eleven seconds.
           </p>
-          <Link to="/schedule" className="inline-block mt-5">
-            <Button variant="primary" size="md">See the schedule</Button>
-          </Link>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Link to="/studio"><Button variant="primary" size="md">Post a clip</Button></Link>
+            <Link to="/schedule"><Button variant="secondary" size="md">See who's on</Button></Link>
+          </div>
         </section>
 
       </div>

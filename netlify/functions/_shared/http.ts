@@ -22,6 +22,61 @@ export function json(statusCode: number, data: unknown, extraHeaders: Record<str
   }
 }
 
+/**
+ * A PUBLIC READ THAT THE CDN CAN SERVE WITHOUT WAKING A FUNCTION.
+ *
+ * ── Why this exists ────────────────────────────────────────────────────────
+ *
+ * Netlify bills function invocations and the wall clock they burn. Several
+ * endpoints here answer the SAME question for everybody — the Meme 100, who is
+ * live on the roster, the recommended-profiles rail — and each of them was
+ * being invoked once per viewer per poll. Two hundred people with /watch open
+ * is two hundred invocations a minute for one identical JSON body.
+ *
+ * `memo()` in cache.ts already stops that becoming Firestore reads, but a memo
+ * hit is still a container being started and billed. This stops the request
+ * reaching a container at all: the edge holds the body and serves it.
+ *
+ * ── The two headers ────────────────────────────────────────────────────────
+ *
+ *   Cache-Control              — what the VIEWER'S BROWSER may keep.
+ *   Netlify-CDN-Cache-Control  — what the EDGE may keep, and for how long it
+ *                                may keep serving a stale copy while it
+ *                                refreshes in the background.
+ *
+ * They are separate on purpose. A short browser TTL keeps a member from seeing
+ * their own action fail to appear; a longer edge TTL with stale-while-
+ * revalidate is what actually collapses the invocation count, because the first
+ * request after expiry is served instantly from the stale copy and exactly one
+ * background refresh is triggered.
+ *
+ * ── NEVER use this for ─────────────────────────────────────────────────────
+ *
+ * Anything that varies by caller. A per-user balance, a member's own reel, an
+ * admin queue. Caching one member's answer and serving it to the next is not a
+ * performance bug, it is a data leak, and it is the reason this helper is a
+ * separate named function rather than a flag on `json()`.
+ */
+export function cachedJson(
+  data: unknown,
+  { browserSeconds = 15, edgeSeconds = 60, staleSeconds = 300 }: {
+    browserSeconds?: number
+    edgeSeconds?: number
+    staleSeconds?: number
+  } = {},
+): HandlerResponse {
+  return json(200, data, {
+    'Cache-Control': `public, max-age=${browserSeconds}`,
+    'Netlify-CDN-Cache-Control': `public, s-maxage=${edgeSeconds}, stale-while-revalidate=${staleSeconds}`,
+  })
+}
+
+/** The opposite, said explicitly. For a response that is correct only for the
+ *  caller who asked, or only at the instant it was produced. */
+export function uncachedJson(statusCode: number, data: unknown): HandlerResponse {
+  return json(statusCode, data, { 'Cache-Control': 'no-store' })
+}
+
 export function html(statusCode: number, body: string): HandlerResponse {
   return { statusCode, headers: { ...corsHeaders(), 'Content-Type': 'text/html; charset=utf-8' }, body }
 }

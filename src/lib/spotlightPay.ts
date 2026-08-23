@@ -1,4 +1,4 @@
-import { Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js'
+import { Connection, PublicKey, Transaction } from '@solana/web3.js'
 import {
   getAssociatedTokenAddressSync,
   createTransferCheckedInstruction,
@@ -7,12 +7,14 @@ import {
 } from '@solana/spl-token'
 import { CSGN_TREASURY, CSGN_MINT, CSGN_DECIMALS } from './slots'
 
-// Client side of the Coin Jukebox: pay the CSGN treasury to put your coin in the
-// broadcast spotlight (TouchTunes-style) — in SOL (a plain SystemProgram
-// transfer) or in $CSGN (an SPL transfer of the mint). Either returns a confirmed
+// Client side of the Coin Jukebox: bid $CSGN to the treasury to take the
+// broadcast spotlight. An SPL transferChecked of the mint, returning a confirmed
 // signature that jukeboxSpotlight then re-verifies on-chain before granting the
-// spotlight. The treasury recycles the proceeds into distribution / creator
-// payouts / liquidity — nothing is burned (see /treasury).
+// spotlight.
+//
+// $CSGN ONLY. The SOL path was removed deliberately — see the header of
+// netlify/functions/jukeboxSpotlight.ts. The treasury recycles the proceeds into
+// distribution / creator payouts / liquidity; nothing is burned (see /treasury).
 //
 // ⚠️ Not yet exercised against a live mainnet transaction — dry-run with a tiny
 //    amount before enabling the jukebox publicly.
@@ -23,31 +25,10 @@ interface PhantomTxProvider {
   signAndSendTransaction?: (tx: Transaction) => Promise<{ signature: string }>
 }
 
-/** Pay `sol` SOL from `walletAddress` to the treasury; resolves with the
- *  confirmed tx signature. Throws if Phantom is unavailable or the user rejects. */
-export async function paySpotlight(walletAddress: string, sol: number): Promise<string> {
-  const provider = (window as unknown as { solana?: PhantomTxProvider }).solana
-  if (!provider?.isPhantom || !provider.signAndSendTransaction) throw new Error('Phantom is required to play the jukebox.')
-  if (!(sol > 0)) throw new Error('Amount must be positive.')
-
-  const owner = new PublicKey(walletAddress)
-  const treasury = new PublicKey(CSGN_TREASURY)
-  const lamports = Math.round(sol * LAMPORTS_PER_SOL)
-
-  const conn = new Connection(RPC, 'confirmed')
-  const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash('confirmed')
-  const tx = new Transaction({ feePayer: owner, blockhash, lastValidBlockHeight })
-  tx.add(SystemProgram.transfer({ fromPubkey: owner, toPubkey: treasury, lamports }))
-
-  const { signature } = await provider.signAndSendTransaction(tx)
-  await conn.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed')
-  return signature
-}
-
 /** Pay `amount` $CSGN from `walletAddress` to the treasury's token account;
- *  resolves with the confirmed tx signature. An SPL transferChecked of the mint —
- *  the token equivalent of paySpotlight. Throws if Phantom is unavailable, the
- *  wallet holds no $CSGN token account, or the user rejects. */
+ *  resolves with the confirmed tx signature. An SPL transferChecked of the mint.
+ *  Throws if Phantom is unavailable, the wallet holds no $CSGN token account,
+ *  or the user rejects. */
 export async function paySpotlightCsgn(walletAddress: string, amount: number): Promise<string> {
   const provider = (window as unknown as { solana?: PhantomTxProvider }).solana
   if (!provider?.isPhantom || !provider.signAndSendTransaction) throw new Error('Phantom is required to play the jukebox.')

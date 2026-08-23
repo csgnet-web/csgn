@@ -33,7 +33,7 @@ const SCHEDULE_TEMPLATE: TemplateSlot[] = [
 ]
 
 /** Convert an ET wall-clock hour on a calendar date to UTC, DST-aware. */
-function etToUTC(year: number, month: number, day: number, hourET: number): Date {
+export function etToUTC(year: number, month: number, day: number, hourET: number): Date {
   let candidate = new Date(Date.UTC(year, month - 1, day, hourET + 5, 0, 0))
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',

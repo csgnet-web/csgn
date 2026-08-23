@@ -1,4 +1,4 @@
-import { isSlotClaimable, slotIdentity, toMillis } from '@/lib/slots'
+import { slotIdentity, toMillis } from '@/lib/slots'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight } from 'lucide-react'
@@ -86,16 +86,10 @@ function TodaySlotCard({ slot, isCurrent, networkBlockEnabled }: { slot: Slot; i
 }
 
 /**
- * Collapsible "Today's Schedule" strip with claimable slots and up-next list.
- * Claim handling stays in Watch (needs auth + register-modal flow).
+ * Collapsible "Today's Schedule" strip — what is on now and what is up next.
+ * Read-only by design: nobody books an hour, so there is nothing to press.
  */
-export default function ScheduleStrip({
-  claiming,
-  onClaimSlot,
-}: {
-  claiming: boolean
-  onClaimSlot: (slot: Slot) => void
-}) {
+export default function ScheduleStrip() {
   const { allSlots, nowMs, networkBlockEnabled } = useLiveSlot()
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
 
@@ -153,21 +147,12 @@ export default function ScheduleStrip({
               const slotStart = toMillis(slot.startTime)
               const slotEnd = toMillis(slot.endTime)
               const isCurrent = nowMs >= slotStart && nowMs < slotEnd
-              // Same shared rule as /schedule and the server — see isSlotClaimable.
-              const claimable = isSlotClaimable(slot, networkBlockEnabled)
+              // NO "TAKE SLOT". Nobody claims a block any more — the channel
+              // runs off whoever from the roster is live. The card is a record
+              // of what is on, which is the only thing this strip should be.
               return (
                 <div key={slot.id} className="flex flex-col gap-1.5">
                   <TodaySlotCard slot={slot} isCurrent={isCurrent} networkBlockEnabled={networkBlockEnabled} />
-                  {claimable && (
-                    <button
-                      type="button"
-                      onClick={() => onClaimSlot(slot)}
-                      disabled={claiming}
-                      className="flex items-center justify-center w-full text-[10px] font-bold uppercase tracking-wider px-2 py-1 lg:py-0.5 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
-                    >
-                      Take Slot
-                    </button>
-                  )}
                 </div>
               )
             })}

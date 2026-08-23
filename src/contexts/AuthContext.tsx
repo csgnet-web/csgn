@@ -6,10 +6,19 @@ import {
   createUserWithEmailAndPassword,
   linkWithCredential,
   EmailAuthProvider,
+  GoogleAuthProvider,
+  TwitterAuthProvider,
+  signInWithPopup,
+  signInWithRedirect,
+  sendSignInLinkToEmail,
+  isSignInWithEmailLink,
+  signInWithEmailLink,
   signOut as firebaseSignOut,
   sendEmailVerification,
   type User,
+  type AuthProvider as FirebaseAuthProvider,
 } from 'firebase/auth'
+import { isEmbeddedBrowser } from '@/lib/webview'
 import { doc, getDoc } from 'firebase/firestore'
 import { auth, db } from '@/config/firebase'
 import { logAuthEvent } from '@/lib/authEvents'
@@ -47,6 +56,89 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
     return unsubscribe
   }, [])
+
+  /* ── One-tap sign-in ────────────────────────────────────────────────────
+   *
+   * Google, X, and an email link. No password to invent, no wallet to install,
+   * and — the part that matters — no decision about whether this is a sign-UP
+   * or a sign-IN. The provider knows. If a profile already exists we load it;
+   * if not, `finalizeSocialAccount` mints one with a handle nobody had to think
+   * of. That is the whole reason this replaced a five-step form.
+   *
+   * A wallet is still offered, and still required to be PAID — just not to
+   * exist here.
+   */
+  const socialSignIn = async (provider: FirebaseAuthProvider, label: string) => {
+    await logAuthEvent('signin-start', { meta: { method: label } })
+    try {
+      // A popup is better UX where it works, and is silently killed inside
+      // Phantom's / Instagram's in-app browser — so those get a full-page
+      // redirect instead. Same reasoning as the Twitch handoff in
+      // useTwitchLink: never hand an embedded webview a popup.
+      if (isEmbeddedBrowser()) {
+        await signInWithRedirect(auth, provider)
+        return
+      }
+      const { user: firebaseUser } = await signInWithPopup(auth, provider)
+      await ensureProfile(firebaseUser)
+      await logAuthEvent('signin-success', { uid: firebaseUser.uid, meta: { method: label } })
+    } catch (err) {
+      await logAuthEvent('signin-failure', {
+        errorMessage: err instanceof Error ? err.message : String(err),
+        meta: { method: label },
+      })
+      throw err
+    }
+  }
+
+  /** Create the CSGN profile if this Firebase user does not have one yet.
+   *  Safe to call on every sign-in — the function answers `created: false` for
+   *  an account that already exists rather than erroring. */
+  const ensureProfile = async (firebaseUser: User) => {
+    try {
+      await api.finalizeSocialAccount()
+    } catch (err) {
+      console.warn('Could not finalize social account:', err)
+    }
+    await fetchProfile(firebaseUser.uid)
+  }
+
+  const signInWithGoogle = async () => {
+    const provider = new GoogleAuthProvider()
+    // Always ask which account — a shared device that silently reuses the last
+    // Google session is how somebody ends up posting from someone else's name.
+    provider.setCustomParameters({ prompt: 'select_account' })
+    await socialSignIn(provider, 'google')
+  }
+
+  const signInWithX = async () => {
+    await socialSignIn(new TwitterAuthProvider(), 'x')
+  }
+
+  /** Email link ("magic link") — no password ever created, so none can be
+   *  forgotten, reused or leaked. The link returns to /auth/email/complete. */
+  const sendEmailLink = async (email: string) => {
+    const clean = email.trim().toLowerCase()
+    await logAuthEvent('signup-email-start', { meta: { method: 'email-link' } })
+    await sendSignInLinkToEmail(auth, clean, {
+      url: `${window.location.origin}/auth/email/complete`,
+      handleCodeInApp: true,
+    })
+    // Kept so the completion page can finish without asking for the address
+    // again — Firebase requires the original email to redeem the link.
+    window.localStorage.setItem('csgn:emailForSignIn', clean)
+  }
+
+  /** Finish an email-link sign-in on the landing page. */
+  const completeEmailLink = async (href: string, fallbackEmail?: string) => {
+    if (!isSignInWithEmailLink(auth, href)) throw new Error('That link is not a valid sign-in link.')
+    const stored = window.localStorage.getItem('csgn:emailForSignIn') || fallbackEmail || ''
+    if (!stored) throw new Error('Enter the email address the link was sent to.')
+    const { user: firebaseUser } = await signInWithEmailLink(auth, stored, href)
+    window.localStorage.removeItem('csgn:emailForSignIn')
+    await ensureProfile(firebaseUser)
+    await logAuthEvent('signup-email-success', { uid: firebaseUser.uid, meta: { method: 'email-link' } })
+  }
 
   const signIn = async (email: string, password: string) => {
     void logAuthEvent('signin-start', { meta: { identifierKind: 'email' } })
@@ -155,5 +247,5 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user && !user.emailVerified) await sendEmailVerification(user)
   }
 
-  return <AuthContext.Provider value={{ user, profile, loading, signIn, signInWithPhantom, signUp, signUpWithPhantom, addEmailPassword, signOut, refreshProfile, resendVerification }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user, profile, loading, signIn, signInWithPhantom, signInWithGoogle, signInWithX, sendEmailLink, completeEmailLink, signUp, signUpWithPhantom, addEmailPassword, signOut, refreshProfile, resendVerification }}>{children}</AuthContext.Provider>
 }

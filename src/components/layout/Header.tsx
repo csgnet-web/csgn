@@ -5,7 +5,7 @@ import { Menu, X, ChevronDown, User, LogOut, LayoutDashboard, Shield } from 'luc
 import { Button } from '@/components/ui/Button'
 import { LiveIndicator } from '@/components/ui/LiveIndicator'
 import { Logo } from '@/components/ui/Logo'
-import { AuthModal } from '@/components/auth/AuthModal'
+import { useAuthModal } from '@/contexts/useAuthModal'
 import { useAuth } from '@/contexts/useAuth'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
 import { CSGN_MINT } from '@/lib/slots'
@@ -14,6 +14,10 @@ import { useScrollLock } from '@/hooks/useScrollLock'
 const navLinks = [
   { href: '/watch', label: 'Watch Live', live: true },
   { href: '/schedule', label: 'Schedule' },
+  // Studio sits in the main nav, not behind the account menu: putting a clip on
+  // the network is a thing to DO, and the whole point of the link model is that
+  // it takes one paste. Burying it two taps deep would undo that.
+  { href: '/studio', label: 'Studio' },
   { href: '/about', label: 'About' },
 ]
 
@@ -52,19 +56,19 @@ export function Header() {
   const [mobileOpen, setMobileOpen] = useState(false)
   useScrollLock(mobileOpen)
   const [profileOpen, setProfileOpen] = useState(false)
-  const [authModal, setAuthModal]   = useState<{ open: boolean; mode: 'login' | 'signup' }>({
-    open: false,
-    mode: 'login',
-  })
-
   const location = useLocation()
   const [searchParams] = useSearchParams()
   const { user, profile, signOut } = useAuth()
+  // The sheet is mounted once at the app root (AuthModalProvider) so the tab
+  // bar and any locked page can open the same one.
+  const { openAuth: openAuthSheet } = useAuthModal()
 
-  const openAuth = useCallback((mode: 'login' | 'signup') => {
+  // No mode argument any more: the sheet has no sign-in/sign-up fork, because
+  // the provider already knows which one applies.
+  const openAuth = useCallback(() => {
     setMobileOpen(false)
-    setAuthModal({ open: true, mode })
-  }, [])
+    openAuthSheet()
+  }, [openAuthSheet])
 
   // The mobile-safe Twitch OAuth flow returns the user to the page they left,
   // tagged ?auth=register when they were mid-sign-up (see lib/authReturn.ts).
@@ -73,7 +77,7 @@ export function Header() {
   // path is that sign-up resumes wherever it started.
   useEffect(() => {
     if (searchParams.get('auth') !== 'register') return
-    const id = setTimeout(() => openAuth('signup'), 0)
+    const id = setTimeout(() => openAuth(), 0)
     return () => clearTimeout(id)
   }, [searchParams, openAuth])
 
@@ -84,8 +88,8 @@ export function Header() {
   }, [])
 
   useEffect(() => {
-    const openRegister = () => openAuth('signup')
-    const openLogin = () => openAuth('login')
+    const openRegister = () => openAuth()
+    const openLogin = () => openAuth()
     window.addEventListener('csgn:openRegister', openRegister)
     window.addEventListener('csgn:openLogin', openLogin)
     return () => {
@@ -210,8 +214,8 @@ export function Header() {
                 </div>
               ) : (
                 <div className="hidden lg:flex items-center gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => openAuth('login')}>Sign In</Button>
-                  <Button variant="primary" size="sm" onClick={() => openAuth('signup')}>Get Started</Button>
+                  <Button variant="ghost" size="sm" onClick={() => openAuth()}>Sign In</Button>
+                  <Button variant="primary" size="sm" onClick={() => openAuth()}>Get Started</Button>
                 </div>
               )}
 
@@ -265,10 +269,10 @@ export function Header() {
               </div>
               {!user && (
                 <div className="mt-8 flex flex-col gap-3">
-                  <Button variant="secondary" size="lg" className="w-full" onClick={() => openAuth('login')}>
+                  <Button variant="secondary" size="lg" className="w-full" onClick={() => openAuth()}>
                     Sign In
                   </Button>
-                  <Button variant="primary" size="lg" className="w-full" onClick={() => openAuth('signup')}>
+                  <Button variant="primary" size="lg" className="w-full" onClick={() => openAuth()}>
                     Get Started
                   </Button>
                 </div>
@@ -278,12 +282,6 @@ export function Header() {
         )}
       </AnimatePresence>
 
-      {/* Auth Modal */}
-      <AuthModal
-        isOpen={authModal.open}
-        onClose={() => setAuthModal((s) => ({ ...s, open: false }))}
-        initialMode={authModal.mode}
-      />
     </>
   )
 }

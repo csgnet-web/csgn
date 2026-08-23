@@ -19,6 +19,9 @@ import { isOBS, obsVersion } from '@/lib/environment'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
 import { WipeOverlay } from '@/components/ui/WipeOverlay'
 import IntermissionBoard from '@/components/player/IntermissionBoard'
+import ChannelIdent from '@/components/player/kit/ChannelIdent'
+import NowOnAir from '@/components/player/kit/NowOnAir'
+import ComingUpPanel from '@/components/player/kit/ComingUpPanel'
 import StatusCard from '@/components/player/StatusCard'
 import VodRotator, { type VodItem } from '@/components/player/VodRotator'
 import FeedCover from '@/components/player/FeedCover'
@@ -153,7 +156,26 @@ function buildOverrideSrc(url: string): string | null {
  * gate confirms; in a normal browser tab, where the autoplay policy blocks a
  * gesture-less unmute, a one-tap affordance unlocks sound.
  */
-export default function Player() {
+/**
+ * `clipsEnabled: false` is the REVERT PATH, served at /oldplayer.
+ *
+ * The clip reel is the newest and least battle-tested source on the channel: it
+ * pulls third-party embeds from three platforms, any of which can change an
+ * embed policy overnight and leave a black rectangle on television. When that
+ * happens the fix is not to debug live — it is to point OBS at a URL that
+ * cannot possibly be affected, and then debug.
+ *
+ * So this is a FLAG on the real player rather than a forked copy of it. A copy
+ * would drift: the fallback would quietly stop receiving the fixes that make
+ * the primary work, and the day you needed it would be the day you found out.
+ * Everything else — the live pipeline, the state machine, the wipes, the
+ * overlays, the preview modes — is byte-for-byte identical, because it is the
+ * same component.
+ *
+ * With clips off, INTERMISSION falls back to the admin VOD playlist and then to
+ * the branded board, which is exactly how the channel ran before clips existed.
+ */
+export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean } = {}) {
   const hostname = useMemo(() => (typeof window !== 'undefined' ? window.location.hostname : 'localhost'), [])
   const obs = useMemo(() => isOBS(), [])
   // No-ads / Turbo fast-reveal flag: set on the OBS Browser Source URL
@@ -468,6 +490,10 @@ export default function Player() {
   }, [broadcast])
 
   // ── Firestore: admin-managed intermission VOD playlist ──
+  //
+  // The FALLBACK, not the main event. Holder airtime (below) fills intermission
+  // when there is any; this is what plays when there isn't, and it is the reason
+  // an empty schedule can never become dead air.
   useEffect(() => {
     const unsub = onSnapshot(
       doc(db, 'config', 'vodPlaylist'),
@@ -476,6 +502,43 @@ export default function Player() {
         setVodItems(Array.isArray(items) ? items.filter((i) => typeof i?.url === 'string' && i.url) : [])
       },
       () => setVodItems([]),
+    )
+    return unsub
+  }, [])
+
+  // ── Firestore: the holder-airtime schedule ──
+  //
+  // Pre-computed server-side (feePollerBackground → public/airtimeSchedule) and
+  // read here as-is. The ordering is deliberately NOT recomputed on the client:
+  // members are shown the exact minute their clip airs, and a client that
+  // re-derived the running order would make that preview a lie. Segments whose
+  // window has already passed are dropped rather than replayed late.
+  const [airtimeItems, setAirtimeItems] = useState<VodItem[]>([])
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, 'public', 'airtimeSchedule'),
+      (snap) => {
+        const raw = snap.exists() ? (snap.data().items as Array<Record<string, unknown>> | undefined) : undefined
+        const nowMs = Date.now()
+        setAirtimeItems(
+          (Array.isArray(raw) ? raw : [])
+            .filter((i) => typeof i?.url === 'string' && i.url && Date.parse(String(i.endsAt ?? '')) > nowMs)
+            .map((i) => ({
+              url: String(i.url),
+              title: String(i.title ?? ''),
+              platform: String(i.platform ?? ''),
+              username: String(i.username ?? ''),
+              look: String(i.look ?? 'signal'),
+              // The member's chosen shape and picture travel on the schedule,
+              // so the broadcast paints their card without looking anything up.
+              style: String(i.style ?? 'bar'),
+              motion: String(i.motion ?? 'cut'),
+              avatarUrl: String(i.avatarUrl ?? ''),
+              seconds: Number(i.seconds) || 30,
+            })),
+        )
+      },
+      () => setAirtimeItems([]),
     )
     return unsub
   }, [])
@@ -813,6 +876,27 @@ export default function Player() {
     return (
       <div className="fixed inset-0 bg-black overflow-hidden">
         {preview === 'board' && <IntermissionBoard />}
+
+        {/* ── The broadcast package. Every one of these is a full-frame
+               1920×1080 graphic — frame them in OBS before they go to air. */}
+        {preview === 'ident' && <ChannelIdent />}
+        {preview === 'nowonair' && (
+          <NowOnAir
+            name={streamerName || 'Streamer'}
+            handle={(streamerName || 'streamer').toLowerCase()}
+            subtitle={slotLabel || 'Live on CSGN'}
+            viewers={1284}
+          />
+        )}
+        {preview === 'clipcredit' && (
+          <NowOnAir
+            kicker="Clip by"
+            name={streamerName || 'Member'}
+            handle={(streamerName || 'member').toLowerCase()}
+            subtitle="Posted to CSGN · airing between live streams"
+          />
+        )}
+        {preview === 'comingup' && <ComingUpPanel />}
         {preview === 'brb' && <StatusCard variant="brb" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
         {preview === 'starting' && <StatusCard variant="starting-soon" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
         {preview === 'lastcall' && <StatusCard variant="starting-soon" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} countdownSeconds={STARTING_SOON_COUNTDOWN_MS / 1_000} />}
@@ -898,7 +982,25 @@ export default function Player() {
         <StatusCard variant="brb" streamerName={streamerName} slotLabel={slotLabel} />
       )}
 
-      {state.mode === 'INTERMISSION' && <VodRotator items={vodItems} />}
+      {/* Holder-uploaded airtime runs the gap between live hours; the
+          admin playlist is what plays when nobody has uploaded anything.
+          A claimed hour going live pre-empts both — it takes /player out of
+          INTERMISSION entirely, which is why there is no priority check here. */}
+      {state.mode === 'INTERMISSION' && (
+        <VodRotator items={clipsEnabled && airtimeItems.length > 0 ? airtimeItems : vodItems} />
+      )}
+
+      {/* NO PERSISTENT HUD HERE, DELIBERATELY.
+          The clock, the up-next strip, the price rail and the channel bug were
+          briefly rendered by this page. They are broadcast FURNITURE — they do
+          not change when the programme changes, they re-render on every state
+          tick, and every one of them costs this page a Firestore listener and a
+          per-second timer that exist purely to draw something static.
+          /player's job is to put the PROGRAMME on screen and get out of the
+          way; anything that would look identical over any source belongs in its
+          own OBS browser source, where it composites for free on the GPU and
+          can be repositioned, hidden or restyled without touching the app.
+          See docs/obs/csgn-hud.html and docs/obs/GRAPHICS.md. */}
 
       <WipeOverlay
         visible={showWipe}
