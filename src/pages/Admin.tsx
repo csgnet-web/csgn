@@ -959,7 +959,7 @@ export default function Admin() {
 
   const tabs = [
     { id: 'overview' as Tab, label: 'Overview', icon: BarChart3 },
-    { id: 'live' as Tab, label: 'Live Now', icon: Radio },
+    { id: 'live' as Tab, label: 'Master Control', icon: Radio },
     { id: 'streamers' as Tab, label: 'Streamers', icon: Users },
     { id: 'schedule' as Tab, label: 'Schedule', icon: Clock },
     { id: 'fees' as Tab, label: 'Creator Fees', icon: DollarSign, count: pendingFeeCount, tone: 'amber' },
@@ -1505,8 +1505,8 @@ export default function Admin() {
                   isLoading={togglingNetwork}
                   onClick={handleToggleNetworkBlock}
                   title={networkBlockEnabled
-                    ? 'Network block ON — 7 PM–3 AM ET is reserved for CSGN Originals. Click to open those hours to claiming.'
-                    : 'Network block OFF — every slot is open to claim. Click to reserve 7 PM–3 AM ET again.'}
+                    ? 'Master block ON — 7 PM–3 AM ET is yours by default. Click to hand those hours back to the reel.'
+                    : 'Master block OFF — the reel has the whole day unless you break in. Click to reserve 7 PM–3 AM ET again.'}
                 >
                   {networkBlockEnabled ? 'Network block: ON' : 'Network block: OFF — all open'}
                 </Button>
@@ -1956,10 +1956,12 @@ export default function Admin() {
         {activeTab === 'live' && (
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-semibold text-white">Live Now</h3>
+              <h3 className="text-lg font-semibold text-white">Master Control</h3>
               <p className="text-sm text-gray-400 mt-1">
-                Every member who connected Twitch and gave permission to be forwarded. Nobody has to
-                claim a block — they stream as they normally would, and you put them on from here.
+                Everyone who connected Twitch and gave permission to be forwarded. They sign up once
+                and stream as they normally would; you decide who goes on, when to switch, and when
+                to hand the channel back to the reel. The ranked list is a suggestion — nothing goes
+                on air without you.
               </p>
             </div>
             <LiveNowTab />

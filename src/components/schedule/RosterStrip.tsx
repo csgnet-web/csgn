@@ -14,7 +14,7 @@ import { api } from '@/lib/api'
  * So the page opens with the roster instead. This is the honest headline —
  * these are real channels, live right now, that agreed to be carried — and the
  * grid below it becomes what it actually is: a record of what aired and a way
- * to reserve a specific hour if you want one.
+ * of what aired — which is the only honest thing it can be.
  *
  * Nobody live is not a failure state and is not hidden. It says the reel is
  * carrying the channel, which is true, and is the whole point of the reel.
