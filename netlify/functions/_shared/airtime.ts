@@ -30,6 +30,27 @@
  *  can open a floor without a code change. */
 export const AIRTIME_FLOOR_SECONDS = 0
 
+/**
+ * THE DENOMINATOR. Fixed, not measured.
+ *
+ * Airtime is one to one with the token: your seconds are
+ * `balance / 1,000,000,000 x 86,400`. That is arithmetic anybody can do on a
+ * phone, and being able to do it is most of why the promise is believable.
+ *
+ * It used to be the CIRCULATING supply, derived from market cap over price on
+ * every member request. Three things wrong with that: it cost a DexScreener
+ * call on a member-facing path, it drifted (so the same bag bought different
+ * seconds on different days for reasons nobody could see), and it made the
+ * central promise of the product uncheckable without an API.
+ *
+ * If the supply is ever genuinely changed on chain, change this constant —
+ * deliberately, once, in one place.
+ */
+export const CSGN_TOTAL_SUPPLY = 1_000_000_000
+
+/** Seconds in a day. Clips run 24/7, so this is the whole inventory. */
+export const AIRTIME_DAY_SECONDS = 86_400
+
 /** No member may take more than this share of a day, however large their bag.
  *  token-voting.md §2.5's anti-capture cap. Set to 1 for a pure, uncapped 1:1
  *  split — see `weightMode` below for the trade that implies. */

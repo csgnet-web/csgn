@@ -297,6 +297,18 @@ export const api = {
       uid?: string
       username?: string
     }>
+    /** WHO TO PUT ON, RANKED. Audience, freshness, rotation fairness and
+     *  holdings — see netlify/functions/_shared/streamerRank.ts. */
+    shortlist: Array<{
+      uid: string
+      name: string
+      score: number
+      breakdown: { audience: number; freshness: number; rotation: number; stake: number }
+      why: string
+      viewerCount: number
+      gameName: string
+      title: string
+    }>
     recommendation: { mode: 'streamer' | 'clips'; uid: string | null; why: string }
   }>('adminLiveNow', {}, true),
   /** MASTER CONTROL — the one call that decides what is on the channel.

@@ -32,6 +32,7 @@ import { json, parseJson, requireMethod, withHttp } from './_shared/http'
 import { refreshLiveRoster, ROSTER_STALE_MS, type RosterEntry } from './_shared/liveRoster'
 import { operatorAlerts, recommendedMode, DEFAULT_LIVE_VIEWER_FLOOR } from './_shared/operatorAlerts'
 import { publishChannelMode } from './_shared/channelModeStore'
+import { rankStreamers } from './_shared/streamerRank'
 import type { ModeSlot } from './_shared/channelMode'
 import { resolveBroadcast } from './resolveCurrentBroadcast'
 import { twitchLoginFromUrl } from './_shared/twitch'
@@ -84,9 +85,27 @@ export const handler = withHttp(async (event) => {
       onAirName: slot?.assignedName ?? null,
       staleAfterMs: ROSTER_STALE_MS,
       viewerFloor,
-      // What to do, and why. Computed server-side so the board and any future
+      // What to do, and why. Computed server-side so the board and the webhook
       // notifier cannot disagree about whether something needs attention.
       alerts: operatorAlerts(alertInput),
+      // WHO TO PUT ON, RANKED, with a one-line reason per row. The board leads
+      // with this rather than with the raw roster: the MP's question is "who
+      // now", not "who is live", and those have different answers.
+      shortlist: rankStreamers(
+        entries.map((e) => ({
+          uid: e.uid,
+          username: e.username,
+          displayName: e.displayName,
+          live: e.live,
+          viewerCount: e.viewerCount,
+          streamMinutes: minutesSince(e.startedAt),
+          onAirMinutesToday: e.onAirMinutes,
+          balance: 0,
+          gameName: e.gameName,
+          title: e.title,
+        })),
+        viewerFloor,
+      ).slice(0, 8),
       recommendation: recommendedMode(alertInput),
     })
   }

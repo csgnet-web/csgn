@@ -73,9 +73,12 @@ import {
 import { sampleTwitchStream, twitchAppToken, twitchLoginFromUrl } from './_shared/twitch'
 import { refreshAirtimeSchedule } from './_shared/airtimeSchedule'
 import { ensureDayLock } from './_shared/airtimeLock'
+import { CSGN_TOTAL_SUPPLY } from './_shared/airtime'
 import { refreshLiveRoster } from './_shared/liveRoster'
 import { operatorAlerts, recommendedMode, DEFAULT_LIVE_VIEWER_FLOOR } from './_shared/operatorAlerts'
 import { publishChannelMode } from './_shared/channelModeStore'
+import { rankStreamers } from './_shared/streamerRank'
+import { notifyOperator } from './_shared/notify'
 
 // NO `sleep` HELPER, DELIBERATELY. There used to be one, used to hold this
 // function open for 45 billed seconds every minute. Netlify charges wall clock;
@@ -771,12 +774,37 @@ export const handler = async () => {
         : 0,
       viewerFloor,
     }
+    const alerts = operatorAlerts(alertInput)
+    // WHO TO PUT ON, RANKED. Not just "somebody is live" — an ordered shortlist
+    // with a reason on each row, so the decision is a glance rather than a
+    // comparison. See _shared/streamerRank.ts for why viewer count alone is the
+    // wrong rule.
+    const shortlist = rankStreamers(
+      roster.map((e) => ({
+        uid: e.uid,
+        username: e.username,
+        displayName: e.displayName,
+        live: e.live,
+        viewerCount: e.viewerCount,
+        streamMinutes: streamMinutesOf(e.startedAt),
+        onAirMinutesToday: e.onAirMinutes,
+        balance: 0,
+        gameName: e.gameName,
+        title: e.title,
+      })),
+      viewerFloor,
+    ).slice(0, 8)
+
     await writeDoc('public/operatorAlerts', {
-      alerts: operatorAlerts(alertInput),
+      alerts,
+      shortlist,
       recommendation: recommendedMode(alertInput),
       viewerFloor,
       updatedAt: new Date().toISOString(),
     })
+
+    // AND TELL THE MP, with the tab closed. Deduped hard — see _shared/notify.
+    await notifyOperator(alerts)
 
     // ── The PUBLIC half of the same question ──
     //
@@ -799,18 +827,15 @@ export const handler = async () => {
   // Idempotent and cheap — one document read on every tick but the first after
   // a cutover. Called BEFORE the schedule rebuild so the playlist is always
   // laid against locked proportions rather than racing them.
-  await ensureDayLock(async () => {
-    const dex = await memo('airtime:supply', 10 * 60_000, () => fetchDexData())
-    return dex && dex.priceUsd > 0 ? dex.marketCapUsd / dex.priceUsd : 0
-  })
+  // The supply is a CONSTANT, not a measurement — see CSGN_TOTAL_SUPPLY. This
+  // used to derive circulating supply from market cap over price, which made a
+  // member's seconds drift with the chart for reasons they could not check.
+  await ensureDayLock(async () => CSGN_TOTAL_SUPPLY)
 
   // Rebuild the holder-airtime playlist the channel runs on between live hours.
   // Supply is injected so this module's cached DexScreener read is reused
   // rather than the scheduler making a second one of its own.
-  await refreshAirtimeSchedule(async () => {
-    const dex = await memo('airtime:supply', 10 * 60_000, () => fetchDexData())
-    return dex && dex.priceUsd > 0 ? dex.marketCapUsd / dex.priceUsd : 0
-  })
+  await refreshAirtimeSchedule(async () => CSGN_TOTAL_SUPPLY)
 
   // Re-anchor the Meme-100 to what voters actually still hold (every 30 min).
   await settleMemeVote()
@@ -894,4 +919,14 @@ export const handler = async () => {
   // The second is what stops the channel going to sleep on the one thing it
   // needs to notice — somebody worth cutting to going live.
   await recordDutyCycle(!active && !roster.some((e) => e.live))
+}
+
+/** Minutes since a Twitch stream started, for the freshness term in the
+ *  shortlist ranking. Unknown reads as 0, which the scorer treats as "just
+ *  started" — the safe direction, since a stream we cannot age is more likely
+ *  to be new than six hours old. */
+function streamMinutesOf(startedAt?: string): number {
+  const t = Date.parse(startedAt ?? '')
+  if (!Number.isFinite(t)) return 0
+  return Math.max(0, Math.floor((Date.now() - t) / 60_000))
 }

@@ -25,24 +25,18 @@
  * resulting playlist to `public/airtimeSchedule`.
  */
 
-import { queryCollection, getDoc, writeDoc, fieldFilter, order } from './firebaseAdmin'
+import { queryCollection, getDoc, writeDoc, fieldFilter } from './firebaseAdmin'
 import { broadcastDayBounds, broadcastDayKey } from './broadcastDay'
 import { ensureDayLock } from './airtimeLock'
 import { applyTrim } from './clipEmbed'
 import {
   airtimeShares, deriveAirtimeWindows, windowSeconds, buildAirtimeSchedule,
+  CSGN_TOTAL_SUPPLY,
   type AirtimeClip, type AirtimeMember, type TimeRange,
 } from './airtime'
 
 const SCHEDULE_META_PATH = 'config/scheduleMeta'
 
-/** Slot fields this module reads. The poller's fuller SlotDoc is a superset. */
-interface SlotRow {
-  startTime?: string
-  endTime?: string
-  status?: string
-  type?: string
-}
 
 /** Rebuild cadence. Long enough to cost nothing, short enough that a clip
  *  approved now is on the air within the hour. */
@@ -121,29 +115,57 @@ export interface AirtimeRebuildResult {
 export type SupplyProvider = () => Promise<number>
 
 /**
- * HOW MUCH OPEN AIR THERE IS, computed from the schedule itself.
+ * HOW MUCH CLIP AIR THERE IS IN A DAY. The answer is: all of it.
  *
- * Extracted because reading it off the PUBLISHED playlist was a live bug with a
- * bad failure mode. `myClips` did `Number(schedule?.inventorySeconds) || 0`, and
+ * ── The rule, and why it is this simple ────────────────────────────────────
+ *
+ * **Clips run 24/7.** A member's entitlement is their share of the token
+ * applied to a whole 86,400-second day — one to one, balance over the
+ * 1,000,000,000 supply — and nothing shrinks it.
+ *
+ * This replaced a version that subtracted booked hours and the owner's block
+ * from the denominator, so the reel divided sixteen hours on some days and
+ * twenty-four on others. Two problems with that, one practical and one about
+ * what the token means:
+ *
+ *   • A member's seconds moved for reasons that had nothing to do with them.
+ *     They bought a share of the channel and got a different amount of it
+ *     depending on what somebody else did that evening.
+ *
+ *   • It made an interruption look like a deduction. It is not. A streamer
+ *     going on, or the MP taking the channel, PRE-EMPTS the reel in real time —
+ *     it does not withdraw anybody's entitlement. The reel picks up where it
+ *     left off.
+ *
+ * So the denominator is a constant and the schedule no longer touches it. What
+ * a holder is owed is now a fact about the token, not a fact about tonight.
+ *
+ * ── Why this is derived rather than read from a cache ──────────────────────
+ *
+ * Reading the inventory off the PUBLISHED playlist was a live bug with a bad
+ * failure mode. `myClips` did `Number(schedule?.inventorySeconds) || 0`, and
  * `airtimeQuote` floors to zero when inventory is zero — so if
  * `public/airtimeSchedule` had never been written (the poller had not run, or
  * the last rebuild bailed because nobody had an approved clip), a member holding
  * 1.89 MILLION $CSGN was quoted zero seconds. Their balance was read correctly
  * and then multiplied by an inventory of nothing.
  *
- * An entitlement must not depend on a cache existing. This derives the open air
- * from the slots themselves, every time, which is three cheap reads and cannot
- * be stale.
+ * An entitlement must not depend on a cache existing — and now it does not
+ * depend on a query either.
  */
 export interface OpenAir {
   /** Which broadcast day this is — see _shared/broadcastDay.ts. */
   dayKey: string
   dayStartMs: number
-  /** Open air across the WHOLE day. The entitlement denominator, fixed for the
-   *  day regardless of how much of it has already aired. */
+  /** The entitlement denominator: a whole day, every day. Constant by design —
+   *  see the note above. */
   inventorySeconds: number
-  /** Open air still to come. What a playlist can actually be laid into. */
+  /** Air still to come today. What a playlist can actually be laid into — you
+   *  cannot schedule a clip into an hour that has already gone out. */
   remainingSeconds: number
+  /** Whether the MP has their 7 PM–3 AM block reserved. Kept because the
+   *  SCHEDULE still shows it and the mode rule still reads it — but it no
+   *  longer touches the clip denominator, which is the point. */
   networkBlockEnabled: boolean
   /** The remaining windows, for scheduling. */
   windows: TimeRange[]
@@ -151,64 +173,41 @@ export interface OpenAir {
 }
 
 export async function openAirInventory(nowMs = Date.now()): Promise<OpenAir> {
-  // THE WHOLE BROADCAST DAY, not a rolling window from right now.
+  // THE WHOLE BROADCAST DAY, and all of it.
   //
-  // This used to be `nowMs + AIRTIME_HORIZON_MS`, which meant the denominator
-  // was "however much of the next six hours is unclaimed" — so a member's
-  // airtime shrank every time they refreshed, and two members holding identical
-  // bags saw different numbers depending on what time it was. A channel has a
-  // programming day; proportions are answered once against the whole of it.
-  //
-  // Past hours are included in the day's inventory on purpose: the day's
-  // proportions are fixed at its 2 AM cutover, so what a member is entitled to
-  // must not depend on how much of the day has already been spent.
+  // Past hours are included on purpose: the day's proportions are fixed at its
+  // 2 AM cutover, so what a member is entitled to must not depend on how much
+  // of the day has already been spent.
   const { startMs, endMs } = broadcastDayBounds(broadcastDayKey(nowMs))
-  const dayStartMs = startMs
-  const horizonEndMs = endMs
 
+  // One read, and only for the schedule's benefit — the denominator below does
+  // not use it. See the note on the interface.
   const meta = await getDoc<{ networkBlockEnabled?: boolean }>(SCHEDULE_META_PATH)
   const networkBlockEnabled = meta?.networkBlockEnabled !== false // absent = on
 
-  const upcoming = await queryCollection(
-    'slots',
-    [
-      fieldFilter('endTime', 'GREATER_THAN', new Date(dayStartMs).toISOString()),
-      fieldFilter('endTime', 'LESS_THAN', new Date(horizonEndMs + 4 * 60 * 60 * 1000).toISOString()),
-    ],
-    [order('endTime', 'ASCENDING')],
-    40,
-  )
-
-  const blocked: TimeRange[] = []
-  for (const row of upcoming) {
-    const slot = row.data as SlotRow
-    const startMs = Date.parse(String(slot.startTime ?? ''))
-    const endMs = Date.parse(String(slot.endTime ?? ''))
-    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue
-    // A claimed hour is someone's booking; the network block is the owner's.
-    const claimed = slot.status === 'confirmed' || slot.status === 'live'
-    const ownerBlock = networkBlockEnabled && String(slot.type || '') === 'network'
-    if (claimed || ownerBlock) blocked.push({ startMs, endMs })
-  }
-
-  // The DAY's open air, for the entitlement maths.
-  const dayWindows = deriveAirtimeWindows(dayStartMs, horizonEndMs, blocked)
-  // The air still to come, for actually laying a playlist down — you cannot
-  // schedule a clip into an hour that has already gone out.
-  const remainingWindows = deriveAirtimeWindows(nowMs, horizonEndMs, blocked)
+  // NO BLOCKED RANGES. There used to be a slots query here subtracting booked
+  // hours and the owner's block. Deleting it is the whole change: clips run
+  // 24/7, live interruptions pre-empt rather than deduct, and this function no
+  // longer needs the schedule to answer a question about the token.
+  const dayWindows = deriveAirtimeWindows(startMs, endMs, [])
+  // The air still to come, for actually laying a playlist down.
+  const remainingWindows = deriveAirtimeWindows(Math.max(nowMs, startMs), endMs, [])
 
   return {
     dayKey: broadcastDayKey(nowMs),
-    dayStartMs,
+    dayStartMs: startMs,
     inventorySeconds: windowSeconds(dayWindows),
     remainingSeconds: windowSeconds(remainingWindows),
     networkBlockEnabled,
     windows: remainingWindows,
-    horizonEndMs,
+    horizonEndMs: endMs,
   }
 }
 
-const DEFAULT_SUPPLY = 1_000_000_000
+/** The one denominator. Re-exported from _shared/airtime.ts rather than
+ *  redeclared, because two copies of a number that decides airtime is two
+ *  answers waiting to disagree. */
+const DEFAULT_SUPPLY = CSGN_TOTAL_SUPPLY
 
 export async function refreshAirtimeSchedule(
   getSupply?: SupplyProvider,

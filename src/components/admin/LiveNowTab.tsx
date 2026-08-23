@@ -30,6 +30,19 @@ import { api } from '@/lib/api'
  *    that are really about which channel they streamed to.
  */
 
+/** A row of the ranked "who to put on next" list. Scored server-side so the
+ *  board and the webhook notifier cannot disagree about who is best. */
+interface Shortlisted {
+  uid: string
+  name: string
+  score: number
+  breakdown: { audience: number; freshness: number; rotation: number; stake: number }
+  why: string
+  viewerCount: number
+  gameName: string
+  title: string
+}
+
 interface Alert {
   kind: string
   severity: 'critical' | 'action' | 'info'
@@ -70,6 +83,7 @@ export default function LiveNowTab() {
   const [onAirName, setOnAirName] = useState<string | null>(null)
   const [onAirIsGuest, setOnAirIsGuest] = useState(false)
   const [alerts, setAlerts] = useState<Alert[]>([])
+  const [shortlist, setShortlist] = useState<Shortlisted[]>([])
   const [recommendation, setRecommendation] = useState<{ mode: 'streamer' | 'clips'; uid: string | null; why: string } | null>(null)
   const [viewerFloor, setViewerFloor] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -99,6 +113,7 @@ export default function LiveNowTab() {
       setOnAirName(res.onAirName)
       setOnAirIsGuest(res.onAirIsGuest)
       setAlerts(res.alerts)
+      setShortlist(res.shortlist ?? [])
       setRecommendation(res.recommendation)
       setViewerFloor(res.viewerFloor)
       setError('')
@@ -235,6 +250,63 @@ export default function LiveNowTab() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── UP NEXT: WHO TO PUT ON, RANKED ──
+          The board used to lead with the raw roster sorted by viewers, which
+          answers "who is live". The MP's actual question is "who now", and
+          those have different answers — a streamer with a smaller room who has
+          not been carried all week is often the better call, and viewer count
+          alone can never say so. Each row carries the one fact most likely to
+          change the decision, and the button that acts on it. */}
+      {shortlist.length > 0 && (
+        <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-white/[0.06] flex items-center justify-between gap-2">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-gray-500">Up next — ranked</p>
+            <p className="text-[10px] text-gray-600">audience · freshness · rotation · stake</p>
+          </div>
+          <div className="divide-y divide-white/[0.05]">
+            {shortlist.map((row, i) => {
+              const onAirNow = row.uid === onAirUid
+              return (
+                <div key={row.uid} className="flex items-center gap-3 px-4 py-2.5">
+                  <span className={`w-5 shrink-0 text-center text-xs font-mono ${i === 0 ? 'text-primary-300 font-bold' : 'text-gray-600'}`}>
+                    {i + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-white truncate">
+                      {row.name}
+                      {onAirNow && <span className="ml-2 text-[10px] uppercase tracking-wider text-live">on air</span>}
+                    </p>
+                    <p className="text-[11px] text-gray-500 truncate">{row.why}</p>
+                  </div>
+                  {/* The score is shown because a ranking nobody can interrogate
+                      is a ranking nobody trusts. The bar is the four weighted
+                      terms in order, so a high score built entirely on rotation
+                      looks different from one built on audience. */}
+                  <div className="hidden sm:flex w-24 h-1.5 rounded-full overflow-hidden bg-white/[0.06] shrink-0" title={`audience ${row.breakdown.audience} · fresh ${row.breakdown.freshness} · rotation ${row.breakdown.rotation} · stake ${row.breakdown.stake}`}>
+                    <span className="bg-live h-full" style={{ width: `${row.breakdown.audience}%` }} />
+                    <span className="bg-primary-400 h-full" style={{ width: `${row.breakdown.freshness}%` }} />
+                    <span className="bg-gold h-full" style={{ width: `${row.breakdown.rotation}%` }} />
+                    <span className="bg-white/40 h-full" style={{ width: `${row.breakdown.stake}%` }} />
+                  </div>
+                  <span className="w-8 shrink-0 text-right text-xs font-mono text-gray-400">{row.score}</span>
+                  {!onAirNow && (
+                    <Button
+                      size="sm"
+                      variant={i === 0 ? 'primary' : 'secondary'}
+                      isLoading={busyUid === row.uid}
+                      onClick={() => void putOnAir(row.uid)}
+                      leftIcon={<Play className="w-3.5 h-3.5" />}
+                    >
+                      Put on
+                    </Button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 

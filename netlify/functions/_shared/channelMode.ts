@@ -233,9 +233,20 @@ export interface ModeEvent {
   because: string
 }
 
-/** How many switches the public log keeps. Enough for a visitor to see that the
- *  channel moves on a rule, short enough that the doc stays small and free. */
-export const MODE_LOG_LIMIT = 24
+/**
+ * How many switches the public log keeps.
+ *
+ * Raised from 24 when /schedule started drawing a per-block timeline off it.
+ * Twenty-four entries is a day and a half of switching at best, so the bars on
+ * yesterday's blocks went blank — and a blank bar reads as "nothing aired",
+ * which is a claim rather than an absence.
+ *
+ * 120 covers roughly a week at a realistic switching rate and is still a small
+ * document: each entry is a timestamp, a mode, a name and one sentence, so the
+ * whole log is tens of kilobytes against a 1 MB limit. It is only rewritten
+ * when the mode actually changes, so the size costs nothing per tick.
+ */
+export const MODE_LOG_LIMIT = 120
 
 /**
  * Append a switch to the log — but only when the mode ACTUALLY changed.

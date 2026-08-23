@@ -9,6 +9,8 @@ import { formatTimeET, isNetworkSlot, toMillis, type Slot } from '@/lib/slots'
 import { Link } from 'react-router-dom'
 import RosterStrip from '@/components/schedule/RosterStrip'
 import ChannelModeCard from '@/components/watch/ChannelModeCard'
+import BlockTimelineBar from '@/components/schedule/BlockTimelineBar'
+import { useChannelMode } from '@/hooks/useChannelMode'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
 import { usePageMeta } from '@/hooks/usePageMeta'
 
@@ -55,6 +57,11 @@ export default function Schedule() {
   // Shared app-wide listener (-3h → +8d): already normalized, sorted, live, and
   // ticking nowMs. A second listener here would double every visitor's reads.
   const { allSlots, nowMs } = useLiveSlot()
+  // THE RECEIPT. The same published switch log the mode card reads, cut into
+  // per-block segments below — what actually went out, against what the grid
+  // said was planned.
+  const { channelMode } = useChannelMode()
+  const modeLog = channelMode?.log ?? []
   const [networkBlockEnabled, setNetworkBlockEnabled] = useState(true)
   // Whether the 7 PM–3 AM owner block is running. Decides how hours are typed
   // on the grid and whether the legend mentions CSGN Originals at all.
@@ -88,14 +95,10 @@ export default function Schedule() {
     return dayed
   }), [allSlots, days])
 
-  // How much of the week has nobody scheduled on it. Not "claimable" any more
-  // — nothing is claimed — but still worth stating, because an open hour is an
-  // hour the clip reel carries, and that is the product working rather than a
-  // gap in it.
-  const openCount = useMemo(
-    () => allSlots.filter((s) => !s.assignedUid && !s.isGuest && !(isNetworkSlot(s) && networkBlockEnabled)).length,
-    [allSlots, networkBlockEnabled],
-  )
+  // NO "OPEN BLOCKS" COUNT. It used to say how much of the week was
+  // unscheduled, which framed the reel's hours as gaps. They are not gaps —
+  // clips run 24/7 and an hour with nobody booked on it is the reel doing its
+  // job. Counting them was the last of the booking-sheet language.
 
   /**
    * One slot card — shared by the desktop grid and the mobile list.
@@ -164,10 +167,9 @@ export default function Schedule() {
               {slot.streamTitle && <p className="truncate text-[11px] text-gray-400 mt-0.5">{slot.streamTitle}</p>}
             </>
           ) : isPast ? (
-            /* A finished hour nobody was on. Said plainly rather than shown as
-               an em-dash, because "nothing aired" is real information about a
-               channel and pretending the cell is empty hides it. */
-            <p className="text-[11px] text-gray-600">Reel + clips</p>
+            /* A finished hour nobody was booked on. The timeline below says what
+               actually ran on it, which is usually more interesting than this. */
+            <p className="text-[11px] text-gray-600">Member clips</p>
           ) : reel ? (
             /* An hour with nobody scheduled is the CLIP REEL's hour, and saying
                so is the point. "Open" implied something was missing; the reel
@@ -180,10 +182,18 @@ export default function Schedule() {
           )}
         </div>
 
-        {/* NO ACTION. Nobody reserves a block any more — the channel runs
-            entirely off whoever from the roster is live, and the operator
-            decides who goes on. This grid is a RECORD of what aired and what
-            is scheduled, which is the only honest thing it can be now. */}
+        {/* HOW THE BLOCK ACTUALLY WENT. Clips for the first thirty-seven
+            minutes, a streamer for the rest, back to clips when they dropped —
+            drawn from the published switch log, not from what was planned.
+            Renders nothing at all for a block it has no record of, which is
+            every future block and anything past the end of the log. */}
+        <BlockTimelineBar
+          log={modeLog}
+          startMs={toMillis(slot.startTime)}
+          endMs={toMillis(slot.endTime)}
+          nowMs={nowMs}
+          compact={compact}
+        />
       </div>
     )
   }
@@ -196,17 +206,15 @@ export default function Schedule() {
         <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-display font-bold text-white">Schedule</h1>
-            {/* WHAT THIS PAGE IS NOW. It used to open by selling the claim,
-                because claiming was the only way onto the channel. It is not
-                any more: connect Twitch once, stream when you were going to
-                stream anyway, and the operator puts you on. Reserving a block
-                is still here for anyone who wants a guaranteed time — it is
-                the deliberate option, not the entry fee. */}
+            {/* WHAT THIS PAGE IS. Not a booking sheet and not an offer — a
+                plan on top and a RECEIPT underneath. Nobody reserves anything;
+                the blocks are how the day is organised in advance, and the bar
+                on each one is what actually went out on it. */}
             <p className="text-sm text-gray-400 mt-0.5 max-w-2xl">
-              The channel runs 24 hours. Connected streamers get picked up automatically whenever
-              they go live — <Link to="/account" className="text-primary-300 font-semibold hover:text-primary-200 underline underline-offset-2">connect Twitch once</Link>{' '}
-              and never think about the schedule again. Between live streams, member clips carry the air.
-              {openCount > 0 && <> {openCount} block{openCount !== 1 ? 's' : ''} can also be reserved outright if you want a guaranteed time.</>}
+              How the day is laid out, and what actually went out on it. Clips run around the clock;
+              the control room breaks in with a live streamer whenever one is worth carrying.{' '}
+              <Link to="/account" className="text-primary-300 font-semibold hover:text-primary-200 underline underline-offset-2">Connect Twitch once</Link>{' '}
+              and you are on the roster — there is nothing to book and nothing to remember.
             </p>
           </div>
           <div className="flex items-center gap-2">

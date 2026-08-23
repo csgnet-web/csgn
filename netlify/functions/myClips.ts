@@ -11,8 +11,8 @@ import { json, requireMethod, withHttp } from './_shared/http'
 import { refreshAirtimeSchedule, openAirInventory, type AirtimeBlockReason } from './_shared/airtimeSchedule'
 import { getCsgnBalance } from './_shared/solana'
 import { ensureDayLock, joinDayLock, shareFor } from './_shared/airtimeLock'
+import { CSGN_TOTAL_SUPPLY } from './_shared/airtime'
 import { broadcastDayWindow } from './_shared/broadcastDay'
-import { fetchJson } from './_shared/cache'
 
 interface ScheduleDoc {
   items?: Array<{ startsAt?: string; endsAt?: string; seconds?: number; clipId?: string; uid?: string }>
@@ -123,7 +123,7 @@ export const handler = withHttp(async (event) => {
   //     could be multiplied by zero.
   const openAir = await openAirInventory(nowMs)
   const inventory = openAir.inventorySeconds
-  let lock = await ensureDayLock(circulatingSupply, nowMs)
+  let lock = await ensureDayLock(async () => CSGN_TOTAL_SUPPLY, nowMs)
   let mine2 = shareFor(lock, authUser.uid)
 
   // First appearance mid-day — they just linked a wallet, or their balance was
@@ -200,28 +200,15 @@ export const handler = withHttp(async (event) => {
 
 
 /**
- * Circulating supply, from the same market read the rest of the app uses.
+ * THE SUPPLY IS A CONSTANT, and this function is what is left of it.
  *
- * Cached for ten minutes because it moves slowly and this is a member-facing
- * request path. A failed read falls back to the nominal one-billion supply
- * rather than throwing — an unreachable price API must not be able to make
- * somebody's airtime read as zero, which is the exact class of failure this
- * whole change is about.
+ * It used to fetch DexScreener on every member request and derive circulating
+ * supply from market cap over price. That cost an outbound call on a
+ * member-facing path, and it made the product's central promise drift: the same
+ * bag bought different seconds on different days, for reasons no member could
+ * see or check.
+ *
+ * Airtime is one to one with the token against a FIXED 1,000,000,000 supply —
+ * see CSGN_TOTAL_SUPPLY. Anybody can verify their own number with a calculator,
+ * which is most of why the promise is believable.
  */
-const NOMINAL_SUPPLY = 1_000_000_000
-const DEX_PAIR_URL = 'https://api.dexscreener.com/latest/dex/tokens/GFV7fphvprMr1PYpYGPJort2QP7JJLEp3J1Buu7Zpump'
-
-async function circulatingSupply(): Promise<number> {
-  try {
-    const data = await fetchJson<{ pairs?: Array<{ priceUsd?: string; marketCap?: number; fdv?: number }> }>(
-      DEX_PAIR_URL, { timeoutMs: 2_500 },
-    )
-    const pair = data?.pairs?.[0]
-    const price = Number(pair?.priceUsd) || 0
-    const cap = Number(pair?.marketCap ?? pair?.fdv) || 0
-    const supply = price > 0 ? cap / price : 0
-    return supply > 0 ? supply : NOMINAL_SUPPLY
-  } catch {
-    return NOMINAL_SUPPLY
-  }
-}

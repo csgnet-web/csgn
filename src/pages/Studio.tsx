@@ -768,19 +768,29 @@ export default function Studio() {
 
           {hasAirtime ? (
             <>
-              {/* THE DENOMINATOR, SAID OUT LOUD.
-                  Clip airtime is one-to-one with your share of the supply, but
-                  a share of WHAT was never stated — and it moves: with the
-                  7 PM–3 AM master block reserved, clips divide a sixteen-hour
-                  day; with it released, twenty-four. Somebody whose seconds
-                  jumped overnight deserves the reason rather than a mystery. */}
+              {/* THE DENOMINATOR, SAID OUT LOUD — and it is a constant.
+                  It used to move: a measured circulating supply on one side and
+                  "whatever fraction of the day was unbooked" on the other, so
+                  the same bag bought different seconds on different days for
+                  reasons no member could see. Now the sum is one anybody can do
+                  on a phone, which is most of why the promise is believable. */}
               <p className="relative mt-3 text-[11px] text-gray-500 leading-relaxed">
-                Out of {airtimeLabel(airtime?.inventorySeconds ?? 0)} of clip air today
-                {airtime?.networkBlockEnabled === false
-                  ? ' — a full 24-hour day, because the 7 PM–3 AM master block is released right now'
-                  : ' — a 16-hour day, with 7 PM–3 AM ET reserved for the master block'}.
-                One to one with your $CSGN: your share of the 1,000,000,000 supply is your share of the reel.
+                Out of a full 24-hour day — clips run around the clock.
+                Your share of the 1,000,000,000 supply is your share of the reel, one to one.
                 {airtime?.capped && ' You are at the per-member ceiling, which exists so no one holder can take the whole channel.'}
+              </p>
+              {/* The sum, spelled out, so it can be checked rather than trusted. */}
+              {airtime?.balance != null && (
+                <p className="relative mt-1 text-[11px] font-mono text-gray-600">
+                  {fmtCsgn(airtime.balance)} ÷ 1B × 86,400s = {airtimeLabel(airtime.seconds)}
+                </p>
+              )}
+              {/* Being interrupted is not being deducted. Said here because the
+                  question it answers — "where did my seconds go?" — otherwise
+                  gets answered by a member guessing, badly. */}
+              <p className="relative mt-1 text-[11px] text-gray-600 leading-relaxed">
+                When a streamer or the control room breaks in, the reel pauses and picks up where it
+                left off. An interruption never costs you seconds.
               </p>
               {/* THE WORKING, SHOWN. Checkable against the chain and against
                   the market cap, which is what makes it a fact rather than
