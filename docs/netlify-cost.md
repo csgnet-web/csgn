@@ -1,6 +1,8 @@
-# Where the Netlify bill was going, and what it is now
+# Where the Netlify bill goes, and what holds it down
 
-You said credits were burning. They were, and almost all of it was one loop.
+Credits were burning again: **300 in a week, with no traffic and no deploys.**
+That second half is the important part — it means the bill had nothing to do
+with visitors, and everything to do with a cron job talking to itself.
 
 ---
 
@@ -8,155 +10,205 @@ You said credits were burning. They were, and almost all of it was one loop.
 
 | | Before | After |
 |---|---|---|
-| Scheduled runs per day | 1,440 | **~500** (idle-aware) |
-| Billed wall clock per run | ~30–46s | **~2–4s** |
-| **Compute per day** | **~12–18 hours** | **~25–35 minutes** |
-| Viewer-driven invocations | 1 per viewer per poll | **1 per 45s, total** |
+| Cron period | every minute | **every 2 minutes** |
+| Scheduled invocations / month | 43,200 | **21,600** |
+| Passes that do real work while idle | every 1–3 min | **every 10 min** |
+| Firestore reads per pass, 200-member roster | ~200 | **1 + one per live member** |
+| Idle tick cost | a full pass | **one document read, then return** |
+| **Poller credits / month** | **~1,200** | **~120** |
 
-That is roughly a **95% cut in function compute**, and it comes from three
-changes, none of which trades away anything the product needs.
+Roughly a **90% cut**, and the part that matters for "no traffic": an empty
+channel now costs about **60 credits a month**, against a 1,000-credit
+allowance. The rest of the budget is free for deploys and actual visitors.
+
+Estimated, not measured — the real figure depends on how many hours a day
+somebody is actually on the channel. Check it against the dashboard after a
+week; the diagnostic order is at the bottom of this page.
 
 ---
 
-## 1. The poller was paying to wait — `~90%` of the bill
+## The exchange rate, because everything follows from it
 
-`feePollerBackground` ran every minute and did this:
+Netlify bills function compute at **10 credits per GB-hour**, and a function
+gets **1 GB** by default. So:
+
+> ### One credit = six minutes of wall clock.
+> ### A 1,000-credit month = 100 hours of function runtime. That is the whole budget.
+
+Two other line items matter and are easy to forget, because neither is runtime:
+
+| Item | Cost | What it means here |
+|---|---|---|
+| Function compute | 10 credits / GB-hour | 6 minutes of runtime per credit |
+| **Production deploy** | **15 credits each** | ~66 deploys = the entire month |
+| Bandwidth | 20 credits / GB | The firebase chunk is ~110 kB gzipped |
+| CDN requests | 2 credits / 10k | Only matters with real traffic |
+
+**A deploy costs the same whether you changed a compiler or a comma.** Thirty
+pushes in a week is 450 credits before a single function runs.
+
+---
+
+## What was actually happening
+
+`schedule = "* * * * *"` is **43,200 invocations a month**. At roughly ten
+seconds a pass that is ~120 hours of compute — *over the entire monthly
+allowance on a channel with no viewers*. The measured 300 credits/week works
+out to about 10.7 seconds per invocation, which is exactly what a pass costs
+when it makes twenty-odd sequential network round trips.
+
+### Why the previous fix didn't take
+
+The last pass at this added a duty cycle: a `cold` boolean that let the poller
+skip two ticks in three. It barely moved the bill, and the reason is worth
+keeping:
 
 ```ts
-for (let i = 0; i < 4; i++) {
-  const dexData = await fetchDexData()
-  ...
-  if (i < 3) await sleep(POLL_INTERVAL_MS)   // 15 seconds
-}
+await recordDutyCycle(!active && !roster.some((e) => e.live))
 ```
 
-Four DexScreener samples, fifteen seconds apart. **Netlify bills wall clock**,
-so every single minute of every single day the project was paying for a
-container to sit and do nothing for 45 seconds. 1,440 runs × 45s = **18 hours
-of billed compute per day** to produce four readings of a number instead of one.
+**Cold required that nobody on the roster was live anywhere on Twitch.** On a
+network of real streamers somebody is nearly always broadcasting to their own
+audience — which costs us nothing and decides nothing — so the flag sat false
+essentially forever and the full pass ran every single minute regardless.
 
-### Why one sample is enough
-
-Fee accrual is **cumulative and delta-based**, not an average of samples.
-`_feeState` on the slot carries the running `tierVolumeMap` and the previous
-estimate, so the same total is reached whether it is stepped once a minute or
-four times. The only thing lost is sub-minute attribution when the market cap
-crosses a pump.fun fee tier boundary mid-minute — a fraction of a percent on a
-single hour's fee.
-
-> **If finer resolution is ever genuinely wanted, raise the cron rate. Never
-> re-add a sleep.** Paying a serverless container to wait is the one cost that
-> cannot be optimised after the fact.
-
-### And it was probably being killed anyway
-
-The file is named `feePollerBackground.ts`, but Netlify's background-function
-convention requires a **hyphen** (`something-background.ts`). So this was an
-ordinary scheduled function with an ordinary execution ceiling — tens of
-seconds — and a ~46-second run would have been terminated partway through the
-loop.
-
-Which means **everything after the loop very likely never ran**: the
-`config/ticker` write, and the on-air *now live* / *up next* auto-fill. Billed
-for the full wall clock, then killed before its last writes. If the ticker's
-automatic fields have looked stale, this is why.
+> The lesson: *hot* has to mean "we are doing something expensive that matters
+> **right now**", not "something is happening somewhere in the world."
 
 ---
 
-## 2. The channel is cold most of the day — `~65%` of what was left
+## What holds it down now
 
-By design, clips are the source of last resort: unless the operator has put
-somebody on air or a roster member is actually live, **nothing on a poll tick
-changes**. No fee is accruing, no minute counter is running, no status is
-advancing. A full pass every sixty seconds was discovering the same nothing
-sixty times an hour.
+### 1. The cron period — halved, and no further
 
-So the poller now runs on a duty cycle:
+`*/2 * * * *`. Straight 50% cut in invocations.
 
-| State | Definition | Cadence |
+It does not go lower, and the reason is not comfort. Verified airtime is scored
+on **samples taken**, and `AIRTIME_MIN_SAMPLES = 10` is the floor below which an
+hour cannot be judged at all:
+
+| Cron | Samples in a 1-hour slot | Verdict |
 |---|---|---|
-| **HOT** | A slot is assigned, **or** anybody on the roster is live | every minute |
-| **COLD** | Clip mode, nobody live anywhere | **every 3 minutes** |
+| 1 min | 60 | Fine, and expensive |
+| **2 min** | **30** | **3× the floor. Chosen.** |
+| 3 min | 20 | Workable |
+| 5 min | 12 | One missed tick from `unverified` |
 
-The state is written to `config/feePollerRun.cold` at the end of each pass, so
-the *next* tick can decide to skip before doing any billable work at all.
+A slot that falls under the floor settles as `unverified`, which **pays out in
+full without evidence**. Slowing the cron past ~3 minutes would quietly convert
+a cost decision into a payout decision. Don't.
 
-Three properties keep this safe:
+### 2. Three tiers, and the pass names the minute it is next due
 
-1. **Unknown means hot.** A missing or corrupt flag runs the full pass. A wrong
-   guess costs an invocation, never a minute of fee accrual.
-2. **Every ambiguous lock still runs** — no lock, a garbled date, a
-   future-dated one. Cold can never wedge the poller off.
-3. **The operator short-circuits it.** `adminLiveNow` writes `cold: false` the
-   moment it puts somebody on air, so the poller is hot again on the very next
-   tick rather than up to three minutes later.
+Rather than re-deciding every tick, each pass writes `nextDueAt` to
+`config/feePollerRun`. An idle tick reads one document and returns.
 
-The only cost is up to three minutes of lag on noticing that a streamer went
-live — and the operator is not cutting to them inside sixty seconds anyway.
+| Tier | Meaning | Next pass due |
+|---|---|---|
+| **HOT** | A slot is on the clock — fees accruing, samples deciding a payout | every tick |
+| **WARM** | Nobody on the channel, but a roster member is live and could be cut to | 4 min |
+| **COLD** | Clips carrying the air, nothing live anywhere | 10 min |
 
-Pinned by tests in `netlify/functions/__tests__/feePoller.test.ts`.
+Four properties keep this from ever costing anyone money:
+
+1. **Unknown means run.** A missing lock, a garbled date, a future-dated one, a
+   missing due time — every ambiguous input resolves toward running. A wrong
+   guess costs one invocation; the other direction costs a streamer their fee
+   accrual, silently.
+2. **An assigned hour is never slept through.** `nextDueAtMs` caps the due time
+   at the next slot's start, so an idle channel wakes exactly when the schedule
+   says something begins rather than up to ten minutes late.
+3. **The operator short-circuits it.** `adminLiveNow` marks the poller due *now*
+   the moment it puts somebody on air.
+4. **An overlap guard still collapses duplicates** — 30 seconds, far below the
+   cron period so it can never turn away a real scheduled run.
+
+### 3. The roster sampler stopped scaling with the roster
+
+It issued **one Firestore read per consenting member, every pass**, to read
+counters it was about to leave untouched for everyone offline. Two hundred
+members with three live was two hundred round trips to increment three numbers —
+so the cost of a pass grew with the size of the network while the work stayed
+the same.
+
+Offline members' counters cannot have changed (this module is the only writer of
+`liveMinutes/{uid}`), so they are carried forward from the published roster and
+only live members get an authoritative read. **One round trip plus one per live
+member.**
+
+### 4. The pass overlaps its I/O
+
+It is almost entirely network round trips, and Netlify bills the wall clock they
+take. Independent reads now run in one `Promise.all` instead of in series, and
+the self-throttling housekeeping runs underneath the rest of the pass.
+
+### 5. Documentation pushes no longer deploy
+
+`build.ignore` in `netlify.toml` skips the build when every changed file is
+Markdown. The published site would be byte-for-byte identical, and the deploy
+costs 15 credits either way.
 
 ---
 
-## 3. Public reads now come from the edge
+## ⚠️ The trap this change had to step around
 
-Several endpoints answer the **same question for everybody** and were being
-invoked once per viewer per poll. Two hundred people with `/watch` open was two
-hundred invocations a minute for one identical JSON body.
+`refreshLiveRoster` credited minutes like this:
 
-`memo()` in `_shared/cache.ts` already stopped that becoming Firestore reads,
-but a memo hit is still a container being started and billed. Now these carry
-edge-cache headers, so the request does not reach a container at all:
+```ts
+const liveMinutes = running.liveMinutes + (sample.live ? 1 : 0)
+```
 
-| Endpoint | Browser | Edge | Stale-while-revalidate |
-|---|---|---|---|
-| `publicRoster` | 20s | 45s | 120s |
-| `memeBoard` | 30s | 120s | 600s |
-| `lookupCoin` | 15s | 60s | 300s |
-| `publicProfiles` (single) | 60s | — | — |
+That `+ 1` silently encoded **"the poller runs once a minute"** into every
+member's minute counter — the denominator that splits payouts. Nothing said so
+and nothing checked it.
 
-Two headers, doing different jobs: `Cache-Control` is what the viewer's browser
-may keep; `Netlify-CDN-Cache-Control` is what the edge may keep and for how long
-it may keep serving a stale copy while refreshing in the background. The second
-is what actually collapses the invocation count.
+Changing the cron to `*/2` without touching this would have under-credited
+**every streamer on the network by exactly half**, indefinitely, and not with an
+error — with smaller numbers that looked entirely plausible.
 
-**`cachedJson()` must never be used for anything that varies by caller** —
-a balance, a member's own reel, an admin queue. Caching one member's answer and
-serving it to the next is not a performance bug, it is a data leak. That is why
-it is a separate named helper rather than a flag on `json()`, and why
-`memeBoard?force=1`, `health` and the recommended-profiles rail are explicitly
-`no-store`.
+So the counter now credits the **measured gap** since the last observation
+(`creditMinutes`), clamped to `MAX_SAMPLE_CREDIT_MIN`. Six passes at one minute
+and three passes at two minutes both pay six minutes. That property is what
+makes the cron period a **cost** decision instead of a **payout** decision, and
+it is pinned by tests in `__tests__/feePoller.test.ts`.
+
+> If you change the cron period, check `MAX_SAMPLE_CREDIT_MIN` and
+> `AIRTIME_MIN_SAMPLES`. Those two constants are the only things standing
+> between a cost tweak and a payout bug.
 
 ---
 
 ## What was deliberately NOT changed
 
-- **The one-minute cron while hot.** Verified airtime divides by samples taken,
-  and slowing the sampler during an hour that decides money would change what
-  people are paid. The duty cycle only slows the cold path.
-- **Firestore listeners on the client.** Those are a Firebase cost, not a
-  Netlify one, and they are what keep `/watch` and `/player` live without
-  polling a function at all.
-- **The self-throttles inside the pass.** `refreshMemeBoard` (5 min),
-  `refreshAirtimeSchedule` (10 min), `settleMemeVote` (30 min) and
-  `topUpSchedule` (15 min) already skip their own work; they cost one cheap
-  read each on a tick that does nothing.
+- **Sampling rate during an assigned hour.** Hot runs every tick. An hour that
+  decides money is not where savings come from.
+- **Firestore listeners on the client.** A Firebase cost, not a Netlify one, and
+  they are what keep `/watch` and `/player` live without polling a function.
+- **Edge caching on public endpoints.** `publicRoster`, `memeBoard`,
+  `lookupCoin` already answer from the CDN; `cachedJson()` must never be used
+  for anything that varies by caller.
+
+## What this trades away
+
+- Up to **10 minutes** to notice a roster member going live during a cold
+  stretch (was 3). The operator's board rebuilds on demand, so a human looking
+  at it never sees stale data — `ROSTER_STALE_MS` was widened to 14 minutes to
+  match the new idle cadence.
+- `public/tokenStats` and the ticker refresh every 10 minutes while idle rather
+  than every minute.
+
+Both are invisible on a channel nobody is watching, which is precisely when they
+apply.
 
 ---
 
-## If the bill is still high after this
+## If the bill is still high
 
-Check in this order:
-
-1. **Netlify dashboard → Functions → invocations by function.** If anything
-   other than `feePollerBackground` is in the top three, something is polling
-   it from the client. Find the `setInterval`.
-2. **Build minutes.** Every push to a deploy branch is a build. If you are
-   pushing many small commits, that is real money and it is not runtime.
-3. **Bandwidth.** The largest asset shipped is the firebase vendor chunk
-   (~355 kB / 110 kB gzipped). It is cached hard by the CDN; if bandwidth is
-   the line item, look at `/player` being open in OBS 24/7 re-fetching.
-4. **`feePollerBackground` runtime.** If a run creeps back over a few seconds,
-   something new in the pass is doing network I/O per member. The roster
-   sampler is the one to watch as the roster grows — it is one Helix request
-   per hundred members, so it stays cheap, but a per-member call would not.
+1. **Netlify dashboard → Functions → invocations by function.** Anything other
+   than `feePollerBackground` in the top three means something is polling it
+   from the client. Find the `setInterval`.
+2. **Deploy count.** 15 credits each, and it is not runtime — it will not show
+   up anywhere in the functions view.
+3. **`feePollerBackground` duration.** If a pass creeps past a few seconds,
+   something new in it is doing per-member network I/O.
+4. **Bandwidth.** `/player` open in OBS 24/7 re-fetching is the one to check.

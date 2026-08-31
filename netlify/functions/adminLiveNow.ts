@@ -313,13 +313,19 @@ function minutesSince(startTime?: string): number {
  */
 async function announceMode(slot: ModeSlot): Promise<void> {
   try {
-    // WAKE THE POLLER. It runs on a duty cycle — when the channel is cold
-    // (clip mode, nobody live) it skips two ticks out of three to keep the
-    // Netlify bill down. An operator putting somebody on air is exactly the
-    // event that makes it hot again, and waiting up to three minutes for the
-    // poller to notice would delay the first minute of fee accrual on an hour
-    // somebody is actually broadcasting. One merge write buys that back.
-    await writeDoc('config/feePollerRun', { cold: false }, { merge: true })
+    // WAKE THE POLLER. It runs on a duty cycle — when nothing is on the channel
+    // it defers the next pass by minutes at a time to keep the Netlify bill
+    // down, and each pass writes the minute it is next due. An operator putting
+    // somebody on air is exactly the event that invalidates that plan: waiting
+    // out a ten-minute cold interval would delay the first minutes of fee
+    // accrual on an hour somebody is actually broadcasting.
+    //
+    // Marking it due NOW (rather than clearing a flag) is what the gate reads,
+    // so the very next tick runs a full pass. One merge write buys that back.
+    await writeDoc('config/feePollerRun', {
+      cold: false,
+      nextDueAt: new Date().toISOString(),
+    }, { merge: true })
     const [meta, roster] = await Promise.all([
       getDoc<{ networkBlockEnabled?: boolean }>('config/scheduleMeta'),
       getDoc<RosterDoc>('public/liveRoster'),
