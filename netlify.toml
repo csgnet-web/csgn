@@ -1,12 +1,25 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  # A production deploy costs 15 credits whatever the diff was, so a day of
+  # README and docs edits is a real line on the bill and buys nothing: the
+  # published site is byte-for-byte identical. Exit 0 to SKIP the build, non-zero
+  # to run it — Netlify's convention reads backwards, and `git diff --quiet`
+  # happens to match it exactly: it exits 0 when the diff is EMPTY, which here
+  # means "nothing outside documentation changed, so there is nothing to ship".
+  #
+  # HEAD~1..HEAD is not always the right range (squashed merges, first build on
+  # a new branch), so an empty or failed diff falls through to building. Being
+  # wrong toward building costs 15 credits; being wrong the other way ships
+  # nothing and looks like a broken deploy.
+  ignore = "git diff --quiet HEAD~1 HEAD -- . ':(exclude)*.md' ':(exclude)docs/**' ':(exclude)archive/**' ':(exclude)LICENSE'"
 
 # The scheduled poller must not be reachable over public HTTP.
 #
 # Netlify serves every function at /.netlify/functions/<name>, scheduled ones
-# included, and this one holds a container for ~45s of billed wall clock per
-# call while hitting DexScreener, Twitch and Firestore. The scheduler invokes it
+# included, and this one bills for every second it spends on DexScreener,
+# Twitch and Firestore — an invocation anyone could trigger is an invocation
+# anyone could bill us for. The scheduler invokes it
 # internally and never crosses the CDN, so returning 404 here closes it to the
 # outside world without affecting the cron. `force = true` is required or the
 # function route wins. The function also self-guards (see its header) — this is
@@ -62,5 +75,26 @@
     # sees. Any platform added to _shared/clipEmbed.ts has to be added here too.
     Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://platform.twitter.com https://*.twimg.com https://embed.twitch.tv https://www.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://platform.twitter.com https://*.twimg.com; img-src 'self' data: https:; media-src 'self' blob: https:; connect-src 'self' https://api.dexscreener.com https://*.firebaseapp.com https://*.googleapis.com https://*.twitch.tv wss://*.firebaseio.com https://cdn.syndication.twimg.com https://syndication.twitter.com; frame-src https://player.twitch.tv https://www.twitch.tv https://embed.twitch.tv https://www.youtube-nocookie.com https://www.youtube.com https://www.tiktok.com https://www.instagram.com https://instagram.com https://player.kick.com https://kick.com https://platform.twitter.com https://syndication.twitter.com https://x.com https://twitter.com https://www.google.com; font-src 'self' data: https://fonts.gstatic.com;"
 
+# ── THE CRON RATE IS THE BILL ─────────────────────────────────────────────
+#
+# Netlify charges 10 credits per GB-hour and a function gets 1 GB by default,
+# so the exchange rate is: ONE CREDIT = SIX MINUTES OF WALL CLOCK, and a
+# 1,000-credit month is 100 hours of runtime, total, for everything.
+#
+# At `* * * * *` this job alone was 43,200 invocations a month. At roughly ten
+# seconds a pass that is ~120 hours — over the entire monthly allowance on a
+# channel with no traffic, no viewers and nobody deploying. It was.
+#
+# Every two minutes instead:
+#   • halves the invocations outright, and
+#   • still gives 30 airtime samples inside a one-hour slot, three times the
+#     AIRTIME_MIN_SAMPLES floor of 10 that decides whether an hour can be scored
+#     at all. Below ~3 minutes that margin disappears and slots start settling
+#     'unverified', which pays out in full without evidence.
+#
+# DO NOT SLOW THIS FURTHER WITHOUT READING feeCalc.ts. The sample count is a
+# payout input, not a telemetry detail. The saving beyond this point comes from
+# the duty cycle in the function (see its header), not from the cron: idle ticks
+# read one document and return, which is a few hundred milliseconds.
 [functions.feePollerBackground]
-  schedule = "* * * * *"
+  schedule = "*/2 * * * *"

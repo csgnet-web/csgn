@@ -46,8 +46,62 @@ import { sampleTwitchStreams, twitchAppToken } from './twitch'
 const ROSTER_MAX_MEMBERS = 500
 
 /** A roster entry goes stale this long after its last live sample, so a member
- *  who closed OBS stops showing as live even if a pass is missed. */
-export const ROSTER_STALE_MS = 4 * 60 * 1000
+ *  who closed OBS stops showing as live even if a pass is missed.
+ *
+ *  MUST COMFORTABLY EXCEED THE POLLER'S IDLE CADENCE. The poller no longer
+ *  refreshes this every minute — when nobody is live it rebuilds the roster
+ *  every ~10 minutes, because a pass that samples Twitch for a network where
+ *  nothing is happening is the single thing that was burning the Netlify
+ *  allowance. A window shorter than that cadence would mark a perfectly good
+ *  roster stale between passes and report "nobody is live" as fact.
+ *
+ *  It is safe to be generous here precisely because it is not the only guard:
+ *  `adminLiveNow` rebuilds on demand whenever an operator opens the board, so
+ *  the decision surface is never reading a stale roster no matter what this is
+ *  set to. This value only governs the passive, published copy. */
+export const ROSTER_STALE_MS = 14 * 60 * 1000
+
+/**
+ * The most minutes a single observation may credit.
+ *
+ * MUST BE >= THE CRON PERIOD in netlify.toml. Each sample credits the time
+ * since the previous one, so this is the cap that stops a gap — a missed tick,
+ * an idle stretch, a redeploy — from paying for time nobody was watched.
+ */
+export const MAX_SAMPLE_CREDIT_MIN = 3
+
+/**
+ * How many minutes one positive observation is worth.
+ *
+ * THIS IS A PAYOUT DENOMINATOR. Read it before touching the cron.
+ *
+ * It used to be a literal `+ 1`, which quietly encoded "the poller runs once a
+ * minute" into every member's minute counter. Nothing said so, and nothing
+ * checked it. The moment the cron period changed, every streamer on the network
+ * would have been under-credited by exactly that factor — not with an error,
+ * but with plausible-looking numbers that were simply too small, and no way to
+ * tell from the data that it had happened. Crediting the measured gap instead
+ * makes the counter mean the same thing at any cadence, which is what makes the
+ * cron period a cost decision rather than a payout decision.
+ *
+ * `lastAt` is the last time we saw this member in this same state, so the gap
+ * is genuinely time they were live while we were watching. A member coming back
+ * after a break carries an old `lastAt` and is clamped to MAX_SAMPLE_CREDIT_MIN
+ * — a bounded over-credit that fails toward the streamer, which is the posture
+ * the rest of this module already takes (see "A SAMPLE WE COULD NOT TAKE IS NOT
+ * A ZERO" above).
+ */
+export function creditMinutes(lastAt: string | undefined, nowMs: number): number {
+  const last = Date.parse(String(lastAt ?? ''))
+  // No previous observation, or one we cannot read as a past instant: this is
+  // the first sample of a live run and is worth a single minute.
+  if (!Number.isFinite(last) || last <= 0 || last > nowMs) return 1
+  const gap = Math.round((nowMs - last) / 60_000)
+  // Two samples inside the same minute — a retry, an operator waking the
+  // poller — must not both pay. The minute has already been credited.
+  if (gap <= 0) return 0
+  return Math.min(gap, MAX_SAMPLE_CREDIT_MIN)
+}
 
 export interface RosterEntry {
   uid: string
@@ -121,16 +175,49 @@ export async function refreshLiveRoster(currentOnAirUid?: string | null): Promis
     return []
   }
 
-  const samples = await sampleTwitchStreams(members.map((m) => m.login), token)
+  // Sample Twitch and read the previously published roster at the same time.
+  // The published copy is what lets the counter reads below stay proportional
+  // to who is actually live rather than to how big the network is.
+  const [samples, published] = await Promise.all([
+    sampleTwitchStreams(members.map((m) => m.login), token),
+    getDoc<{ entries?: RosterEntry[] }>('public/liveRoster'),
+  ])
   const nowISO = new Date().toISOString()
+  const nowMs = Date.parse(nowISO)
 
-  // Read the running minute counters for everyone we are about to sample.
-  const counters = new Map<string, { liveMinutes: number; onAirMinutes: number }>()
-  await Promise.all(members.map(async (m) => {
-    const doc = await getDoc<{ liveMinutes?: number; onAirMinutes?: number }>(`liveMinutes/${m.uid}`)
+  // ── Why the counters are not all read here ──
+  //
+  // This used to issue one Firestore GET per consenting member, every pass,
+  // to read counters it was about to leave untouched for everyone offline. On
+  // a network of two hundred with three people live, that was two hundred
+  // round trips to increment three numbers — and Netlify bills the wall clock
+  // those round trips take, so the cost of a pass grew with the size of the
+  // roster while the work it did stayed the same. That is the shape of a bill
+  // that surprises you six months from now.
+  //
+  // An offline member's counters cannot have changed since we last published
+  // them: this module is the only writer of `liveMinutes/{uid}`. So the
+  // published roster is carried forward for them, and only members Twitch says
+  // are live get an authoritative read. One round trip plus one per live
+  // member, instead of one per member.
+  const carried = new Map<string, { liveMinutes: number; onAirMinutes: number }>()
+  for (const e of published?.entries ?? []) {
+    if (!e?.uid) continue
+    carried.set(String(e.uid), {
+      liveMinutes: Math.max(0, Number(e.liveMinutes) || 0),
+      onAirMinutes: Math.max(0, Number(e.onAirMinutes) || 0),
+    })
+  }
+
+  const liveMembers = members.filter((m) => samples.get(m.login)?.live)
+  const counters = new Map<string, { liveMinutes: number; onAirMinutes: number; lastLiveAt?: string; lastOnAirAt?: string }>()
+  await Promise.all(liveMembers.map(async (m) => {
+    const doc = await getDoc<{ liveMinutes?: number; onAirMinutes?: number; lastLiveAt?: string; lastOnAirAt?: string }>(`liveMinutes/${m.uid}`)
     counters.set(m.uid, {
       liveMinutes: Math.max(0, Number(doc?.liveMinutes) || 0),
       onAirMinutes: Math.max(0, Number(doc?.onAirMinutes) || 0),
+      lastLiveAt: doc?.lastLiveAt,
+      lastOnAirAt: doc?.lastOnAirAt,
     })
   }))
 
@@ -144,10 +231,15 @@ export async function refreshLiveRoster(currentOnAirUid?: string | null): Promis
     // an observation, and these observations decide money.
     if (!sample) continue
 
-    const running = counters.get(m.uid)!
+    // A live member has an authoritative read; an offline one carries the
+    // counters we last published, which cannot have moved since.
+    const running: { liveMinutes: number; onAirMinutes: number; lastLiveAt?: string; lastOnAirAt?: string } =
+      counters.get(m.uid) ?? carried.get(m.uid) ?? { liveMinutes: 0, onAirMinutes: 0 }
     const onAirNow = sample.live && currentOnAirUid === m.uid
-    const liveMinutes = running.liveMinutes + (sample.live ? 1 : 0)
-    const onAirMinutes = running.onAirMinutes + (onAirNow ? 1 : 0)
+    // Credit the measured gap, never a flat one. See creditMinutes: this is
+    // what keeps the counters honest when the cron period changes.
+    const liveMinutes = running.liveMinutes + (sample.live ? creditMinutes(running.lastLiveAt, nowMs) : 0)
+    const onAirMinutes = running.onAirMinutes + (onAirNow ? creditMinutes(running.lastOnAirAt, nowMs) : 0)
 
     if (sample.live) {
       writes.push(updateWrite(`liveMinutes/${m.uid}`, {

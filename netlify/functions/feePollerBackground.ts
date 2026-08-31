@@ -1,4 +1,6 @@
-// Scheduled background function — runs every minute via cron.
+// Scheduled function — runs every two minutes via cron, and defers itself
+// further than that whenever nothing is on the channel (see THE DUTY CYCLE
+// below, which is where this project's Netlify bill lives).
 // One DexScreener poll per run (it used to be four, 15 seconds apart, which
 // cost 45 seconds of billed container time every single minute).
 // Writes live creatorFees to the active slot doc in Firestore.
@@ -26,10 +28,10 @@
 //     from the scheduler itself — cannot stack overlapping runs, because a run
 //     that starts within MIN_RUN_INTERVAL_MS of the last one exits immediately.
 //
-// The lock deliberately does NOT throw and is deliberately shorter than the
-// cron period: a guard that can reject the real scheduled run would be a
-// self-inflicted outage on the job that drives fees, slot lifecycle and token
-// stats. It skips, it never fails.
+// The lock deliberately does NOT throw, and its overlap guard is deliberately
+// far shorter than the cron period: a guard that can reject the real scheduled
+// run would be a self-inflicted outage on the job that drives fees, slot
+// lifecycle and token stats. It skips, it never fails.
 //
 // ── The name lies, and it matters ──────────────────────────────────────────
 //
@@ -631,68 +633,126 @@ async function pollAndWrite(dexData: DexData, active: SlotRow | null, airtimeSta
 // Netlify scheduled background function — handler runs once per cron invocation.
 // One DexScreener fetch per invocation, which also refreshes public/tokenStats
 // (~1 write/min) so token stats flow 24/7 even when no slot is live.
-/** Shortest gap between two real runs while the channel is HOT — something is
- *  on air, or somebody on the roster is live. Below the 60s cron period on
- *  purpose — see the header: this must never be able to reject the scheduled
- *  run during an hour that decides money. */
-const HOT_RUN_INTERVAL_MS = 45_000
+/**
+ * ── THE DUTY CYCLE, AND WHY IT IS A SCHEDULE RATHER THAN A FLAG ────────────
+ *
+ * Netlify bills function compute at 10 credits per GB-hour, and a function runs
+ * with 1 GB by default. That makes the exchange rate brutally simple:
+ *
+ *     ONE CREDIT = SIX MINUTES OF WALL CLOCK.
+ *     A 1,000-credit month = 100 hours of runtime. That is the whole budget.
+ *
+ * A cron of `* * * * *` is 43,200 invocations a month before anyone visits the
+ * site. At ten seconds a pass that is 120 hours — over budget on an empty
+ * channel, which is exactly what happened: 300 credits burned in a week with no
+ * traffic and no deploys.
+ *
+ * The previous attempt at this was a boolean: `cold` meant "no slot assigned
+ * AND nobody on the roster is live", and cold ticks skipped two runs in three.
+ * It barely helped, for a reason worth writing down — ANY roster member live
+ * ANYWHERE ON TWITCH made the channel hot. A network of real streamers almost
+ * always has somebody broadcasting to their own audience, so the flag sat true
+ * essentially forever and the full pass ran every single minute regardless.
+ * The lesson: hotness has to mean "we are doing something expensive that
+ * matters right now", not "something is happening somewhere in the world".
+ *
+ * So there are three tiers, and the pass NAMES THE MINUTE it next needs to be
+ * awake instead of re-deciding every tick:
+ *
+ *   HOT   A slot is on the clock — fees are accruing and airtime samples are
+ *         the denominator of somebody's payout. Run every tick, no exceptions.
+ *   WARM  Nobody is on the channel, but a roster member is live and could be
+ *         cut to. Worth watching, not worth watching every two minutes.
+ *   COLD  Clips are carrying the air and nothing is live anywhere. This is most
+ *         of the day by design, and it is where the entire bill was going.
+ *
+ * Three properties keep this from ever costing anyone money:
+ *
+ *  1. UNKNOWN MEANS RUN. A missing lock, a garbled date, a future-dated one, a
+ *     missing due time — every ambiguous input resolves toward running. A wrong
+ *     guess costs one invocation; the other direction costs a streamer their
+ *     fee accrual, silently.
+ *  2. AN ASSIGNED HOUR IS NEVER SLEPT THROUGH. The due time is capped at the
+ *     next slot's start (see `nextDueAtMs`), so an idle channel wakes exactly
+ *     when the schedule says something begins rather than up to ten minutes
+ *     late.
+ *  3. THE OPERATOR SHORT-CIRCUITS IT. `adminLiveNow` marks the poller due the
+ *     moment it puts somebody on air, so the next tick runs a full pass.
+ */
+export type PollTier = 'hot' | 'warm' | 'cold'
+
+/** How long a pass of each tier may let the next one wait. */
+export const TIER_INTERVAL_MS: Record<PollTier, number> = {
+  // Every tick. Airtime is scored on samples taken (AIRTIME_MIN_SAMPLES = 10),
+  // so an hour that decides money must never be sampled sparsely.
+  hot: 0,
+  warm: 4 * 60_000,
+  cold: 10 * 60_000,
+}
 
 /**
- * Shortest gap between two real runs while the channel is COLD.
- *
- * Cold means: no slot assigned, nobody from the roster live, the clip reel
- * carrying the channel. That is most of the day by design — clips are the
- * source of last resort and the baseline — and during it a minute-by-minute
- * pass is buying nothing. Nothing accrues, no fee is moving, no minute counter
- * is running. The only question a cold tick answers is "has anybody gone live",
- * and the operator is not cutting to them inside sixty seconds anyway.
- *
- * At 1,440 scheduled invocations a day this is the difference between paying
- * for all of them and paying for a third. The cost is up to three minutes of
- * detection lag on a streamer going live, which `adminLiveNow` short-circuits
- * anyway by clearing the cold flag the moment an operator acts.
+ * Two invocations landing on top of each other — a scheduler retry, an operator
+ * wake racing the cron — must not both run the pass. Deliberately far below
+ * every tier interval so it can only ever collapse a genuine duplicate, never
+ * reject a real scheduled run.
  */
-export const COLD_RUN_INTERVAL_MS = 3 * 60_000
+export const OVERLAP_GUARD_MS = 30_000
 
 const RUN_LOCK_PATH = 'config/feePollerRun'
 /** config/season only carries the airtime cutover today, and moving that date
  *  is a deliberate, rare admin act — an hour of staleness costs nothing. */
 const SEASON_CONFIG_TTL_MS = 60 * 60 * 1000
 
-/**
- * The lock decision, with the I/O taken out so every case is testable.
- *
- * Anything it cannot read as a real, in-the-past timestamp means "run": a
- * missing lock is a first run, and a garbled or future-dated one is a bug in
- * the lock rather than evidence a poll just happened. The failure that matters
- * here is a poll that silently never happens, so every ambiguous input resolves
- * toward running.
- */
-export function shouldRunPoll(lastStartedAt: string | undefined, nowMs: number, wasCold = false): boolean {
-  if (!lastStartedAt) return true
-  const last = new Date(lastStartedAt).getTime()
-  if (!Number.isFinite(last) || last <= 0) return true
-  const elapsed = nowMs - last
-  if (elapsed < 0) return true
-  // Cold only slows things down when the PREVIOUS run positively established
-  // that the channel was cold. An unknown state is treated as hot, so a missing
-  // or corrupt flag costs money rather than correctness — which is the right
-  // way round for a job that decides fees.
-  return elapsed >= (wasCold ? COLD_RUN_INTERVAL_MS : HOT_RUN_INTERVAL_MS)
+export interface RunLock {
+  startedAt?: string
+  nextDueAt?: string
+  tier?: string
 }
 
 /**
- * Single-flight guard. Returns false when a run started too recently, so the
- * caller exits before doing any billable work.
+ * When the next pass is genuinely needed.
  *
- * Best-effort by design: if the lock can't be read or written we run anyway.
- * Skipping the poll because Firestore hiccuped would silently stall fee
- * tracking, and a duplicate run is far cheaper than a missing one.
+ * Capped at the next slot's start so an idle channel wakes for an assigned hour
+ * on time. Without that cap a ten-minute cold interval could start an hour up
+ * to ten minutes late, which would cost real airtime samples on a slot that
+ * pays somebody.
+ */
+export function nextDueAtMs(tier: PollTier, nowMs: number, nextSlotStartMs?: number | null): number {
+  const byTier = nowMs + TIER_INTERVAL_MS[tier]
+  if (nextSlotStartMs != null && Number.isFinite(nextSlotStartMs) && nextSlotStartMs > nowMs) {
+    return Math.min(byTier, nextSlotStartMs)
+  }
+  return byTier
+}
+
+/**
+ * The gate, with the I/O taken out so every case is testable.
+ *
+ * The failure that matters here is a poll that silently never happens, so every
+ * ambiguous input resolves toward running — see property (1) above.
+ */
+export function shouldRunPoll(lock: RunLock | null | undefined, nowMs: number): boolean {
+  if (!lock) return true
+  const last = Date.parse(String(lock.startedAt ?? ''))
+  // A lock we cannot read as a real, in-the-past instant is a bug in the lock,
+  // not evidence that a pass just happened.
+  if (!Number.isFinite(last) || last <= 0 || last > nowMs) return true
+  if (nowMs - last < OVERLAP_GUARD_MS) return false
+  const due = Date.parse(String(lock.nextDueAt ?? ''))
+  // No readable due time is not evidence the work is done.
+  if (!Number.isFinite(due) || due <= 0) return true
+  return nowMs >= due
+}
+
+/**
+ * Claim the run. Best-effort by design: if the lock cannot be read or written
+ * we run anyway, because skipping a poll over a Firestore hiccup would stall
+ * fee tracking, and a duplicate run is far cheaper than a missing one.
  */
 async function claimRunSlot(): Promise<boolean> {
   try {
-    const lock = await getLockDoc<{ startedAt?: string; cold?: boolean }>(RUN_LOCK_PATH)
-    if (!shouldRunPoll(lock?.startedAt, Date.now(), lock?.cold === true)) return false
+    const lock = await getLockDoc<RunLock>(RUN_LOCK_PATH)
+    if (!shouldRunPoll(lock, Date.now())) return false
     await writeLockDoc(RUN_LOCK_PATH, { startedAt: new Date().toISOString() }, { merge: true })
     return true
   } catch (err) {
@@ -702,223 +762,249 @@ async function claimRunSlot(): Promise<boolean> {
 }
 
 /**
- * Record whether the channel was cold on this pass, so the NEXT tick knows how
- * long it may skip for.
+ * Record the tier this pass found and the minute the next one is due.
  *
- * Stored rather than recomputed because hotness can only be known after the
- * work — and the whole point is to let a tick decide, before doing any work,
- * that it does not need to.
+ * Stored rather than recomputed because the tier can only be known AFTER the
+ * work — and the whole point is to let the next tick decide, before doing any
+ * billable work, that it does not need to.
  */
-async function recordDutyCycle(cold: boolean): Promise<void> {
+async function recordDutyCycle(tier: PollTier, nextSlotStartMs: number | null): Promise<void> {
   try {
-    await writeLockDoc(RUN_LOCK_PATH, { cold, coldAt: new Date().toISOString() }, { merge: true })
+    const nowMs = Date.now()
+    await writeLockDoc(RUN_LOCK_PATH, {
+      tier,
+      cold: tier === 'cold',
+      nextDueAt: new Date(nextDueAtMs(tier, nowMs, nextSlotStartMs)).toISOString(),
+      coldAt: new Date(nowMs).toISOString(),
+    }, { merge: true })
   } catch {
-    // Best-effort. Failing to write it means the next tick assumes hot, which
-    // costs an invocation and breaks nothing.
+    // Best-effort. Failing to write it leaves no readable due time, which the
+    // gate reads as "run" — costs an invocation, breaks nothing.
   }
 }
 
 export const handler = async () => {
   if (!(await claimRunSlot())) {
-    return { statusCode: 200, body: JSON.stringify({ skipped: 'ran too recently' }) }
+    return { statusCode: 200, body: JSON.stringify({ skipped: 'not due' }) }
   }
 
-  // Keep the schedule seeded ~a week out so it never runs empty. Cheap check
-  // every minute; real work only when the horizon actually shrinks (~daily).
-  await topUpSchedule()
-
-  // Advance clock-driven slot statuses first so /player, admin, /schedule and
-  // /queue all agree on which slot is confirmed / live / completed right now.
-  // The active slot is derived from the same rows — the whole invocation runs
-  // on one slots range query where it used to issue six.
-  const rows = await advanceSlotLifecycles()
-  const active = pickActiveSlot(rows)
-
-  // Sample real Twitch activity for the active slot (1 Helix call/min) so the
-  // Creator Fees log can prove the streamer was actually live, not intermission
-  // — and so this minute's sample is in the denominator the fee is scaled by.
-  // Patched onto the row we already hold so the first poll tick below sees the
-  // sample it just took instead of a minute-old one.
-  const sampled = await logSlotActivity(active)
-  if (active && sampled) active.data.streamActivity = sampled
-
-  // When verified airtime started deciding money. One cheap read, cached per
-  // container, because the answer changes roughly never.
-  const airtimeStart = airtimeStartMs(
-    await memo('config:season', SEASON_CONFIG_TTL_MS, () => getDoc<{ airtimeStartAt?: string }>('config/season')),
-  )
-
-  // Sample every consenting member's Twitch channel — one Helix request per 100
-  // of them — so the operator's board knows who is live and the minute counters
-  // that decide the fee split keep ticking. This is what lets a streamer sign up
-  // once and never think about the schedule again.
-  const roster = await refreshLiveRoster(active?.data.assignedUid ?? null)
-
-  // Publish what the operator should be doing about it, every minute, whether
-  // or not anybody has the board open. Written to a doc rather than computed on
-  // read so a future notifier (email, push, a Discord webhook) has one place to
-  // watch and cannot disagree with what the board shows.
+  // ── Why the whole pass sits in a try/finally ──
+  //
+  // The duty-cycle write at the bottom is not bookkeeping, it is the gate: it
+  // is what tells the next tick it can read one document and go home. If an
+  // exception anywhere above skipped it, `nextDueAt` would stop advancing,
+  // every subsequent tick would read "no readable due time → run", and the job
+  // would quietly revert to a full pass every two minutes — the exact bill this
+  // design exists to remove, restored by a transient Twitch or Firestore error
+  // and visible nowhere except the invoice.
+  //
+  // So the tier is tracked in a variable that starts at the SAFE-BUT-EXPENSIVE
+  // value. A pass that dies before it can judge the channel is treated as hot:
+  // it runs again next tick, exactly as it does today, rather than deferring on
+  // the strength of a state it never established.
+  let tier: PollTier = 'hot'
+  let nextSlotStartMs: number | null = null
   try {
-    const meta = await getDoc<{ liveViewerFloor?: number; networkBlockEnabled?: boolean }>(SCHEDULE_META_PATH)
-    const viewerFloor = meta?.liveViewerFloor != null && Number(meta.liveViewerFloor) >= 0
-      ? Number(meta.liveViewerFloor)
-      : DEFAULT_LIVE_VIEWER_FLOOR
-    const alertInput = {
-      roster: roster.map((e) => ({
-        uid: e.uid, username: e.username, displayName: e.displayName,
-        live: e.live, viewerCount: e.viewerCount,
-      })),
-      onAirUid: active?.data.assignedUid ?? null,
-      onAirMinutes: active?.data.startTime
-        ? Math.max(0, Math.floor((Date.now() - Date.parse(active.data.startTime)) / 60_000))
-        : 0,
-      viewerFloor,
-    }
-    const alerts = operatorAlerts(alertInput)
-    // WHO TO PUT ON, RANKED. Not just "somebody is live" — an ordered shortlist
-    // with a reason on each row, so the decision is a glance rather than a
-    // comparison. See _shared/streamerRank.ts for why viewer count alone is the
-    // wrong rule.
-    const shortlist = rankStreamers(
-      roster.map((e) => ({
-        uid: e.uid,
-        username: e.username,
-        displayName: e.displayName,
-        live: e.live,
-        viewerCount: e.viewerCount,
-        streamMinutes: streamMinutesOf(e.startedAt),
-        onAirMinutesToday: e.onAirMinutes,
-        balance: 0,
-        gameName: e.gameName,
-        title: e.title,
-      })),
-      viewerFloor,
-    ).slice(0, 8)
-
-    await writeDoc('public/operatorAlerts', {
-      alerts,
-      shortlist,
-      recommendation: recommendedMode(alertInput),
-      viewerFloor,
-      updatedAt: new Date().toISOString(),
-    })
-
-    // AND TELL THE MP, with the tab closed. Deduped hard — see _shared/notify.
-    await notifyOperator(alerts)
-
-    // ── The PUBLIC half of the same question ──
+    // ── Everything independent, at once ──
     //
-    // operatorAlerts says what the operator should do. This says what a viewer
-    // is looking at and why, in one sentence, on the same tick and from the
-    // same inputs — so the control room and the audience can never be told two
-    // different stories about what is on. Every surface (/watch, /schedule,
-    // /player, the OBS graphics) renders this stored verdict rather than
-    // deriving its own, which is what stopped four pages disagreeing before.
-    await publishChannelMode({
-      slot: active?.data ?? null,
-      networkBlockEnabled: meta?.networkBlockEnabled !== false,
-      liveCount: roster.filter((e) => e.live).length,
-    })
-  } catch (err) {
-    console.warn('[feePoller] operatorAlerts write failed', err)
-  }
+    // This pass is almost entirely network round trips, and Netlify bills the
+    // wall clock they take. Run in series they add up; overlapped they cost
+    // roughly the slowest one. None of these four touch each other's data:
+    // lifecycle advancement writes slot statuses, the rest are reads.
+    const [rows, seasonConfig, meta, nextSlot] = await Promise.all([
+      // Advance clock-driven slot statuses first so /player, admin, /schedule and
+      // /queue all agree on which slot is confirmed / live / completed right now.
+      advanceSlotLifecycles(),
+      // When verified airtime started deciding money. Cached per container,
+      // because the answer changes roughly never.
+      memo('config:season', SEASON_CONFIG_TTL_MS, () => getDoc<{ airtimeStartAt?: string }>('config/season')),
+      getDoc<{ liveViewerFloor?: number; networkBlockEnabled?: boolean }>(SCHEDULE_META_PATH),
+      // Needed for the ticker's Up Next card, and — more importantly — for the
+      // due time this pass writes at the end: an idle channel must wake when the
+      // next hour starts rather than whenever its tier interval happens to lapse.
+      fetchNextSlot(),
+    ])
 
-  // Take the day's lock if 2 AM ET has passed and it has not been taken yet.
-  // Idempotent and cheap — one document read on every tick but the first after
-  // a cutover. Called BEFORE the schedule rebuild so the playlist is always
-  // laid against locked proportions rather than racing them.
-  // The supply is a CONSTANT, not a measurement — see CSGN_TOTAL_SUPPLY. This
-  // used to derive circulating supply from market cap over price, which made a
-  // member's seconds drift with the chart for reasons they could not check.
-  await ensureDayLock(async () => CSGN_TOTAL_SUPPLY)
+    const active = pickActiveSlot(rows)
+    const airtimeStart = airtimeStartMs(seasonConfig)
+    nextSlotStartMs = nextSlot?.data.startTime ? Date.parse(nextSlot.data.startTime) : null
 
-  // Rebuild the holder-airtime playlist the channel runs on between live hours.
-  // Supply is injected so this module's cached DexScreener read is reused
-  // rather than the scheduler making a second one of its own.
-  await refreshAirtimeSchedule(async () => CSGN_TOTAL_SUPPLY)
+    // Housekeeping that self-throttles internally (15 min / daily / 10 min /
+    // 30 min / 5 min). Each costs one cheap read on a pass that does nothing, so
+    // it rides along with the expensive work rather than in front of it.
+    // ensureDayLock stays BEFORE refreshAirtimeSchedule so the playlist is always
+    // laid against locked proportions rather than racing them, and the meme
+    // settle stays before the board rebuild that reads it.
+    const housekeeping = (async () => {
+      try {
+        await topUpSchedule()
+        // The supply is a CONSTANT, not a measurement — see CSGN_TOTAL_SUPPLY.
+        await ensureDayLock(async () => CSGN_TOTAL_SUPPLY)
+        await refreshAirtimeSchedule(async () => CSGN_TOTAL_SUPPLY)
+        await settleMemeVote()
+        await refreshMemeBoard()
+      } catch (err) {
+        // Self-contained on purpose. This chain is started early and awaited
+        // late, so an unguarded rejection would travel out of the `await` at the
+        // bottom of the handler and skip the duty-cycle write — which is the one
+        // thing that must always happen. See the finally block there.
+        console.error('[feePoller] housekeeping error:', err)
+      }
+    })()
 
-  // Re-anchor the Meme-100 to what voters actually still hold (every 30 min).
-  await settleMemeVote()
-  await refreshMemeBoard()
+    // Sample real Twitch activity for the active slot so the Creator Fees log can
+    // prove the streamer was actually live, and so this pass's sample is in the
+    // denominator the fee is scaled by. Sampling every consenting member's channel
+    // runs alongside it — one Helix request per 100 of them.
+    const [sampled, roster, dexData] = await Promise.all([
+      logSlotActivity(active),
+      refreshLiveRoster(active?.data.assignedUid ?? null),
+      fetchDexData(),
+    ])
+    // Patched onto the row we already hold so the fee poll below sees the sample
+    // it just took instead of a stale one.
+    if (active && sampled) active.data.streamActivity = sampled
 
-  // ── ONE DexScreener read, then done ──
-  //
-  // This loop used to run four times per invocation with `await sleep(15_000)`
-  // between them, so every scheduled run held a billed container for 45 seconds
-  // doing nothing but waiting. Netlify bills wall clock: that was 1,440 runs a
-  // day x 45s = eighteen hours of paid compute per day, to produce four
-  // samples of a number instead of one. It was, by a wide margin, the most
-  // expensive line in this project.
-  //
-  // Dropping to a single sample is safe because fee accrual is CUMULATIVE and
-  // delta-based, not an average of samples: `_feeState` carries the running
-  // tier volume map and the previous estimate, so the same total is reached
-  // whether it is stepped once a minute or four times. The only thing lost is
-  // sub-minute attribution when the market cap crosses a pump.fun tier
-  // boundary mid-minute, which moves a fee by a fraction of a percent.
-  //
-  // If finer resolution is ever genuinely needed, raise the CRON RATE. Never
-  // re-add a sleep — paying for a container to wait is the one thing that
-  // cannot be optimised afterwards.
-  const dexData = await fetchDexData()
-  const lastDex: DexData | null = dexData
-  if (dexData) {
+    // ── The tier this pass found ──
+    //
+    // HOT is deliberately narrow: a slot actually on the clock. It is NOT "a
+    // roster member is live" — that was the bug that made the previous duty cycle
+    // a no-op, because somebody on a real roster is nearly always streaming to
+    // their own audience, which costs us nothing and decides nothing.
+    const liveCount = roster.filter((e) => e.live).length
+    tier = active ? 'hot' : liveCount > 0 ? 'warm' : 'cold'
+
+    // Publish what the operator should be doing about it, whether or not anybody
+    // has the board open. Written to a doc rather than computed on read so a
+    // notifier has one place to watch and cannot disagree with what the board shows.
     try {
-      await writeDoc('public/tokenStats', { ...buildTokenStatsDoc(dexData) }, { merge: false })
+      const viewerFloor = meta?.liveViewerFloor != null && Number(meta.liveViewerFloor) >= 0
+        ? Number(meta.liveViewerFloor)
+        : DEFAULT_LIVE_VIEWER_FLOOR
+      const alertInput = {
+        roster: roster.map((e) => ({
+          uid: e.uid, username: e.username, displayName: e.displayName,
+          live: e.live, viewerCount: e.viewerCount,
+        })),
+        onAirUid: active?.data.assignedUid ?? null,
+        onAirMinutes: active?.data.startTime
+          ? Math.max(0, Math.floor((Date.now() - Date.parse(active.data.startTime)) / 60_000))
+          : 0,
+        viewerFloor,
+      }
+      const alerts = operatorAlerts(alertInput)
+      // WHO TO PUT ON, RANKED. Not just "somebody is live" — an ordered shortlist
+      // with a reason on each row, so the decision is a glance rather than a
+      // comparison. See _shared/streamerRank.ts for why viewer count alone is the
+      // wrong rule.
+      const shortlist = rankStreamers(
+        roster.map((e) => ({
+          uid: e.uid,
+          username: e.username,
+          displayName: e.displayName,
+          live: e.live,
+          viewerCount: e.viewerCount,
+          streamMinutes: streamMinutesOf(e.startedAt),
+          onAirMinutesToday: e.onAirMinutes,
+          balance: 0,
+          gameName: e.gameName,
+          title: e.title,
+        })),
+        viewerFloor,
+      ).slice(0, 8)
+
+      await Promise.all([
+        writeDoc('public/operatorAlerts', {
+          alerts,
+          shortlist,
+          recommendation: recommendedMode(alertInput),
+          viewerFloor,
+          updatedAt: new Date().toISOString(),
+        }),
+        // AND TELL THE MP, with the tab closed. Deduped hard — see _shared/notify.
+        notifyOperator(alerts),
+        // ── The PUBLIC half of the same question ──
+        //
+        // operatorAlerts says what the operator should do. This says what a viewer
+        // is looking at and why, from the same inputs on the same pass — so the
+        // control room and the audience can never be told two different stories
+        // about what is on. Every surface renders this stored verdict rather than
+        // deriving its own, which is what stopped four pages disagreeing before.
+        publishChannelMode({
+          slot: active?.data ?? null,
+          networkBlockEnabled: meta?.networkBlockEnabled !== false,
+          liveCount,
+        }),
+      ])
     } catch (err) {
-      console.error('[feePoller] tokenStats write error:', err)
+      console.warn('[feePoller] operatorAlerts write failed', err)
     }
-    await pollAndWrite(dexData, active, airtimeStart)
-  }
 
-  // Publish CSGN token info + the live creator-fee beat to the broadcast ticker
-  // overlay (config/ticker), so the $CSGN beat + fee readout run automatically —
-  // no manual admin entry. merge:true never touches the admin-curated fields
-  // (rightNow / breaking / governance / vote).
-  const tickerPatch: Record<string, unknown> = { updatedAt: new Date().toISOString() }
-  if (lastDex) {
-    tickerPatch.csgn = { price: lastDex.priceUsd, chg: lastDex.priceChangeH24Pct, mc: lastDex.marketCapUsd, vol: lastDex.volumeH24Usd }
-  }
-  const liveAssigned = active?.data.assignedName && (active.data.status === 'live' || active.data.status === 'confirmed')
-  tickerPatch.liveFee = liveAssigned
-    ? { name: active!.data.assignedName, usd: Math.max(0, active!.data.creatorFees?.feeOwedUSD ?? 0), sinceISO: active!.data.startTime ?? '' }
-    : null
-
-  // Live now / Up next follow the real schedule — unless an operator has taken
-  // manual control (config/ticker.onAirAuto === false), in which case their
-  // typed cards stay exactly as they left them.
-  try {
-    const ticker = await getDoc<{ onAirAuto?: boolean }>('config/ticker')
-    if (ticker?.onAirAuto !== false) {
-      const next = await fetchNextSlot()
-      const current = pickCurrentSlot(rows)
-      tickerPatch.nowLive = deriveNowLive(current?.data as OnAirSlot | undefined)
-      tickerPatch.upNext = deriveUpNext(next?.data as OnAirSlot | undefined)
-      tickerPatch.onAirAuto = true
+    // ── ONE DexScreener read, then done ──
+    //
+    // This loop used to run four times per invocation with `await sleep(15_000)`
+    // between them, so every scheduled run held a billed container for 45 seconds
+    // doing nothing but waiting. Fee accrual is CUMULATIVE and delta-based, not an
+    // average of samples: `_feeState` carries the running tier volume map and the
+    // previous estimate, so the same total is reached whether it is stepped once a
+    // minute or four times.
+    //
+    // If finer resolution is ever genuinely needed, raise the CRON RATE. Never
+    // re-add a sleep — paying for a container to wait is the one thing that
+    // cannot be optimised afterwards.
+    if (dexData) {
+      try {
+        await writeDoc('public/tokenStats', { ...buildTokenStatsDoc(dexData) }, { merge: false })
+      } catch (err) {
+        console.error('[feePoller] tokenStats write error:', err)
+      }
+      await pollAndWrite(dexData, active, airtimeStart)
     }
-  } catch (err) {
-    console.error('[feePoller] on-air auto-fill error:', err)
-  }
 
-  try {
-    await writeDoc('config/ticker', tickerPatch, { merge: true })
-  } catch (err) {
-    console.error('[feePoller] ticker csgn/liveFee write error:', err)
-  }
+    // Publish CSGN token info + the live creator-fee beat to the broadcast ticker
+    // overlay (config/ticker), so the $CSGN beat + fee readout run automatically —
+    // no manual admin entry. merge:true never touches the admin-curated fields
+    // (rightNow / breaking / governance / vote).
+    const tickerPatch: Record<string, unknown> = { updatedAt: new Date().toISOString() }
+    if (dexData) {
+      tickerPatch.csgn = { price: dexData.priceUsd, chg: dexData.priceChangeH24Pct, mc: dexData.marketCapUsd, vol: dexData.volumeH24Usd }
+    }
+    const liveAssigned = active?.data.assignedName && (active.data.status === 'live' || active.data.status === 'confirmed')
+    tickerPatch.liveFee = liveAssigned
+      ? { name: active!.data.assignedName, usd: Math.max(0, active!.data.creatorFees?.feeOwedUSD ?? 0), sinceISO: active!.data.startTime ?? '' }
+      : null
 
-  // ── How hard should the next tick work? ──
-  //
-  // COLD is the honest description of most of the day under the current model:
-  // clips are the source of last resort and the baseline, so unless the
-  // operator has put somebody on or a roster member is actually live, nothing
-  // on this pass changed and nothing on the next one will either. Saying so
-  // lets the next two ticks exit in milliseconds instead of doing a full pass
-  // to discover the same nothing.
-  //
-  // Note what counts as hot: an assigned slot OR anybody live on the roster.
-  // The second is what stops the channel going to sleep on the one thing it
-  // needs to notice — somebody worth cutting to going live.
-  await recordDutyCycle(!active && !roster.some((e) => e.live))
+    // Live now / Up next follow the real schedule — unless an operator has taken
+    // manual control (config/ticker.onAirAuto === false), in which case their
+    // typed cards stay exactly as they left them.
+    try {
+      const ticker = await getDoc<{ onAirAuto?: boolean }>('config/ticker')
+      if (ticker?.onAirAuto !== false) {
+        const current = pickCurrentSlot(rows)
+        tickerPatch.nowLive = deriveNowLive(current?.data as OnAirSlot | undefined)
+        tickerPatch.upNext = deriveUpNext(nextSlot?.data as OnAirSlot | undefined)
+        tickerPatch.onAirAuto = true
+      }
+    } catch (err) {
+      console.error('[feePoller] on-air auto-fill error:', err)
+    }
+
+    try {
+      await writeDoc('config/ticker', tickerPatch, { merge: true })
+    } catch (err) {
+      console.error('[feePoller] ticker csgn/liveFee write error:', err)
+    }
+
+    // Let the housekeeping finish before the container is torn down — it was
+    // started at the top and has been running underneath the work above.
+    await housekeeping
+
+    return { statusCode: 200, body: JSON.stringify({ tier, liveCount, active: Boolean(active) }) }
+  } finally {
+    // How hard should the next tick work, and when is it due? Always written,
+    // never skipped — see the note at the top of the block.
+    await recordDutyCycle(tier, nextSlotStartMs)
+  }
 }
 
 /** Minutes since a Twitch stream started, for the freshness term in the
