@@ -1,6 +1,6 @@
 # Testing the channel — proving each piece works
 
-Six things to check, in the order that makes each one easy. Nothing here needs
+Seven things to check, in the order that makes each one easy. Nothing here needs
 a second person, a real streamer, a connected TikTok account, or waiting for
 something to happen.
 
@@ -405,13 +405,57 @@ scheduled function checks it before it checks anything else.
 
 ---
 
+## 7. The minute tracker, and the intro
+
+### Is the on-air clock right?
+
+Put a guest on **partway through a block** — that is the case that was broken.
+
+| Where | What you should see |
+|---|---|
+| `/admin` → Live Now | on-air minutes counting from **when you pressed the button**, not from the top of the hour |
+| `/watch` mode card | "since" showing the same instant |
+| The operator alert | nothing, until they have genuinely been on a while |
+
+Before this, a streamer put on 47 minutes into a two-hour block was reported as
+having been on air for 47 minutes the moment they went on, and the alert that
+watches that number fired immediately.
+
+```bash
+npx vitest run netlify/functions/__tests__/onAirClock.test.ts   # 17 tests
+```
+
+### Is the airtime figure a duration or a sample count?
+
+**Both, and they are labelled differently now.** `42 of 48 checks live` is the
+ratio that decides the money; a duration says `1h 47m` and comes from
+`liveSeconds`, which credits the measured gap between samples.
+
+If you see a bare `~14m` anywhere, that is the old bug: the poller runs every
+two minutes and backs off to four or ten, so a sample count read as minutes is
+wrong by 2× at best.
+
+### The intro
+
+`/watch?intro=1` reopens the first-run sheet at any time, signed in or out —
+for checking a copy change without clearing site data.
+
+**It must never appear on `/player`.** `/player?intro=1` is a test worth running
+by hand once: a sheet over an OBS browser source goes out on television.
+
+```bash
+npx vitest run src/lib/firstRun.test.ts   # 14 tests, half of them that one rule
+```
+
+---
+
 ## Everything at once
 
 ```bash
 npx tsc -b && npm run lint && npm test && npm run build
 ```
 
-883 tests. The ones specific to what is described above:
+933 tests. The ones specific to what is described above:
 
 | File | Covers |
 |---|---|
@@ -424,3 +468,5 @@ npx tsc -b && npm run lint && npm test && npm run build
 | `rehearsal.test.ts` | The scripted run, and the demo reel's shape |
 | `reel.test.ts` | Clock playout vs loop, and every malformed schedule |
 | `rightNow.test.ts` | What a model may and may not put on the broadcast |
+| `onAirClock.test.ts` | How long the current cut has been running |
+| `firstRun.test.ts` | The intro, and the surfaces it must never cover |

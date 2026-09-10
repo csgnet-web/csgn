@@ -283,6 +283,53 @@ number marks it. Still well short of v2.)*
   - New `_shared/cache.ts`: bounded TTL cache, single-flight, bounded fetch —
     with the rule that a failed load is never cached
 
+### v1.22 — September 2026
+**The minutes were counting the wrong thing; twenty words on arrival; the brochure comes out.**
+
+- **"On air" was measured from the block's start, not from the cut.** A
+  two-hour block opening at 8 PM with a streamer put on at 8:47 reported **"on
+  air 47m" the instant they went on** — and `operatorAlerts` reads that number
+  to decide when somebody has been carried long enough to think about
+  switching, so the alert fired immediately, every time. The same figure was
+  published to every viewer as "since 8:00 PM". `adminLiveNow` now stamps
+  `onAirAt` on all three put-on paths, clears it on take-off and re-stamps on a
+  hand-over; `_shared/onAirClock.ts` is the one place that answers the question
+- **A SAMPLE IS NOT A MINUTE.** `liveCheckCount` counts how many times we asked
+  and got "yes", and three surfaces rendered it as `~{n}m` — true exactly once,
+  back when the cron ran every minute. It runs every TWO, and the duty cycle
+  stretches that to four or ten when the channel is quiet, so a stream up for
+  two hours reported anywhere between 60 and 12 "minutes". The counters are
+  untouched (`payableAirtime` is a ratio of them and was always correct, so no
+  payout moved); what is new is `liveSeconds`, credited from the measured gap
+  and capped at twelve minutes so a poller that was down for an hour cannot
+  hand back an hour it did not observe
+- **A stranger lands on a live video and nothing says what it is.** Every page
+  answered that with paragraphs, which is the other failure — a brochure under
+  a live video reads as a landing page, not a channel. There is now one screen,
+  three lines, two buttons, **once**: watch, post a clip, hold $CSGN, ordered by
+  what each costs you. It refuses outright on `/player` and `/oldplayer`, because
+  a sheet over an OBS browser source goes out on television
+- **About went from ~670 words to ~220.** Seven sections of prose became three
+  doors and eight one-line rules — a person on a page called "About" is
+  checking whether this is legitimate and what the catch is, and that is
+  answered with facts on separate lines
+- **Studio's airtime block stacked FIVE explanations** of the denominator, the
+  interruption rule and the cap. All of it is said better by the one line of
+  arithmetic underneath, which a member can check against their own wallet — a
+  paragraph asserting a thing is strictly weaker than the sum proving it. Its
+  four zero-states each lost a paragraph and kept their button
+- **The largest, brightest thing on a viewer's screen was the streamer's
+  payout** — "Live Earnings" over a 3xl yellow figure, beside a 4xl name, under
+  the video. The meter stays, at caption size, and disappears entirely on an
+  unprogrammed hour where it could only ever read $0.00
+- **The stage was a card on a card** and the footer was taller than the pages it
+  sat under. The stage runs edge to edge on mobile; the footer keeps the
+  contract address, the off-site links and the legal row, and drops two columns
+  of navigation that duplicated the permanent tab bar
+- The channel-mode card shows ONE sentence under the picture: `because` is the
+  published rule and earns its place, `nextSwitch` moved behind the toggle with
+  the switch log
+
 ### v1.21 — September 2026
 **Rehearse the whole channel with no accounts; the master mode /player could not express; a rail that writes itself.**
 
