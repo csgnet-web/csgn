@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useAuthModal } from '@/contexts/useAuthModal'
-import { SOCIAL_AUTH_ENABLED } from '@/config/authProviders'
+import { authDoorsLine, WALLET_DEFERRED } from '@/config/authProviders'
 
 /**
  * ONE GATE, USED EVERYWHERE.
@@ -14,10 +14,11 @@ import { SOCIAL_AUTH_ENABLED } from '@/config/authProviders'
  *     tells them why to open it.
  *  2. THE SHEET OPENS IN PLACE. No redirect to a sign-in page they then have to
  *     navigate back from — the modal opens over whatever they were looking at.
- *  3. IT NAMES THE DOORS THAT ACTUALLY WORK. While the social providers are
- *     unconfigured (see config/authProviders.ts) it says wallet, because
- *     promising Google here and greying it out one tap later is the kind of
- *     small lie people notice.
+ *  3. IT NAMES THE DOORS THAT ACTUALLY WORK, and nothing else. The sentence
+ *     comes from `authDoorsLine()` so this wall, the modal and anywhere else
+ *     that makes the promise cannot disagree — promising Google here and
+ *     greying it out one tap later is the kind of small lie people notice, on
+ *     the one screen where trust is the entire ask.
  */
 export function SignInWall({
   Icon, title, body, cta = 'Sign in',
@@ -37,9 +38,14 @@ export function SignInWall({
         <h1 className="mt-6 text-3xl font-black font-display text-white tracking-tight">{title}</h1>
         <p className="mt-3 text-sm text-gray-400 leading-relaxed">{body}</p>
         <Button variant="primary" size="lg" className="mt-7 w-full" onClick={openAuth}>{cta}</Button>
-        <p className="mt-4 text-[11px] text-gray-600">
-          {SOCIAL_AUTH_ENABLED ? 'Google, X, wallet or email. No password.' : 'Connect a Phantom wallet. No password.'}
-        </p>
+        <p className="mt-4 text-[11px] text-gray-600">{authDoorsLine()}</p>
+        {/* The objection that actually costs sign-ups, answered before it is
+            raised — but only once there is a door that does not need one. */}
+        {WALLET_DEFERRED && (
+          <p className="mt-1.5 text-[11px] text-gray-600">
+            You only need a wallet when there are fees to pay you.
+          </p>
+        )}
       </div>
     </div>
   )

@@ -239,6 +239,9 @@ export default function VodRotator({
   // the current decision expires, which re-asks `pickByClock`. One timer per
   // decision, never a poll — and Date.now() stays out of render.
   const [clockNow, setClockNow] = useState(() => Date.now())
+  // Clock playout: which segment was on last render, so the hand-over can be
+  // noticed. Null until the first decision.
+  const [lastPickIndex, setLastPickIndex] = useState<number | null>(null)
 
   useEffect(() => {
     if (!ident) return
@@ -267,6 +270,19 @@ export default function VodRotator({
     ? (pick && pick.index >= 0 ? items[pick.index] : null)
     : (items.length > 0 ? items[index % items.length] : null)
   const isEmbed = Boolean(current?.platform)
+
+  // THE IDENT, ON THE CLOCK. Render-phase adjustment rather than an effect, so
+  // it is armed before the frame that would otherwise show a bare board.
+  //
+  // It plays when a segment ENDS, in the gap the schedule left — never in front
+  // of one. A 2.6-second ident before a member's segment either eats the
+  // airtime they were promised or pushes them late, and either one breaks the
+  // exact promise that is the only reason to run on the clock.
+  if (playout === 'clock' && pick && pick.index !== lastPickIndex) {
+    const handedOver = lastPickIndex !== null && lastPickIndex >= 0 && pick.index === -1
+    setLastPickIndex(pick.index)
+    if (handedOver) setIdent(true)
+  }
 
   // Clock playout: sleep until this decision expires — the end of the segment
   // on air, or the start of the next one. Infinity (nothing left scheduled

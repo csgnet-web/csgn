@@ -45,3 +45,26 @@ export const SOCIAL_AUTH_SOON_LABEL = 'Soon'
  * docs/setup-tiktok-and-share.md.
  */
 export const TIKTOK_AUTH_ENABLED = false
+
+/**
+ * THE DOORS THAT ACTUALLY WORK, in one sentence.
+ *
+ * Named here rather than written out at each wall, because the sentence is a
+ * PROMISE about the next screen and there are three places that make it. When
+ * they drift, one of them promises Google and the modal greys it out one tap
+ * later — which is the kind of small lie people notice, and it lands on the one
+ * screen where trust is the entire ask.
+ */
+export function authDoorsLine(): string {
+  if (TIKTOK_AUTH_ENABLED && SOCIAL_AUTH_ENABLED) return 'TikTok, Google, X, a wallet or email. No password.'
+  // The likely state for a while, and the strongest of the four: the door most
+  // creators want, and the door holders want, and nothing else in the way.
+  if (TIKTOK_AUTH_ENABLED) return 'TikTok or a wallet. No password, no email.'
+  if (SOCIAL_AUTH_ENABLED) return 'Google, X, a wallet or email. No password.'
+  return 'Connect a Phantom wallet. No password.'
+}
+
+/** What a signed-out wall can honestly promise about the WALLET, which is the
+ *  objection that actually costs sign-ups. Only true once there is a door that
+ *  does not need one. */
+export const WALLET_DEFERRED = TIKTOK_AUTH_ENABLED || SOCIAL_AUTH_ENABLED

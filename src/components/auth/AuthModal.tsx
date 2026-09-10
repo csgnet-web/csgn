@@ -9,7 +9,7 @@ import { CsgnLogo } from '@/components/ui/CsgnLogo'
 import { suggestUsername } from '@/lib/username'
 import { storeAuthReturn } from '@/lib/authReturn'
 import { isEmbeddedBrowser, openInSystemBrowser, systemBrowserName } from '@/lib/webview'
-import { SOCIAL_AUTH_ENABLED, SOCIAL_AUTH_SOON_LABEL, TIKTOK_AUTH_ENABLED } from '@/config/authProviders'
+import { SOCIAL_AUTH_ENABLED, SOCIAL_AUTH_SOON_LABEL, TIKTOK_AUTH_ENABLED, WALLET_DEFERRED } from '@/config/authProviders'
 
 /**
  * SIGN IN OR SIGN UP — one sheet, four doors, no fork.
@@ -392,7 +392,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
               )}
 
               <p className="mt-6 text-center text-[11px] text-gray-500 leading-relaxed">
-                {TIKTOK_AUTH_ENABLED || SOCIAL_AUTH_ENABLED
+                {WALLET_DEFERRED
                   ? "No wallet needed to watch, post a clip or go live. You'll be asked for one when you've actually earned fees."
                   : 'Google, X and email sign-in are being switched on shortly. Until then a Phantom wallet is the way in — and it is what your airtime and fees are paid against anyway.'}
               </p>

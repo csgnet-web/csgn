@@ -30,6 +30,20 @@
  * the owner's call and not a side effect of a refactor. CLOCK is one query
  * parameter away (`/player?reel=clock`) so it can be watched before it is
  * chosen. Everything here is pure so both are pinned by tests.
+ *
+ * ── One thing CLOCK gives up, stated rather than hidden ────────────────────
+ *
+ * The channel ident between segments. In LOOP it plays on every hand-over, and
+ * it is what makes a rotation of other people's clips read as ONE CHANNEL
+ * rather than a playlist. On the clock there is nowhere to put it: a member's
+ * segment starts at the second it was promised, so a 2.6-second ident in front
+ * of it either eats their airtime or pushes them late — and either one breaks
+ * the exact promise that is the whole reason to run on the clock.
+ *
+ * So the ident plays in the GAP a segment leaves behind, on the way out rather
+ * than on the way in, where it costs nobody a second. Whether that is enough
+ * brand between clips is a judgement to make while watching it, which is why
+ * this is a flag and not a rewrite.
  */
 
 export interface ScheduledSegment {
