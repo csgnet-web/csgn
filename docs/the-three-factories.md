@@ -6,7 +6,19 @@ The product, stated once, in the words it should be described in everywhere.
 
 ## The factories — where content comes from
 
-### CLIP FACTORY — *connect TikTok, get airtime passively*
+### CLIP FACTORY — *sign up with TikTok, get airtime passively*
+
+**TikTok is now the front door, not a thing you do after making an account.**
+That used to be the wrong way round: the pitch is "connect TikTok, your clips
+air", and it sat behind making an account, which meant a crypto wallet. We were
+asking a creator to do a crypto thing before the thing they came for. One tap
+now creates the account AND connects the clips.
+
+**The wallet is asked for at PAYOUT**, because that is the first moment it does
+anything — you cannot be paid without somewhere for the money to land, and not
+one moment earlier. (Airtime still needs one, because airtime is a share of the
+token and a balance needs an address; /studio says exactly that, with a button,
+rather than showing a bare zero.)
 
 Connect a TikTok account. Your clips air on the member reel and **the share of
 the day you get is your share of the token**: tokens held over the
@@ -118,6 +130,28 @@ streamer and the sign must say so. Checking the block first made the badge read
 The rule lives in exactly one place — `netlify/functions/_shared/channelMode.ts`
 — and is pinned by tests. Every surface renders the stored verdict.
 
+### The one distinction the mode alone cannot carry
+
+Both master cases publish `mode: 'master'`, and for a badge that is the whole
+story. For the thing that PAINTS THE FRAME they are opposite instructions:
+
+- **The MP on their own encoder.** There is already a picture. `/player` must
+  draw nothing over it and must not run the reel.
+- **The 7 PM–3 AM block with nobody on it.** Master mode is what the sign says —
+  the hour belongs to the MP — but no encoder is sending anything, so the reel
+  has to keep the channel alive. Clips run 24/7.
+
+So the verdict carries **`encoder`**, true only for a live takeover. `/player`
+was wrong about this for as long as it existed: `go_master` writes a slot with a
+null stream URL, `/player` read "assigned slot, no URL" as "use the house
+channel", and the moment the MP went on air their own network page armed
+`twitch.tv/csgnet` and played somebody's TikTok over a live studio broadcast.
+
+Two setups for `/player` in master mode, and an operator should pick one
+deliberately: it is the whole picture (leave it — the master card IS the
+picture), or it is one layer over the MP's own scene (`?master=clear`, and it
+draws nothing).
+
 ---
 
 ## Why the rule is published
@@ -146,6 +180,9 @@ picture. `/watch` and `/schedule` render it and expand into the log of the last
 | Clip airtime maths | `netlify/functions/_shared/airtime.ts` |
 | The 16/24 switch | `config/scheduleMeta.networkBlockEnabled` |
 | TikTok connection | `netlify/functions/_shared/tiktok.ts`, `src/components/studio/TikTokImport.tsx` |
+| TikTok as a sign-up door | `netlify/functions/tiktokOAuthCallback.ts`, `src/hooks/useTikTokLink.ts` |
+| Rehearsing it all without accounts | `src/lib/rehearsal.ts`, `netlify/functions/adminRehearseReel.ts` |
+| Whether the reel plays on the clock | `src/lib/reel.ts` |
 | Twitch + forward consent | `netlify/functions/linkTwitch.ts`, `setForwardConsent.ts` |
 | The public sign | `src/components/watch/ChannelModeCard.tsx` |
 

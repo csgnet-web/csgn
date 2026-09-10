@@ -95,6 +95,61 @@ never reach the encode.
 
 ---
 
+## 0b. Rehearse the channel before you have anything to broadcast
+
+**Point the browser source at `/player?rehearse=run` and watch the whole channel
+for two minutes.**
+
+You get the real components on demo footage, looping:
+
+```
+clip (90s)  →  stream (45s)  →  master (45s)  →  clip (45s)  →  repeat
+```
+
+That is the whole product in one loop: the reel is the floor, a streamer breaks
+in over it, you pre-empt them from your own encoder, and the reel picks up where
+it left off. No account, no TikTok, no Firestore, nothing to wait for.
+
+**Every rehearsal frame carries a REHEARSAL watermark, top right.** It renders
+the real components, so a frame is otherwise indistinguishable from the channel
+in a screenshot — and stripping `?rehearse=` off the browser source before you
+go live is the only thing you have to remember.
+
+| Flag | Does |
+|---|---|
+| `?rehearse=clip` | The member reel, held |
+| `?rehearse=stream&channel=name` | A live feed through the real gate |
+| `?rehearse=master` | The master stage |
+| `?rehearse=live` | Your OWN links — seed them in Master Control → Clips |
+| `&leg=20` | Seconds per leg of the run |
+| `&clip=10` | Seconds per demo clip |
+| `&board=6` | Seconds of network board between clips |
+
+Framing this way is how you find out, before air, that the ticker-style member
+card runs along the bottom exactly where your own lower third sits.
+
+---
+
+## 0c. `/player` in master mode — pick one setup deliberately
+
+When Master Control → **I'm going on** puts you on your own encoder, `/player`
+draws a **master card** and does not run the member reel. Two setups:
+
+- **`/player` is your only visible source** — the way every other mode runs.
+  Leave it. The card is the picture.
+- **`/player` is one layer over your own scene** — camera, game capture,
+  graphics. Add **`?master=clear`** and it draws nothing while you are on.
+
+The default is the card on purpose: the two failure modes are not symmetric. A
+card covering your scene is visible on your own preview in the first second and
+fixed by hiding a source; a transparent default fails as a **black rectangle
+going out to an audience** while your preview, composited over your scene, looks
+perfect.
+
+Check the card before your first takeover: `/player?preview=master`.
+
+---
+
 ## 1. Scene setup (one time)
 
 Create exactly one scene: **`CSGN MASTER`**, containing exactly one source:

@@ -1,4 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { prefetchProps } from '@/lib/routePrefetch'
 import { CalendarDays, Clapperboard, Coins, Radio, User } from 'lucide-react'
 import { useAuth } from '@/contexts/useAuth'
 import { useAuthModal } from '@/contexts/useAuthModal'
@@ -146,7 +147,7 @@ export function BottomNav() {
               {body}
             </button>
           ) : (
-            <Link key={href} to={href} className={shell} style={shellStyle} aria-current={active ? 'page' : undefined}>
+            <Link key={href} to={href} {...prefetchProps(href)} className={shell} style={shellStyle} aria-current={active ? 'page' : undefined}>
               {body}
             </Link>
           )

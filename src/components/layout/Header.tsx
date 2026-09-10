@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/useAuth'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
 import { CSGN_MINT } from '@/lib/slots'
 import { useScrollLock } from '@/hooks/useScrollLock'
+import { prefetchProps } from '@/lib/routePrefetch'
 
 const navLinks = [
   { href: '/watch', label: 'Watch Live', live: true },
@@ -125,6 +126,10 @@ export function Header() {
                   <Link
                     key={link.href}
                     to={link.href}
+                    // Warm the route's chunk on hover / touch-down, so the page
+                    // renders on the tap instead of behind a spinner. See
+                    // lib/routePrefetch.ts.
+                    {...prefetchProps(link.href)}
                     className={`relative px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 ${
                       isActive
                         ? 'text-white bg-white/[0.07]'
@@ -254,6 +259,7 @@ export function Header() {
                     <Link
                       key={link.href}
                       to={link.href}
+                      {...prefetchProps(link.href)}
                       onClick={() => setMobileOpen(false)}
                       className={`flex items-center gap-3 px-4 py-3 text-base font-medium rounded-xl transition-all ${
                         location.pathname === link.href
