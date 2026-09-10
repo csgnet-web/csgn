@@ -171,10 +171,8 @@ export default function TikTokImport({ onImported }: { onImported: () => void | 
 
       {load.kind === 'disconnected' && (
         <>
-          <p className="text-[13px] text-gray-400 leading-relaxed">
-            Connect your TikTok and your own videos show up here to tick — no copying links. We only
-            ever read your public posts, and it's the only way we learn a clip's real length instead
-            of guessing at it.
+          <p className="text-[13px] text-gray-400">
+            Your videos show up here to tick — no copying links, and we learn their real length.
           </p>
           <Button variant="secondary" className="w-full" isLoading={connecting} onClick={() => void connect()}>
             Connect TikTok

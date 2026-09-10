@@ -1,11 +1,21 @@
-import { Connection, PublicKey, Transaction } from '@solana/web3.js'
-import {
-  getAssociatedTokenAddressSync,
-  createTransferCheckedInstruction,
-  createAssociatedTokenAccountInstruction,
-  getAccount,
-} from '@solana/spl-token'
+import type { Transaction } from '@solana/web3.js'
 import { CSGN_TREASURY, CSGN_MINT, CSGN_DECIMALS } from './slots'
+
+/**
+ * ── WHY THESE TWO LIBRARIES ARE LOADED ON DEMAND ──────────────────────────
+ *
+ * `@solana/web3.js` and `@solana/spl-token` are ~250KB gzipped between them,
+ * and they were imported at the top of this file — which meant /participate
+ * downloaded and parsed the whole Solana stack on arrival, for every visitor,
+ * to support ONE action almost nobody takes on their first visit: paying
+ * $CSGN to take the coin spotlight.
+ *
+ * They are pulled in inside `paySpotlightCsgn` instead, so the cost lands on
+ * the person who actually presses the button, at the moment they press it,
+ * where a beat of latency is invisible next to a wallet approval dialog.
+ *
+ * The type import above is erased at build time and pulls in nothing.
+ */
 
 // Client side of the Coin Jukebox: bid $CSGN to the treasury to take the
 // broadcast spotlight. An SPL transferChecked of the mint, returning a confirmed
@@ -33,6 +43,18 @@ export async function paySpotlightCsgn(walletAddress: string, amount: number): P
   const provider = (window as unknown as { solana?: PhantomTxProvider }).solana
   if (!provider?.isPhantom || !provider.signAndSendTransaction) throw new Error('Phantom is required to play the jukebox.')
   if (!(amount > 0)) throw new Error('Amount must be positive.')
+
+  // Loaded here, not at module scope — see the note above. Both in parallel:
+  // they are independent chunks and this is the one place that waits on them.
+  const [{ Connection, PublicKey, Transaction }, {
+    getAssociatedTokenAddressSync,
+    createTransferCheckedInstruction,
+    createAssociatedTokenAccountInstruction,
+    getAccount,
+  }] = await Promise.all([
+    import('@solana/web3.js'),
+    import('@solana/spl-token'),
+  ])
 
   const owner = new PublicKey(walletAddress)
   const treasury = new PublicKey(CSGN_TREASURY)

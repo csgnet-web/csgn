@@ -17,7 +17,7 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { HistoryLedger } from '@/components/admin/HistoryLedger'
-import { airtimeLabel, airtimeNote, airtimeTone, readAirtime } from '@/lib/airtime'
+import { airtimeLabel, airtimeNote, airtimeTone, liveDuration, readAirtime } from '@/lib/airtime'
 import { isFeePending, type Slot } from '@/lib/slots'
 
 interface AdminUser {
@@ -119,7 +119,10 @@ export function CreatorFeesTab({
   const renderPending = (slot: Slot) => {
     const fees = slot.creatorFees
     const activity = slot.streamActivity
-    const liveMinutes = activity?.liveCheckCount ?? 0
+    // Samples, NOT minutes — the poller's cadence varies. Used only to tell
+    // "we looked and saw nothing" from "we never looked".
+    const liveSamples = activity?.liveCheckCount ?? 0
+    const onAir = liveDuration(activity)
     const airtime = readAirtime(fees?.airtime)
     const busy = feeActionLoading === slot.id
 
@@ -152,7 +155,10 @@ export function CreatorFeesTab({
               ['Volume', `${fees.tradingVolumeSOL.toFixed(4)} SOL`],
               ['Tier', fees.marketCapTierLabel ?? 'n/a'],
               ['Creator fee', `${(fees.tradingVolumeSOL * (fees.creatorFeeRate ?? 0.003)).toFixed(6)} SOL`],
-              ['Airtime', airtimeLabel(airtime) ?? (activity ? `~${liveMinutes}m` : 'not logged')],
+              // The real duration when we measured it; otherwise the ratio,
+              // honestly labelled as checks. Never a sample count wearing an
+              // "m" — that read as minutes and was out by 2× at best.
+              ['Airtime', onAir ?? airtimeLabel(airtime) ?? (activity ? `${liveSamples} checks live` : 'not logged')],
             ] as const).map(([label, value]) => (
               <div key={label} className="rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2">
                 <p className="text-[11px] text-gray-500">{label}</p>
@@ -168,7 +174,7 @@ export function CreatorFeesTab({
           <p className={`mt-2 flex items-center gap-1.5 text-xs ${airtimeTone(airtime)}`}>
             <Activity className="w-3 h-3 shrink-0" /> {airtimeNote(airtime)}
           </p>
-        ) : activity && liveMinutes === 0 && (
+        ) : activity && liveSamples === 0 && (
           <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-400">
             <Activity className="w-3 h-3" /> No live samples captured — the channel looked offline for this slot.
           </p>

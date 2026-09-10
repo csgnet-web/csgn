@@ -21,6 +21,8 @@
 | Work out why the Netlify bill is what it is | [`netlify-cost.md`](netlify-cost.md) |
 | Decide when to run clips vs. a live streamer | [`analysis-clip-vs-streamer-mode.md`](analysis-clip-vs-streamer-mode.md) |
 | Switch on TikTok import and the share sheet | [`setup-tiktok-and-share.md`](setup-tiktok-and-share.md) |
+| **Decide what to switch on, and what it costs** | [`decisions.md`](decisions.md) |
+| Rehearse the whole channel with no accounts | [`testing-the-channel.md`](testing-the-channel.md) §0 |
 
 ---
 

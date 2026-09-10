@@ -82,6 +82,59 @@ still gets attached; only the on-chain check is bypassed.
 
 ---
 
+## 2b. TikTok is now the front door
+
+**One tap makes the account and connects the clips.**
+
+The clip factory's pitch is *"connect TikTok, your clips air"*, and that used to
+be step two — behind making an account, which meant a Phantom wallet. So the one
+action we actually want from a creator sat behind an action most creators do not
+want to take, on the one screen where a stranger decides whether to bother.
+
+TikTok is now the credential:
+
+```
+Continue with TikTok  →  approve on TikTok  →  you are in, and your clips are importable
+```
+
+No username to pick (their handle is taken if it is free, sanitised if it needs
+it, minted from a stable seed if it is gone — `_shared/handles.ts`). No email.
+No password. **No wallet.**
+
+### Where the wallet went
+
+To **payout**, which is the first moment it does anything: you cannot be paid
+without somewhere for the money to land, and not one moment earlier.
+
+Airtime is the honest exception, and /studio says so rather than showing a bare
+zero: airtime is a share of the token, and a balance needs an address. The panel
+reads *"Connect your wallet to claim your airtime"*, explains that it is a
+signature rather than a transaction, and gives them the button.
+
+### The rule that keeps it safe
+
+`startTikTokOAuth` serves both a signed-in member (LINK) and a stranger
+(SIGN UP), and **the server decides which by whether a valid ID token arrived** —
+never by anything in the request body. A caller cannot ask for the sign-up path
+while holding a session, or the link path without one, so there is no way to
+aim a link at somebody else's account.
+
+The custom token that finishes a sign-up goes in a **document**, never in the
+redirect URL. A token in a URL is in browser history, in any referrer, and in
+whichever browser happened to finish the OAuth — which, for most of our users,
+is not the browser they are looking at. It is handed out exactly once, expires
+in ten minutes, and is claimed with a signed bearer that never leaves the
+originating tab.
+
+### Switched off until the console entry exists
+
+`TIKTOK_AUTH_ENABLED` in `src/config/authProviders.ts`. The server already
+refuses cleanly without the environment; the flag exists so a live button never
+fails on a redirect-URI mismatch. See
+[`docs/setup-tiktok-and-share.md`](setup-tiktok-and-share.md) Part 3.
+
+---
+
 ## 3. Twitch: the cross-browser handoff
 
 Once the account exists, Twitch is offered — and here the browser decides the

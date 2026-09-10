@@ -106,27 +106,36 @@ export default function ChannelModeCard({ compact = false }: { compact?: boolean
             )}
           </div>
 
-          <p className="mt-1.5 text-[13px] text-gray-300 leading-relaxed">{channelMode.because}</p>
-          {channelMode.nextSwitch && (
-            <p className="mt-1 text-[12px] text-gray-500 leading-relaxed">{channelMode.nextSwitch}</p>
-          )}
+          {/* ONE sentence on the page. `because` is the published rule and earns
+              its place directly under the picture — it is the answer to "why am
+              I looking at a clip reel". `nextSwitch` answers a question nobody
+              has yet, so it moved behind the toggle with the switch log rather
+              than being a second paragraph under a live video. */}
+          <p className="mt-1.5 text-[13px] text-gray-300 leading-snug">{channelMode.because}</p>
 
-          {history.length > 0 && (
+          {(history.length > 0 || Boolean(channelMode.nextSwitch)) && (
             <button
               type="button"
               onClick={() => setOpen((v) => !v)}
               aria-expanded={open}
               className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500 hover:text-gray-300 transition-colors"
             >
-              {open ? 'Hide' : 'Recent switches'}
+              {open ? 'Hide' : history.length > 0 ? 'What changes this' : "What's next"}
               <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
             </button>
           )}
 
-          {open && history.length > 0 && (
-            <ul className="mt-1 divide-y divide-white/[0.05] border-t border-white/[0.05]">
-              {history.map((e) => <SwitchRow key={`${e.at}-${e.mode}`} event={e} />)}
-            </ul>
+          {open && (
+            <>
+              {channelMode.nextSwitch && (
+                <p className="mt-1 text-[12px] text-gray-500 leading-snug">{channelMode.nextSwitch}</p>
+              )}
+              {history.length > 0 && (
+                <ul className="mt-1 divide-y divide-white/[0.05] border-t border-white/[0.05]">
+                  {history.map((e) => <SwitchRow key={`${e.at}-${e.mode}`} event={e} />)}
+                </ul>
+              )}
+            </>
           )}
         </div>
 

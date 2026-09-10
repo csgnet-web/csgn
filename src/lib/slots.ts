@@ -109,8 +109,13 @@ export interface StreamActivity {
   lastLive?: boolean        // whether the channel was live on that check
   firstLiveAt?: string      // ISO of the first time it was seen live this slot
   lastLiveAt?: string       // ISO of the most recent time it was seen live
-  liveCheckCount?: number   // number of live samples (~minutes, 1 check/min)
+  // COUNTS OF SAMPLES, NOT MINUTES. The poller runs every two minutes and backs
+  // off to four or ten when the channel is quiet, so a sample is worth an
+  // unknown amount of time. Their RATIO is what decides money (payableAirtime);
+  // for a duration read `liveSeconds`.
+  liveCheckCount?: number   // samples that found the channel live
   checkCount?: number       // samples TAKEN, live or not — the fairness denominator
+  liveSeconds?: number      // REAL observed live time, credited from measured gaps
   peakViewers?: number      // highest concurrent viewers seen this slot
   viewerSampleSum?: number  // ÷ liveCheckCount = average concurrent viewers
   lastTitle?: string        // stream title on the most recent live sample

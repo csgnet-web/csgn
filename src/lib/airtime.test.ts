@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readAirtime, airtimeLabel, airtimeNote, airtimeTone, type SlotAirtime } from './airtime'
+import { readAirtime, airtimeLabel, airtimeNote, airtimeTone, liveDuration, type SlotAirtime } from './airtime'
 
 const verdict = (over: Partial<SlotAirtime> = {}): SlotAirtime => ({
   liveCheckCount: 42,
@@ -26,9 +26,36 @@ describe('readAirtime', () => {
   })
 })
 
+describe('liveDuration — the real one', () => {
+  it('reads the measured seconds, not a sample count', () => {
+    expect(liveDuration({ liveSeconds: 0 })).toBeNull()
+    expect(liveDuration({ liveSeconds: 47 * 60 })).toBe('47m')
+    expect(liveDuration({ liveSeconds: 107 * 60 })).toBe('1h 47m')
+    expect(liveDuration({ liveSeconds: 60 * 60 })).toBe('1h 00m')
+  })
+
+  it('is null for a slot that predates the measurement', () => {
+    // Honest: a slot with no liveSeconds genuinely does not know its duration,
+    // and inferring one from the sample count is the bug this replaced.
+    expect(liveDuration({})).toBeNull()
+    expect(liveDuration(null)).toBeNull()
+    expect(liveDuration(undefined)).toBeNull()
+    expect(liveDuration({ liveSeconds: Number.NaN })).toBeNull()
+  })
+})
+
 describe('airtimeLabel', () => {
   it('shows both halves — live samples over samples taken', () => {
-    expect(airtimeLabel(verdict())).toBe('42/48 min live')
+    expect(airtimeLabel(verdict())).toBe('42 of 48 checks live')
+  })
+
+  it('says CHECKS, never minutes', () => {
+    // It read "42/48 min live" for as long as it existed, which was true only
+    // while the poller ran every minute. It runs every two and backs off to ten
+    // when the channel is quiet, so the same stream reported anywhere between a
+    // half and a twelfth of its real airtime. The ratio was always right; the
+    // unit was the lie.
+    expect(airtimeLabel(verdict())).not.toMatch(/\bmin\b/)
   })
 
   it('has nothing to say without a verdict or a denominator', () => {

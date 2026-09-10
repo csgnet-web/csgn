@@ -283,6 +283,134 @@ number marks it. Still well short of v2.)*
   - New `_shared/cache.ts`: bounded TTL cache, single-flight, bounded fetch —
     with the rule that a failed load is never cached
 
+### v1.22 — September 2026
+**The minutes were counting the wrong thing; twenty words on arrival; the brochure comes out.**
+
+- **"On air" was measured from the block's start, not from the cut.** A
+  two-hour block opening at 8 PM with a streamer put on at 8:47 reported **"on
+  air 47m" the instant they went on** — and `operatorAlerts` reads that number
+  to decide when somebody has been carried long enough to think about
+  switching, so the alert fired immediately, every time. The same figure was
+  published to every viewer as "since 8:00 PM". `adminLiveNow` now stamps
+  `onAirAt` on all three put-on paths, clears it on take-off and re-stamps on a
+  hand-over; `_shared/onAirClock.ts` is the one place that answers the question
+- **A SAMPLE IS NOT A MINUTE.** `liveCheckCount` counts how many times we asked
+  and got "yes", and three surfaces rendered it as `~{n}m` — true exactly once,
+  back when the cron ran every minute. It runs every TWO, and the duty cycle
+  stretches that to four or ten when the channel is quiet, so a stream up for
+  two hours reported anywhere between 60 and 12 "minutes". The counters are
+  untouched (`payableAirtime` is a ratio of them and was always correct, so no
+  payout moved); what is new is `liveSeconds`, credited from the measured gap
+  and capped at twelve minutes so a poller that was down for an hour cannot
+  hand back an hour it did not observe
+- **A stranger lands on a live video and nothing says what it is.** Every page
+  answered that with paragraphs, which is the other failure — a brochure under
+  a live video reads as a landing page, not a channel. There is now one screen,
+  three lines, two buttons, **once**: watch, post a clip, hold $CSGN, ordered by
+  what each costs you. It refuses outright on `/player` and `/oldplayer`, because
+  a sheet over an OBS browser source goes out on television
+- **About went from ~670 words to ~220.** Seven sections of prose became three
+  doors and eight one-line rules — a person on a page called "About" is
+  checking whether this is legitimate and what the catch is, and that is
+  answered with facts on separate lines
+- **Studio's airtime block stacked FIVE explanations** of the denominator, the
+  interruption rule and the cap. All of it is said better by the one line of
+  arithmetic underneath, which a member can check against their own wallet — a
+  paragraph asserting a thing is strictly weaker than the sum proving it. Its
+  four zero-states each lost a paragraph and kept their button
+- **The largest, brightest thing on a viewer's screen was the streamer's
+  payout** — "Live Earnings" over a 3xl yellow figure, beside a 4xl name, under
+  the video. The meter stays, at caption size, and disappears entirely on an
+  unprogrammed hour where it could only ever read $0.00
+- **The stage was a card on a card** and the footer was taller than the pages it
+  sat under. The stage runs edge to edge on mobile; the footer keeps the
+  contract address, the off-site links and the legal row, and drops two columns
+  of navigation that duplicated the permanent tab bar
+- The channel-mode card shows ONE sentence under the picture: `because` is the
+  published rule and earns its place, `nextSwitch` moved behind the toggle with
+  the switch log
+
+### v1.21 — September 2026
+**Rehearse the whole channel with no accounts; the master mode /player could not express; a rail that writes itself.**
+
+- **You can now see the clip factory work before anybody has connected
+  anything.** `/player?rehearse=run` loops CLIP → STREAM → MASTER → CLIP on demo
+  footage with no account, no TikTok and no Firestore, so an OBS operator can
+  frame every hand-over on day one. The existing `?preview=` flags render one
+  card and stop; what actually goes wrong is the HAND-OVER — ident into board
+  into clip, a streamer breaking in, the reel picking up — and that is the part
+  with the timers in it. Every rehearsal frame carries a **REHEARSAL
+  watermark**, because it renders the real components and is otherwise
+  indistinguishable from the channel in a screenshot
+- **Master Control → Clips → Rehearse the reel** pushes *your* pasted links
+  through the real parser, the real short-link resolution, the real metadata
+  lookup, the real crop and the real scheduler — and reports, per link, whether
+  the duration came back **measured or guessed**. It writes one document that
+  only `?rehearse=live` reads, so it is safe to run while the channel is on air.
+  The one step it substitutes is allocation, which belongs to the day lock and
+  has no business near a test
+- **MASTER MODE was a bug, not a gap.** "I'm going on" writes a slot with no
+  stream URL — correctly, since the picture comes from the MP's own encoder —
+  and `/player` read "assigned slot, no URL" as "fall back to the house
+  channel". So the moment the MP took their own channel, their own network page
+  armed `twitch.tv/csgnet` and either sat on "Starting soon" or **started
+  playing somebody's TikTok over a live studio broadcast**. The verdict now
+  carries `encoder` — true only for a live takeover, never for the 7 PM–3 AM
+  block, where the reel must keep running — and `/player` draws a master stage
+  with everything else suppressed. `?master=clear` draws nothing for an operator
+  compositing over their own scene; rehearse it with `?preview=master`
+- **Two card shapes a member could choose did not exist on air.** Stack and
+  Minimal were in the chooser, in the preview, and not in the renderer, so they
+  silently fell through to Bar: a member picked a card, was shown it, and went
+  out wearing somebody else's
+- **The reel's playout and the reel's promise had drifted apart.** The scheduler
+  writes real timestamps and /studio tells a member the minute their clip airs;
+  the rotator ignored them and looped the list with a minute of board between
+  clips. Both are defensible — LOOP is good television while there are four
+  minutes of content to spread over a day, CLOCK makes the quoted time literally
+  true — so `/player?reel=clock` is one flag away, LOOP stays the default
+  because **changing what goes out on a live channel is the owner's call**, and
+  the trade-off is written up in `src/lib/reel.ts`. The 60-second board break is
+  now a knob (`?board=`) rather than a constant
+- **Sign up with TikTok; the wallet waits for payout.** The clip factory's whole
+  pitch is "connect TikTok, your clips air", and that was step *two* — behind
+  making an account, which meant a crypto wallet. We were asking a creator to do
+  a crypto thing before the thing they came for. TikTok is now the credential:
+  one tap and the account exists **and** their clips are importable. Signed in,
+  `startTikTokOAuth` still links an existing account; signed out it creates one —
+  and which of the two happens is decided by whether a session arrived, never by
+  the request body, so nobody can aim a link at somebody else's account. The
+  cross-browser handoff Twitch needed applies here for the same reason (a
+  webview has its own cookie jar and the user is signed out inside it), so the
+  polling mechanism moved to `lib/linkWait.ts` and both providers share one copy
+- **The Right Now rail writes itself, every two hours.** X's recent search when
+  `X_BEARER_TOKEN` is set, the channel's own Meme 100 board when it is not — so
+  it works on day one with no new bill. A model writes up to four short lines;
+  **nothing it writes reaches the broadcast until `vetLines` accepts it in
+  code**: length, character set, no links, no @handles, no profanity, and
+  nothing that reads as financial advice. Posts pulled from X are untrusted
+  input in the strictest sense — anyone can write one, and "ignore your
+  instructions" is a post — so they arrive labelled as data and the prompt is
+  never the control. **A holder's paid line is never written over**; the writer
+  fills only what is left, and writes nothing at all when holders have filled
+  the rail. Master Control can dry-run it (write lines, show them, air nothing),
+  run it, or switch it off
+- **`/participate` was 92KB gzipped and is now 10KB.** The Solana web3 and
+  spl-token libraries were imported at module scope for one action almost nobody
+  takes on a first visit — paying $CSGN for the coin spotlight — so every
+  visitor downloaded and parsed the whole stack on arrival. They load when the
+  button is pressed, where a beat of latency is invisible next to a wallet
+  approval dialog
+- **The nav warms the next page before you tap it.** Every route is a lazy
+  chunk, which is right, but the first visit to each one paid a round trip
+  behind a spinner — on exactly the taps a new user makes first. Hovering,
+  touching down on, or tabbing to a nav link starts its chunk loading, so the
+  page renders on the tap. `App.tsx` and the prefetcher share one import thunk
+  per route, so warming and loading are provably the same chunk
+- New docs: [`docs/decisions.md`](docs/decisions.md) — what is behind a switch,
+  what it costs, and a recommendation for each. `docs/testing-the-channel.md`
+  leads with the rehearsal now
+
 ### v1.20 — August 2026
 **Three taps to an account; a Twitch hop that survives the in-app browser.**
 
@@ -452,9 +580,29 @@ CSGN_ALLOWED_ORIGIN=          # e.g. https://csgn.tv — required for CORS
 CSGN_PROOF_SIGNING_SECRET=    # must be ≥ 32 characters
 CSGN_DEFAULT_STREAM_URL=
 CSGN_FALLBACK_STREAM_URL=
+
+# TikTok — Login Kit + Display API. TIKTOK_REDIRECT_URI points at the FUNCTION
+# (…/.netlify/functions/tiktokOAuthCallback) and must match the developer
+# console byte-for-byte. Also flip TIKTOK_AUTH_ENABLED in
+# src/config/authProviders.ts to open the sign-up door.
+TIKTOK_CLIENT_KEY=
+TIKTOK_CLIENT_SECRET=
+TIKTOK_REDIRECT_URI=
+
+# The Right Now rail, written automatically every two hours. Without the API key
+# the scheduled function exits immediately and the rail keeps whatever holders
+# put on it. X is OPTIONAL and is a real bill (~$200/mo — their recent-search
+# endpoint is not on the free tier); without it the writer reads the channel's
+# own Meme 100 board instead, at no extra cost. See docs/decisions.md §1.
+ANTHROPIC_API_KEY=
+CSGN_RAIL_MODEL=              # optional; defaults to claude-opus-5
+X_BEARER_TOKEN=               # optional; app-only bearer, recent search
+X_RAIL_QUERY=                 # optional; X search syntax, e.g. from:someone OR from:another
 ```
 
-See [`docs/env-setup.md`](docs/env-setup.md) for Netlify-specific setup guidance.
+See [`docs/env-setup.md`](docs/env-setup.md) for Netlify-specific setup guidance,
+and [`docs/decisions.md`](docs/decisions.md) for what each optional integration
+costs and whether to switch it on.
 
 ---
 
@@ -469,7 +617,11 @@ See [`docs/env-setup.md`](docs/env-setup.md) for Netlify-specific setup guidance
 | `/about` | About CSGN, mission, vision |
 | `/account` | User dashboard — application status, streamer stats |
 | `/admin` | Admin panel — slot management, fee overrides |
-| `/player` | OBS-ready iframe player for broadcast capture |
+| `/player` | OBS-ready broadcast surface — the state machine, not a dumb iframe |
+| `/player?rehearse=run` | The whole channel on a loop with no accounts — see `docs/testing-the-channel.md` §0 |
+| `/studio` | A member's reel: paste or import clips, choose their on-air card, see their airtime |
+| `/participate` | The Meme 100 board, token-weighted votes, the coin jukebox |
+| `/auth/tiktok` | Where a TikTok sign-up lands |
 | `/terms` | Terms of service |
 
 ---

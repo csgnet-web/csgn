@@ -13,6 +13,7 @@
     "verify:airtime": "node scripts/verify-airtime.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
     "@headlessui/react": "^2.2.9",
     "@solana/spl-token": "^0.4.15",
     "@solana/web3.js": "^1.98.4",

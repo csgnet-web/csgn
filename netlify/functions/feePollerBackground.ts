@@ -57,6 +57,7 @@ import { buildExpectedSlotsForDate, buildSlotDoc } from './_shared/schedule'
 import { deriveNowLive, deriveUpNext, type OnAirSlot } from './_shared/onAir'
 import { readLiveWeights, settleTally, type BallotRow } from './_shared/settleVotes'
 import { memo } from './_shared/cache'
+import { onAirMinutes } from './_shared/onAirClock'
 import { refreshMemeBoard } from './_shared/memeBoard'
 import { getDoc as getLockDoc, writeDoc as writeLockDoc } from './_shared/firebaseAdmin'
 import {
@@ -117,6 +118,21 @@ interface StreamActivity {
   liveCheckCount?: number
   /** Samples taken, live or not — the fairness denominator. See payableAirtime. */
   checkCount?: number
+  /**
+   * REAL SECONDS the channel was observed live. Not a sample count.
+   *
+   * `liveCheckCount` is how many times we asked and got "yes", and three
+   * surfaces rendered it as `~{n}m` — which was true exactly once, back when
+   * the cron ran every minute. It is every TWO minutes now, and the poller
+   * defers itself to four or ten when the channel is quiet, so a stream up for
+   * two hours reported anywhere between 60 and 12 "minutes".
+   *
+   * The counters stay as they are because `payableAirtime` is a RATIO of them
+   * and is unaffected by the cadence. This is the separate number for anything
+   * that wants a duration, credited from the measured gap between samples the
+   * same way the roster's minutes already are (`creditMinutes`).
+   */
+  liveSeconds?: number
   peakViewers?: number
   viewerSampleSum?: number
   lastTitle?: string
@@ -134,6 +150,14 @@ interface SlotDoc {
   /** Who holds this block. The real "someone took this" — see claimSlot.ts. */
   assignedUid?: string
   assignedName?: string
+  isGuest?: boolean
+  sourceType?: string
+  type?: string
+  /** When the occupant was actually put on air. Stamped by adminLiveNow; read
+   *  by _shared/onAirClock.ts and published as the mode's `since`. Without it
+   *  on this type, the poller's republish would silently drop the stamp and the
+   *  public sign would fall back to the block's start every two minutes. */
+  onAirAt?: string
   streamTitle?: string
   creatorFees?: CreatorFees
   streamActivity?: StreamActivity
@@ -148,9 +172,35 @@ interface SlotRow {
 /* ─── Twitch Helix: verify the slot's channel is actually live ─── */
 
 /**
- * Once a minute, sample whether the active slot's Twitch channel is actually
- * broadcasting and append a timestamp to the slot's streamActivity log. Kept in
- * a separate top-level field so the fee-poll writes never clobber it.
+ * How much elapsed time one sample may credit.
+ *
+ * The gap between samples is normally the cron period (two minutes) but can be
+ * four or ten when the duty cycle has backed off, and arbitrarily long after an
+ * outage. Crediting the measured gap is what makes the number mean the same
+ * thing at any cadence; the ceiling is what stops a poller that was down for an
+ * hour handing back an hour of "observed" airtime it did not observe.
+ *
+ * Twelve minutes: just above the coldest tier, so a legitimate slow pass is
+ * credited in full and nothing else is.
+ */
+export const MAX_LIVE_CREDIT_SECONDS = 12 * 60
+
+export function creditSeconds(lastAt: string | undefined, nowMs: number): number {
+  const last = Date.parse(String(lastAt ?? ''))
+  if (!Number.isFinite(last) || last <= 0 || last > nowMs) return 0
+  const gap = Math.floor((nowMs - last) / 1000)
+  if (gap <= 0) return 0
+  return Math.min(gap, MAX_LIVE_CREDIT_SECONDS)
+}
+
+/**
+ * Sample whether the active slot's Twitch channel is actually broadcasting and
+ * append a timestamp to the slot's streamActivity log. Kept in a separate
+ * top-level field so the fee-poll writes never clobber it.
+ *
+ * ONCE PER PASS, not once per minute — the cron is every two minutes and the
+ * duty cycle stretches that to four or ten when the channel is quiet. That
+ * distinction is the whole reason `liveSeconds` exists alongside the counters.
  *
  * Two things this counts, and the difference between them decides money:
  * `liveCheckCount` is how often the channel was up, `checkCount` is how often
@@ -193,6 +243,12 @@ async function logSlotActivity(row: SlotRow | null): Promise<StreamActivity | nu
       lastLiveAt: live ? nowISO : prev.lastLiveAt,
       liveCheckCount: (prev.liveCheckCount ?? 0) + (live ? 1 : 0),
       checkCount: prevCheckCount + 1,
+      // The MEASURED gap, never a flat minute — see the note on the field. A
+      // sample only credits time if the PREVIOUS sample also saw the channel
+      // live, so the first sample of a run credits nothing and a channel that
+      // came back after a break is not paid for the break.
+      liveSeconds: (prev.liveSeconds ?? 0)
+        + (live && prev.lastLive === true ? creditSeconds(prev.lastCheckedAt, Date.now()) : 0),
       peakViewers: Math.max(prev.peakViewers ?? 0, sample.viewerCount),
       // Live samples only — an offline channel's zero would drag the average
       // toward "nobody watched" rather than measuring the broadcast.
@@ -887,9 +943,12 @@ export const handler = async () => {
           live: e.live, viewerCount: e.viewerCount,
         })),
         onAirUid: active?.data.assignedUid ?? null,
-        onAirMinutes: active?.data.startTime
-          ? Math.max(0, Math.floor((Date.now() - Date.parse(active.data.startTime)) / 60_000))
-          : 0,
+        // How long THIS CUT has been running. It used to measure from the
+        // block's start, so a streamer put on 47 minutes into a two-hour block
+        // was reported as having been on air for 47 minutes the instant they
+        // went on — and the alert that watches this number fired immediately,
+        // every time. See _shared/onAirClock.ts.
+        onAirMinutes: onAirMinutes(active?.data ?? null),
         viewerFloor,
       }
       const alerts = operatorAlerts(alertInput)

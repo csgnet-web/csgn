@@ -26,6 +26,7 @@ const doc = (over: Partial<ChannelModeDoc> = {}): ChannelModeDoc => ({
   because: 'Nobody from the roster is streaming right now, so the member clip reel is carrying the channel.',
   nextSwitch: 'The moment a connected member goes live, the network can cut to them.',
   since: '2026-08-20T18:00:00.000Z',
+  encoder: false,
   log: [
     { at: '2026-08-20T18:00:00.000Z', mode: 'clip', who: null, because: 'Reel took over.' },
     { at: '2026-08-20T16:00:00.000Z', mode: 'stream', who: 'roblito', because: 'roblito went live.' },
@@ -71,11 +72,23 @@ describe('ChannelModeCard', () => {
     expect(text()).toBe('')
   })
 
-  it('states the mode and the reason', () => {
+  it('states the mode and the reason, and only those', () => {
     state.channelMode = doc()
     mount()
     expect(text()).toContain('Clip Mode')
     expect(text()).toContain('member clip reel is carrying the channel')
+  })
+
+  // ONE sentence under a live video. `because` is the published rule and is the
+  // answer to the question a viewer actually has; `nextSwitch` answers one they
+  // have not asked yet, so it waits behind the toggle rather than being a second
+  // paragraph on the page.
+  it('keeps "what changes this" behind the toggle', () => {
+    state.channelMode = doc()
+    mount()
+    expect(text()).not.toContain('cut to them')
+    const button = host.querySelector('button')
+    act(() => { button!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     expect(text()).toContain('cut to them')
   })
 
@@ -114,8 +127,18 @@ describe('ChannelModeCard', () => {
     expect(occurrences).toBe(1)
   })
 
-  it('offers no history control when there is nothing but the current mode', () => {
+  it('still offers the toggle for "what changes this" with no history behind it', () => {
     state.channelMode = doc({ log: [{ at: '2026-08-20T18:00:00.000Z', mode: 'clip', who: null, because: 'Reel took over.' }] })
+    mount()
+    expect(host.querySelector('button')).not.toBeNull()
+    expect(text()).toContain("What's next")
+  })
+
+  it('offers no control at all when there is neither history nor a next switch', () => {
+    state.channelMode = doc({
+      nextSwitch: '',
+      log: [{ at: '2026-08-20T18:00:00.000Z', mode: 'clip', who: null, because: 'Reel took over.' }],
+    })
     mount()
     expect(host.querySelector('button')).toBeNull()
   })

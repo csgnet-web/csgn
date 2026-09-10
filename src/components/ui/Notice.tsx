@@ -116,8 +116,7 @@ export function EmailNotice({ action }: { action?: React.ReactNode }) {
 export function TwitchNotice({ action }: { action?: React.ReactNode }) {
   return (
     <Notice tone="warning" title="Connect Twitch to get on air" action={action}>
-      Your account is ready. Link the channel you stream from and turn on forwarding, and we'll
-      carry you on CSGN whenever you go live — nothing to book, nothing to remember.
+      Link your channel and turn on forwarding. We carry you whenever you go live.
     </Notice>
   )
 }

@@ -25,41 +25,11 @@ import { auditLog } from './_shared/audit'
 import { conflict } from './_shared/errors'
 import { createWrite, commitWrites, getDoc } from './_shared/firebaseAdmin'
 import { json, parseJson, requireMethod, withHttp } from './_shared/http'
-import { emailKey, normalizeEmail, normalizeUsername, usernameKey } from './_shared/validators'
+import { emailKey, normalizeEmail, usernameKey } from './_shared/validators'
+import { allocateUsername } from './_shared/handles'
 import { checkRateLimit, clientIp } from './_shared/rateLimit'
 
 type Body = { username?: unknown }
-
-/** Same shape as src/lib/username.ts, so a name suggested in the browser and a
- *  name minted here look like they came from the same product. */
-const ADJECTIVES = [
-  'Neon', 'Rapid', 'Golden', 'Silent', 'Prime', 'Wild', 'Solar', 'Iron',
-  'Lucky', 'Bold', 'Swift', 'Vivid', 'Cobalt', 'Crimson', 'Onyx', 'Turbo',
-  'Atomic', 'Cosmic', 'Rogue', 'Sharp', 'Bright', 'Frost', 'Hyper', 'Quantum',
-]
-const NOUNS = [
-  'Ticker', 'Candle', 'Whale', 'Rally', 'Alpha', 'Chart', 'Runner', 'Anchor',
-  'Signal', 'Vault', 'Pulse', 'Relay', 'Beacon', 'Circuit', 'Nova', 'Orbit',
-  'Wire', 'Studio', 'Cutter', 'Feed', 'Static', 'Vector', 'Ledger', 'Prism',
-]
-
-function hash(input: string): number {
-  let h = 2166136261
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
-  return h >>> 0
-}
-
-/** A handle nobody had to invent. Stable for a given seed, so retrying the same
- *  sign-up produces the same name rather than a different stranger each time. */
-function suggestUsername(seed: string, salt = 0): string {
-  const h = hash(`${seed}:${salt}`)
-  const adjective = ADJECTIVES[h % ADJECTIVES.length]
-  const noun = NOUNS[(h >>> 8) % NOUNS.length]
-  return `${adjective}${noun}${(h >>> 16) % 100}`
-}
 
 export const handler = withHttp(async (event) => {
   requireMethod(event, 'POST')
@@ -79,23 +49,12 @@ export const handler = withHttp(async (event) => {
   // this endpoint exists to remove.
   const email = typeof authUser.email === 'string' && authUser.email ? normalizeEmail(authUser.email) : null
 
-  // Take the requested handle if it is valid and free; otherwise mint one and
-  // walk salts until it lands. A name collision must never be a dead end on the
-  // one screen where a stranger decides whether to bother.
-  let username = ''
-  const requested = String(body.username ?? '').trim()
-  if (requested) {
-    try {
-      const candidate = normalizeUsername(requested)
-      if (!(await getDoc(`uniqueUsernames/${usernameKey(candidate)}`))) username = candidate
-    } catch {
-      // Invalid handle — fall through to a minted one rather than 400ing.
-    }
-  }
-  for (let salt = 0; !username && salt < 12; salt++) {
-    const candidate = suggestUsername(authUser.uid, salt)
-    if (!(await getDoc(`uniqueUsernames/${usernameKey(candidate)}`))) username = candidate
-  }
+  // Take the requested handle if it can be made valid and is free; otherwise
+  // mint one and walk salts until it lands. A name collision must never be a
+  // dead end on the one screen where a stranger decides whether to bother.
+  // The rule lives in _shared/handles.ts because the TikTok door needs the same
+  // one, and "what are you called" is not a question with two answers.
+  const username = await allocateUsername(String(body.username ?? ''), authUser.uid)
   if (!username) throw conflict('Could not allocate a username. Try again.', 'username_unavailable')
 
   const usernameLower = usernameKey(username)

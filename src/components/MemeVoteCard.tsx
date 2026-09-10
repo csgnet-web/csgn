@@ -99,10 +99,8 @@ export default function MemeVoteCard() {
       </header>
 
       <div className="p-4 space-y-3">
-        <p className="text-xs text-gray-500 leading-relaxed">
-          Back a coin with your $CSGN. Your weight is whatever your wallet holds — nothing is spent,
-          locked or burned, and you can move it any time. The rank blends holder votes, 24h volume,
-          market cap and how much is actually happening on the chart.
+        <p className="text-xs text-gray-500">
+          Back a coin with your $CSGN. Nothing is spent or locked — your weight is your balance.
         </p>
 
         {msg && <Notice tone="success" compact>{msg}</Notice>}

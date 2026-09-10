@@ -136,12 +136,20 @@ export default function Watch() {
           <BroadcastBanner banner={broadcastBanner} fallbackLines={banner} />
         </div>
 
-        {/* Broadcast stage — X embeds self-size (max 550px wide), so this is a
-            centered stage with ambient glow rather than a forced 16:9 frame. */}
-        <div className="shrink-0 px-4 sm:px-5 pt-4 sm:pt-5 pb-2">
-          <div className="relative overflow-hidden rounded-2xl border border-red-500/40 bg-black shadow-[0_0_45px_rgba(255,20,80,0.32)] max-w-[1280px] mx-auto">
+        {/* THE STAGE.
+            X embeds self-size (max 550px wide), so this can never be a true
+            full-bleed 16:9 frame — that is X's constraint and pretending
+            otherwise would letterbox a post into a black void.
+            What it CAN stop being is a card. On a phone the rounded border, the
+            outer padding and the ambient glow were chrome around a small video
+            on a small screen, which is the difference between a channel and a
+            web page with a video on it. Edge to edge on mobile; the framed
+            stage returns at sm, where there is room for it to read as a frame
+            rather than as a border. */}
+        <div className="shrink-0 sm:px-5 sm:pt-5 sm:pb-2">
+          <div className="relative overflow-hidden border-y border-red-500/30 sm:rounded-2xl sm:border bg-black sm:border-red-500/40 sm:shadow-[0_0_45px_rgba(255,20,80,0.32)] max-w-[1280px] mx-auto">
             <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(255,0,90,0.28),transparent_42%),radial-gradient(circle_at_85%_10%,rgba(80,0,255,0.26),transparent_35%)]" />
-            <div className="relative w-full min-h-[220px] sm:min-h-[280px] flex items-center justify-center px-4 py-4 sm:py-5">
+            <div className="relative w-full min-h-[240px] sm:min-h-[280px] flex items-center justify-center px-3 py-3 sm:px-4 sm:py-5">
               {broadcastPostId && broadcastUrl ? (
                 <XBroadcastEmbed postId={broadcastPostId} postUrl={broadcastUrl} />
               ) : (
@@ -166,7 +174,7 @@ export default function Watch() {
         {/* WHY THIS IS WHAT'S ON. Sits directly under the stage because that is
             where the question gets asked — a viewer who just saw a clip reel
             where a live stream was an hour ago reads this before anything else. */}
-        <div className="shrink-0 px-4 sm:px-5 pt-1 pb-4">
+        <div className="shrink-0 px-4 sm:px-5 py-2.5">
           <div className="max-w-[1280px] mx-auto">
             <ChannelModeCard />
           </div>

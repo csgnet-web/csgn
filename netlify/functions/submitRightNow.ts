@@ -15,10 +15,14 @@ import { getCsgnBalance } from './_shared/solana'
 import { containsProfanity } from './_shared/profanity'
 import { bumpOnAirAction } from './_shared/onAirActions'
 import { normalizeTokenGates } from './_shared/tokenGates'
+// The tag and the cap live with the rail's own rules, not here: the automatic
+// writer keys on HOLDER_TAG to know which lines it may never write over, and two
+// spellings of 'HOLDER' would silently make a paid line evictable.
+import { HOLDER_TAG, MAX_RAIL_ITEMS } from './_shared/rightNow'
 
 const MAX_LEN = 90
 const MIN_LEN = 3
-const MAX_ITEMS = 8
+const MAX_ITEMS = MAX_RAIL_ITEMS
 
 type WalletProof = { type: string; walletAddress: string; exp: number; iat: number; jti: string }
 type Body = { proofToken?: string; text?: string }
@@ -61,7 +65,7 @@ export const handler = withHttp(async (event) => {
   const rail = Array.isArray(ticker?.rightNow)
     ? ticker!.rightNow.filter((i): i is RailItem => !!i && typeof i.text === 'string' && i.text.trim().length > 0)
     : []
-  const item: RailItem = { tag: 'HOLDER', text }
+  const item: RailItem = { tag: HOLDER_TAG, text }
   const next = [...rail, item].slice(-MAX_ITEMS)
 
   await writeDoc('config/ticker', { rightNow: next, updatedAt: new Date().toISOString() }, { merge: true })

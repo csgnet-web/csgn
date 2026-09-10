@@ -17,8 +17,12 @@ import { createFeedGate, PREROLL_MASK_MS, PROGRESS_TICK_MS, type FeedGate, type 
 import { loadTwitchPlayer, type TwitchPlayer, type TwitchPlayerCtor } from '@/lib/twitchEmbed'
 import { isOBS, obsVersion } from '@/lib/environment'
 import { useLiveSlot } from '@/contexts/useLiveSlot'
+import { useChannelMode } from '@/hooks/useChannelMode'
+import { parseRehearsal, legAt, demoReelItems, type LegPosition } from '@/lib/rehearsal'
+import { parsePlayout, parseBoardBreakMs, type ReelPlayout } from '@/lib/reel'
 import { WipeOverlay } from '@/components/ui/WipeOverlay'
 import IntermissionBoard from '@/components/player/IntermissionBoard'
+import MasterStage from '@/components/player/MasterStage'
 import ChannelIdent from '@/components/player/kit/ChannelIdent'
 import NowOnAir from '@/components/player/kit/NowOnAir'
 import ComingUpPanel from '@/components/player/kit/ComingUpPanel'
@@ -139,6 +143,16 @@ function buildOverrideSrc(url: string): string | null {
  *   INTERMISSION   VOD/promo rotation + animated network board
  *   OVERRIDE       emergency non-Twitch URL (YouTube iframe)
  *
+ * Sitting ABOVE all five is the published channel mode — CLIP, STREAM or
+ * MASTER (`netlify/functions/_shared/channelMode.ts`). The states above are how
+ * this page gets a picture up; the mode is what the network says it is doing,
+ * and the two are not the same list. Four of the five states are clip or stream
+ * mode wearing different clothes. The one the page could not express at all was
+ * MASTER — the MP live from their own encoder — and its absence was a bug, not
+ * a gap: with no feed to tune, a master hour fell through to the house channel
+ * and played the member reel over the top of a live studio broadcast. The mode
+ * is now read (never re-derived) and `masterEncoder` suppresses everything else.
+ *
  * The Twitch player (embed JS API) stays mounted and muted through every
  * non-LIVE state — an ONLINE *or* PLAYING event wipes back to the feed (PLAYING
  * is the fallback for OBS's CEF, where ONLINE is unreliable and the page would
@@ -187,6 +201,27 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
     return p.has('noads') || p.has('turbo')
   }, [])
   const timing = useMemo<RevealTiming>(() => (noAds ? FAST_TIMING : STANDARD_TIMING), [noAds])
+  // ── Rehearsal (?rehearse=clip|stream|master|run): drive the whole channel
+  //    from the URL bar with demo content and no account, so an operator can
+  //    frame every hand-over in OBS before a single member has connected
+  //    anything. See src/lib/rehearsal.ts for what this is and is not. ──
+  const rehearsal = useMemo(
+    () => (typeof window !== 'undefined' ? parseRehearsal(window.location.search) : null),
+    [],
+  )
+  // How the reel plays out: stretch-to-fill (the default) or on the schedule's
+  // own clock (`?reel=clock`). See src/lib/reel.ts — this is a programming
+  // decision with a real trade-off, so it is a flag the operator can watch
+  // before it is chosen, not a silent change to what goes on air.
+  const playout = useMemo<ReelPlayout>(
+    () => (typeof window === 'undefined' ? 'loop' : parsePlayout(window.location.search)),
+    [],
+  )
+  // Master mode with /player composited over the MP's own scene: draw nothing.
+  const masterClear = useMemo(() => {
+    if (typeof window === 'undefined') return false
+    return (new URLSearchParams(window.location.search).get('master') || '') === 'clear'
+  }, [])
   // Diagnostic peek (?peek=1): drop the "Going Live Now" curtain to ~22% opacity
   // so the operator can watch the raw Twitch startup behind it and see for
   // themselves whether a preroll ad actually plays (and for how long). Pair with
@@ -197,6 +232,11 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
     return new URLSearchParams(window.location.search).has('peek')
   }, [])
   const { currentSlot, slotsReady } = useLiveSlot()
+  // WHAT IS ON AND WHY, as the server decided it. /player does not re-derive the
+  // mode — see netlify/functions/_shared/channelMode.ts. It reads it for exactly
+  // one reason: `encoder`, which says the MP's own encoder is the picture, and
+  // is the difference between running the reel and getting out of the way.
+  const { channelMode, stale: modeStale } = useChannelMode()
   const [state, dispatch] = useReducer(reduce, INITIAL_STATE)
   const [vodItems, setVodItems] = useState<VodItem[]>([])
   const [emergency, setEmergency] = useState<EmergencyOverride | null>(null)
@@ -236,6 +276,51 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
   // state): it's only read inside timers, and Date.now() belongs in an effect,
   // not render. Null while not LIVE.
   const liveSinceRef = useRef<number | null>(null)
+
+  // ── The rehearsal clock ──
+  //
+  // One timer per leg rather than a ticking poll: `legAt` hands back how long
+  // the current leg has left, so the page sleeps until the exact moment the
+  // channel is supposed to change hands. A fixed single-mode rehearsal reports
+  // Infinity and sets no timer at all.
+  // Stamped in an effect, not at render: Date.now() is impure and the first leg
+  // starts at zero by definition, so nothing needs it before mount.
+  const rehearsalStartRef = useRef<number | null>(null)
+  const [rehearsalLeg, setRehearsalLeg] = useState<LegPosition | null>(
+    () => (rehearsal ? legAt(rehearsal, 0) : null),
+  )
+  useEffect(() => {
+    if (rehearsal) rehearsalStartRef.current = Date.now()
+  }, [rehearsal])
+  useEffect(() => {
+    if (!rehearsal || !rehearsalLeg || !Number.isFinite(rehearsalLeg.remainingMs)) return
+    const t = setTimeout(() => {
+      const started = rehearsalStartRef.current ?? Date.now()
+      setRehearsalLeg(legAt(rehearsal, Date.now() - started))
+    }, rehearsalLeg.remainingMs)
+    return () => clearTimeout(t)
+  }, [rehearsal, rehearsalLeg])
+
+  /**
+   * IS THE MP ON THEIR OWN ENCODER RIGHT NOW?
+   *
+   * The one question that decides whether this page paints a picture at all.
+   * Two sources, deliberately, because they fail in opposite directions:
+   *
+   *   • The published verdict (`public/channelMode`) is authoritative and is
+   *     what every other surface renders — but it is written by the poller, so
+   *     a stalled poller makes it stale and it is then ignored.
+   *   • The slot's own `sourceType` is the same fact one step earlier, and it
+   *     arrives on the snapshot listener this page already has. It keeps master
+   *     mode working when the poller is down.
+   *
+   * Either one saying so is enough. Getting this wrong in the false direction
+   * plays somebody's TikTok over the MP's live broadcast, which is what
+   * happened for as long as this page ignored the question.
+   */
+  const masterEncoder = rehearsal
+    ? rehearsalLeg?.mode === 'master'
+    : (!modeStale && channelMode?.encoder === true) || String(currentSlot?.sourceType || '') === 'master'
 
   const playerRef = useRef<TwitchPlayer | null>(null)
   // The channel the CURRENT embed instance was constructed for. The embed is
@@ -463,6 +548,24 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
   //    so an admin changing a slot's stream URL or status (or the clock rolling
   //    into a new slot) switches /player automatically — no server round-trip. ──
   const broadcast = useMemo<BroadcastDoc>(() => {
+    // A rehearsal drives the source itself: a stream leg tunes a real channel
+    // through the real gate, and the other two legs arm nothing.
+    if (rehearsal) {
+      return rehearsalLeg?.mode === 'stream'
+        ? { streamUrl: `https://www.twitch.tv/${rehearsal.channel}`, source: 'slot', slotId: null }
+        : { streamUrl: '', source: 'rehearsal', slotId: null }
+    }
+    // THE MP IS ON THEIR OWN ENCODER — there is no feed to tune, and arming one
+    // is the bug. `go_master` writes the slot with a null streamUrl precisely
+    // because the picture is already coming from somewhere else, but the
+    // fallback below reads "no URL on an assigned slot" as "use the house
+    // channel" and armed it: the MP went on air and their own network page
+    // tuned twitch.tv/csgnet behind them. Answering an empty URL here puts the
+    // state machine straight into INTERMISSION with no channel, and the render
+    // below draws the master stage instead of the reel.
+    if (masterEncoder) {
+      return { streamUrl: '', source: 'master', slotId: currentSlot?.id ?? null }
+    }
     if (emergency?.enabled && emergency.streamUrl) {
       return { streamUrl: emergency.streamUrl, source: 'emergency_override', slotId: null }
     }
@@ -483,7 +586,7 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
     // mid-bootstrap — how a mistuned offline page ended up on-stream.
     if (!slotsReady) return { streamUrl: '', source: 'loading', slotId: null }
     return { streamUrl: DEFAULT_STREAM_URL, source: 'default', slotId: null }
-  }, [emergency, forcedChannel, currentSlot, slotsReady])
+  }, [emergency, forcedChannel, currentSlot, slotsReady, rehearsal, rehearsalLeg, masterEncoder])
 
   useEffect(() => {
     dispatch({ type: 'BROADCAST_CHANGED', broadcast, nowMs: Date.now() })
@@ -514,9 +617,14 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
   // re-derived the running order would make that preview a lie. Segments whose
   // window has already passed are dropped rather than replayed late.
   const [airtimeItems, setAirtimeItems] = useState<VodItem[]>([])
+  // `?rehearse=live` reads the REHEARSAL playlist instead — the one Master
+  // Control built from links the operator pasted (adminRehearseReel.ts). Same
+  // document shape, same code path, a different document: the live reel keeps
+  // running untouched while somebody rehearses over the top of it.
+  const scheduleDoc = rehearsal?.useRehearsalSchedule ? 'airtimeScheduleRehearsal' : 'airtimeSchedule'
   useEffect(() => {
     const unsub = onSnapshot(
-      doc(db, 'public', 'airtimeSchedule'),
+      doc(db, 'public', scheduleDoc),
       (snap) => {
         const raw = snap.exists() ? (snap.data().items as Array<Record<string, unknown>> | undefined) : undefined
         const nowMs = Date.now()
@@ -535,13 +643,19 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
               motion: String(i.motion ?? 'cut'),
               avatarUrl: String(i.avatarUrl ?? ''),
               seconds: Number(i.seconds) || 30,
+              // The minute the scheduler booked this segment for. Carried so
+              // clock playout can honour it — the loop ignores it, and used to
+              // drop it on the floor here, which is why the time quoted in
+              // /studio and the thing on air were two different programmes.
+              startsAt: String(i.startsAt ?? ''),
+              endsAt: String(i.endsAt ?? ''),
             })),
         )
       },
       () => setAirtimeItems([]),
     )
     return unsub
-  }, [])
+  }, [scheduleDoc])
 
   // ── Clock tick: expires BRB grace / starting-soon deadlines ──
   useEffect(() => {
@@ -855,6 +969,29 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
 
   const streamerName = currentSlot?.assignedName || ''
   const slotLabel = currentSlot ? formatESTRange(currentSlot) : ''
+  // Who the master hour belongs to. The published verdict names them (Master
+  // Control lets the MP type a name for the hour); the slot is the fallback.
+  const masterName = channelMode?.who || currentSlot?.assignedName || 'CSGN'
+  // What the reel plays. A rehearsal substitutes demo segments in the exact
+  // shape the published schedule uses, so VodRotator cannot tell the difference
+  // — which is the whole point of rehearsing it.
+  // A rehearsal turns the board break right down by default: the operator is
+  // there to watch hand-overs, and waiting a minute between each one is how a
+  // rehearsal stops being used.
+  const boardBreakMs = useMemo(
+    () => (typeof window === 'undefined'
+      ? undefined
+      : parseBoardBreakMs(window.location.search, rehearsal ? 6_000 : undefined)),
+    [rehearsal],
+  )
+  const rotatorItems = useMemo(
+    () => (rehearsal && !rehearsal.useRehearsalSchedule
+      ? demoReelItems(rehearsal.clipSeconds)
+      : (clipsEnabled || rehearsal?.useRehearsalSchedule) && airtimeItems.length > 0
+        ? airtimeItems
+        : vodItems),
+    [rehearsal, clipsEnabled, airtimeItems, vodItems],
+  )
   // OVERRIDE splits three ways: an X source (its own stage — neither X shape is
   // playable from a raw iframe URL), an iframe-able source (YouTube / Kick), or
   // nothing we recognise, which holds the intermission board.
@@ -897,6 +1034,10 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
           />
         )}
         {preview === 'comingup' && <ComingUpPanel />}
+        {/* The master stage — what the channel shows while the MP is on their
+            own encoder. Worth framing before the first takeover rather than
+            during it. */}
+        {preview === 'master' && <MasterStage masterName={streamerName || 'CSGN'} slotLabel={slotLabel} clear={masterClear} />}
         {preview === 'brb' && <StatusCard variant="brb" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
         {preview === 'starting' && <StatusCard variant="starting-soon" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} />}
         {preview === 'lastcall' && <StatusCard variant="starting-soon" streamerName={streamerName || 'Streamer'} slotLabel={slotLabel} countdownSeconds={STARTING_SOON_COUNTDOWN_MS / 1_000} />}
@@ -934,14 +1075,29 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
       <div
         ref={playerContainerRef}
         className="absolute inset-0"
-        style={{ visibility: state.mode === 'LIVE' ? 'visible' : 'hidden', pointerEvents: 'none' }}
+        style={{
+          // Never visible during a master takeover, whatever the state machine
+          // thinks: the MP's encoder owns the picture and a stale LIVE frame
+          // from the outgoing embed must not sit on top of it.
+          visibility: state.mode === 'LIVE' && !masterEncoder ? 'visible' : 'hidden',
+          pointerEvents: 'none',
+        }}
       />
+
+      {/* MASTER MODE — the MP is on their own encoder. Rendered ABOVE the state
+          machine rather than inside it, so no combination of a stale embed, an
+          in-flight slot update or a late Firestore snapshot can put a frame of
+          anything else over a live studio broadcast. Everything below is
+          suppressed while it is up. */}
+      {masterEncoder && (
+        <MasterStage masterName={masterName} slotLabel={slotLabel} clear={masterClear} />
+      )}
 
       {/* Branded curtain over the LIVE feed until FeedGate confirms settled
           broadcast content — masks the play-button poster, the entire preroll
           ad window (video, countdown text, "commercial break" chrome), and
           every startup/rebuild reveal. */}
-      {state.mode === 'LIVE' && !feedReady && (
+      {!masterEncoder && state.mode === 'LIVE' && !feedReady && (
         <FeedCover
           label="Going Live Now"
           streamerName={streamerName}
@@ -951,7 +1107,7 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
         />
       )}
 
-      {state.mode === 'OVERRIDE' && (
+      {!masterEncoder && state.mode === 'OVERRIDE' && (
         overrideX ? (
           <XStage stream={overrideX} url={state.url} streamerName={streamerName} slotLabel={slotLabel} />
         ) : overrideSrc ? (
@@ -968,7 +1124,7 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
         )
       )}
 
-      {state.mode === 'STARTING_SOON' && (
+      {!masterEncoder && state.mode === 'STARTING_SOON' && (
         <StatusCard
           key={startingCountdown ? 'starting-countdown' : 'starting-quiet'}
           variant="starting-soon"
@@ -978,7 +1134,7 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
         />
       )}
 
-      {state.mode === 'BRB' && (
+      {!masterEncoder && state.mode === 'BRB' && (
         <StatusCard variant="brb" streamerName={streamerName} slotLabel={slotLabel} />
       )}
 
@@ -986,8 +1142,8 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
           admin playlist is what plays when nobody has uploaded anything.
           A claimed hour going live pre-empts both — it takes /player out of
           INTERMISSION entirely, which is why there is no priority check here. */}
-      {state.mode === 'INTERMISSION' && (
-        <VodRotator items={clipsEnabled && airtimeItems.length > 0 ? airtimeItems : vodItems} />
+      {!masterEncoder && state.mode === 'INTERMISSION' && (
+        <VodRotator items={rotatorItems} playout={playout} boardBreakMs={boardBreakMs} />
       )}
 
       {/* NO PERSISTENT HUD HERE, DELIBERATELY.
@@ -1024,6 +1180,18 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
         </button>
       )}
 
+      {/* REHEARSAL WATERMARK. Small, permanent, and not optional.
+          A rehearsal renders the real components on demo content, which means
+          a frame of it is indistinguishable from the real channel in a
+          screenshot — and an operator who forgets to strip `?rehearse=` off a
+          browser source would broadcast rehearsal footage to a live audience
+          with nothing on screen to say so. This is that thing on screen. */}
+      {rehearsal && (
+        <div className="absolute right-4 top-4 z-30 rounded border border-amber-400/40 bg-black/70 px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.18em] text-amber-300">
+          Rehearsal · {rehearsalLeg?.mode ?? rehearsal.label}
+        </div>
+      )}
+
       {debug && (
         <DebugOverlay
           obs={obs}
@@ -1032,6 +1200,11 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
           reveal={`${noAds ? 'no-ads' : 'ad-mask'} · ${Math.round(timing.maskMs / 1000)}s mask · ${timing.countdownS}s count${peek ? ' · PEEK' : ''}`}
           playback={playbackOk ? (feedReady ? 'confirmed (revealed)' : 'confirmed (covered)') : 'not confirmed'}
           gate={gateInfo}
+          channelMode={
+            rehearsal
+              ? `rehearsal · ${rehearsalLeg?.mode ?? '—'}`
+              : `${channelMode?.mode ?? '—'}${channelMode?.encoder ? ' · encoder' : ''}${modeStale ? ' (stale)' : ''}`
+          }
           audioBlocked={audioBlocked}
           serverLive={activity?.lastLive ? `yes @ ${activity.lastCheckedAt ?? '?'}` : String(activity?.lastLive ?? '—')}
           log={eventLog}
@@ -1042,7 +1215,7 @@ export default function Player({ clipsEnabled = true }: { clipsEnabled?: boolean
 }
 
 function DebugOverlay({
-  obs, mode, channel, reveal, playback, gate, audioBlocked, serverLive, log,
+  obs, mode, channel, reveal, playback, gate, channelMode, audioBlocked, serverLive, log,
 }: {
   obs: boolean
   mode: MasterState['mode']
@@ -1050,6 +1223,10 @@ function DebugOverlay({
   reveal: string
   playback: string
   gate: string
+  /** The PUBLISHED mode — clip / stream / master — next to the state machine's
+   *  own mode, because the two answer different questions and an operator
+   *  diagnosing "why is the reel playing" needs to see both at once. */
+  channelMode: string
   audioBlocked: boolean
   serverLive: string
   log: string[]
@@ -1064,6 +1241,7 @@ function DebugOverlay({
       <div className={row}><span>channel</span><span>{channel ?? '—'}</span></div>
       <div className={row}><span>playback</span><span>{playback}</span></div>
       <div className={row}><span>gate</span><span className="truncate max-w-[12rem]">{gate}</span></div>
+      <div className={row}><span>channel mode</span><span className="truncate max-w-[11rem] text-white">{channelMode}</span></div>
       <div className={row}><span>audioBlocked</span><span>{String(audioBlocked)}</span></div>
       <div className={row}><span>server live</span><span className="truncate max-w-[10rem]">{serverLive}</span></div>
       <div className="mt-2 border-t border-white/15 pt-1 text-white/60">events</div>

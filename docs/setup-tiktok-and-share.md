@@ -131,6 +131,72 @@ the file saying so.
 
 ---
 
+## Part 3 — TikTok as a SIGN-UP door
+
+Everything in Part 2 assumes an account already exists. This part is the account
+not existing yet.
+
+### Why this is the important one
+
+The clip factory's pitch is *"connect TikTok, your clips air."* Until now that
+was step **two** — behind making an account, which meant a crypto wallet. We
+were asking a creator to do a crypto thing before the thing they came for, on
+the one screen where a stranger decides whether to bother.
+
+One tap now creates the account **and** connects the clips. The wallet is asked
+for at payout, which is the first moment it does anything.
+
+### What it needs beyond Part 2
+
+1. `https://csgn.fun/auth/tiktok` — the LANDING page — does not need registering
+   anywhere; the callback redirects there itself. **Only the function URL goes
+   in the developer console**, exactly as in Part 2.
+2. Flip **`TIKTOK_AUTH_ENABLED`** to `true` in `src/config/authProviders.ts`.
+
+That is the whole difference. The server already refuses cleanly when the
+environment is missing (`tiktok_not_configured`), so the flag exists to stop a
+live button failing on a redirect-URI mismatch — TikTok's least helpful error
+message, and the one you hit first.
+
+### How the two paths stay apart
+
+`startTikTokOAuth` serves both, and **the server decides which by whether a
+valid session arrived** — never by anything in the request body. Signed in it
+writes the member's uid onto the OAuth state and finishes the link itself.
+Signed out it mints a `tiktok_link` bearer that only the originating tab holds,
+and writes the outcome under the state for that tab to claim.
+
+So a caller cannot ask for the sign-up path while holding a session, and cannot
+ask for the link path without one. There is no way to aim a link at somebody
+else's account.
+
+### Why it polls instead of redirecting, for most of your users
+
+The same reason the Twitch flow does. Most traffic arrives inside an app's
+in-app browser, which has **its own cookie jar** — so somebody signed into
+TikTok on their phone is signed *out* in there and faces a password prompt
+inside an app that is not TikTok. The tab hands them a link into Safari or
+Chrome and polls; they approve elsewhere, switch back, and are already signed
+in. The mechanism is shared with Twitch (`src/lib/linkWait.ts`).
+
+### Testing it
+
+1. `/` → **Sign in or sign up** → **Continue with TikTok**
+2. Approve. A new account lands on **/studio** with `?welcome=tiktok`; a
+   returning one goes back where it started
+3. Their TikToks are already importable — no second connection step
+4. In a webview (open the site inside Phantom or X), the same button renders the
+   escape-to-Safari panel instead of navigating
+
+| What you see | What it means |
+|---|---|
+| Button greyed with **Soon** | `TIKTOK_AUTH_ENABLED` is still `false` |
+| "TikTok is not configured on this deployment" | The three env vars are missing |
+| Lands on `/auth/tiktok` saying "go back" | You finished in a different browser — correct; the original tab has it |
+| "That TikTok link expired" | More than 15 minutes, or the state was reused |
+
+---
+
 ## What this does NOT include
 
 **Instagram import.** Meta killed the Basic Display API in December 2024 and

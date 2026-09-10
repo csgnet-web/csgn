@@ -6,25 +6,35 @@ import { LiveSlotProvider } from '@/contexts/LiveSlotContext'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
 import { BottomNav } from '@/components/layout/BottomNav'
+import Intro from '@/components/onboarding/Intro'
 import { CSGNMark } from '@/components/ui/Logo'
 import { lazy, Suspense } from 'react'
+import { ROUTE_CHUNKS } from '@/lib/routePrefetch'
 
-const Watch = lazy(() => import('@/pages/Watch'))
-const Schedule = lazy(() => import('@/pages/Schedule'))
-const About = lazy(() => import('@/pages/About'))
-const Dashboard = lazy(() => import('@/pages/Dashboard'))
+// Routes the nav can PREFETCH share their import thunk with lib/routePrefetch.ts,
+// so warming a chunk on hover and loading it on navigation are provably the same
+// chunk. Two copies of the specifier would emit two chunks and the prefetch
+// would quietly warm the wrong one.
+const Watch = lazy(ROUTE_CHUNKS['/watch'])
+const Schedule = lazy(ROUTE_CHUNKS['/schedule'])
+const About = lazy(ROUTE_CHUNKS['/about'])
+const Dashboard = lazy(ROUTE_CHUNKS['/account'])
+const Admin = lazy(ROUTE_CHUNKS['/admin'])
+const Terms = lazy(ROUTE_CHUNKS['/terms'])
+const Privacy = lazy(ROUTE_CHUNKS['/privacy'])
+const Participate = lazy(ROUTE_CHUNKS['/participate'])
+const Treasury = lazy(ROUTE_CHUNKS['/treasury'])
+const Studio = lazy(ROUTE_CHUNKS['/studio'])
+const Share = lazy(ROUTE_CHUNKS['/share'])
+
+// Routes nothing links to from the nav — an OBS surface, a profile page reached
+// by handle, the two OAuth landings — so there is nothing to warm them from.
 const PublicProfile = lazy(() => import('@/pages/PublicProfile'))
-const Admin = lazy(() => import('@/pages/Admin'))
 const Player = lazy(() => import('@/pages/Player'))
 const OldPlayer = lazy(() => import('@/pages/OldPlayer'))
-const Terms = lazy(() => import('@/pages/Terms'))
-const Privacy = lazy(() => import('@/pages/Privacy'))
 const TwitchComplete = lazy(() => import('@/pages/TwitchComplete'))
-const Participate = lazy(() => import('@/pages/Participate'))
-const Treasury = lazy(() => import('@/pages/Treasury'))
-const Studio = lazy(() => import('@/pages/Studio'))
+const TikTokComplete = lazy(() => import('@/pages/TikTokComplete'))
 const EmailComplete = lazy(() => import('@/pages/EmailComplete'))
-const Share = lazy(() => import('@/pages/Share'))
 
 function Loading() {
   return (
@@ -79,12 +89,23 @@ function AppContent() {
             <Route path="/terms" element={<Terms />} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/auth/twitch/complete" element={<TwitchComplete />} />
+            {/* Where a TikTok sign-up lands. Named without /complete because
+                the callback builds this URL server-side and a shorter path is
+                one less thing to get wrong in the TikTok developer console. */}
+            <Route path="/auth/tiktok" element={<TikTokComplete />} />
             <Route path="/auth/email/complete" element={<EmailComplete />} />
           </Routes>
         </AnimatePresence>
       </Suspense>
 
       {showFooter && <Footer />}
+
+      {/* WHAT THIS IS, once, for somebody who has never been here. It decides
+          for itself whether to appear (lib/firstRun.ts) and refuses outright on
+          the OBS capture surfaces — a sheet over those goes out on television.
+          Mounted here rather than on /watch so it covers whichever page they
+          happened to land on. */}
+      {!isPlayerPage && <Intro />}
 
       {/* The tab bar sits above everything except modals, on every route but the
           OBS capture. The spacer keeps the last line of a page clear of it —

@@ -75,10 +75,7 @@ export default function Treasury() {
             transition={{ delay: 0.2 }}
             className="text-lg text-gray-400 leading-relaxed max-w-2xl mx-auto"
           >
-            Everything the network earns goes to one public address under published rules.
-            A burn is a press release you can only do once. A rule-bound public treasury is a
-            balance sheet — the same "supply won't dump on you" promise, kept while the capital
-            stays productive.
+            Everything the network earns goes to one public address, under published rules.
           </motion.p>
         </div>
 
@@ -159,13 +156,14 @@ export default function Treasury() {
             <Flame className="w-5 h-5 text-primary-400" />
             <h2 className="text-lg font-display font-bold text-white">Why we don't burn $CSGN</h2>
           </div>
-          <p className="text-sm text-gray-400 leading-relaxed">
-            A burn buys exactly one thing: proof that supply won't come back to hit the market. It
-            buys that by destroying capital, permanently, once. We buy the same credibility a better
-            way — a public address anyone can watch, a stated hold window, a published drip cap, and a
-            stated purpose. The reassurance is identical; the capital stays working for creators,
-            distribution, and liquidity instead of going up in smoke. That's a stronger answer to
-            "why don't you burn," not a weaker one.
+          {/* The argument used to run six sentences. It is two facts and a
+              conclusion, and stating them as such is more convincing than the
+              essay was — a page that argues at length about not burning reads
+              like a page that expects to be doubted. */}
+          <p className="text-sm text-gray-400">
+            A burn proves supply won't come back — by destroying capital, once.
+            A public address with a stated hold window, drip cap and purpose proves the same thing,
+            and the capital keeps working for creators, distribution and liquidity.
           </p>
         </div>
       </div>

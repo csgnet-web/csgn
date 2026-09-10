@@ -1,12 +1,19 @@
 import { auth } from '@/config/firebase'
 
-async function functionFetch<T>(name: string, init: RequestInit = {}, authRequired = false): Promise<T> {
+/**
+ * `auth`: false sends nothing, true refuses to call without a session, and
+ * 'optional' attaches one if there is one. The third is for the endpoints that
+ * serve a member and a stranger and do different things for each — the TikTok
+ * door being the reason it exists: signed in it connects an account, signed out
+ * it makes one, and the SERVER decides which by whether a token arrived.
+ */
+async function functionFetch<T>(name: string, init: RequestInit = {}, authRequired: boolean | 'optional' = false): Promise<T> {
   const headers = new Headers(init.headers)
   if (!headers.has('Content-Type') && init.body) headers.set('Content-Type', 'application/json')
   if (authRequired) {
-    const token = await auth.currentUser?.getIdToken()
-    if (!token) throw new Error('Please sign in first.')
-    headers.set('Authorization', `Bearer ${token}`)
+    const token = await auth.currentUser?.getIdToken().catch(() => null)
+    if (!token && authRequired !== 'optional') throw new Error('Please sign in first.')
+    if (token) headers.set('Authorization', `Bearer ${token}`)
   }
   const res = await fetch(`/.netlify/functions/${name}`, { ...init, headers })
   const data = await res.json().catch(() => ({}))
@@ -30,6 +37,57 @@ export type TwitchOAuthResult = { twitchProofToken: string; twitchUserId: string
 /** What `startTwitchOAuth` hands back. `state` identifies this attempt and
  *  `linkToken` is the signed bearer that claims its result — see lib/twitchLink.ts. */
 export type TwitchLinkStart = { authUrl: string; state: string; linkToken: string }
+
+/** One line on the Right Now rail. `tag` is HOLDER for a paid submission. */
+export type RailLine = { tag: string; text: string }
+
+/** What is wired up for the auto-writer, and what it did last time. */
+export type AutoRailStatus = {
+  enabled: boolean
+  /** False means ANTHROPIC_API_KEY is not set and nothing will run. */
+  hasModelKey: boolean
+  model: string
+  /** False is not a fault — the writer falls back to the channel's own market
+   *  board, which costs nothing extra. */
+  hasX: boolean
+  xQuery: string
+  lastRunAt: string
+  lastError: string
+  lastSource: string
+  lastAccepted: number
+  lastRejected: number
+  lastLines: RailLine[]
+}
+
+/** One pass of the writer. `skipped: 'dry_run'` means nothing was aired. */
+export type AutoRailRun = {
+  ran: boolean
+  skipped?: string
+  written?: number
+  source?: string
+  accepted?: RailLine[]
+  /** Every line thrown out and why — a model failing one check every run is a
+   *  prompt problem, and this is where it becomes visible. */
+  rejected?: Array<{ text: string; reason: string }>
+  model?: string
+  error?: string
+}
+
+/** What `startTikTokOAuth` hands back. `linkToken` is present only on the
+ *  SIGN-UP path — a signed-in member connecting their account has a session
+ *  already and needs no second, weaker way to reach it. */
+export type TikTokLinkStart = { authUrl: string; state: string; linkToken: string | null; intent: 'link' | 'signup' }
+
+/** The account behind a finished TikTok sign-up. `created` distinguishes a new
+ *  account from a returning one, which is the only thing the UI needs it for —
+ *  nobody is asked which they were. */
+export type TikTokAccount = { customToken: string; username: string; created: boolean; displayName: string; avatarUrl: string }
+
+/** One poll of a TikTok sign-up round trip. */
+export type TikTokLinkStatus =
+  | { status: 'pending' }
+  | { status: 'failed'; error: string }
+  | ({ status: 'ready' } & TikTokAccount)
 
 /** One poll of the Twitch round trip. `pending` means "still out there". */
 export type TwitchLinkStatus =
@@ -108,6 +166,51 @@ export const api = {
       { method: 'POST', body: JSON.stringify({ slotIds, txSignature }) },
       true,
     ),
+  /**
+   * Admin: build a REHEARSAL playlist from pasted links.
+   *
+   * Runs the real parser, the real metadata lookup and the real scheduler, and
+   * writes `public/airtimeScheduleRehearsal` — a document /player only reads
+   * when asked for it with `?rehearse=live`. The live reel is untouched, so
+   * this can be run against a channel that is on air.
+   */
+  rehearseReel: (body: {
+    action?: 'seed' | 'clear'
+    urls?: string[]
+    seconds?: number
+    username?: string
+    look?: string
+    style?: string
+    motion?: string
+    avatarUrl?: string
+    trimStartSeconds?: number
+    trimEndSeconds?: number
+  }) =>
+    functionFetch<{
+      ok: boolean
+      cleared?: boolean
+      items: number
+      totalSeconds?: number
+      reason?: string
+      urls: Array<{
+        url: string; ok: boolean; error?: string; platform?: string
+        canonicalUrl?: string; measured?: boolean; sourceSeconds?: number | null
+      }>
+      preview?: Array<{ startsAt: string; seconds: number; title: string; platform: string }>
+    }>('adminRehearseReel', { method: 'POST', body: JSON.stringify(body) }, true),
+
+  /**
+   * Admin: the auto-written Right Now rail — read it, try it, run it, stop it.
+   *
+   * `dry` writes lines and hands them back WITHOUT putting them on air, which
+   * is the difference between switching on a writer you have read and one you
+   * have not. `run` and `dry` each cost one model call.
+   */
+  autoRail: (body: { action: 'status' | 'dry' | 'run' | 'toggle'; enabled?: boolean }) =>
+    functionFetch<{ ok: boolean; config: AutoRailStatus; rail: RailLine[]; result?: AutoRailRun }>(
+      'adminRightNow', { method: 'POST', body: JSON.stringify(body) }, true,
+    ),
+
   /** Create the CSGN profile for a Firebase user who signed in with Google, X
    *  or an email link. Idempotent — answers `created: false` if one exists. */
   finalizeSocialAccount: (username?: string) =>
@@ -167,8 +270,20 @@ export const api = {
    * three of these", and it is the only way we ever learn a TikTok's real
    * runtime — a pasted one falls back to a 45-second guess. See
    * docs/spec-social-import.md. */
+  /**
+   * Begin a TikTok round trip. Signed in it starts a LINK; signed out it starts
+   * a SIGN-UP and hands back the bearer that claims the result. The caller does
+   * not choose — the server decides from whether a session arrived, so nobody
+   * can aim a link at somebody else's account.
+   */
   startTikTokOAuth: () =>
-    functionFetch<{ authUrl: string; state: string }>('startTikTokOAuth', { method: 'POST' }, true),
+    functionFetch<TikTokLinkStart>('startTikTokOAuth', { method: 'POST' }, 'optional'),
+  /** Claim the result of a TikTok sign-up. Safe to call repeatedly — `pending`
+   *  until some browser finishes the OAuth, and the custom token is handed out
+   *  exactly once. This is what lets the flow finish in Safari while the tab in
+   *  an app's in-app browser waits. */
+  claimTikTokLink: (linkToken: string) =>
+    functionFetch<TikTokLinkStatus>('claimTikTokLink', { method: 'POST', body: JSON.stringify({ linkToken }) }),
   /** The member's own public TikToks, newest first, with real durations.
    *  `connected: false` means reconnect — NOT "you have no videos". */
   tiktokVideos: (cursor?: number | null) =>
