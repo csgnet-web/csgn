@@ -10,7 +10,7 @@ import { db } from '@/config/firebase'
 import { useAuth } from '@/contexts/useAuth'
 import type { UserNotification } from '@/contexts/AuthContext'
 import { fetchSlotsByAssignee, type Slot } from '@/lib/slots'
-import { airtimeLabel, airtimeNote, airtimeTone, readAirtime } from '@/lib/airtime'
+import { airtimeLabel, airtimeNote, airtimeTone, liveDuration, readAirtime } from '@/lib/airtime'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -774,7 +774,10 @@ export default function Dashboard() {
             ) : (
               pagedFees.map((slot) => {
                 const activity = slot.streamActivity
-                const liveMinutes = activity?.liveCheckCount ?? 0
+                // Samples, not minutes — the poller's cadence varies, so this
+                // only answers "did we ever see them live", never "for how long".
+                const liveSamples = activity?.liveCheckCount ?? 0
+                const onAir = liveDuration(activity)
                 const airtime = readAirtime(slot.creatorFees?.airtime)
                 return (
                   <div key={slot.id} className="border border-white/[0.08] rounded-lg p-3">
@@ -787,20 +790,23 @@ export default function Dashboard() {
                           {new Date(slot.startTime).toLocaleString()} – {new Date(slot.endTime).toLocaleString()}
                         </p>
                         {/* A settled hour shows the verdict that decided the
-                            amount; an hour from before verified airtime shipped
-                            still shows the raw sample count it always did. */}
+                            amount; anything else shows the measured duration
+                            when we have one, and says plainly that we only have
+                            a check count when we do not. */}
                         {airtime ? (
                           <p className={`text-[11px] mt-1.5 flex items-start gap-1 leading-snug ${airtimeTone(airtime)}`}>
                             <Radio className="w-3 h-3 shrink-0 mt-px" />
                             <span>{airtimeLabel(airtime) ?? 'No live checks recorded'} — {airtimeNote(airtime)}</span>
                           </p>
                         ) : activity && (
-                          <p className={`text-[11px] mt-1.5 flex items-start gap-1 leading-snug ${liveMinutes > 0 ? 'text-emerald-400' : 'text-gray-500'}`}>
+                          <p className={`text-[11px] mt-1.5 flex items-start gap-1 leading-snug ${liveSamples > 0 ? 'text-emerald-400' : 'text-gray-500'}`}>
                             <Radio className="w-3 h-3 shrink-0 mt-px" />
                             <span>
-                              {liveMinutes > 0
-                                ? `Streamed ~${liveMinutes} min live${activity.lastLiveAt ? ` (last ${new Date(activity.lastLiveAt).toLocaleTimeString()})` : ''}`
-                                : 'No live activity detected'}
+                              {onAir
+                                ? `Live ${onAir}${activity.lastLiveAt ? ` (last ${new Date(activity.lastLiveAt).toLocaleTimeString()})` : ''}`
+                                : liveSamples > 0
+                                  ? `Seen live on ${liveSamples} check${liveSamples === 1 ? '' : 's'}`
+                                  : 'No live activity detected'}
                             </span>
                           </p>
                         )}

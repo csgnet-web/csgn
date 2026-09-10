@@ -24,6 +24,7 @@
  */
 import { requireAdminUser } from './_shared/auth'
 import { auditLog } from './_shared/audit'
+import { onAirMinutes } from './_shared/onAirClock'
 import { badRequest, notFound } from './_shared/errors'
 import {
   commitWrites, fieldFilter, getDoc, order, queryCollection, updateWrite, writeDoc,
@@ -73,7 +74,11 @@ export const handler = withHttp(async (event) => {
         live: e.live, viewerCount: e.viewerCount,
       })),
       onAirUid: slot?.assignedUid ?? null,
-      onAirMinutes: minutesSince(slot?.startTime),
+      // How long THIS CUT has been running — not how long the block has been
+      // open. See _shared/onAirClock.ts: measuring from the block start made
+      // every "they have been on a while" alert fire the moment somebody went
+      // on, which is the same as not having the alert.
+      onAirMinutes: onAirMinutes(slot),
       viewerFloor,
     }
 
@@ -128,7 +133,11 @@ export const handler = withHttp(async (event) => {
       status: 'open', isClaimable: true,
       assignedUid: null, assignedUsername: null, assignedName: null,
       twitchUserId: null, twitchUsername: null, twitchChannelUrl: null, streamUrl: null,
-      sourceType: null, isGuest: null, guestAddedBy: null, updatedAt: new Date(),
+      sourceType: null, isGuest: null, guestAddedBy: null,
+      // The cut is over, so the clock stops. Leaving the stamp behind would
+      // have the next occupant of this block inherit the last one's minutes.
+      onAirAt: null,
+      updatedAt: new Date(),
     }, true)])
     const currentBroadcast = await resolveBroadcast()
     await announceMode({ startTime: slot.startTime, status: 'open', type: slot.type })
@@ -168,6 +177,11 @@ export const handler = withHttp(async (event) => {
       twitchUsername: null,
       twitchChannelUrl: null,
       streamUrl: null,
+      // WHEN THE CUT STARTED. Known exactly here and derivable nowhere else —
+      // the block's start is the schedule's, and the activity log's first live
+      // sample is whenever the poller next happened to look. See
+      // _shared/onAirClock.ts.
+      onAirAt: new Date().toISOString(),
       updatedAt: new Date(),
     }, true)])
 
@@ -208,6 +222,11 @@ export const handler = withHttp(async (event) => {
       twitchUsername: login || '',
       twitchChannelUrl: guestUrl,
       streamUrl: guestUrl,
+      // WHEN THE CUT STARTED. Known exactly here and derivable nowhere else —
+      // the block's start is the schedule's, and the activity log's first live
+      // sample is whenever the poller next happened to look. See
+      // _shared/onAirClock.ts.
+      onAirAt: new Date().toISOString(),
       updatedAt: new Date(),
     }, true)])
 
@@ -254,6 +273,10 @@ export const handler = withHttp(async (event) => {
     // leave the guest marking behind on the schedule.
     isGuest: null,
     guestAddedBy: null,
+    // WHEN THE CUT STARTED — see _shared/onAirClock.ts. Re-stamped on every
+    // put-on, so handing a block from one streamer to another restarts the
+    // clock rather than carrying the first one's minutes onto the second.
+    onAirAt: new Date().toISOString(),
     updatedAt: new Date(),
   }, true)])
 
@@ -267,7 +290,7 @@ export const handler = withHttp(async (event) => {
 })
 
 /** The block covering right now, if there is one. */
-async function currentSlot(): Promise<{ id: string; assignedUid?: string; assignedName?: string; sourceType?: string; startTime?: string; type?: string } | null> {
+async function currentSlot(): Promise<{ id: string; assignedUid?: string; assignedName?: string; sourceType?: string; startTime?: string; onAirAt?: string; isGuest?: boolean; status?: string; type?: string } | null> {
   const now = new Date().toISOString()
   const rows = await queryCollection(
     'slots',
@@ -291,7 +314,10 @@ async function currentSlot(): Promise<{ id: string; assignedUid?: string; assign
   return null
 }
 
-/** Minutes since a slot started, for the long-shift nudge. */
+/** Minutes since a TWITCH STREAM started — the streamer's own broadcast, which
+ *  is what the freshness term in the ranking is about. NOT how long we have been
+ *  carrying them; that is `onAirMinutes` in _shared/onAirClock.ts, and confusing
+ *  the two is the bug that module exists to end. */
 function minutesSince(startTime?: string): number {
   const start = Date.parse(startTime ?? '')
   if (!Number.isFinite(start)) return 0
