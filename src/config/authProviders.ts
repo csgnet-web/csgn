@@ -21,3 +21,27 @@ export const SOCIAL_AUTH_ENABLED = false
 
 /** Shown on each shut door. Kept here so all three say the same thing. */
 export const SOCIAL_AUTH_SOON_LABEL = 'Soon'
+
+/**
+ * TIKTOK AS A SIGN-UP DOOR.
+ *
+ * Separate from `SOCIAL_AUTH_ENABLED` because it needs completely different
+ * console work and is ready at a different time. Google, X and email-link are
+ * Firebase Auth providers — a consent screen and an authorised domain. TikTok
+ * is not a Firebase provider at all: the OAuth runs in our own functions and
+ * the session comes from a custom token, so what it needs is
+ *
+ *   1. TIKTOK_CLIENT_KEY / TIKTOK_CLIENT_SECRET / TIKTOK_REDIRECT_URI in
+ *      Netlify, and
+ *   2. `https://csgn.fun/auth/tiktok` — the LANDING page, not the function —
+ *      registered as a redirect URI in the TikTok developer console, and
+ *   3. Login Kit approved for the `user.info.basic` and `video.list` scopes.
+ *
+ * The server refuses cleanly when 1 is missing (`tiktok_not_configured`), so
+ * the only thing this flag protects against is a live button that fails on 2
+ * or 3 — a redirect mismatch, which is TikTok's least helpful error message.
+ *
+ * FLIP THIS TO `true` once the console entry is in. See
+ * docs/setup-tiktok-and-share.md.
+ */
+export const TIKTOK_AUTH_ENABLED = false

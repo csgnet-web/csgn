@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Loader2, Mail, Wallet, X } from 'lucide-react'
+import { ExternalLink, Loader2, Mail, Wallet, X } from 'lucide-react'
 import { useAuth } from '@/contexts/useAuth'
 import { api } from '@/lib/api'
 import { getPhantomProvider, usePhantomWallet } from '@/hooks/usePhantomWallet'
+import { useTikTokLink } from '@/hooks/useTikTokLink'
 import { CsgnLogo } from '@/components/ui/CsgnLogo'
 import { suggestUsername } from '@/lib/username'
+import { storeAuthReturn } from '@/lib/authReturn'
 import { isEmbeddedBrowser, openInSystemBrowser, systemBrowserName } from '@/lib/webview'
-import { SOCIAL_AUTH_ENABLED, SOCIAL_AUTH_SOON_LABEL } from '@/config/authProviders'
+import { SOCIAL_AUTH_ENABLED, SOCIAL_AUTH_SOON_LABEL, TIKTOK_AUTH_ENABLED } from '@/config/authProviders'
 
 /**
  * SIGN IN OR SIGN UP — one sheet, four doors, no fork.
@@ -46,6 +48,17 @@ function GoogleMark() {
       <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
       <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
       <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+    </svg>
+  )
+}
+
+/** TikTok's note mark, drawn inline for the same reason as the others. */
+function TikTokMark() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+      <path fill="#25F4EE" d="M16.5 2h-3v13.2a2.6 2.6 0 1 1-2.6-2.6c.24 0 .47.03.69.1V9.6a5.9 5.9 0 0 0-.69-.04 5.7 5.7 0 1 0 5.7 5.7V8.9a7 7 0 0 0 4.1 1.33V7.13A4.13 4.13 0 0 1 16.5 3z" />
+      <path fill="#FE2C55" d="M17.4 2h-2.1v13.2a2.6 2.6 0 1 1-2.6-2.6c.24 0 .47.03.69.1V9.6a5.9 5.9 0 0 0-.69-.04 5.7 5.7 0 1 0 5.7 5.7V8.9a7 7 0 0 0 4.1 1.33V7.13A4.13 4.13 0 0 1 18.4 3z" opacity=".85" />
+      <path fill="#fff" d="M16.95 2.5h-2.4v13.2a2.6 2.6 0 1 1-2.6-2.6c.24 0 .47.03.69.09v-3.1a5.9 5.9 0 0 0-.69-.04 5.7 5.7 0 1 0 5.7 5.7V9.2a7 7 0 0 0 4.1 1.33V7.6a4.13 4.13 0 0 1-4.1-4.1z" opacity=".55" />
     </svg>
   )
 }
@@ -100,10 +113,22 @@ function Door({
 
 export function AuthModal({ isOpen, onClose }: AuthModalProps) {
   const {
-    signInWithGoogle, signInWithX, sendEmailLink,
+    signInWithGoogle, signInWithX, sendEmailLink, signInWithTikTok,
     signUpWithPhantom, signInWithPhantom, refreshProfile,
   } = useAuth()
   const { connect, signMessage } = usePhantomWallet()
+
+  // TikTok is the first door that can finish in ANOTHER BROWSER, so it owns a
+  // little state of its own: a handoff panel while the tab waits. See
+  // useTikTokLink for why a webview cannot complete this in place.
+  const tiktok = useTikTokLink({
+    onAccount: async (account) => {
+      await signInWithTikTok(account.customToken)
+      await refreshProfile()
+      close()
+    },
+    beforeRedirect: () => storeAuthReturn({ path: window.location.pathname, intent: 'signup' }),
+  })
 
   const [pending, setPending] = useState<'google' | 'x' | 'wallet' | 'email' | null>(null)
   const [error, setError] = useState('')
@@ -118,10 +143,17 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
     onClose()
   }
 
+  // The sheet closing must stop the poll, or a five-minute wait carries on
+  // behind a dismissed modal and signs somebody in out of nowhere.
+  const dismiss = () => {
+    tiktok.cancel()
+    close()
+  }
+
   // Escape closes, like every other sheet on the site.
   useEffect(() => {
     if (!isOpen) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') dismiss() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,7 +226,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
       <button
         type="button"
         aria-label="Close"
-        onClick={close}
+        onClick={dismiss}
         className="absolute inset-0 bg-black/80 backdrop-blur-sm cursor-default"
       />
 
@@ -206,7 +238,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
         </div>
         <button
           type="button"
-          onClick={close}
+          onClick={dismiss}
           aria-label="Close"
           className="hidden sm:flex absolute right-4 top-4 w-8 h-8 items-center justify-center rounded-lg text-gray-500 hover:text-white hover:bg-white/5 cursor-pointer"
         >
@@ -243,6 +275,56 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
           ) : (
             <>
               <div className="mt-8 space-y-3">
+                {/* FIRST, and on purpose. The clip factory's whole pitch is
+                    "connect TikTok, your clips air" — putting that behind a
+                    wallet meant asking a creator to do a crypto thing before
+                    the thing they came for. No wallet is asked for here; it is
+                    asked for at payout, where it first does something. */}
+                <Door
+                  icon={<TikTokMark />}
+                  label="Continue with TikTok"
+                  busy={tiktok.phase === 'starting' || tiktok.phase === 'redirecting'}
+                  disabled={pending !== null || tiktok.phase === 'waiting'}
+                  soon={!TIKTOK_AUTH_ENABLED}
+                  onClick={() => { setError(''); void tiktok.start() }}
+                />
+
+                {/* The escape to a real browser. Only ever rendered inside a
+                    webview, where the sign-in genuinely cannot happen in place. */}
+                {tiktok.handoff && (
+                  <div className="rounded-xl border border-white/[0.09] bg-white/[0.02] p-4 space-y-3">
+                    <p className="text-xs text-gray-400 leading-relaxed">
+                      TikTok can't sign you in inside this app's browser. Open it in{' '}
+                      {tiktok.handoff.browserName}, approve it there, then come back to this
+                      screen — it finishes by itself.
+                    </p>
+                    <a
+                      href={tiktok.handoff.href}
+                      className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black"
+                    >
+                      Open {tiktok.handoff.browserName} <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                    <div className="flex items-center gap-3">
+                      {/* The iOS scheme fails SILENTLY when a host app declines
+                          it, so there is always a second way out. */}
+                      <button
+                        type="button"
+                        onClick={() => { void navigator.clipboard?.writeText(tiktok.handoff!.rawUrl) }}
+                        className="text-[11px] text-gray-500 hover:text-gray-300 underline underline-offset-2 cursor-pointer"
+                      >
+                        Copy the link instead
+                      </button>
+                      <button
+                        type="button"
+                        onClick={tiktok.cancel}
+                        className="text-[11px] text-gray-600 hover:text-gray-400 cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <Door
                   icon={<GoogleMark />}
                   label="Continue with Google"
@@ -305,12 +387,12 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
                 </div>
               </div>
 
-              {error && (
-                <p className="mt-4 text-center text-xs text-red-300 leading-relaxed">{error}</p>
+              {(error || tiktok.error) && (
+                <p className="mt-4 text-center text-xs text-red-300 leading-relaxed">{error || tiktok.error}</p>
               )}
 
               <p className="mt-6 text-center text-[11px] text-gray-500 leading-relaxed">
-                {SOCIAL_AUTH_ENABLED
+                {TIKTOK_AUTH_ENABLED || SOCIAL_AUTH_ENABLED
                   ? "No wallet needed to watch, post a clip or go live. You'll be asked for one when you've actually earned fees."
                   : 'Google, X and email sign-in are being switched on shortly. Until then a Phantom wallet is the way in — and it is what your airtime and fees are paid against anyway.'}
               </p>

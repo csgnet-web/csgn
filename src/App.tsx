@@ -20,6 +20,7 @@ const OldPlayer = lazy(() => import('@/pages/OldPlayer'))
 const Terms = lazy(() => import('@/pages/Terms'))
 const Privacy = lazy(() => import('@/pages/Privacy'))
 const TwitchComplete = lazy(() => import('@/pages/TwitchComplete'))
+const TikTokComplete = lazy(() => import('@/pages/TikTokComplete'))
 const Participate = lazy(() => import('@/pages/Participate'))
 const Treasury = lazy(() => import('@/pages/Treasury'))
 const Studio = lazy(() => import('@/pages/Studio'))
@@ -79,6 +80,10 @@ function AppContent() {
             <Route path="/terms" element={<Terms />} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/auth/twitch/complete" element={<TwitchComplete />} />
+            {/* Where a TikTok sign-up lands. Named without /complete because
+                the callback builds this URL server-side and a shorter path is
+                one less thing to get wrong in the TikTok developer console. */}
+            <Route path="/auth/tiktok" element={<TikTokComplete />} />
             <Route path="/auth/email/complete" element={<EmailComplete />} />
           </Routes>
         </AnimatePresence>

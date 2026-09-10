@@ -57,6 +57,13 @@ export interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>
   /** Wallet login — exchanges a verified Phantom proof for a Firebase session. */
   signInWithPhantom: (phantomProofToken: string) => Promise<void>
+  /**
+   * Sign in (or up) with the custom token a finished TikTok round trip handed
+   * back. The account was created server-side by the OAuth callback, so this
+   * only exchanges the token and loads the profile — there is no username to
+   * pick and no wallet to connect, which is the entire point of that door.
+   */
+  signInWithTikTok: (customToken: string) => Promise<void>
   /** One tap, no password, no wallet. Creates the CSGN profile on first use. */
   signInWithGoogle: () => Promise<void>
   signInWithX: () => Promise<void>

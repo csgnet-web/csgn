@@ -129,6 +129,50 @@ describe('describeChannelMode', () => {
   })
 })
 
+/**
+ * `encoder` — the flag that decides whether /player draws anything.
+ *
+ * Both master cases publish `mode: 'master'`, and for a badge that is the whole
+ * story. For the encoder it is the opposite instruction in each case, so this
+ * is the one distinction the verdict has to carry explicitly.
+ */
+describe('describeChannelMode — encoder', () => {
+  it('is true ONLY while the MP is on their own encoder', () => {
+    const v = describeChannelMode({
+      slot: slot({ assignedUid: 'admin', assignedName: 'CSGN', sourceType: 'master' }),
+      networkBlockEnabled: true,
+    })
+    expect(v.mode).toBe('master')
+    expect(v.encoder).toBe(true)
+  })
+
+  it('is FALSE for the scheduled block, which is master mode with nothing encoding', () => {
+    // The sign says the hour belongs to the MP; no picture is being sent, so
+    // the reel must keep the channel alive. Getting this wrong the other way
+    // blanks the network for eight hours a night.
+    const v = describeChannelMode({ slot: slot({ type: 'network' }), networkBlockEnabled: true })
+    expect(v.mode).toBe('master')
+    expect(v.encoder).toBe(false)
+  })
+
+  it('is false in stream mode and in clip mode', () => {
+    expect(describeChannelMode({
+      slot: slot({ assignedUid: 'u1', assignedName: 'roblito' }),
+      networkBlockEnabled: true,
+    }).encoder).toBe(false)
+    expect(describeChannelMode({ slot: null, networkBlockEnabled: true }).encoder).toBe(false)
+  })
+
+  it('is false once the master hour is completed', () => {
+    // A finished takeover is not an encoder still sending.
+    const v = describeChannelMode({
+      slot: slot({ assignedUid: 'admin', assignedName: 'CSGN', sourceType: 'master', status: 'completed' }),
+      networkBlockEnabled: true,
+    })
+    expect(v.encoder).toBe(false)
+  })
+})
+
 describe('appendModeEvent', () => {
   const clips = describeChannelMode({ slot: slot(), networkBlockEnabled: true })
   const live = describeChannelMode({ slot: slot({ assignedUid: 'u1', assignedName: 'roblito' }), networkBlockEnabled: true })

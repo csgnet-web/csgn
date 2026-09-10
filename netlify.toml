@@ -33,6 +33,19 @@
   status = 404
   force = true
 
+# The rail writer must not be reachable over public HTTP either — and the
+# argument is sharper than it is for the fee poller, because every invocation of
+# this one spends money at Anthropic (and at X, if it is configured). Same
+# mechanism, same verification: `curl -i https://csgn.fun/.netlify/functions/rightNowBackground`
+# must return 404 while the rail keeps updating every two hours. The function
+# also refuses to run twice inside its cadence (see its header) — this is the
+# outer of two independent controls, not the only one.
+[[redirects]]
+  from = "/.netlify/functions/rightNowBackground"
+  to = "/index.html"
+  status = 404
+  force = true
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
@@ -98,3 +111,20 @@
 # read one document and return, which is a few hundred milliseconds.
 [functions.feePollerBackground]
   schedule = "*/2 * * * *"
+
+# ── THE RAIL WRITER ───────────────────────────────────────────────────────
+#
+# Twelve runs a day, and each one is a model call plus (optionally) an X search.
+# The cadence is a PRODUCT decision before it is a cost one: the Right Now rail
+# leads every rotation of the ticker, so a viewer sees it repeatedly within a
+# few minutes, and rewriting it every ten would make the channel look like it
+# was talking to itself rather than making it look live.
+#
+# Cost is the second reason and it is not nothing: at this rate the writer is
+# single-digit dollars a month, and at `*/10` it would be two orders of
+# magnitude more Netlify invocations for a rail nobody could keep up with.
+#
+# The function enforces its own floor (RUN_INTERVAL_MS), so tightening this
+# cron alone will not make it run more often — change both, deliberately.
+[functions.rightNowBackground]
+  schedule = "0 */2 * * *"

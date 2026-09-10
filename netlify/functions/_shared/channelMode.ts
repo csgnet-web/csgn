@@ -95,6 +95,24 @@ export interface ModeVerdict {
   nextSwitch: string
   /** When the current mode started (the slot's start), ISO, or null. */
   since: string | null
+  /**
+   * IS THE PICTURE COMING FROM THE MP'S OWN ENCODER RIGHT NOW?
+   *
+   * True only for case 1 — "I'm going on". Both master cases carry
+   * `mode: 'master'`, but they are opposite instructions to the thing that
+   * paints the frame:
+   *
+   *   • The MP on their own encoder: there is already a picture. /player must
+   *     draw nothing over it and must NOT run the reel.
+   *   • The 7 PM–3 AM block with nobody on it: master mode is what the SIGN
+   *     says (the hour belongs to the MP), but no encoder is sending anything,
+   *     so the reel has to keep the channel alive — clips run 24/7.
+   *
+   * /player got this wrong for as long as it existed, because the mode alone
+   * cannot tell the two apart and it had nothing else to read. A viewer-facing
+   * badge does not care; the encoder does, so the distinction is published.
+   */
+  encoder: boolean
 }
 
 const GUEST_SOURCE = 'operator_guest'
@@ -168,6 +186,7 @@ export function describeChannelMode(input: ModeInput): ModeVerdict {
       because: 'The Master of Programming is live on the network right now, straight from the CSGN control room.',
       nextSwitch: 'When they end the broadcast the channel hands back — to a roster streamer if one is worth carrying, otherwise to the member clip reel.',
       since,
+      encoder: true,
     }
   }
 
@@ -186,6 +205,7 @@ export function describeChannelMode(input: ModeInput): ModeVerdict {
         : `${name} connected their Twitch to CSGN and gave us permission to carry it. They went live, and the Master of Programming put them on.`,
       nextSwitch: 'When they end the stream — or the MP switches away — the channel returns to the member clip reel.',
       since,
+      encoder: false,
     }
   }
 
@@ -201,6 +221,9 @@ export function describeChannelMode(input: ModeInput): ModeVerdict {
       because: 'This hour is inside the network block, 7 PM–3 AM ET — programming the Master of Programming runs directly.',
       nextSwitch: 'At 3 AM ET the block ends and the rest of the day belongs to the members: the clip reel, and any streamer the MP cuts to.',
       since,
+      // The sign says master; nothing is being encoded. The reel keeps the
+      // channel alive underneath it — see the note on `encoder`.
+      encoder: false,
     }
   }
 
@@ -220,6 +243,7 @@ export function describeChannelMode(input: ModeInput): ModeVerdict {
       ? 'The channel cuts to a live member as soon as one of them clears the audience bar and the MP puts them on.'
       : 'The moment a connected member goes live — or the MP goes on themselves — the channel cuts to them.',
     since,
+    encoder: false,
   }
 }
 

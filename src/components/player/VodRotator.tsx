@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import IntermissionBoard from './IntermissionBoard'
 import ChannelIdent from './kit/ChannelIdent'
+import { pickByClock, DEFAULT_BOARD_BREAK_MS, type ReelPlayout } from '@/lib/reel'
 
 export interface VodItem {
   url: string
@@ -20,6 +21,11 @@ export interface VodItem {
   motion?: string
   /** Their profile picture, when they have one and left it switched on. */
   avatarUrl?: string
+  /** WHEN the scheduler said this segment airs. Present on member segments,
+   *  absent on the admin VOD playlist (which has no place on the clock).
+   *  Only read in `clock` playout — see src/lib/reel.ts. */
+  startsAt?: string
+  endsAt?: string
 }
 
 /** Mirrors ON_AIR_LOOKS in src/lib/clipEmbed.ts. Kept as plain classes rather
@@ -54,7 +60,13 @@ const LOOK_RING: Record<string, string> = {
 /**
  * THE MEMBER'S CREDIT CARD, on air.
  *
- * Three shapes, because a channel where every segment carries an identical grey
+ * FIVE shapes — one for each entry in ON_AIR_STYLES. It was three for a while,
+ * and the other two silently fell through to the bar: a member picked Stack or
+ * Minimal in /studio, was shown a preview of it, and then went out on air
+ * wearing somebody else's card. A chooser with options that do not exist on the
+ * receiving end is worse than a chooser with three options.
+ *
+ * Shapes matter, because a channel where every segment carries an identical grey
  * box is a channel where nobody's segment is recognisable as theirs — and that
  * recognition is most of what a member is actually buying with their bag.
  *
@@ -124,6 +136,38 @@ function ClipCredit({ username, look, style, motion, avatarUrl, title }: {
     )
   }
 
+  // STACK — the member's handle over a colour block, the biggest of the five.
+  if (style === 'stack') {
+    return (
+      <div className={`absolute left-8 bottom-8 overflow-hidden rounded-lg ${anim}`}>
+        <div className={`h-1.5 w-full ${accent}`} />
+        <div className="flex items-center gap-4 bg-black/75 backdrop-blur-sm border border-t-0 border-white/10 px-6 py-4">
+          {avatar}
+          <span className="min-w-0">
+            <span className="block text-3xl font-black text-white leading-none tracking-tight">@{username}</span>
+            {title && <span className="mt-1.5 block text-xs text-gray-400 truncate max-w-[420px]">{title}</span>}
+          </span>
+        </div>
+      </div>
+    )
+  }
+
+  // MINIMAL — the handle and nothing else. No box, so it has to carry its own
+  // legibility over an unknown video: a hard shadow rather than a panel.
+  if (style === 'minimal') {
+    return (
+      <div className={`absolute left-8 bottom-8 flex items-center gap-3 ${anim}`}>
+        <span className={`w-1.5 h-8 rounded-full ${accent} shrink-0`} />
+        <span
+          className="text-2xl font-black text-white leading-none"
+          style={{ textShadow: '0 2px 12px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.9)' }}
+        >
+          @{username}
+        </span>
+      </div>
+    )
+  }
+
   return (
     <div className={`absolute left-8 bottom-8 flex items-stretch overflow-hidden rounded-lg bg-black/70 border border-white/10 backdrop-blur-sm ${anim}`}>
       <span className={`w-1.5 ${accent} shrink-0`} />
@@ -139,7 +183,11 @@ function ClipCredit({ username, look, style, motion, avatarUrl, title }: {
   )
 }
 
-const BOARD_BREAK_MS = 60_000
+/** Default gap between two clips in loop playout. A prop now, not a constant —
+ *  see the note on DEFAULT_BOARD_BREAK_MS in src/lib/reel.ts for why a minute
+ *  is the right order of magnitude for four minutes of content and the wrong
+ *  one for a full reel. */
+const BOARD_BREAK_MS = DEFAULT_BOARD_BREAK_MS
 /** The ident that plays as the channel hands over between segments. Short —
  *  it recurs constantly, and an ident that outstays its welcome is worse than
  *  no ident at all. */
@@ -160,14 +208,37 @@ const IDENT_MS = 2_600
  * set to the duration the schedule allocated it, and moves on when that expires.
  * Anything that fails to load advances too, because the one thing the network
  * must never do is sit on a broken segment.
+ *
+ * TWO PLAYOUTS, one component. `loop` rotates the list with a board break
+ * between items, stretching whatever content exists across the whole day.
+ * `clock` reads the timestamps the scheduler wrote and plays each segment in
+ * the minute it was booked for, which is what makes the time quoted in /studio
+ * literally true. Which one the channel should run is a programming decision,
+ * not a technical one — src/lib/reel.ts states both sides; loop is the default
+ * because it is what the channel already does.
  */
-export default function VodRotator({ items }: { items: VodItem[] }) {
+export default function VodRotator({
+  items,
+  playout = 'loop',
+  boardBreakMs = BOARD_BREAK_MS,
+}: {
+  items: VodItem[]
+  /** 'loop' stretches what content exists across the day (the default, and what
+   *  the channel has always done); 'clock' plays each segment in the minute the
+   *  scheduler booked it for. See src/lib/reel.ts. */
+  playout?: ReelPlayout
+  boardBreakMs?: number
+}) {
   const [index, setIndex] = useState(0)
   const [onBoard, setOnBoard] = useState(true)
   // The ident plays on every hand-over. This is what makes a rotation of other
   // people's clips read as ONE CHANNEL rather than as a playlist — the recurring
   // mark between segments is the entire signal.
   const [ident, setIdent] = useState(true)
+  // Clock playout: the instant the schedule is being read at. Re-stamped when
+  // the current decision expires, which re-asks `pickByClock`. One timer per
+  // decision, never a poll — and Date.now() stays out of render.
+  const [clockNow, setClockNow] = useState(() => Date.now())
 
   useEffect(() => {
     if (!ident) return
@@ -175,12 +246,14 @@ export default function VodRotator({ items }: { items: VodItem[] }) {
     return () => clearTimeout(t)
   }, [ident])
 
-  // Board break between items (and before the first)
+  // Board break between items (and before the first). Loop playout only — on
+  // the clock, the gaps between segments ARE the board break, and inserting
+  // another one would push every segment past the minute it was promised for.
   useEffect(() => {
-    if (!onBoard || items.length === 0) return
-    const t = setTimeout(() => setOnBoard(false), BOARD_BREAK_MS)
+    if (playout === 'clock' || !onBoard || items.length === 0) return
+    const t = setTimeout(() => setOnBoard(false), boardBreakMs)
     return () => clearTimeout(t)
-  }, [onBoard, items.length])
+  }, [playout, onBoard, items.length, boardBreakMs])
 
   const advance = () => {
     setIndex((i) => (i + 1) % Math.max(items.length, 1))
@@ -188,23 +261,40 @@ export default function VodRotator({ items }: { items: VodItem[] }) {
     setOnBoard(true)
   }
 
-  const current = items.length > 0 ? items[index % items.length] : null
+  // WHAT IS ON. Loop asks the rotation; clock asks the schedule.
+  const pick = playout === 'clock' ? pickByClock(items, clockNow) : null
+  const current = playout === 'clock'
+    ? (pick && pick.index >= 0 ? items[pick.index] : null)
+    : (items.length > 0 ? items[index % items.length] : null)
   const isEmbed = Boolean(current?.platform)
+
+  // Clock playout: sleep until this decision expires — the end of the segment
+  // on air, or the start of the next one. Infinity (nothing left scheduled
+  // today) sets no timer at all; the next schedule snapshot wakes it instead.
+  useEffect(() => {
+    if (playout !== 'clock' || !pick || !Number.isFinite(pick.holdMs)) return
+    const t = setTimeout(() => setClockNow(Date.now()), Math.max(250, pick.holdMs))
+    return () => clearTimeout(t)
+    // Primitive deps on purpose: `pick` is a fresh object every render, and
+    // depending on it would tear the timer down and rebuild it each time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playout, items, pick?.index, pick?.holdMs])
 
   // An iframe has no 'ended' event we can read across origins, so an embedded
   // clip runs on a clock. Slightly longer than the allotted segment so a slow
-  // embed start does not clip the end off every single one.
+  // embed start does not clip the end off every single one. Clock playout does
+  // not advance on a timer — the schedule already said when this segment ends.
   useEffect(() => {
-    if (!current || !isEmbed || onBoard) return
+    if (playout === 'clock' || !current || !isEmbed || onBoard) return
     const t = setTimeout(advance, (current.seconds ?? 30) * 1000 + 1_500)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.url, isEmbed, onBoard])
+  }, [current?.url, isEmbed, onBoard, playout])
 
   // Ident first, then the board, then the clip. The order is the hand-over:
   // brand, context, content.
   if (ident) return <ChannelIdent onDone={() => setIdent(false)} />
-  if (!current || onBoard) return <IntermissionBoard />
+  if (!current || (playout === 'loop' && onBoard)) return <IntermissionBoard />
 
   if (isEmbed) {
     return (
@@ -240,8 +330,8 @@ export default function VodRotator({ items }: { items: VodItem[] }) {
         src={current.url}
         autoPlay
         playsInline
-        onEnded={advance}
-        onError={advance}
+        onEnded={playout === 'clock' ? undefined : advance}
+        onError={playout === 'clock' ? undefined : advance}
         className="absolute inset-0 w-full h-full object-contain"
       />
       {current.title && (

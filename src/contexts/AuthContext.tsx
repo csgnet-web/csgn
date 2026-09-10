@@ -172,6 +172,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  /**
+   * TikTok as the credential. The account already exists by the time we get
+   * here — `tiktokOAuthCallback` created it (or recognised a returning one) and
+   * minted this token — so there is nothing to create and nothing to ask for.
+   */
+  const signInWithTikTok = async (customToken: string) => {
+    void logAuthEvent('signin-start', { meta: { identifierKind: 'tiktok' } })
+    try {
+      const { user } = await signInWithCustomToken(auth, customToken)
+      await fetchProfile(user.uid)
+      void logAuthEvent('signin-success', { uid: user.uid, meta: { identifierKind: 'tiktok' } })
+    } catch (err) {
+      void logAuthEvent('signin-failure', { errorMessage: err instanceof Error ? err.message : String(err) })
+      throw err
+    }
+  }
+
   const signUp = async (email: string, password: string, username: string, proofs: { phantomProofToken: string; twitchProofToken?: string }) => {
     void logAuthEvent('signup-email-start')
     let createdUid: string | null = null
@@ -247,5 +264,5 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user && !user.emailVerified) await sendEmailVerification(user)
   }
 
-  return <AuthContext.Provider value={{ user, profile, loading, signIn, signInWithPhantom, signInWithGoogle, signInWithX, sendEmailLink, completeEmailLink, signUp, signUpWithPhantom, addEmailPassword, signOut, refreshProfile, resendVerification }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user, profile, loading, signIn, signInWithPhantom, signInWithTikTok, signInWithGoogle, signInWithX, sendEmailLink, completeEmailLink, signUp, signUpWithPhantom, addEmailPassword, signOut, refreshProfile, resendVerification }}>{children}</AuthContext.Provider>
 }

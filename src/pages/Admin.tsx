@@ -27,6 +27,8 @@ import MemeBoardCard from '@/components/admin/MemeBoardCard'
 import { CreatorFeesTab } from '@/components/admin/CreatorFeesTab'
 import LiveNowTab from '@/components/admin/LiveNowTab'
 import ClipQueueTab from '@/components/admin/ClipQueueTab'
+import RehearsalCard from '@/components/admin/RehearsalCard'
+import AutoRailCard from '@/components/admin/AutoRailCard'
 import { VoteHistoryTab } from '@/components/admin/VoteHistoryTab'
 import { isVoteOpen, type VoteRecord } from '@/lib/votes'
 import { PUMP_FUN_FEE_TIERS, estimateCreatorFeeSOL, formatTierRange, resolvePumpFeeTier } from '@/lib/dexscreener'
@@ -1324,6 +1326,11 @@ export default function Admin() {
                       Clear
                     </Button>
                   </div>
+
+                  {/* The writer sits directly under the box it writes into, so
+                      the relationship between the two is obvious: same rail,
+                      two authors, and the human one is on top. */}
+                  <AutoRailCard />
                 </div>
 
                 {/* Coin spotlight */}
@@ -1977,6 +1984,10 @@ export default function Admin() {
                 here airs until you approve it.
               </p>
             </div>
+            {/* The rehearsal sits ABOVE the queue deliberately: on day one the
+                queue is empty, and an empty queue with nothing else on the
+                screen reads as "the clip factory does not work yet". */}
+            <RehearsalCard />
             <ClipQueueTab />
           </div>
         )}

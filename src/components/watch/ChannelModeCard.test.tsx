@@ -26,6 +26,7 @@ const doc = (over: Partial<ChannelModeDoc> = {}): ChannelModeDoc => ({
   because: 'Nobody from the roster is streaming right now, so the member clip reel is carrying the channel.',
   nextSwitch: 'The moment a connected member goes live, the network can cut to them.',
   since: '2026-08-20T18:00:00.000Z',
+  encoder: false,
   log: [
     { at: '2026-08-20T18:00:00.000Z', mode: 'clip', who: null, because: 'Reel took over.' },
     { at: '2026-08-20T16:00:00.000Z', mode: 'stream', who: 'roblito', because: 'roblito went live.' },

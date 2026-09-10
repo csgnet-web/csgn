@@ -37,6 +37,12 @@ export interface ChannelModeDoc {
   because: string
   nextSwitch: string
   since: string | null
+  /** The picture is coming from the MP's own encoder right now, so nothing may
+   *  be drawn over it and the reel must not run. True ONLY for a live "I'm
+   *  going on" takeover — never for the 7 PM–3 AM block, which is master mode
+   *  on the sign with no encoder behind it. Mirrors `encoder` in
+   *  netlify/functions/_shared/channelMode.ts. */
+  encoder: boolean
   log: ModeEvent[]
   liveCount: number
   updatedAt: string
@@ -75,6 +81,10 @@ export function useChannelMode(): { channelMode: ChannelModeDoc | null; stale: b
           because: d.because,
           nextSwitch: d.nextSwitch || '',
           since: d.since ?? null,
+          // Absent (a doc written before this field existed) reads as false —
+          // the safe direction, because false keeps the reel running and true
+          // would blank the channel on the strength of a missing field.
+          encoder: d.encoder === true,
           log: Array.isArray(d.log) ? d.log.filter((e) => e && e.at && e.mode) : [],
           liveCount: Math.max(0, Number(d.liveCount) || 0),
           updatedAt: d.updatedAt || '',
