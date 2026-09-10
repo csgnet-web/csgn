@@ -104,7 +104,9 @@ export default function Intro() {
         <ul className="mt-7 space-y-4">
           <Line Icon={Radio} title="Watch" note="Always something on." />
           <Line Icon={Clapperboard} title="Post a clip" note="It airs between the live streams." />
-          <Line Icon={Coins} title="Hold $CSGN" note="Your share of the token is your share of the day." />
+          {/* The 1:1 rule, in the fewest words it survives in. It wrapped to
+              two lines as a sentence, which broke the rhythm of three. */}
+          <Line Icon={Coins} title="Hold $CSGN" note="1% of the token, 1% of the day." />
         </ul>
 
         <button

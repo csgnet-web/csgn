@@ -19,7 +19,10 @@ export default function OfflinePanel() {
   const upNow = current && !current.isOpen ? current.name : null
 
   return (
-    <div className="w-full max-w-[550px] rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-12 flex flex-col items-center gap-5 text-center">
+    // NO CARD. The stage this sits in is already a bordered frame, so the panel
+    // used to draw a second rounded box inside the first — chrome around chrome,
+    // which on a phone is most of the visible design. It fills the stage now.
+    <div className="w-full max-w-[550px] px-6 py-10 flex flex-col items-center gap-5 text-center">
       <div className="flex flex-col items-center gap-3">
         <CsgnLogo className="h-12 w-auto opacity-90" />
         <div className="flex items-center gap-2">
@@ -28,13 +31,7 @@ export default function OfflinePanel() {
         </div>
       </div>
 
-      <p className="text-sm text-gray-400 max-w-[380px]">
-        The 24/7 broadcast runs on X. Follow{' '}
-        <a href={X_PROFILE_URL} target="_blank" rel="noopener noreferrer" className="text-white font-semibold hover:text-primary-300 transition-colors">
-          @{X_HANDLE}
-        </a>{' '}
-        to catch the feed the moment it goes live.
-      </p>
+      <p className="text-sm text-gray-400">The broadcast runs on X.</p>
 
       {(upNow || nextSlot) && (
         <div className="text-[11px] uppercase tracking-[0.2em] text-gray-500">

@@ -90,15 +90,13 @@ export default function About() {
 
         <h2 className="mt-12 text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">The rules</h2>
         <ul className="mt-3">
-          <Rule>Live beats clips. A stream going on moves your clip to the next gap — it never costs you seconds.</Rule>
-          <Rule>
-            Clip airtime is one to one with the $CSGN you hold. 1% of the supply, 1% of the day.
-          </Rule>
-          <Rule>Holding is not spending. Nothing is burned, locked or deposited — sell tomorrow and it goes with you.</Rule>
-          <Rule>There is a ceiling on how much of a day one wallet can take.</Rule>
+          <Rule>Live beats clips. A stream never costs you seconds — your clip moves to the next gap.</Rule>
+          <Rule>Airtime is one to one with $CSGN held. 1% of the supply, 1% of the day.</Rule>
+          <Rule>Holding is not spending. Nothing is burned, locked or deposited.</Rule>
+          <Rule>One wallet can never take the whole day. There is a ceiling.</Rule>
           <Rule>A person watches every clip before it airs.</Rule>
-          <Rule>Streams earn 30% of the fees their hour generates, for the minutes we actually carried them.</Rule>
-          <Rule>An account, connecting Twitch and going live are free. The token decides what gets promoted, never who is allowed in.</Rule>
+          <Rule>Streams earn 30% of their hour's fees, for the minutes we carried them.</Rule>
+          <Rule>Accounts, Twitch and going live are free. The token decides what gets promoted, never who gets in.</Rule>
           <Rule>
             Fees go to one public treasury.{' '}
             <Link to="/treasury" className="text-primary-400 hover:text-primary-300 underline underline-offset-2">See the balance</Link>.
