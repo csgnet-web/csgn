@@ -6,6 +6,7 @@ import { LiveSlotProvider } from '@/contexts/LiveSlotContext'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
 import { BottomNav } from '@/components/layout/BottomNav'
+import Intro from '@/components/onboarding/Intro'
 import { CSGNMark } from '@/components/ui/Logo'
 import { lazy, Suspense } from 'react'
 import { ROUTE_CHUNKS } from '@/lib/routePrefetch'
@@ -98,6 +99,13 @@ function AppContent() {
       </Suspense>
 
       {showFooter && <Footer />}
+
+      {/* WHAT THIS IS, once, for somebody who has never been here. It decides
+          for itself whether to appear (lib/firstRun.ts) and refuses outright on
+          the OBS capture surfaces — a sheet over those goes out on television.
+          Mounted here rather than on /watch so it covers whichever page they
+          happened to land on. */}
+      {!isPlayerPage && <Intro />}
 
       {/* The tab bar sits above everything except modals, on every route but the
           OBS capture. The spacer keeps the last line of a page clear of it —

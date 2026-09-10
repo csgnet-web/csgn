@@ -211,10 +211,9 @@ export default function Schedule() {
                 the blocks are how the day is organised in advance, and the bar
                 on each one is what actually went out on it. */}
             <p className="text-sm text-gray-400 mt-0.5 max-w-2xl">
-              How the day is laid out, and what actually went out on it. Clips run around the clock;
-              the control room breaks in with a live streamer whenever one is worth carrying.{' '}
-              <Link to="/account" className="text-primary-300 font-semibold hover:text-primary-200 underline underline-offset-2">Connect Twitch once</Link>{' '}
-              and you are on the roster — there is nothing to book and nothing to remember.
+              The plan, and what actually went out.{' '}
+              <Link to="/account" className="text-primary-300 font-semibold hover:text-primary-200 underline underline-offset-2">Connect Twitch</Link>{' '}
+              to get on the roster.
             </p>
           </div>
           <div className="flex items-center gap-2">

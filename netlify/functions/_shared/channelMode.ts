@@ -60,6 +60,10 @@ export type ChannelMode =
 
 export interface ModeSlot {
   assignedUid?: string | null
+  /** When the current occupant was actually put on air — see
+   *  _shared/onAirClock.ts. Absent on the scheduled-block case, which has no
+   *  occupant to have started. */
+  onAirAt?: string | null
   assignedName?: string | null
   assignedUsername?: string | null
   isGuest?: boolean | null
@@ -171,7 +175,17 @@ function occupantName(slot: ModeSlot): string {
 export function describeChannelMode(input: ModeInput): ModeVerdict {
   const { slot, networkBlockEnabled } = input
   const liveCount = Math.max(0, Number(input.liveCount) || 0)
-  const since = slot?.startTime ? String(slot.startTime) : null
+  // SINCE WHEN, honestly.
+  //
+  // This read the BLOCK's start, so a streamer put on at 8:47 into an 8 PM
+  // block was published to every viewer as on air "since 8:00 PM" — the same
+  // bug the operator board had, on the public page. `onAirAt` is the moment
+  // Master Control actually cut to them; the block start survives as the
+  // fallback for the scheduled-block case (which has no occupant, so its start
+  // IS the answer) and for slots written before the stamp existed.
+  const stamped = slot?.onAirAt ? String(slot.onAirAt) : ''
+  const since = (stamped && Number.isFinite(Date.parse(stamped)) ? stamped : null)
+    ?? (slot?.startTime ? String(slot.startTime) : null)
   const source = String(slot?.sourceType || '')
   const occupied = slot != null && hasOccupant(slot)
 

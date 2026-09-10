@@ -189,10 +189,8 @@ export function MemeVotePicker({
                     </span>
                     <span className="text-[10px] uppercase tracking-wider text-gray-600 shrink-0">Off board</span>
                   </button>
-                  <p className="text-[11px] text-gray-600 px-1 leading-relaxed">
-                    Not on the Meme 100 yet — the board only carries coins clearing its published
-                    liquidity, volume and age thresholds. You can still back it; your weight counts
-                    toward its tally.
+                  <p className="text-[11px] text-gray-600 px-1">
+                    Not on the board yet. You can still back it — your weight counts.
                   </p>
                 </>
               )}

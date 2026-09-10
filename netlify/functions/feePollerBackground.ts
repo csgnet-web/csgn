@@ -150,6 +150,14 @@ interface SlotDoc {
   /** Who holds this block. The real "someone took this" — see claimSlot.ts. */
   assignedUid?: string
   assignedName?: string
+  isGuest?: boolean
+  sourceType?: string
+  type?: string
+  /** When the occupant was actually put on air. Stamped by adminLiveNow; read
+   *  by _shared/onAirClock.ts and published as the mode's `since`. Without it
+   *  on this type, the poller's republish would silently drop the stamp and the
+   *  public sign would fall back to the block's start every two minutes. */
+  onAirAt?: string
   streamTitle?: string
   creatorFees?: CreatorFees
   streamActivity?: StreamActivity

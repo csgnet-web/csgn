@@ -129,7 +129,7 @@ function LockedStudio() {
     <SignInWall
       Icon={Clapperboard}
       title="Get on television."
-      body="Post a link to something you already made. It airs on CSGN between the live blocks — you don't have to be there."
+      body="A link to something you already made. It airs between the live blocks."
       cta="Sign in to post"
     />
   )
@@ -266,9 +266,10 @@ function LockNotice({ airtime }: { airtime: Airtime }) {
         {hours > 0 ? `${hours}h ${String(mins).padStart(2, '0')}m` : `${mins}m`}
       </span>
       <span className="text-gray-600">to go.</span>
-      <span className="w-full text-gray-600 leading-relaxed">
-        Buy more now and it counts from the next one — that's what makes this number hold still.
-      </span>
+      {/* "Buy more now and it counts from the next one" used to follow. The
+          heading already says the number is fixed until the next lock, which is
+          the same fact in fewer words and in the right place. */}
+      <span className="w-full text-gray-600">Buy now, counts from the next one.</span>
     </div>
   )
 }
@@ -306,7 +307,7 @@ function NextStep({ clips, approvedSeconds, allowance, hasAirtime, onAddFocus }:
   if (rejected > 0) {
     return (
       <Nudge tone="warn" title={`${rejected} clip${rejected === 1 ? '' : 's'} didn't make it`}
-        body="Open the reel below for the reason. Most rejections are a quick fix — music, or a link to the wrong post." />
+        body="Open the reel below for the reason. Usually music, or the wrong link." />
     )
   }
 
@@ -334,7 +335,7 @@ function NextStep({ clips, approvedSeconds, allowance, hasAirtime, onAddFocus }:
   if (pending > 0) {
     return (
       <Nudge tone="wait" title={`${pending} clip${pending === 1 ? '' : 's'} in review`}
-        body="We watch everything before it airs. You'll see it move to On air here when it clears." />
+        body="It moves to On air here when it clears." />
     )
   }
 
@@ -343,7 +344,7 @@ function NextStep({ clips, approvedSeconds, allowance, hasAirtime, onAddFocus }:
   if (hasAirtime && spare <= 30 && clips.length > 0) {
     return (
       <Nudge tone="win" title="Your whole day is booked"
-        body="Every second your $CSGN earned today has a clip in it. More $CSGN is the only way to get more time."
+        body="Every second you earned today has a clip in it."
         cta="Get more $CSGN" href={JUPITER_SWAP_URL} />
     )
   }
@@ -384,8 +385,6 @@ function Nudge({ tone, title, body, cta, onCta, href }: {
 const fmtCsgn = (n: number): string =>
   n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(Math.round(n))
 
-const shortWallet = (a: string): string => (a && a.length > 9 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a || '—')
-
 /**
  * ZERO SECONDS, EXPLAINED.
  *
@@ -414,9 +413,8 @@ function ZeroAirtime({
     return (
       <div className="relative mt-4 rounded-xl border border-amber-500/30 bg-amber-500/[0.07] p-4">
         <p className="text-sm font-bold text-white">We couldn't read your balance just now.</p>
-        <p className="mt-1 text-[11px] text-gray-400 leading-relaxed">
-          Your wallet is linked and your tokens are exactly where you left them — Solana's public
-          RPC is rate-limiting us. This clears on its own; reload in a minute.
+        <p className="mt-1 text-[11px] text-gray-400">
+          Solana's RPC is rate-limiting us. Your tokens are fine — reload in a minute.
         </p>
       </div>
     )
@@ -426,9 +424,8 @@ function ZeroAirtime({
     return (
       <div className="relative mt-4 rounded-xl border border-live/25 bg-live/[0.06] p-4">
         <p className="text-sm font-bold text-white">You have airtime. Nothing is filling it yet.</p>
-        <p className="mt-1 text-[11px] text-gray-400 leading-relaxed">
-          Your $CSGN has already earned you the time above — it is yours whether or not you post.
-          Add a link below and it goes on air as soon as it clears review.
+        <p className="mt-1 text-[11px] text-gray-400">
+          The time above is yours whether or not you post. Add a link below.
         </p>
       </div>
     )
@@ -438,10 +435,8 @@ function ZeroAirtime({
     return (
       <div className="relative mt-4 rounded-xl border border-primary-500/25 bg-primary-500/[0.07] p-4">
         <p className="text-sm font-bold text-white">Connect your wallet to claim your airtime.</p>
-        <p className="mt-1 text-[11px] text-gray-400 leading-relaxed">
-          Your share of the day is worked out from the $CSGN you hold, and we have no wallet on file
-          for this account yet — so it is currently counting zero. Connecting one is a signature, not
-          a transaction: nothing moves and nothing is approved for spending.
+        <p className="mt-1 text-[11px] text-gray-400">
+          A signature, not a transaction — nothing moves and nothing is approved.
         </p>
         <Button variant="primary" size="sm" className="mt-3" isLoading={linking} onClick={onLinkWallet}>
           Connect wallet
@@ -455,12 +450,10 @@ function ZeroAirtime({
     return (
       <div className="relative mt-4 rounded-xl border border-primary-500/25 bg-primary-500/[0.07] p-4">
         <p className="text-sm font-bold text-white">Hold $CSGN to get airtime.</p>
-        <p className="mt-1 text-[11px] text-gray-400 leading-relaxed">
-          Airtime is shared out by holdings — that is what the token is for. Watching, claiming a
-          two-hour block and going live are all free and always will be; this part is not.
+        <p className="mt-1 text-[11px] text-gray-400">
           {balance === null
-            ? ' We could not read your balance just now, so this may simply be a bad connection to the chain — reload in a minute before buying anything.'
-            : ' Your linked wallet is holding none right now.'}
+            ? "We couldn't read your balance — reload before buying anything."
+            : 'Your wallet is holding none right now.'}
         </p>
         <a href={JUPITER_SWAP_URL} target="_blank" rel="noopener noreferrer" className="inline-block mt-3">
           <Button variant="primary" size="sm">Get $CSGN on Jupiter</Button>
@@ -473,9 +466,8 @@ function ZeroAirtime({
   return (
     <div className="relative mt-4 rounded-xl border border-white/[0.1] bg-white/[0.03] p-4">
       <p className="text-sm font-bold text-white">No open air in the next few hours.</p>
-      <p className="mt-1 text-[11px] text-gray-400 leading-relaxed">
-        Live blocks and the 7 PM–3 AM network block outrank clips, and right now they cover the
-        schedule. Your reel is queued and picks up its share as soon as a gap opens.
+      <p className="mt-1 text-[11px] text-gray-400">
+        Your reel is queued and picks up its share when a gap opens.
       </p>
     </div>
   )
@@ -768,39 +760,21 @@ export default function Studio() {
 
           {hasAirtime ? (
             <>
-              {/* THE DENOMINATOR, SAID OUT LOUD — and it is a constant.
-                  It used to move: a measured circulating supply on one side and
-                  "whatever fraction of the day was unbooked" on the other, so
-                  the same bag bought different seconds on different days for
-                  reasons no member could see. Now the sum is one anybody can do
-                  on a phone, which is most of why the promise is believable. */}
-              <p className="relative mt-3 text-[11px] text-gray-500 leading-relaxed">
-                Out of a full 24-hour day — clips run around the clock.
-                Your share of the 1,000,000,000 supply is your share of the reel, one to one.
-                {airtime?.capped && ' You are at the per-member ceiling, which exists so no one holder can take the whole channel.'}
-              </p>
-              {/* The sum, spelled out, so it can be checked rather than trusted. */}
+              {/* THE SUM, AND NOTHING ELSE.
+                  Five stacked paragraphs used to live here explaining the
+                  denominator, the interruption rule and the cap — all true, all
+                  said better by the one line of arithmetic underneath, which a
+                  member can check on a phone against their own wallet. That
+                  checkability is the whole reason the promise is believable, and
+                  a paragraph asserting it is strictly weaker than the sum. */}
               {airtime?.balance != null && (
-                <p className="relative mt-1 text-[11px] font-mono text-gray-600">
-                  {fmtCsgn(airtime.balance)} ÷ 1B × 86,400s = {airtimeLabel(airtime.seconds)}
+                <p className="relative mt-3 text-[11px] font-mono text-gray-500">
+                  {fmtCsgn(airtime.balance)} ÷ 1B × 86,400s = <span className="text-white">{airtimeLabel(airtime.seconds)}</span>
+                  {airtime.supplyShare > 0 && <span className="text-gray-600"> · {formatShare(airtime.supplyShare)} of supply</span>}
                 </p>
               )}
-              {/* Being interrupted is not being deducted. Said here because the
-                  question it answers — "where did my seconds go?" — otherwise
-                  gets answered by a member guessing, badly. */}
-              <p className="relative mt-1 text-[11px] text-gray-600 leading-relaxed">
-                When a streamer or the control room breaks in, the reel pauses and picks up where it
-                left off. An interruption never costs you seconds.
-              </p>
-              {/* THE WORKING, SHOWN. Checkable against the chain and against
-                  the market cap, which is what makes it a fact rather than
-                  something to take on faith. */}
-              {airtime?.balance != null && (
-                <p className="relative mt-1.5 text-[11px] text-gray-600">
-                  <span className="font-mono text-gray-400">{fmtCsgn(airtime.balance)} $CSGN</span>
-                  {airtime.supplyShare > 0 && <> · {formatShare(airtime.supplyShare)} of supply</>}
-                  {' '}in <span className="font-mono">{shortWallet(airtime.walletAddress)}</span>.
-                </p>
+              {airtime?.capped && (
+                <p className="relative mt-1 text-[11px] text-gold">At the per-member ceiling.</p>
               )}
               {airtime && <LockNotice airtime={airtime} />}
             </>
@@ -898,11 +872,7 @@ export default function Studio() {
           ) : sorted.length === 0 ? (
             <div className="p-10 text-center">
               <p className="text-sm text-gray-300 font-medium">Your reel is empty</p>
-              <p className="mt-1.5 text-xs text-gray-500 max-w-xs mx-auto leading-relaxed">
-                Paste a link to something you already posted. It's on a real television channel
-                within a few hours — you don't have to be there, and you don't have to make
-                anything new.
-              </p>
+              <p className="mt-1.5 text-xs text-gray-500">Paste a link to something you already posted.</p>
             </div>
           ) : (
             <div className="divide-y divide-white/[0.05]">
@@ -993,10 +963,7 @@ export default function Studio() {
             <Clock className="w-4 h-4 text-gray-400" /> You're on at
           </h2>
           {airings.length === 0 ? (
-            <p className="mt-2.5 text-xs text-gray-500 leading-relaxed">
-              Nothing scheduled yet. Approved clips land in the next rebuild and the exact times
-              show up here.
-            </p>
+            <p className="mt-2.5 text-xs text-gray-500">Nothing scheduled yet.</p>
           ) : (
             <>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -1010,11 +977,11 @@ export default function Studio() {
                   </span>
                 ))}
               </div>
-              <p className="mt-3 text-[11px] text-gray-500 leading-relaxed">
-                Real times — this is the schedule the broadcast runs from. If somebody claims one of
-                those two-hour blocks and goes live, their stream wins and your clip moves to the
-                next opening.
-              </p>
+              {/* "Real times" mattered when this was the only place that said
+                  so. A live stream moving your clip is now one line in the
+                  rules on /about, where somebody looking for the catch reads
+                  it — rather than four lines under the answer they came for. */}
+              <p className="mt-3 text-[11px] text-gray-600">Real times, from the broadcast schedule.</p>
             </>
           )}
         </section>
@@ -1024,9 +991,7 @@ export default function Studio() {
             <Sparkles className="w-4 h-4 text-primary-400" />
             <h2 className="text-sm font-bold text-white">Your on-air look</h2>
           </div>
-          <p className="mt-1 text-[11px] text-gray-500 leading-relaxed">
-            The card that carries your name while your clip is on television.
-          </p>
+          <p className="mt-1 text-[11px] text-gray-500">Your name card, on air.</p>
 
           {/* Live preview of the actual lower third, in the chosen shape. */}
           <div className="mt-4 relative h-28 rounded-xl overflow-hidden bg-black border border-white/[0.06]">
@@ -1132,16 +1097,13 @@ export default function Studio() {
               />
             </label>
           ) : (
-            <p className="mt-3 text-[11px] text-gray-600 leading-relaxed">
-              Sign in with X and your profile picture rides along on your lower third.
-            </p>
+            <p className="mt-3 text-[11px] text-gray-600">Sign in with X to use your profile picture.</p>
           )}
         </section>
 
 
-        <p className="text-[11px] text-gray-600 leading-relaxed px-1">
-          Every clip is watched by a person before it airs. We never host your video — we point at
-          your post, so the views and the follows stay on your account.
+        <p className="text-[11px] text-gray-600 px-1">
+          Reviewed by a person before it airs. Your post stays on your account.
         </p>
 
       </div>

@@ -309,18 +309,19 @@ export default function Meme100Board() {
         )}
       </Card>
 
-      <p className="flex items-start gap-1.5 text-[11px] text-gray-600 leading-relaxed">
+      {/* THE WEIGHTS, AS NUMBERS. Three sentences of justification used to
+          follow — why momentum, why staying power, what happens to the vote
+          weight before anybody votes. Every coin's own breakdown is one tap
+          away and shows the same thing applied to a real row, which is a better
+          explanation than the paragraph was. */}
+      <p className="flex items-start gap-1.5 text-[11px] text-gray-600">
         <Info className="w-3.5 h-3.5 shrink-0 mt-px" />
         <span>
-          Score is out of 100: 24h volume {Math.round(POWER_WEIGHTS.volume * 100)},
+          Out of 100 — volume {Math.round(POWER_WEIGHTS.volume * 100)},
           momentum {Math.round(POWER_WEIGHTS.momentum * 100)},
-          holder votes {Math.round(POWER_WEIGHTS.votes * 100)},
+          votes {Math.round(POWER_WEIGHTS.votes * 100)},
           staying power {Math.round(POWER_WEIGHTS.maturity * 100)},
-          size {Math.round(POWER_WEIGHTS.size * 100)}. Momentum separates a coin having a day from
-          one that is merely large; staying power keeps the majors on a board that would otherwise
-          only show whatever launched this morning. Until holders start voting, that{' '}
-          {Math.round(POWER_WEIGHTS.votes * 100)} is shared across the other four rather than left
-          unscored. Tap a coin for its breakdown.
+          size {Math.round(POWER_WEIGHTS.size * 100)}. Tap a coin for its breakdown.
         </span>
       </p>
     </section>

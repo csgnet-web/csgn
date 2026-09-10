@@ -206,9 +206,12 @@ describe('the holder panel', () => {
 })
 
 describe('slots and fees', () => {
-  it('gives an empty, actionable state when nothing is booked', async () => {
+  // "Nothing booked" is the NORMAL state — nobody books anything any more — so
+  // it must read as a fact, not a warning, and must not be followed by a
+  // paragraph re-explaining the forwarding model underneath it.
+  it('gives an empty, unalarming state when nothing is booked', async () => {
     await render()
-    expect(text()).toContain("Nothing booked — which is normal")
+    expect(text()).toContain('Nothing booked. We carry you whenever you go live.')
     expect(text()).toContain('No assigned slot history yet.')
   })
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { motion } from 'framer-motion'
 import { Wallet, Megaphone, Check, Trophy, AlertCircle, Vote as VoteIcon, Flame, Coins } from 'lucide-react'
@@ -453,8 +454,8 @@ export default function Participate() {
         </div>
         <Card hover={false} className="p-5 space-y-3">
           <p className="text-sm text-gray-400">
-            Hold at least <span className="text-primary-300 font-semibold">{fmtFull(rightNowMin)} $CSGN</span> to push one message to the live{' '}
-            <span className="text-primary-300 font-semibold">RIGHT NOW</span> rail — once per day, kept clean for air.
+            Hold <span className="text-primary-300 font-semibold">{fmtFull(rightNowMin)} $CSGN</span> to put one line on the
+            live rail. Once a day.
           </p>
 
           {!walletAddress ? (
@@ -496,11 +497,9 @@ export default function Participate() {
         </div>
         <Card hover={false} className="p-5 space-y-4">
           <p className="text-sm text-gray-400">
-            The highest live bid holds the <span className="text-amber-300 font-semibold">crypto spotlight</span> on the
-            broadcast. Bids are in <span className="text-amber-300 font-semibold">$CSGN</span> and go straight to the{' '}
-            <span className="text-amber-300 font-semibold">CSGN treasury</span> — recycled into creator payouts and
-            distribution, never burned. A winning bid holds for <span className="text-amber-300 font-semibold">twelve hours</span>,
-            then the floor resets and the spotlight reopens.
+            Highest bid holds the spotlight on air for{' '}
+            <span className="text-amber-300 font-semibold">twelve hours</span>. Paid in $CSGN to the{' '}
+            <Link to="/treasury" className="text-amber-300 font-semibold underline underline-offset-2">treasury</Link>, never burned.
           </p>
 
           {/* WHO HOLDS IT NOW, FOR HOW LONG, AND WHAT IT COST.
@@ -623,7 +622,8 @@ export default function Participate() {
         </div>
         <Card hover={false} className="p-5 space-y-3">
           <p className="text-sm text-gray-400">
-            Back a memecoin with your <span className="text-cyan-300 font-semibold">$CSGN voting power</span> — no burn, no stake, nothing leaves your wallet. Your weight = your balance. Holder votes are the largest single term in the board’s score, so this is what moves the ranking that goes on air.
+            Back a coin with your <span className="text-cyan-300 font-semibold">$CSGN</span>. Nothing leaves your wallet —
+            your weight is your balance, and it is the biggest term in the on-air ranking.
           </p>
 
           {!walletAddress ? (

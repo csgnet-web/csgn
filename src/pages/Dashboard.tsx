@@ -89,11 +89,9 @@ function ForwardConsentBox({
         <span className="block text-sm font-semibold text-white">
           Let CSGN put my stream on the channel
         </span>
-        <span className="mt-1 block text-[11px] text-gray-400 leading-relaxed">
-          You stream on Twitch exactly as you normally would. When you go live we can carry your
-          stream on CSGN and you earn your share of the trading fees for the minutes you are on.
-          No schedule to manage, no block to claim, nothing to install.
-          {linked && ' Turn this off any time — we stop checking your channel within a minute.'}
+        <span className="mt-1 block text-[11px] text-gray-400">
+          Stream as you normally would. You earn 30% of the fees for the minutes we carry you.
+          {linked && ' Turn it off any time.'}
         </span>
       </span>
     </label>
@@ -678,9 +676,8 @@ export default function Dashboard() {
                 works completely without it. */}
             {!accountEmail && (
               <div className="flex flex-wrap items-center gap-3">
-                <p className="text-[11px] text-gray-500 leading-relaxed flex-1 min-w-[16rem]">
-                  You signed up with your wallet, so there's no email on this account. Add one and you
-                  can get back in without your seed phrase.
+                <p className="text-[11px] text-gray-500 flex-1 min-w-[16rem]">
+                  No email on this account. Add one to get back in without your seed phrase.
                 </p>
                 <Button variant="secondary" size="sm" onClick={() => { setAddEmailOpen(true); setAddEmailError('') }}>
                   Add email
@@ -702,9 +699,7 @@ export default function Dashboard() {
         >
           <div className="min-w-0">
             <p className="text-sm font-semibold text-white">Your studio</p>
-            <p className="mt-0.5 text-xs text-gray-400 leading-relaxed">
-              Post a clip and it airs between the live blocks. How much time you get follows what you hold.
-            </p>
+            <p className="mt-0.5 text-xs text-gray-400">Post a clip. It airs between the live blocks.</p>
           </div>
           <span className="text-primary-300 text-sm shrink-0">Open →</span>
         </Link>
@@ -881,12 +876,11 @@ export default function Dashboard() {
             <Radio className="w-4 h-4 text-gray-400" /> Your upcoming slots
           </h2>
           <div className="mt-3 space-y-2">
+            {/* "Nothing booked" is the NORMAL state — nobody books anything any
+                more — so it must not read as a warning. One line, no apology, no
+                re-explanation of the forwarding model underneath it. */}
             {upcomingSlots.length === 0 ? (
-              <p className="text-sm text-gray-500 leading-relaxed">
-                Nothing booked — which is normal, and nothing to fix. With forwarding on we carry
-                you whenever you happen to go live, and you earn a share of $CSGN's trading fees for
-                the minutes you're actually on air. Your clips fill the hours in between.
-              </p>
+              <p className="text-sm text-gray-500">Nothing booked. We carry you whenever you go live.</p>
             ) : (
               upcomingSlots.map((slot) => (
                 <div key={slot.id} className="border border-white/[0.08] rounded-lg px-3 py-2.5">
@@ -912,9 +906,8 @@ export default function Dashboard() {
       {addEmailOpen && (
         <Modal open onClose={() => setAddEmailOpen(false)} title="Add an email and password">
           <form onSubmit={handleAddEmail} className="space-y-3 mt-2">
-            <p className="text-xs text-gray-400 leading-relaxed">
-              This is a way back into your account that doesn't depend on your seed phrase. Your
-              wallet keeps working as a sign-in exactly as it does now — nothing is replaced.
+            <p className="text-xs text-gray-400">
+              A way back in without your seed phrase. Your wallet keeps working.
             </p>
             {addEmailError && <Notice tone="error" compact>{addEmailError}</Notice>}
             <div className="relative">
@@ -949,8 +942,7 @@ export default function Dashboard() {
             </div>
             <Button variant="primary" size="md" className="w-full" isLoading={addingEmail}>Add email</Button>
             <p className="text-[11px] text-gray-600 leading-relaxed">
-              We'll send a verification link. Only you can see this address — it never appears on
-              your public profile.
+              We'll send a verification link. It never appears on your public profile.
             </p>
           </form>
         </Modal>

@@ -120,6 +120,12 @@ export const handler = withHttp(async (event) => {
   // Explicit allowlist rather than a ternary — an unrecognised action must not
   // silently fall through to putting somebody on television.
   const ACTIONS = ['put_on_air', 'take_off_air', 'put_guest_on_air', 'go_master'] as const
+  // WHEN THE CUT STARTED. Known exactly here and derivable nowhere else — the
+  // block's start belongs to the schedule, and the activity log's first live
+  // sample is whenever the poller next happened to look. One stamp for the whole
+  // request so the slot write and the public sign cannot disagree by a few
+  // milliseconds. See _shared/onAirClock.ts.
+  const onAirStamp = new Date().toISOString()
   type Action = (typeof ACTIONS)[number]
   const requested = String(body.action || 'put_on_air') as Action
   if (!ACTIONS.includes(requested)) throw badRequest('Unknown action.', 'bad_action')
@@ -177,17 +183,13 @@ export const handler = withHttp(async (event) => {
       twitchUsername: null,
       twitchChannelUrl: null,
       streamUrl: null,
-      // WHEN THE CUT STARTED. Known exactly here and derivable nowhere else —
-      // the block's start is the schedule's, and the activity log's first live
-      // sample is whenever the poller next happened to look. See
-      // _shared/onAirClock.ts.
-      onAirAt: new Date().toISOString(),
+      onAirAt: onAirStamp,
       updatedAt: new Date(),
     }, true)])
 
     const currentBroadcast = await resolveBroadcast()
     await announceMode({
-      startTime: slot.startTime, status: 'live', type: slot.type,
+      startTime: slot.startTime, onAirAt: onAirStamp, status: 'live', type: slot.type,
       assignedUid: admin.uid, assignedName: masterName, sourceType: 'master',
     })
     await auditLog('adminGoMaster', admin.uid, { slotId: slot.id, masterName })
@@ -222,17 +224,13 @@ export const handler = withHttp(async (event) => {
       twitchUsername: login || '',
       twitchChannelUrl: guestUrl,
       streamUrl: guestUrl,
-      // WHEN THE CUT STARTED. Known exactly here and derivable nowhere else —
-      // the block's start is the schedule's, and the activity log's first live
-      // sample is whenever the poller next happened to look. See
-      // _shared/onAirClock.ts.
-      onAirAt: new Date().toISOString(),
+      onAirAt: onAirStamp,
       updatedAt: new Date(),
     }, true)])
 
     const currentBroadcast = await resolveBroadcast()
     await announceMode({
-      startTime: slot.startTime, status: 'live', type: slot.type,
+      startTime: slot.startTime, onAirAt: onAirStamp, status: 'live', type: slot.type,
       assignedName: guestName, isGuest: true, sourceType: 'operator_guest',
     })
     await auditLog('adminPutGuestOnAir', admin.uid, { slotId: slot.id, guestUrl, guestName })
@@ -273,16 +271,13 @@ export const handler = withHttp(async (event) => {
     // leave the guest marking behind on the schedule.
     isGuest: null,
     guestAddedBy: null,
-    // WHEN THE CUT STARTED — see _shared/onAirClock.ts. Re-stamped on every
-    // put-on, so handing a block from one streamer to another restarts the
-    // clock rather than carrying the first one's minutes onto the second.
-    onAirAt: new Date().toISOString(),
+    onAirAt: onAirStamp,
     updatedAt: new Date(),
   }, true)])
 
   const currentBroadcast = await resolveBroadcast()
   await announceMode({
-    startTime: slot.startTime, status: 'live', type: slot.type,
+    startTime: slot.startTime, onAirAt: onAirStamp, status: 'live', type: slot.type,
     assignedUid: uid, assignedName: user.username || login, sourceType: 'operator_live',
   })
   await auditLog('adminPutOnAir', admin.uid, { slotId: slot.id, uid, twitchUsername: login })
