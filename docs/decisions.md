@@ -89,6 +89,28 @@ on your channel tells an audience to buy something.
 If the same good line keeps dying on `\b\d+x\b`, that is a specific pattern to
 loosen with evidence rather than a policy to relax on a hunch.
 
+### The related one you should know about: which coins it may name
+
+A `$TICKER` on a television chyron is worth more to somebody than anything else
+this feature could be made to do — a post written specifically to be quoted, with
+enough engagement to clear the floor, ends with a scam ticker on your broadcast.
+
+So a line may only name a coin **that this run's material actually named**, plus
+a short always-allowed list (BTC, ETH, SOL, USDC, USDT, BNB, XRP, DOGE, and
+$CSGN). The model cannot invent a ticker and cannot carry one further than the
+source it came from. A run with no material may use only the majors.
+
+This does not make the feature injection-proof and I would not claim it does: an
+attacker whose post makes it into the material has, by construction, got their
+ticker into the allowed set. What it removes is the cheap version — a
+hallucinated or smuggled ticker with no post behind it — and it bounds the
+expensive version to "a coin that was genuinely being discussed at the time".
+
+**If that residual bothers you, the lever is `X_RAIL_QUERY`.** A curated
+`from:someone OR from:someoneelse` list means the material can only come from
+accounts you chose, which closes the gap almost entirely. That is another reason
+I would run the account-list version rather than the open query.
+
 ---
 
 ## 4. How the reel plays out — the one that changes what goes on air

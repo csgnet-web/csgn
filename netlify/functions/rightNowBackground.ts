@@ -42,7 +42,7 @@ import { containsProfanity } from './_shared/profanity'
 import { fetchXPosts, marketMaterial, xConfigured, type MarketCoin } from './_shared/xFeed'
 import { railWriterConfigured, writeRailLines } from './_shared/railWriter'
 import {
-  mergeRail, readRail, vetLines, MAX_AI_ITEMS, MAX_RAIL_ITEMS,
+  mergeRail, readRail, vetLines, tickersInMaterial, MAX_AI_ITEMS, MAX_RAIL_ITEMS,
   type RailItem, type RailSource,
 } from './_shared/rightNow'
 
@@ -132,7 +132,12 @@ export async function runRailPass({ force = false, dryRun = false } = {}): Promi
   const holderCount = existing.filter((item) => item.tag === 'HOLDER').length
   const room = Math.max(0, Math.min(MAX_AI_ITEMS, MAX_RAIL_ITEMS - holderCount))
 
-  const { accepted, rejected } = vetLines(written.candidates, containsProfanity, existing, room)
+  // A line may only name a coin the MATERIAL named. Derived from the same array
+  // handed to the model, so the two cannot disagree — and so a post written to
+  // be quoted cannot walk a ticker onto a television chyron.
+  const { accepted, rejected } = vetLines(
+    written.candidates, containsProfanity, existing, room, tickersInMaterial(sources),
+  )
 
   if (accepted.length === 0) {
     // Nothing survived, or nothing was written. Leave the rail alone and record

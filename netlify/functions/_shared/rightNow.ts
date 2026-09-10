@@ -19,7 +19,8 @@
  * here is pure and tested, and it is deliberately stricter than a prompt: a
  * prompt is an instruction, and an instruction is not a control. What reaches
  * the broadcast has passed a length check, a character check, a link check, a
- * handle check, a profanity check and a financial-advice check, in code, every
+ * handle check, a profanity check, a financial-advice check and a check that it
+ * only names a coin something this run actually read about, in code, every
  * time — including the run where the model has an off day, and including the
  * run where somebody's post was written specifically to be quoted by a bot.
  *
@@ -84,6 +85,27 @@ const ADVICE_PATTERNS: RegExp[] = [
  *  of chyron text or render as a box on an encoder's font stack. */
 const ALLOWED_TEXT = /^[\p{L}\p{N} .,!?'’"“”:;()%$&+/–—-]+$/u
 
+/**
+ * Cashtags the rail may name even when nothing in the material mentioned them.
+ *
+ * A `$TICKER` is fine on this channel and is most of the point — but it is also
+ * the highest-value thing an attacker could get out of this feature. A post
+ * written specifically to be quoted, with enough engagement to clear the floor,
+ * ends with a scam ticker on a television chyron. That is worth more to
+ * somebody than anything else on the rail.
+ *
+ * So a line may only name a coin that the MATERIAL named — the posts or the
+ * market board this run actually read — plus these, which are the majors and
+ * our own token and are not somebody's exit liquidity. The model cannot invent
+ * a ticker, and it cannot carry one further than the source it came from.
+ */
+const ALWAYS_ALLOWED_TICKERS = new Set(['CSGN', 'BTC', 'ETH', 'SOL', 'USDC', 'USDT', 'BNB', 'XRP', 'DOGE'])
+
+/** Every `$TICKER` in a line, upper-cased. */
+export function cashtags(text: string): string[] {
+  return [...String(text ?? '').matchAll(/\$([A-Za-z][A-Za-z0-9]{1,11})\b/g)].map((m) => m[1].toUpperCase())
+}
+
 /** Rejections, in the words that make a log line diagnosable. */
 export type RejectReason =
   | 'empty'
@@ -96,6 +118,10 @@ export type RejectReason =
   | 'profanity'
   | 'duplicate'
   | 'bad_tag'
+  /** Named a coin that nothing this run had read about. See the note on
+   *  ALWAYS_ALLOWED_TICKERS — this is the injection that would actually be
+   *  worth somebody's time. */
+  | 'unknown_ticker'
 
 export interface Candidate { tag?: unknown; text?: unknown }
 export interface Verdict { ok: boolean; item?: RailItem; reason?: RejectReason }
@@ -115,6 +141,10 @@ export function vetLine(
   candidate: Candidate,
   isProfane: (text: string) => boolean,
   existing: readonly RailItem[] = [],
+  /** Tickers this run's material actually mentioned. Empty means "the model may
+   *  only use the majors", which is the correct behaviour for a run with no
+   *  material rather than a licence to name anything. */
+  knownTickers: ReadonlySet<string> = new Set(),
 ): Verdict {
   const text = flatten(candidate.text)
   if (!text) return { ok: false, reason: 'empty' }
@@ -135,6 +165,10 @@ export function vetLine(
   const lower = text.toLowerCase()
   if (ADVICE_PATTERNS.some((re) => re.test(lower))) return { ok: false, reason: 'advice' }
   if (isProfane(text)) return { ok: false, reason: 'profanity' }
+
+  // A coin nothing this run had read about does not go on television.
+  const unknown = cashtags(text).find((t) => !ALWAYS_ALLOWED_TICKERS.has(t) && !knownTickers.has(t))
+  if (unknown) return { ok: false, reason: 'unknown_ticker' }
 
   // Same line twice on an eight-line rail is a third of the rail.
   if (existing.some((item) => flatten(item.text).toLowerCase() === lower)) {
@@ -163,12 +197,13 @@ export function vetLines(
   isProfane: (text: string) => boolean,
   existing: readonly RailItem[] = [],
   max = MAX_AI_ITEMS,
+  knownTickers: ReadonlySet<string> = new Set(),
 ): VetResult {
   const accepted: RailItem[] = []
   const rejected: VetResult['rejected'] = []
   for (const candidate of candidates) {
     if (accepted.length >= max) break
-    const verdict = vetLine(candidate, isProfane, [...existing, ...accepted])
+    const verdict = vetLine(candidate, isProfane, [...existing, ...accepted], knownTickers)
     if (verdict.ok && verdict.item) accepted.push(verdict.item)
     else rejected.push({ text: flatten(candidate.text), reason: verdict.reason ?? 'empty' })
   }
@@ -245,6 +280,24 @@ export function readRail(stored: unknown): RailItem[] {
 
 /* ─── The prompt ─── */
 
+/**
+ * Which coins this run is allowed to name — every cashtag that appeared in the
+ * material, plus every bare symbol the market board produced ("WIF is up 12%"
+ * carries no `$`). Derived from the same array handed to the model, so the two
+ * cannot disagree.
+ */
+export function tickersInMaterial(sources: readonly RailSource[]): Set<string> {
+  const found = new Set<string>()
+  for (const source of sources) {
+    for (const tag of cashtags(source.text)) found.add(tag)
+    // The market board writes "SYMBOL is up 4.2% over 24h" — the leading token
+    // is the coin, and it is the only bare word here that may be one.
+    const bare = /^([A-Za-z][A-Za-z0-9]{1,11})\s+is\s+(up|down)\b/.exec(source.text.trim())
+    if (bare) found.add(bare[1].toUpperCase())
+  }
+  return found
+}
+
 export interface RailSource {
   /** Where this came from, for the model's benefit: 'x' or 'market'. */
   kind: 'x' | 'market'
@@ -279,6 +332,7 @@ export const RAIL_SYSTEM_PROMPT = [
   '- tell anybody to buy, sell, or hold anything, or imply they should',
   '- name a price target, a multiple, or a prediction',
   '- accuse any real project or person of anything',
+  '- name a coin that does not appear in the material below (majors and $CSGN aside)',
   '- use emoji, hashtags, or ALL CAPS words',
   '',
   'Tag each line with exactly one of: ' + AI_TAGS.join(', ') + '.',

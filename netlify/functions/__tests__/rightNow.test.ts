@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   vetLine, vetLines, parseModelLines, mergeRail, readRail, buildRailPrompt,
+  cashtags, tickersInMaterial,
   RAIL_SYSTEM_PROMPT, MAX_RAIL_ITEMS, MAX_AI_ITEMS, HOLDER_TAG,
-  type RailItem,
+  type RailItem, type RailSource,
 } from '../_shared/rightNow'
 import { parseXSearch, marketMaterial } from '../_shared/xFeed'
 
@@ -81,6 +82,88 @@ describe('vetLine — what may reach the broadcast', () => {
     const existing: RailItem[] = [{ tag: 'HOLDER', text: 'Solana had a day and the timeline has notes.' }]
     const verdict = vetLine({ tag: 'RIGHT NOW', text: 'solana had a DAY and the timeline has notes.' }, clean, existing)
     expect(verdict.reason).toBe('duplicate')
+  })
+})
+
+/**
+ * THE INJECTION THAT WOULD ACTUALLY BE WORTH SOMEBODY'S TIME.
+ *
+ * A `$TICKER` on a television chyron is worth more to an attacker than anything
+ * else this feature could be made to do. The rail may name a coin — that is
+ * most of the point — but only one the material this run read actually named.
+ */
+describe('vetLine — which coins may be named', () => {
+  const known = new Set(['WIF', 'BONK'])
+  const vet = (text: string, tickers = known) => vetLine({ tag: 'MARKET', text }, clean, [], tickers)
+
+  it('allows a coin the material mentioned', () => {
+    expect(vet('$WIF had the kind of day that makes a chart interesting').ok).toBe(true)
+  })
+
+  it('refuses a coin nothing this run had read about', () => {
+    expect(vet('$SCAMCOIN is the one everybody is watching today').reason).toBe('unknown_ticker')
+  })
+
+  it('always allows the majors and our own token', () => {
+    for (const t of ['$BTC', '$ETH', '$SOL', '$CSGN']) {
+      expect(vet(`${t} is having the kind of week people remember`).ok, t).toBe(true)
+    }
+  })
+
+  it('is case-insensitive about the ticker', () => {
+    expect(vet('$wif had the kind of day that makes a chart interesting').ok).toBe(true)
+  })
+
+  it('refuses the whole line if ANY ticker in it is unknown', () => {
+    expect(vet('$WIF and $SCAMCOIN are both having a moment today').reason).toBe('unknown_ticker')
+  })
+
+  it('allows only the majors when there was no material at all', () => {
+    // An empty set is "the model may use the majors", not "anything goes" — a
+    // run with nothing to read is exactly when a hallucinated ticker appears.
+    expect(vetLine({ tag: 'MARKET', text: '$BTC is doing what it does on a Tuesday' }, clean).ok).toBe(true)
+    expect(vetLine({ tag: 'MARKET', text: '$WIF is doing what it does on a Tuesday' }, clean).reason).toBe('unknown_ticker')
+  })
+
+  it('leaves a plain dollar amount alone', () => {
+    expect(vet('The whole board is worth less than $9 today, somehow').ok).toBe(true)
+  })
+})
+
+describe('cashtags', () => {
+  it('finds every ticker, upper-cased', () => {
+    expect(cashtags('$wif and $BONK and $Sol')).toEqual(['WIF', 'BONK', 'SOL'])
+  })
+
+  it('does not treat a number as a ticker', () => {
+    expect(cashtags('$100 and $9.99')).toEqual([])
+  })
+
+  it('is empty-safe', () => {
+    expect(cashtags('')).toEqual([])
+    expect(cashtags('no tickers here at all')).toEqual([])
+  })
+})
+
+describe('tickersInMaterial', () => {
+  const src = (text: string, kind: 'x' | 'market' = 'x'): RailSource => ({ kind, text })
+
+  it('reads cashtags out of posts', () => {
+    expect([...tickersInMaterial([src('everyone is talking about $wif again')])]).toEqual(['WIF'])
+  })
+
+  it('reads the bare symbol the market board writes', () => {
+    // "WIF is up 12.0% over 24h" carries no dollar sign.
+    expect([...tickersInMaterial([src('WIF is up 12.0% over 24h at about $9,000,000 market cap', 'market')])])
+      .toContain('WIF')
+  })
+
+  it('does not take a bare word that is not a coin', () => {
+    expect([...tickersInMaterial([src('Everyone is tired of this market', 'x')])]).toEqual([])
+  })
+
+  it('is empty for no material', () => {
+    expect(tickersInMaterial([]).size).toBe(0)
   })
 })
 
