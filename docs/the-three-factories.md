@@ -1,6 +1,11 @@
 # The three factories, and the three modes
 
-The product, stated once, in the words it should be described in everywhere.
+> **Legacy/current implementation reference.** This page accurately describes
+> the three modes implemented today. It is no longer the target product model:
+> [`ai-network-plan.md`](ai-network-plan.md) makes the autonomous show the default,
+> constrains clips to Community Breaks, and specifies the required fourth mode.
+
+The previously shipped product, stated once, in the words used by the current UI.
 
 ---
 
