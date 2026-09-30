@@ -4,6 +4,7 @@
 
 | I want to… | Open |
 |---|---|
+| **Build and operate the autonomous flagship network** | **[`ai-network-plan.md`](ai-network-plan.md)** |
 | Get our first users | [`product-process.md`](product-process.md) |
 | Open the door to non-crypto streamers | [`plan-twitch-first-claim.md`](plan-twitch-first-claim.md) |
 | Make payouts honest, and give streamers a reason to come back | [`plan-network-growth.md`](plan-network-growth.md) |
@@ -30,6 +31,7 @@ The two documents that describe what is actually happening.
 
 | Doc | What it answers |
 |---|---|
+| **[`ai-network-plan.md`](ai-network-plan.md)** | **The current product direction.** The autonomous CSGN Network, 30-minute programming wheel, sourced editorial pipeline, licensed synthetic talent, desktop/OBS operating model, social factory, revised tokenomics, and a gated six-month rollout |
 | **[`product-process.md`](product-process.md)** | **The funnel, end to end.** The two funnels (viewer and streamer), where people actually leave, the cut list with recommendations, the three gates to first users, and the six numbers to write down weekly |
 | **[`marketing-outreach.md`](marketing-outreach.md)** | Positioning, the line, the refusal list, ad copy, cold-DM and investor scripts, the 30-day calendar and the creative briefs. Built on the funnel above |
 | **[`campaign.md`](campaign.md)** | **The operating document.** Three pillars (the room · the show · the campaign), owners, weekly cadence, exact copy, the 30-day table. **Where any other doc disagrees, this one wins.** |

@@ -9,20 +9,31 @@
 > companion (Ansem/Bullpen tandem, revenue-ASAP, the venue play). If anything
 > anywhere disagrees with this file, this file wins.
 
+> **September 2026 pivot:** [`ai-network-plan.md`](ai-network-plan.md) is now the
+> source of truth for the flagship channel, daily operations, synthetic talent,
+> editorial automation, and forward-looking tokenomics. This document remains the
+> source of truth for the community clip/live product unless the newer plan says
+> otherwise.
+
 ---
 
 ## 1. Who we are — and how to say it
 
-**A 24/7 crypto-native TV network for young men who trade, watch sports, and game.**
+**An autonomous 24/7 network for people who follow crypto, sports, and gaming.**
 
 It looks like ESPN, runs like public-access cable, and is coin-operated like a
 jukebox. Three parts:
 
-1. **The 24/7 stream** — always-on linear TV with a broadcast-grade ticker.
-2. **The shows** — CSGN Originals, hosted by the founder. This is the growth engine.
-3. **The token** — $CSGN, which decides what gets *promoted*, never who gets *in*.
+1. **CSGN Network** — the primary showcase: an AI-operated linear channel with
+   sourced, current desks, recurring synthetic hosts, originals, and a
+   broadcast-grade ticker.
+2. **CSGN Community** — the existing holder-programmed clip reel and claimed live
+   windows, visibly labeled when they take over the network.
+3. **The token** — $CSGN, the remote for community participation and promotion;
+   it never decides facts, buys undisclosed coverage, or gates core access.
 
-**One line:** *The only network where crypto, sports, and gaming are the same show.*
+**One line:** *Live AI television for crypto, sports, and gaming—programmed like a
+network, not scrolled like a feed.*
 
 ### 1.1 What's actually unique — lead with this
 
