@@ -6,7 +6,7 @@ import {
   BarChart3, Plus, Crown,
   Trash2, UserCheck, AlertTriangle, Tv, DollarSign,
   Wallet, CheckCircle2, XCircle, RefreshCw, Link as LinkIcon, ExternalLink, Monitor, Activity,
-  Megaphone, Flame, Vote, Film,
+  Megaphone, Flame, Vote,
   Bot,
 } from 'lucide-react'
 import {
@@ -962,12 +962,10 @@ export default function Admin() {
   const tabs = [
     { id: 'overview' as Tab, label: 'Overview', icon: BarChart3 },
     { id: 'autopilot' as Tab, label: 'Autopilot', icon: Bot },
-    { id: 'live' as Tab, label: 'Master Control', icon: Radio },
     { id: 'streamers' as Tab, label: 'Streamers', icon: Users },
     { id: 'schedule' as Tab, label: 'Schedule', icon: Clock },
     { id: 'fees' as Tab, label: 'Creator Fees', icon: DollarSign, count: pendingFeeCount, tone: 'amber' },
     { id: 'votes' as Tab, label: 'Vote History', icon: Vote, count: openVoteCount, tone: 'cyan' },
-    { id: 'clips' as Tab, label: 'Clips', icon: Film },
     { id: 'auth' as Tab, label: 'Auth Events', icon: Activity },
   ]
 

@@ -8,7 +8,35 @@ export interface AutoPilotConfig {
   headline: string
   analysis: string
   nextUpdate: string
+  activePackage?: AnchorPackage
   updatedAt?: string
+}
+
+export type AnchorId = 'A' | 'B'
+
+export interface AnchorTurn {
+  anchor: AnchorId
+  text: string
+  audioUrl?: string
+}
+
+export interface AnchorPackage {
+  id: string
+  title: string
+  sourceLabel: string
+  freshUntil: string
+  turns: AnchorTurn[]
+}
+
+export const DEMO_PACKAGE: AnchorPackage = {
+  id: 'demo-first-takeaway',
+  title: 'Why CSGN is building the show before the studio',
+  sourceLabel: 'CSGN EDITORIAL · DEMO PACKAGE',
+  freshUntil: '2099-01-01T00:00:00.000Z',
+  turns: [
+    { anchor: 'A', text: 'You are watching the CSGN 30. Sports leads, markets move like standings, and the permanent rail keeps the live numbers on screen.' },
+    { anchor: 'B', text: 'This is a working rehearsal package. On-air scripts will be generated only from reviewed fact packets, then voiced and checked before they enter the queue.' },
+  ],
 }
 
 export const DEFAULT_AUTOPILOT: AutoPilotConfig = {
@@ -54,4 +82,9 @@ export function segmentAt(second: number): WheelSegment {
 export function formatClock(seconds: number): string {
   const safe = Math.max(0, Math.floor(seconds))
   return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`
+}
+
+export function isPackageFresh(item: AnchorPackage, now = new Date()): boolean {
+  const expiry = Date.parse(item.freshUntil)
+  return Number.isFinite(expiry) && expiry > now.getTime() && item.turns.length > 0
 }
