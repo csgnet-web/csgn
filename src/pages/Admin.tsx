@@ -6,7 +6,8 @@ import {
   BarChart3, Plus, Crown,
   Trash2, UserCheck, AlertTriangle, Tv, DollarSign,
   Wallet, CheckCircle2, XCircle, RefreshCw, Link as LinkIcon, ExternalLink, Monitor, Activity,
-  Megaphone, Flame, Vote, Film,
+  Megaphone, Flame, Vote,
+  Bot,
 } from 'lucide-react'
 import {
   collection, query, getDocs, doc, setDoc, onSnapshot, orderBy,
@@ -28,6 +29,7 @@ import { CreatorFeesTab } from '@/components/admin/CreatorFeesTab'
 import LiveNowTab from '@/components/admin/LiveNowTab'
 import ClipQueueTab from '@/components/admin/ClipQueueTab'
 import { VoteHistoryTab } from '@/components/admin/VoteHistoryTab'
+import AutopilotControl from '@/components/admin/AutopilotControl'
 import { isVoteOpen, type VoteRecord } from '@/lib/votes'
 import { PUMP_FUN_FEE_TIERS, estimateCreatorFeeSOL, formatTierRange, resolvePumpFeeTier } from '@/lib/dexscreener'
 import { parseXPostId, parseXBroadcastId, isBroadcastUrl } from '@/lib/xembed'
@@ -63,7 +65,7 @@ import {
   type CreatorFees,
 } from '@/lib/slots'
 
-type Tab = 'overview' | 'live' | 'streamers' | 'schedule' | 'fees' | 'clips' | 'votes' | 'auth'
+type Tab = 'overview' | 'autopilot' | 'live' | 'streamers' | 'schedule' | 'fees' | 'clips' | 'votes' | 'auth'
 
 interface AuthEventData {
   id: string
@@ -959,12 +961,11 @@ export default function Admin() {
 
   const tabs = [
     { id: 'overview' as Tab, label: 'Overview', icon: BarChart3 },
-    { id: 'live' as Tab, label: 'Master Control', icon: Radio },
+    { id: 'autopilot' as Tab, label: 'Autopilot', icon: Bot },
     { id: 'streamers' as Tab, label: 'Streamers', icon: Users },
     { id: 'schedule' as Tab, label: 'Schedule', icon: Clock },
     { id: 'fees' as Tab, label: 'Creator Fees', icon: DollarSign, count: pendingFeeCount, tone: 'amber' },
     { id: 'votes' as Tab, label: 'Vote History', icon: Vote, count: openVoteCount, tone: 'cyan' },
-    { id: 'clips' as Tab, label: 'Clips', icon: Film },
     { id: 'auth' as Tab, label: 'Auth Events', icon: Activity },
   ]
 
@@ -1052,6 +1053,8 @@ export default function Admin() {
         )}
 
         {/* ── Overview Tab ── */}
+        {activeTab === 'autopilot' && <AutopilotControl />}
+
         {activeTab === 'overview' && (
           <div className="space-y-6">
             {/* Dashboard hero — network status + the live fan-action counter */}
