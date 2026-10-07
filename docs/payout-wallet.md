@@ -13,7 +13,7 @@
 >
 > SOL creator fees do **not** run through here. They are sent by hand and
 > recorded via `adminMarkFeesPaid`, until the pull-based claim contract in
-> [`plan-twitch-first-claim.md`](plan-twitch-first-claim.md) §5.3–5.5 exists.
+> [`master-plan.md`](master-plan.md) §5.3–5.5 exists.
 
 ```
 EftavCt6Tk2bzWJ9Dnz7cAvfa5RAnh8S9vZcrorV7Hmv

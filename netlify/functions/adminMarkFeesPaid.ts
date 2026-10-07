@@ -1,7 +1,7 @@
 // Settle a member's outstanding creator fees in one action.
 //
 // SOL creator-fee transfers are manual until the pull-based claim contract
-// exists (docs/plan-twitch-first-claim.md §5.3–5.5), so an admin sends the SOL
+// exists (docs/master-plan.md §5.3–5.5), so an admin sends the SOL
 // by hand and then records it here. That is the whole reason a transaction
 // signature is REQUIRED: a "paid" flag with nothing behind it is a claim, while
 // a signature is a receipt anyone can check on-chain. We validate its shape and

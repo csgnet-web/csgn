@@ -233,7 +233,7 @@ export async function refreshAirtimeSchedule(
       return { built: true, skipped: false, members: 0, segments: 0, inventorySeconds: 0 }
     }
 
-    // Approved clips only. Nothing airs unreviewed — see docs/plan-decentralized-tv.md §5.1.
+    // Approved clips only. Nothing airs unreviewed — see docs/master-plan.md §5.1.
     // NO orderBy — see the warning on queryCollection. This one failed inside
     // the catch below, so it was invisible: the schedule simply never built.
     const clipRows = await queryCollection(

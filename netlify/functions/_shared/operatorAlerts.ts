@@ -32,8 +32,8 @@
  * holders' airtime for nothing.
  *
  * That gives a rule that keeps working as the network grows: clips are the
- * BASELINE, and a streamer earns an interruption. See docs/analysis-clip-vs-
- * streamer-mode.md for the full argument and the numbers behind the thresholds.
+ * BASELINE, and a streamer earns an interruption. The current programming and
+ * takeover rule is documented in docs/master-plan.md.
  */
 
 export type AlertKind =
