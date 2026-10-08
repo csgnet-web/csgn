@@ -6,7 +6,7 @@
 // day/week/month — reachable, auditable, and out of the way.
 //
 // The undecided half is grouped BY MEMBER, because that is how the money moves:
-// SOL creator fees are still sent by hand (docs/plan-twitch-first-claim.md
+// SOL creator fees are still sent by hand (docs/master-plan.md
 // §5.3–5.5), and an admin sends one transfer covering every hour a streamer is
 // owed for, not one transfer per slot. A flat list of slots made them do that
 // grouping in their head, every time, against a wallet address they had to

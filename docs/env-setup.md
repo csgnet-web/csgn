@@ -57,7 +57,7 @@ unattended. The mitigation is float, not secrecy:
 The loader asserts that the derived public key equals the published payout
 address, so a wrong key is a startup error rather than transfers out of some other
 wallet. See `netlify/functions/_shared/payoutWallet.ts` and
-[`games-and-payouts.md`](games-and-payouts.md).
+[`dry-run.md`](dry-run.md).
 
 Optional, and worth setting before this runs at any volume:
 

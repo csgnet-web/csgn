@@ -16,7 +16,6 @@ const Dashboard = lazy(() => import('@/pages/Dashboard'))
 const PublicProfile = lazy(() => import('@/pages/PublicProfile'))
 const Admin = lazy(() => import('@/pages/Admin'))
 const Player = lazy(() => import('@/pages/Player'))
-const OldPlayer = lazy(() => import('@/pages/OldPlayer'))
 const Terms = lazy(() => import('@/pages/Terms'))
 const Privacy = lazy(() => import('@/pages/Privacy'))
 const TwitchComplete = lazy(() => import('@/pages/TwitchComplete'))
@@ -25,6 +24,7 @@ const Treasury = lazy(() => import('@/pages/Treasury'))
 const Studio = lazy(() => import('@/pages/Studio'))
 const EmailComplete = lazy(() => import('@/pages/EmailComplete'))
 const Share = lazy(() => import('@/pages/Share'))
+const AutoPlayer = lazy(() => import('@/pages/AutoPlayer'))
 
 function Loading() {
   return (
@@ -39,9 +39,9 @@ function Loading() {
 
 function AppContent() {
   const location = useLocation()
-  // Both player routes are chrome-free OBS capture surfaces.
-  const isPlayerPage = location.pathname === '/player' || location.pathname === '/oldplayer'
-  // Watch is a full-viewport app shell; /player is a chrome-free OBS capture.
+  // Both broadcast routes are chrome-free OBS capture surfaces.
+  const isPlayerPage = location.pathname === '/player' || location.pathname === '/autoplayer'
+  // Watch is a full-viewport app shell; broadcast routes are OBS captures.
   const isWatchPage = location.pathname === '/' || location.pathname === '/watch'
   const showFooter = !isPlayerPage && !isWatchPage
 
@@ -74,8 +74,8 @@ function AppContent() {
             <Route path="/share" element={<Share />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/player" element={<Player />} />
-            {/* The revert path — same player, clips off. See OldPlayer.tsx. */}
-            <Route path="/oldplayer" element={<OldPlayer />} />
+            <Route path="/autoplayer" element={<AutoPlayer />} />
+            <Route path="/oldplayer" element={<Navigate to="/autoplayer" replace />} />
             <Route path="/terms" element={<Terms />} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/auth/twitch/complete" element={<TwitchComplete />} />
